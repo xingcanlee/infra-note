@@ -1,26 +1,25 @@
 {
-  "name": "astro-wisp",
+  "name": "infra-note",
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Wisp —— 安静好读的技术博客主题",
+  "description": "基础设施技术笔记站点",
   "author": "xingcanlee",
   "license": "MIT",
-  "homepage": "https://github.com/xingcanlee/astro-wisp#readme",
+  "homepage": "https://github.com/xingcanlee/infra-note#readme",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/xingcanlee/astro-wisp.git"
+    "url": "git+https://github.com/xingcanlee/infra-note.git"
   },
   "bugs": {
-    "url": "https://github.com/xingcanlee/astro-wisp/issues"
+    "url": "https://github.com/xingcanlee/infra-note/issues"
   },
   "keywords": [
     "astro",
-    "astro-theme",
     "blog",
-    "tailwindcss",
+    "infrastructure",
+    "notes",
     "mdx",
-    "katex",
     "mermaid"
   ],
   "packageManager": "pnpm@10.33.2",
