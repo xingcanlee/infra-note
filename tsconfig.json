@@ -4,11 +4,7 @@
     ".astro/types.d.ts",
     "**/*"
   ],
-  "exclude": [
-    "dist",
-    "node_modules",
-    "skills/wisp-diagram/scripts/node_modules"
-  ],
+  "exclude": ["dist", "node_modules"],
   "compilerOptions": {
     "paths": {
       "@/*": [

@@ -4,11 +4,11 @@
 
 ## 约定
 
-- 站点配置在 `src/wisp.config.ts`。
+- 站点与主题配置在 `astro.config.ts`，主题来自 npm 包 `astro-wisp`。
 - 文章放在 `src/content/posts/`，页面放在 `src/content/pages/`。
-- 颜色使用 `design/palette.json` 生成的 `--wisp-*` / `--wd-*` 令牌。
+- 颜色覆盖使用 `design/palette.json`，通过 `wisp({ palette })` 生成 `--wisp-*` / `--wd-*` 令牌。
 - 图表源文件和 `.wisp.svg` 产物与文章放在一起。
-- 主题运行时位于 `src/wisp/`；修改后运行 `pnpm build` 检查。
+- 主题运行时位于 `node_modules/astro-wisp/`，升级使用 `pnpm up astro-wisp`。
 
 ## 常用命令
 

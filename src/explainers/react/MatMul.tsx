@@ -1,9 +1,7 @@
 import { useMemo, type ReactNode } from 'react';
+import { Label, Matrix, Player, CELL, LABEL_H, matrixHeight, matrixWidth } from 'astro-wisp/explainers';
 import { matmul, type MatMulState } from '../core/algorithms/matmul';
-import { formatNumber as f } from '../core/format';
-import Player from './Player';
-import Matrix, { CELL, LABEL_H, matrixHeight, matrixWidth } from './primitives/Matrix';
-import Label from './primitives/Label';
+import { formatNumber as f } from 'astro-wisp/explainers/core';
 
 export interface MatMulProps {
   a: number[][];

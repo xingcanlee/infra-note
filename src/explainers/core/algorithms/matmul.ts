@@ -1,5 +1,4 @@
-import { cellId, type Timeline } from '../timeline';
-import { formatNumber as f } from '../format';
+import { cellId, formatNumber as f, type Timeline } from 'astro-wisp/explainers/core';
 
 export type MatMulPhase = 'start' | 'multiply' | 'write' | 'done';
 
