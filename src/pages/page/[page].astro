@@ -39,7 +39,7 @@ const times = await getReadingTimes(posts);
         ))
       }
     </ul>
-    <Pagination current={current} total={total} />
+    <Pagination current={current} total={total} base={import.meta.env.BASE_URL} />
   </div>
 </Base>
 

@@ -7,6 +7,7 @@ import config from '../../wisp.config';
 import { formatDate, toISODate } from '../utils/date';
 import Icon from './Icon.astro';
 import { slugify } from '../utils/taxonomy';
+import { sitePath } from '../utils/paths';
 
 export interface Props {
   pubDate: Date;
@@ -28,6 +29,7 @@ const { pubDate, updatedDate, readingTime, category, tags = [], lang = config.si
 const zh = /^zh\b/i.test(lang);
 const showUpdated = updatedDate && toISODate(updatedDate) !== toISODate(pubDate);
 const slugMap = config.taxonomy.slugMap;
+const base = import.meta.env.BASE_URL;
 ---
 
 <div class:list={['wisp-meta', className]}>
@@ -55,7 +57,7 @@ const slugMap = config.taxonomy.slugMap;
     category && (
       <span class="wisp-meta-item">
         <Icon name="folder" size="0.95em" />
-        <a href={`/categories/${slugify(category, slugMap)}/`}>{category}</a>
+        <a href={sitePath(base, `/categories/${slugify(category, slugMap)}/`)}>{category}</a>
       </span>
     )
   }
@@ -63,7 +65,7 @@ const slugMap = config.taxonomy.slugMap;
     tags.length > 0 && (
       <span class="wisp-meta-tags">
         {tags.map((t) => (
-          <a href={`/tags/${slugify(t, slugMap)}/`}>#{t}</a>
+          <a href={sitePath(base, `/tags/${slugify(t, slugMap)}/`)}>#{t}</a>
         ))}
       </span>
     )

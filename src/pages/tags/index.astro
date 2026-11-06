@@ -1,8 +1,10 @@
 ---
 import Page from '../../layouts/Page.astro';
 import { getTags } from '../../wisp/utils/taxonomy';
+import { sitePath } from '../../wisp/utils/paths';
 
 const terms = await getTags();
+const base = import.meta.env.BASE_URL;
 ---
 
 <Page title="标签" description={`共 ${terms.length} 个标签`} prose={false}>
@@ -13,7 +15,7 @@ const terms = await getTags();
       <ul class="terms">
         {terms.map((t) => (
           <li>
-            <a href={`/tags/${t.slug}/`}>#{t.name}</a>
+            <a href={sitePath(base, `/tags/${t.slug}/`)}>#{t.name}</a>
             <span class="n" aria-label={`${t.count} 篇`}>{t.count}</span>
           </li>
         ))}

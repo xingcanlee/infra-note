@@ -15,7 +15,9 @@ export interface Props {
 }
 
 import Icon from './Icon.astro';
+import { sitePath } from '../utils/paths';
 
+const base = import.meta.env.BASE_URL;
 const { prev, next } = Astro.props;
 ---
 
@@ -23,7 +25,7 @@ const { prev, next } = Astro.props;
   (prev || next) && (
     <nav class="wisp-prevnext" aria-label="相邻文章">
       {prev ? (
-        <a href={`/posts/${prev.id}/`} rel="prev" class="is-prev">
+        <a href={sitePath(base, `/posts/${prev.id}/`)} rel="prev" class="is-prev">
           <span class="label"><Icon name="arrow-left" /> 上一篇</span>
           <span class="title">{prev.title}</span>
         </a>
@@ -31,7 +33,7 @@ const { prev, next } = Astro.props;
         <span />
       )}
       {next ? (
-        <a href={`/posts/${next.id}/`} rel="next" class="is-next">
+        <a href={sitePath(base, `/posts/${next.id}/`)} rel="next" class="is-next">
           <span class="label">下一篇 <Icon name="arrow-right" /></span>
           <span class="title">{next.title}</span>
         </a>

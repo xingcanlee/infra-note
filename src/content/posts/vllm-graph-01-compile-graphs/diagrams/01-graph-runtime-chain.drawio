@@ -1,0 +1,142 @@
+<mxfile host="app.diagrams.net"><diagram id="01-graph-runtime-chain" name="vLLM 图调用链：CUDA Graph 与 ACLGraph"><mxGraphModel adaptiveColors="auto" grid="0" gridSize="8" page="0" background="#FFFFFF">
+  <root>
+    <mxCell id="0" />
+    <mxCell id="1" parent="0" />
+    <mxCell id="bg" value="" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=none;" vertex="1" parent="1">
+      <mxGeometry x="0" y="0" width="2048" height="1496" as="geometry" />
+    </mxCell>
+    <mxCell id="title" value="vLLM 图调用链：CUDA Graph 与 ACLGraph" style="text;html=1;align=left;verticalAlign=middle;fontFamily=Inter;fontSize=44;fontStyle=1;fontColor=#1d1d1f;" vertex="1" parent="1">
+      <mxGeometry x="88" y="56" width="1800" height="64" as="geometry" />
+    </mxCell>
+    <mxCell id="subtitle" value="启动时按 batch key 捕获；每次 forward 先 dispatch，再由 wrapper 决定 replay、首次捕获或普通执行。" style="text;html=1;align=left;verticalAlign=middle;fontFamily=Inter;fontSize=24;fontColor=#5c6067;" vertex="1" parent="1">
+      <mxGeometry x="88" y="128" width="1856" height="40" as="geometry" />
+    </mxCell>
+    <mxCell id="s1title" value="启动：封装与捕获" style="text;html=1;align=left;verticalAlign=middle;fontFamily=Inter;fontSize=30;fontStyle=1;fontColor=#1d1d1f;" vertex="1" parent="1">
+      <mxGeometry x="88" y="200" width="600" height="40" as="geometry" />
+    </mxCell>
+    <mxCell id="s1note" value="解析模式 → 初始化 capture keys → 预热 → 按 descriptor 捕获" style="text;html=1;align=right;verticalAlign=middle;fontFamily=Inter;fontSize=18;fontColor=#5c6067;" vertex="1" parent="1">
+      <mxGeometry x="1184" y="200" width="776" height="40" as="geometry" />
+    </mxCell>
+    <mxCell id="rule1" style="endArrow=none;html=1;strokeColor=#e2e2dd;strokeWidth=1;" edge="1" parent="1">
+      <mxGeometry relative="1" as="geometry">
+        <mxPoint x="88" y="256" as="sourcePoint" />
+        <mxPoint x="1960" y="256" as="targetPoint" />
+      </mxGeometry>
+    </mxCell>
+    <mxCell id="labelN" value="NVIDIA" style="text;html=1;align=left;verticalAlign=middle;fontFamily=Inter;fontSize=28;fontStyle=1;fontColor=#1d1d1f;" vertex="1" parent="1">
+      <mxGeometry x="88" y="272" width="152" height="40" as="geometry" />
+    </mxCell>
+    <mxCell id="labelNsub" value="CUDA Graph" style="text;html=1;align=left;verticalAlign=middle;fontFamily=Inter;fontSize=18;fontColor=#5c6067;" vertex="1" parent="1">
+      <mxGeometry x="88" y="312" width="152" height="32" as="geometry" />
+    </mxCell>
+    <mxCell id="n1" value="&lt;b&gt;GPUModelRunner.load_model&lt;/b&gt;&lt;br&gt;CUDA GraphWrapper&lt;br&gt;&lt;font style=&quot;font-size:16px&quot;&gt;FULL / PIECEWISE&lt;/font&gt;" style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#dbeafe;strokeColor=#1d4ed8;strokeWidth=1.5;fontFamily=Inter;fontSize=18;fontColor=#1d1d1f;align=center;verticalAlign=middle;spacing=8;" vertex="1" parent="1">
+      <mxGeometry x="264" y="272" width="368" height="144" as="geometry" />
+    </mxCell>
+    <mxCell id="n2" value="&lt;b&gt;_check_and_update_cudagraph_mode&lt;/b&gt;&lt;br&gt;resolve mode / sizes&lt;br&gt;&lt;font style=&quot;font-size:16px&quot;&gt;initialize_cudagraph_keys&lt;/font&gt;" style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#dbeafe;strokeColor=#1d4ed8;strokeWidth=1.5;fontFamily=Inter;fontSize=18;fontColor=#1d1d1f;align=center;verticalAlign=middle;spacing=8;" vertex="1" parent="1">
+      <mxGeometry x="672" y="272" width="368" height="144" as="geometry" />
+    </mxCell>
+    <mxCell id="n3" value="&lt;b&gt;Worker.load_model (GPU)&lt;/b&gt;&lt;br&gt;capture_model()&lt;br&gt;get_capture_descs →&lt;br&gt;&lt;font style=&quot;font-size:16px&quot;&gt;_warmup_and_capture&lt;/font&gt;" style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#dbeafe;strokeColor=#1d4ed8;strokeWidth=1.5;fontFamily=Inter;fontSize=18;fontColor=#1d1d1f;align=center;verticalAlign=middle;spacing=8;" vertex="1" parent="1">
+      <mxGeometry x="1080" y="272" width="368" height="144" as="geometry" />
+    </mxCell>
+    <mxCell id="n4" value="&lt;b&gt;CUDAGraphWrapper._call_&lt;/b&gt;&lt;br&gt;key 未命中 + capturing&lt;br&gt;&lt;font style=&quot;font-size:16px&quot;&gt;torch.cuda.graph(...)&lt;/font&gt;" style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#dbeafe;strokeColor=#1d4ed8;strokeWidth=1.5;fontFamily=Inter;fontSize=18;fontColor=#1d1d1f;align=center;verticalAlign=middle;spacing=8;" vertex="1" parent="1">
+      <mxGeometry x="1488" y="272" width="368" height="144" as="geometry" />
+    </mxCell>
+    <mxCell id="labelA" value="Ascend" style="text;html=1;align=left;verticalAlign=middle;fontFamily=Inter;fontSize=28;fontStyle=1;fontColor=#1d1d1f;" vertex="1" parent="1">
+      <mxGeometry x="88" y="440" width="152" height="40" as="geometry" />
+    </mxCell>
+    <mxCell id="labelAsub" value="ACLGraph" style="text;html=1;align=left;verticalAlign=middle;fontFamily=Inter;fontSize=18;fontColor=#5c6067;" vertex="1" parent="1">
+      <mxGeometry x="88" y="480" width="152" height="32" as="geometry" />
+    </mxCell>
+    <mxCell id="a1" value="&lt;b&gt;NPUModelRunner.load_model&lt;/b&gt;&lt;br&gt;ACLGraphWrapper&lt;br&gt;&lt;font style=&quot;font-size:16px&quot;&gt;BreakableACLGraphWrapper&lt;/font&gt;" style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#ccfbf1;strokeColor=#0f766e;strokeWidth=1.5;fontFamily=Inter;fontSize=18;fontColor=#1d1d1f;align=center;verticalAlign=middle;spacing=8;" vertex="1" parent="1">
+      <mxGeometry x="264" y="440" width="368" height="144" as="geometry" />
+    </mxCell>
+    <mxCell id="a2" value="&lt;b&gt;_check_and_update_cudagraph_mode&lt;/b&gt;&lt;br&gt;resolve mode / sizes&lt;br&gt;&lt;font style=&quot;font-size:16px&quot;&gt;set_graph_params(capture_sizes)&lt;/font&gt;" style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#ccfbf1;strokeColor=#0f766e;strokeWidth=1.5;fontFamily=Inter;fontSize=18;fontColor=#1d1d1f;align=center;verticalAlign=middle;spacing=8;" vertex="1" parent="1">
+      <mxGeometry x="672" y="440" width="368" height="144" as="geometry" />
+    </mxCell>
+    <mxCell id="a3" value="&lt;b&gt;NPUWorker.load_model&lt;/b&gt;&lt;br&gt;capture_model()&lt;br&gt;&lt;font style=&quot;font-size:16px&quot;&gt;GPUModelRunner.capture_model(self)&lt;/font&gt;" style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#ccfbf1;strokeColor=#0f766e;strokeWidth=1.5;fontFamily=Inter;fontSize=18;fontColor=#1d1d1f;align=center;verticalAlign=middle;spacing=8;" vertex="1" parent="1">
+      <mxGeometry x="1080" y="440" width="368" height="144" as="geometry" />
+    </mxCell>
+    <mxCell id="a4" value="&lt;b&gt;ACLGraphWrapper._call_&lt;/b&gt;&lt;br&gt;key 未命中 + capturing&lt;br&gt;&lt;font style=&quot;font-size:16px&quot;&gt;UpdatableGraph + torch.npu.graph&lt;/font&gt;" style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#ccfbf1;strokeColor=#0f766e;strokeWidth=1.5;fontFamily=Inter;fontSize=18;fontColor=#1d1d1f;align=center;verticalAlign=middle;spacing=8;" vertex="1" parent="1">
+      <mxGeometry x="1488" y="440" width="368" height="144" as="geometry" />
+    </mxCell>
+    <mxCell id="s2title" value="每次 forward：派发与重放" style="text;html=1;align=left;verticalAlign=middle;fontFamily=Inter;fontSize=30;fontStyle=1;fontColor=#1d1d1f;" vertex="1" parent="1">
+      <mxGeometry x="88" y="640" width="700" height="40" as="geometry" />
+    </mxCell>
+    <mxCell id="s2note" value="dispatcher 只给出 mode + padded key；wrapper 信任 context 并执行" style="text;html=1;align=right;verticalAlign=middle;fontFamily=Inter;fontSize=18;fontColor=#5c6067;" vertex="1" parent="1">
+      <mxGeometry x="1080" y="640" width="880" height="40" as="geometry" />
+    </mxCell>
+    <mxCell id="rule2" style="endArrow=none;html=1;strokeColor=#e2e2dd;strokeWidth=1;" edge="1" parent="1">
+      <mxGeometry relative="1" as="geometry">
+        <mxPoint x="88" y="696" as="sourcePoint" />
+        <mxPoint x="1960" y="696" as="targetPoint" />
+      </mxGeometry>
+    </mxCell>
+    <mxCell id="f1" value="&lt;b&gt;execute_model()&lt;/b&gt;&lt;br&gt;准备 batch&lt;br&gt;&lt;font style=&quot;font-size:16px&quot;&gt;num_tokens / reqs / LoRA 状态&lt;/font&gt;" style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e2e8f0;strokeColor=#475569;strokeWidth=1.5;fontFamily=Inter;fontSize=18;fontColor=#1d1d1f;align=center;verticalAlign=middle;spacing=8;" vertex="1" parent="1">
+      <mxGeometry x="264" y="728" width="368" height="144" as="geometry" />
+    </mxCell>
+    <mxCell id="f2" value="&lt;b style=&quot;font-size:16px&quot;&gt;_determine_batch_execution_and_padding&lt;/b&gt;&lt;br&gt;判断 uniform decode&lt;br&gt;&lt;font style=&quot;font-size:16px&quot;&gt;整理 dispatch 输入&lt;/font&gt;" style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e2e8f0;strokeColor=#475569;strokeWidth=1.5;fontFamily=Inter;fontSize=18;fontColor=#1d1d1f;align=center;verticalAlign=middle;spacing=8;" vertex="1" parent="1">
+      <mxGeometry x="672" y="728" width="368" height="144" as="geometry" />
+    </mxCell>
+    <mxCell id="f3" value="&lt;b&gt;CudagraphDispatcher.dispatch&lt;/b&gt;&lt;br&gt;返回 (mode, padded BatchDescriptor)&lt;br&gt;&lt;font style=&quot;font-size:16px&quot;&gt;或 (NONE, 原始 descriptor)&lt;/font&gt;" style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e2e8f0;strokeColor=#475569;strokeWidth=1.5;fontFamily=Inter;fontSize=18;fontColor=#1d1d1f;align=center;verticalAlign=middle;spacing=8;" vertex="1" parent="1">
+      <mxGeometry x="1080" y="728" width="368" height="144" as="geometry" />
+    </mxCell>
+    <mxCell id="f4" value="&lt;b&gt;set_forward_context&lt;/b&gt;&lt;br&gt;set_ascend_forward_context&lt;br&gt;&lt;font style=&quot;font-size:16px&quot;&gt;cudagraph_runtime_mode&lt;br&gt;batch_descriptor&lt;/font&gt;" style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e2e8f0;strokeColor=#475569;strokeWidth=1.5;fontFamily=Inter;fontSize=18;fontColor=#1d1d1f;align=center;verticalAlign=middle;spacing=8;" vertex="1" parent="1">
+      <mxGeometry x="1488" y="728" width="368" height="144" as="geometry" />
+    </mxCell>
+    <mxCell id="wb2" value="&lt;b&gt;CUDAGraphWrapper._call_&lt;/b&gt;&lt;br&gt;NONE / mode 不匹配 → 直接调用 runnable&lt;br&gt;key 未命中 → torch.cuda.graph 首次捕获&lt;br&gt;key 命中 → cudagraph.replay()" style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#dbeafe;strokeColor=#1d4ed8;strokeWidth=1.5;fontFamily=Inter;fontSize=18;fontColor=#1d1d1f;align=center;verticalAlign=middle;spacing=8;" vertex="1" parent="1">
+      <mxGeometry x="264" y="928" width="776" height="216" as="geometry" />
+    </mxCell>
+    <mxCell id="wa2" value="&lt;b&gt;ACLGraphWrapper._call_&lt;/b&gt;&lt;br&gt;NONE / mode 不匹配 → 直接调用 runnable&lt;br&gt;FULL + updatable → resolve tasks → update / replay（顺序随 ENPU）&lt;br&gt;其他 FULL → NPUGraph.replay()；attention 参数另行更新" style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#ccfbf1;strokeColor=#0f766e;strokeWidth=1.5;fontFamily=Inter;fontSize=18;fontColor=#1d1d1f;align=center;verticalAlign=middle;spacing=8;" vertex="1" parent="1">
+      <mxGeometry x="1080" y="928" width="776" height="216" as="geometry" />
+    </mxCell>
+    <mxCell id="share" value="共享：CudagraphDispatcher + ForwardContext，平台分叉在 wrapper 与设备 API；编译缓存命中不代表设备图已捕获。" style="rounded=1;arcSize=4;whiteSpace=wrap;html=1;fillColor=#f4f4f2;strokeColor=#e2e2dd;strokeWidth=1.5;fontFamily=Inter;fontSize=22;fontColor=#1d1d1f;align=center;verticalAlign=middle;spacing=8;" vertex="1" parent="1">
+      <mxGeometry x="112" y="1192" width="1840" height="96" as="geometry" />
+    </mxCell>
+    <mxCell id="footer" value="源码：vllm/v1/worker/gpu_model_runner.py · vllm/compilation/cuda_graph.py · vllm-ascend/compilation/acl_graph.py" style="text;html=1;align=left;verticalAlign=middle;fontFamily=Inter;fontSize=16;fontColor=#5c6067;" vertex="1" parent="1">
+      <mxGeometry x="88" y="1320" width="1856" height="32" as="geometry" />
+    </mxCell>
+    <mxCell id="en1" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#1d4ed8;strokeWidth=1.5;endArrow=block;endFill=1;" edge="1" parent="1" source="n1" target="n2">
+      <mxGeometry relative="1" as="geometry" />
+    </mxCell>
+    <mxCell id="en2" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#1d4ed8;strokeWidth=1.5;endArrow=block;endFill=1;" edge="1" parent="1" source="n2" target="n3">
+      <mxGeometry relative="1" as="geometry" />
+    </mxCell>
+    <mxCell id="en3" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#1d4ed8;strokeWidth=1.5;endArrow=block;endFill=1;" edge="1" parent="1" source="n3" target="n4">
+      <mxGeometry relative="1" as="geometry" />
+    </mxCell>
+    <mxCell id="ea1" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#0f766e;strokeWidth=1.5;endArrow=block;endFill=1;" edge="1" parent="1" source="a1" target="a2">
+      <mxGeometry relative="1" as="geometry" />
+    </mxCell>
+    <mxCell id="ea2" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#0f766e;strokeWidth=1.5;endArrow=block;endFill=1;" edge="1" parent="1" source="a2" target="a3">
+      <mxGeometry relative="1" as="geometry" />
+    </mxCell>
+    <mxCell id="ea3" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#0f766e;strokeWidth=1.5;endArrow=block;endFill=1;" edge="1" parent="1" source="a3" target="a4">
+      <mxGeometry relative="1" as="geometry" />
+    </mxCell>
+    <mxCell id="ef1" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#475569;strokeWidth=1.5;endArrow=block;endFill=1;" edge="1" parent="1" source="f1" target="f2">
+      <mxGeometry relative="1" as="geometry" />
+    </mxCell>
+    <mxCell id="ef2" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#475569;strokeWidth=1.5;endArrow=block;endFill=1;" edge="1" parent="1" source="f2" target="f3">
+      <mxGeometry relative="1" as="geometry" />
+    </mxCell>
+    <mxCell id="ef3" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#475569;strokeWidth=1.5;endArrow=block;endFill=1;" edge="1" parent="1" source="f3" target="f4">
+      <mxGeometry relative="1" as="geometry" />
+    </mxCell>
+    <mxCell id="ef4" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#1d4ed8;strokeWidth=1.5;endArrow=block;endFill=1;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="f4" target="wb2">
+      <mxGeometry relative="1" as="geometry">
+        <Array as="points">
+          <mxPoint x="1672" y="904" />
+          <mxPoint x="652" y="904" />
+        </Array>
+      </mxGeometry>
+    </mxCell>
+    <mxCell id="ef5" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#0f766e;strokeWidth=1.5;endArrow=block;endFill=1;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="f4" target="wa2">
+      <mxGeometry relative="1" as="geometry">
+        <Array as="points">
+          <mxPoint x="1672" y="904" />
+          <mxPoint x="1468" y="904" />
+        </Array>
+      </mxGeometry>
+    </mxCell>
+  </root>
+</mxGraphModel></diagram></mxfile>

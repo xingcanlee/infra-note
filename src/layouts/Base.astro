@@ -18,6 +18,7 @@ import Header from '../wisp/components/Header.astro';
 import Footer from '../wisp/components/Footer.astro';
 import CopyButton from '../wisp/components/CopyButton.astro';
 import Lightbox from '../wisp/components/Lightbox.astro';
+import { sitePath } from '../wisp/utils/paths';
 
 export interface Props {
   /** 页面标题；不传时只显示站点名。会自动拼成 “标题 · 站点名” */
@@ -53,10 +54,19 @@ const {
   noindex = false,
 } = Astro.props;
 
+const base = import.meta.env.BASE_URL;
 const site = Astro.site ?? new URL(config.site.url);
-const canonical = new URL(Astro.props.canonical ?? Astro.url.pathname, site).href;
+const canonicalPath = Astro.props.canonical ?? Astro.url.pathname;
+const canonicalUrlPath = canonicalPath.startsWith(base) ? canonicalPath : sitePath(base, canonicalPath);
+const canonical = /^https?:\/\//i.test(canonicalPath)
+  ? canonicalPath
+  : new URL(canonicalUrlPath, site.origin).href;
 const fullTitle = title && title !== config.site.title ? `${title} · ${config.site.title}` : config.site.title;
-const imageUrl = image ? new URL(image, site).href : undefined;
+const imageUrl = image
+  ? /^https?:\/\//i.test(image)
+    ? image
+    : new URL(sitePath(base, image), site.origin).href
+  : undefined;
 const ogLocale = lang.replace('-', '_');
 ---
 
@@ -80,9 +90,9 @@ const ogLocale = lang.replace('-', '_');
     {config.site.author && <meta name="author" content={config.site.author} />}
     {noindex && <meta name="robots" content="noindex" />}
     <link rel="canonical" href={canonical} />
-    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-    <link rel="alternate" type="application/rss+xml" title={config.site.title} href={new URL('/rss.xml', site).href} />
-    <link rel="sitemap" href="/sitemap-index.xml" />
+    <link rel="icon" type="image/svg+xml" href={sitePath(base, '/favicon.svg')} />
+    <link rel="alternate" type="application/rss+xml" title={config.site.title} href={new URL('rss.xml', site).href} />
+    <link rel="sitemap" href={sitePath(base, '/sitemap-index.xml')} />
     <link rel="preload" href={interLatinUrl} as="font" type="font/woff2" crossorigin />
     <meta name="generator" content={Astro.generator} />
 

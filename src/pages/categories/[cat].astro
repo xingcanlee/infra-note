@@ -4,6 +4,7 @@ import Base from '../../layouts/Base.astro';
 import PostCard from '../../wisp/components/PostCard.astro';
 import { getCategories } from '../../wisp/utils/taxonomy';
 import { getReadingTimes } from '../../wisp/utils/reading';
+import { sitePath } from '../../wisp/utils/paths';
 
 export const getStaticPaths = (async () => {
   const terms = await getCategories();
@@ -12,13 +13,14 @@ export const getStaticPaths = (async () => {
 
 const { term } = Astro.props;
 const times = await getReadingTimes(term.posts);
+const base = import.meta.env.BASE_URL;
 ---
 
 <Base title={`${term.name}`} description={`分类「${term.name}」下的 ${term.count} 篇文章`}>
   <div class="wisp-container tax">
     <header class="tax-header">
       <h1>{term.name}</h1>
-      <p>{term.count} 篇文章 · <a class="wisp-link" href="/categories/">全部分类</a></p>
+      <p>{term.count} 篇文章 · <a class="wisp-link" href={sitePath(base, '/categories/')}>全部分类</a></p>
     </header>
     <ul class="tax-list">
       {term.posts.map((post, i) => (

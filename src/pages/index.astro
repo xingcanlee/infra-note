@@ -45,7 +45,7 @@ const [featuredTimes, times] = await Promise.all([getReadingTimes(featured), get
         }
       </ul>
     </section>
-    <Pagination current={1} total={totalPages} />
+    <Pagination current={1} total={totalPages} base={import.meta.env.BASE_URL} />
   </div>
 </Base>
 

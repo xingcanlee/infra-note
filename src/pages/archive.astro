@@ -4,10 +4,12 @@ import { getPosts, groupByYear } from '../wisp/utils/posts';
 import { formatDate } from '../wisp/utils/date';
 import { toISODate } from '../wisp/utils/date';
 import config from '../wisp.config';
+import { sitePath } from '../wisp/utils/paths';
 
 const posts = await getPosts();
 const groups = groupByYear(posts);
 const short = (d: Date) => `${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}`;
+const base = import.meta.env.BASE_URL;
 ---
 
 <Page title="归档" description={`共 ${posts.length} 篇文章`} prose={false}>
@@ -23,7 +25,7 @@ const short = (d: Date) => `${String(d.getUTCMonth() + 1).padStart(2, '0')}-${St
               <time datetime={toISODate(p.data.pubDate)} title={formatDate(p.data.pubDate, p.data.lang ?? config.site.lang)}>
                 {short(p.data.pubDate)}
               </time>
-              <a href={`/posts/${p.id}/`} lang={p.data.lang}>{p.data.title}</a>
+              <a href={sitePath(base, `/posts/${p.id}/`)} lang={p.data.lang}>{p.data.title}</a>
             </li>
           ))}
         </ul>

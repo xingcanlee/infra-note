@@ -4,6 +4,7 @@
  */
 import config from '../../wisp.config';
 import ThemeToggle from './ThemeToggle.astro';
+import { sitePath } from '../utils/paths';
 
 export interface Props {
   /** 当前路径，用于给导航项加 aria-current；默认取 Astro.url.pathname */
@@ -11,19 +12,20 @@ export interface Props {
 }
 
 const { currentPath = Astro.url.pathname } = Astro.props;
+const base = import.meta.env.BASE_URL;
 const norm = (p: string) => (p.endsWith('/') ? p : `${p}/`);
 const isCurrent = (href: string) => href !== '/' && norm(decodeURI(currentPath)).startsWith(norm(href));
 ---
 
 <header class="wisp-header">
   <div class="wisp-container wisp-header-inner">
-    <a href="/" class="wisp-brand" aria-current={currentPath === '/' ? 'page' : undefined}>{config.site.title}</a>
+    <a href={sitePath(base, '/')} class="wisp-brand" aria-current={currentPath === '/' ? 'page' : undefined}>{config.site.title}</a>
     <nav aria-label="主导航" class="wisp-nav">
       <ul>
         {
           config.nav.map((item) => (
             <li>
-              <a href={item.href} aria-current={isCurrent(item.href) ? 'page' : undefined}>
+              <a href={sitePath(base, item.href)} aria-current={isCurrent(item.href) ? 'page' : undefined}>
                 {item.label}
               </a>
             </li>

@@ -1,0 +1,72 @@
+<mxfile host="app.diagrams.net"><diagram name="Page-1"><mxGraphModel adaptiveColors="auto" grid="0" page="0" background="#FFFFFF">
+  <root>
+    <mxCell id="0" />
+    <mxCell id="1" parent="0" />
+    <mxCell id="n2" value="" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=none;strokeWidth=1.5;fontFamily=Microsoft YaHei;associateText=1;fontSize=23;fontColor=#1D1D1F;align=center;verticalAlign=middle;spacing=12;fontStyle=0;" vertex="1" parent="1">
+      <mxGeometry x="0" y="0" width="1280" height="870" as="geometry" />
+    </mxCell>
+    <mxCell id="n3" value="Ascend：编译后端与运行时分工" style="rounded=0;whiteSpace=wrap;html=1;fillColor=none;strokeColor=none;strokeWidth=1.5;fontFamily=Microsoft YaHei;associateText=1;fontSize=32;fontColor=#1D1D1F;align=left;verticalAlign=middle;spacing=12;fontStyle=1;spacing=0;fontColor=#1D1D1F;" vertex="1" parent="1">
+      <mxGeometry x="44" y="28" width="1192" height="46" as="geometry" />
+    </mxCell>
+    <mxCell id="n4" value="相近的名字代表不同路线；不要把所有入口同时套在一条调用链上。" style="rounded=0;whiteSpace=wrap;html=1;fillColor=none;strokeColor=none;strokeWidth=1.5;fontFamily=Microsoft YaHei;associateText=1;fontSize=20;fontColor=#1D1D1F;align=left;verticalAlign=middle;spacing=12;fontStyle=0;spacing=0;fontColor=#5C6067;" vertex="1" parent="1">
+      <mxGeometry x="44" y="82" width="1192" height="38" as="geometry" />
+    </mxCell>
+    <mxCell id="n5" value="通用 PyTorch 路线" style="rounded=0;whiteSpace=wrap;html=1;fillColor=none;strokeColor=none;strokeWidth=1.5;fontFamily=Microsoft YaHei;associateText=1;fontSize=24;fontColor=#1D1D1F;align=left;verticalAlign=middle;spacing=12;fontStyle=1;spacing=0;fontColor=#1D1D1F;" vertex="1" parent="1">
+      <mxGeometry x="44" y="150" width="1190" height="38" as="geometry" />
+    </mxCell>
+    <mxCell id="n6" value="FX → npugraphs" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#F4F4F2;strokeColor=#8B9098;strokeWidth=1.5;fontFamily=Microsoft YaHei;associateText=1;fontSize=23;fontColor=#1D1D1F;align=center;verticalAlign=middle;spacing=12;fontStyle=0;" vertex="1" parent="1">
+      <mxGeometry x="90" y="215" width="340" height="82" as="geometry" />
+    </mxCell>
+    <mxCell id="n7" value="后端接管捕获 / 重放" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#F4F4F2;strokeColor=#8B9098;strokeWidth=1.5;fontFamily=Microsoft YaHei;associateText=1;fontSize=23;fontColor=#1D1D1F;align=center;verticalAlign=middle;spacing=12;fontStyle=0;" vertex="1" parent="1">
+      <mxGeometry x="470" y="215" width="340" height="82" as="geometry" />
+    </mxCell>
+    <mxCell id="n8" value="NPU Graph 执行" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#F4F4F2;strokeColor=#8B9098;strokeWidth=1.5;fontFamily=Microsoft YaHei;associateText=1;fontSize=23;fontColor=#1D1D1F;align=center;verticalAlign=middle;spacing=12;fontStyle=0;" vertex="1" parent="1">
+      <mxGeometry x="850" y="215" width="340" height="82" as="geometry" />
+    </mxCell>
+    <mxCell id="e9" source="n6" target="n7" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#8B9098;strokeWidth=2;endArrow=block;endFill=1;fontFamily=Microsoft YaHei;fontSize=18;labelBackgroundColor=#FFFFFF;" edge="1" parent="1">
+      <mxGeometry relative="1" as="geometry" />
+    </mxCell>
+    <mxCell id="e10" source="n7" target="n8" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#8B9098;strokeWidth=2;endArrow=block;endFill=1;fontFamily=Microsoft YaHei;fontSize=18;labelBackgroundColor=#FFFFFF;" edge="1" parent="1">
+      <mxGeometry relative="1" as="geometry" />
+    </mxCell>
+    <mxCell id="n11" value="FX → GE 编译路线" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#EDE9FE;strokeColor=#7C3AED;strokeWidth=1.5;fontFamily=Microsoft YaHei;associateText=1;fontSize=23;fontColor=#1D1D1F;align=center;verticalAlign=middle;spacing=12;fontStyle=0;" vertex="1" parent="1">
+      <mxGeometry x="90" y="330" width="340" height="82" as="geometry" />
+    </mxCell>
+    <mxCell id="n12" value="Ascend IR / GE 编译" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#EDE9FE;strokeColor=#7C3AED;strokeWidth=1.5;fontFamily=Microsoft YaHei;associateText=1;fontSize=23;fontColor=#1D1D1F;align=center;verticalAlign=middle;spacing=12;fontStyle=0;" vertex="1" parent="1">
+      <mxGeometry x="470" y="330" width="340" height="82" as="geometry" />
+    </mxCell>
+    <mxCell id="n13" value="GE 图引擎执行" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#EDE9FE;strokeColor=#7C3AED;strokeWidth=1.5;fontFamily=Microsoft YaHei;associateText=1;fontSize=23;fontColor=#1D1D1F;align=center;verticalAlign=middle;spacing=12;fontStyle=0;" vertex="1" parent="1">
+      <mxGeometry x="850" y="330" width="340" height="82" as="geometry" />
+    </mxCell>
+    <mxCell id="e14" source="n11" target="n12" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#7C3AED;strokeWidth=2;endArrow=block;endFill=1;fontFamily=Microsoft YaHei;fontSize=18;labelBackgroundColor=#FFFFFF;" edge="1" parent="1">
+      <mxGeometry relative="1" as="geometry" />
+    </mxCell>
+    <mxCell id="e15" source="n12" target="n13" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#7C3AED;strokeWidth=2;endArrow=block;endFill=1;fontFamily=Microsoft YaHei;fontSize=18;labelBackgroundColor=#FFFFFF;" edge="1" parent="1">
+      <mxGeometry relative="1" as="geometry" />
+    </mxCell>
+    <mxCell id="n16" value="vLLM Ascend 的默认 ACLGraph 路线" style="rounded=0;whiteSpace=wrap;html=1;fillColor=none;strokeColor=none;strokeWidth=1.5;fontFamily=Microsoft YaHei;associateText=1;fontSize=24;fontColor=#1D1D1F;align=left;verticalAlign=middle;spacing=12;fontStyle=1;spacing=0;fontColor=#1D1D1F;" vertex="1" parent="1">
+      <mxGeometry x="44" y="465" width="1190" height="38" as="geometry" />
+    </mxCell>
+    <mxCell id="n17" value="FX 优化&lt;br&gt;npugraph_ex 或基础融合" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#CCFBF1;strokeColor=#0F766E;strokeWidth=1.5;fontFamily=Microsoft YaHei;associateText=1;fontSize=23;fontColor=#1D1D1F;align=center;verticalAlign=middle;spacing=12;fontStyle=0;" vertex="1" parent="1">
+      <mxGeometry x="90" y="530" width="340" height="110" as="geometry" />
+    </mxCell>
+    <mxCell id="n18" value="优化后的 callable&lt;br&gt;交给运行时包装器" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#CCFBF1;strokeColor=#0F766E;strokeWidth=1.5;fontFamily=Microsoft YaHei;associateText=1;fontSize=23;fontColor=#1D1D1F;align=center;verticalAlign=middle;spacing=12;fontStyle=0;" vertex="1" parent="1">
+      <mxGeometry x="470" y="530" width="340" height="110" as="geometry" />
+    </mxCell>
+    <mxCell id="n19" value="ACLGraphWrapper&lt;br&gt;通过 NPUGraph 捕获 / 重放" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#CCFBF1;strokeColor=#0F766E;strokeWidth=1.5;fontFamily=Microsoft YaHei;associateText=1;fontSize=23;fontColor=#1D1D1F;align=center;verticalAlign=middle;spacing=12;fontStyle=0;" vertex="1" parent="1">
+      <mxGeometry x="850" y="530" width="340" height="110" as="geometry" />
+    </mxCell>
+    <mxCell id="e20" source="n17" target="n18" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#0F766E;strokeWidth=2;endArrow=block;endFill=1;fontFamily=Microsoft YaHei;fontSize=18;labelBackgroundColor=#FFFFFF;" edge="1" parent="1">
+      <mxGeometry relative="1" as="geometry" />
+    </mxCell>
+    <mxCell id="e21" source="n18" target="n19" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#0F766E;strokeWidth=2;endArrow=block;endFill=1;fontFamily=Microsoft YaHei;fontSize=18;labelBackgroundColor=#FFFFFF;" edge="1" parent="1">
+      <mxGeometry relative="1" as="geometry" />
+    </mxCell>
+    <mxCell id="n22" value="vLLM dispatcher 选择本轮模式与 key" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#DBEAFE;strokeColor=#1D4ED8;strokeWidth=1.5;fontFamily=Microsoft YaHei;associateText=1;fontSize=24;fontColor=#1D1D1F;align=center;verticalAlign=middle;spacing=12;fontStyle=0;" vertex="1" parent="1">
+      <mxGeometry x="470" y="690" width="720" height="66" as="geometry" />
+    </mxCell>
+    <mxCell id="n23" value="图 06-1 · 在本文固定版本中，npugraph_ex 使用 force_eager=True，由外层 ACLGraph 负责捕获。" style="rounded=0;whiteSpace=wrap;html=1;fillColor=none;strokeColor=none;strokeWidth=1.5;fontFamily=Microsoft YaHei;associateText=1;fontSize=19;fontColor=#1D1D1F;align=left;verticalAlign=middle;spacing=12;fontStyle=0;spacing=0;fontColor=#5C6067;" vertex="1" parent="1">
+      <mxGeometry x="44" y="805" width="1192" height="35" as="geometry" />
+    </mxCell>
+  </root>
+</mxGraphModel></diagram></mxfile>

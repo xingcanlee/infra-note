@@ -6,10 +6,12 @@ import { loadRenderers } from 'astro:container';
 import { render } from 'astro:content';
 import { getPosts } from '../wisp/utils/posts';
 import config from '../wisp.config';
+import { sitePath } from '../wisp/utils/paths';
 
 export async function GET(context: APIContext) {
   const posts = await getPosts();
   const site = context.site ?? new URL(config.site.url);
+  const base = import.meta.env.BASE_URL;
 
   let container: AstroContainer | undefined;
   if (config.rss.fullText) {
@@ -19,14 +21,17 @@ export async function GET(context: APIContext) {
 
   const items = await Promise.all(
     posts.map(async (post) => {
-      const link = `/posts/${post.id}/`;
+      const link = sitePath(base, `/posts/${post.id}/`);
       let content: string | undefined;
       if (container) {
         try {
           const { Content } = await render(post);
           content = await container.renderToString(Content);
           // 正文中的站内相对链接改写为绝对地址，RSS 阅读器里才能打开
-          content = content.replace(/(\s(?:href|src)=")\/(?!\/)/g, `$1${new URL('/', site).href}`);
+          content = content.replace(
+            /(\s(?:href|src)=")\/(?!\/)/g,
+            `$1${new URL(sitePath(base, '/'), site.origin).href}`,
+          );
         } catch {
           // 含交互组件（React island 等）的文章无法在 RSS 中渲染：降级为摘要 + 原文链接
           const url = new URL(link, site).href;

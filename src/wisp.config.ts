@@ -2,21 +2,18 @@ import { defineWispConfig } from './wisp/config';
 
 export default defineWispConfig({
   site: {
-    title: 'Wisp',
-    description: '安静好读的技术博客',
+    title: 'infra-note',
+    description: 'LLM 推理基础设施笔记：编译图、设备图、运行时调度与性能排错。',
     author: 'xingcanlee',
     lang: 'zh-CN',
-    url: 'https://example.com',
+    url: 'https://xingcanlee.github.io/infra-note/',
   },
   nav: [
     { label: '归档', href: '/archive/' },
     { label: '标签', href: '/tags/' },
     { label: '关于', href: '/about/' },
   ],
-  social: [
-    { kind: 'github', href: 'https://github.com/xingcanlee/astro-wisp' },
-    { kind: 'rss', href: '/rss.xml' },
-  ],
+  social: [{ kind: 'rss', href: '/rss.xml' }],
   home: { featuredCount: 3, pageSize: 10 },
   features: {
     codeCopy: true,

@@ -4,6 +4,7 @@
  */
 import config from '../../wisp.config';
 import Icon from './Icon.astro';
+import { sitePath } from '../utils/paths';
 
 export interface Props {
   /** 版权年份，默认当前构建年份 */
@@ -30,6 +31,7 @@ const iconOf: Record<string, string> = {
   link: 'link',
 };
 const owner = config.site.author || config.site.title;
+const base = import.meta.env.BASE_URL;
 ---
 
 <footer class="wisp-footer">
@@ -44,7 +46,11 @@ const owner = config.site.author || config.site.title;
             return (
               <li>
                 <a
-                  href={s.kind === 'email' && !s.href.startsWith('mailto:') ? `mailto:${s.href}` : s.href}
+                  href={
+                    s.kind === 'email' && !s.href.startsWith('mailto:')
+                      ? `mailto:${s.href}`
+                      : sitePath(base, s.href)
+                  }
                   rel={external ? 'me noopener' : undefined}
                   type={s.kind === 'rss' ? 'application/rss+xml' : undefined}
                   aria-label={s.label ?? defaultLabel[s.kind]}
