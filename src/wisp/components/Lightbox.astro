@@ -1,0 +1,158 @@
+---
+/**
+ * Progressive-enhancement lightbox for article images and inline SVG.
+ *
+ * The dialog is present in the HTML, but remains hidden until the browser's
+ * native dialog API is available. The script only adds keyboard/click behavior
+ * to media that is already rendered, so disabling JavaScript leaves the
+ * original image or SVG untouched.
+ */
+---
+
+<dialog class="wisp-lightbox" aria-labelledby="wisp-lightbox-title">
+  <div class="wisp-lightbox-frame">
+    <button class="wisp-lightbox-close" type="button" data-lightbox-close aria-label="关闭">
+      <span aria-hidden="true">×</span>
+    </button>
+    <div class="wisp-lightbox-media" data-lightbox-media></div>
+    <p class="wisp-sr-only" id="wisp-lightbox-title" data-lightbox-title></p>
+  </div>
+</dialog>
+
+<script is:inline>
+  (() => {
+    if (typeof HTMLDialogElement === 'undefined') return;
+    const dialog = document.querySelector('.wisp-lightbox');
+    if (!(dialog instanceof HTMLDialogElement) || typeof dialog.showModal !== 'function') return;
+
+    const mediaSlot = dialog.querySelector('[data-lightbox-media]');
+    const title = dialog.querySelector('[data-lightbox-title]');
+    const close = dialog.querySelector('[data-lightbox-close]');
+    if (!(mediaSlot instanceof HTMLElement) || !(title instanceof HTMLElement) || !(close instanceof HTMLButtonElement)) return;
+
+    const isChinese = /^zh(?:-|$)/i.test(document.documentElement.lang);
+    const labels = {
+      image: isChinese ? '图片' : 'Image',
+      open: isChinese ? '放大查看：' : 'Open image: ',
+      close: isChinese ? '关闭' : 'Close',
+    };
+    close.setAttribute('aria-label', labels.close);
+
+    let activeTrigger = null;
+    let idSequence = 0;
+
+    function readableLabel(source) {
+      if (source instanceof HTMLImageElement) return source.alt.trim() || labels.image;
+      const aria = source.getAttribute('aria-label')?.trim();
+      if (aria) return aria;
+      const svgTitle = source.querySelector(':scope > title')?.textContent?.trim();
+      if (svgTitle) return svgTitle;
+      const parentLabel = source.closest('[aria-label]')?.getAttribute('aria-label')?.trim();
+      return parentLabel || (source.closest('.wisp-diagram') ? (isChinese ? '图表' : 'Chart') : labels.image);
+    }
+
+    function remapSvgIds(svg) {
+      const elements = [svg, ...svg.querySelectorAll('*')];
+      const ids = new Map();
+      for (const element of elements) {
+        if (!element.id) continue;
+        idSequence += 1;
+        ids.set(element.id, `${element.id}-lightbox-${idSequence}`);
+      }
+      for (const element of elements) {
+        for (const attribute of [...element.attributes]) {
+          if (attribute.name === 'id') {
+            attribute.value = ids.get(attribute.value) || attribute.value;
+            continue;
+          }
+          let value = attribute.value;
+          for (const [oldId, newId] of ids) {
+            value = value.replaceAll(`url(#${oldId})`, `url(#${newId})`);
+            value = value.replaceAll(`#${oldId}`, `#${newId}`);
+            if (attribute.name === 'aria-labelledby' || attribute.name === 'aria-describedby') {
+              value = value
+                .split(/\s+/)
+                .map((part) => ids.get(part) || part)
+                .join(' ');
+            }
+          }
+          attribute.value = value;
+        }
+      }
+      return svg;
+    }
+
+    function cloneForDialog(source) {
+      const clone = source.cloneNode(true);
+      clone.removeAttribute('data-wisp-lightbox-trigger');
+      clone.removeAttribute('tabindex');
+      clone.removeAttribute('aria-haspopup');
+      clone.setAttribute('aria-hidden', 'false');
+      if (clone instanceof SVGElement) {
+        clone.setAttribute('role', 'img');
+        clone.setAttribute('aria-label', readableLabel(source));
+        remapSvgIds(clone);
+      }
+      if (clone instanceof HTMLImageElement) {
+        clone.removeAttribute('aria-label');
+        clone.loading = 'eager';
+      }
+      return clone;
+    }
+
+    function open(source) {
+      if (dialog.open) dialog.close();
+      activeTrigger = source;
+      const label = readableLabel(source);
+      title.textContent = label;
+      dialog.setAttribute('aria-label', label);
+      mediaSlot.replaceChildren(cloneForDialog(source));
+      dialog.showModal();
+      close.focus();
+    }
+
+    function enhance(source) {
+      if (source.hasAttribute('data-wisp-lightbox-trigger')) return;
+      source.setAttribute('data-wisp-lightbox-trigger', '');
+      source.setAttribute('tabindex', '0');
+      source.setAttribute('role', 'button');
+      source.setAttribute('aria-haspopup', 'dialog');
+      source.setAttribute('aria-label', `${labels.open}${readableLabel(source)}`);
+      source.addEventListener('click', () => open(source));
+      source.addEventListener('keydown', (event) => {
+        if (event.key !== 'Enter' && event.key !== ' ') return;
+        event.preventDefault();
+        open(source);
+      });
+
+      // The container is only a structural group once its child media becomes
+      // the keyboard-accessible lightbox trigger; it is no longer scrollable.
+      const mediaContainer = source.closest('.wisp-pele-body, .wisp-diagram-body');
+      if (mediaContainer) {
+        mediaContainer.removeAttribute('tabindex');
+        if (mediaContainer.getAttribute('role') === 'img') mediaContainer.setAttribute('role', 'group');
+      }
+    }
+
+    for (const source of document.querySelectorAll('.prose img, .prose svg')) {
+      if (!(source instanceof HTMLElement || source instanceof SVGElement)) continue;
+      if (source.closest('a, button, dialog, pre, .wisp-diagram-actions')) continue;
+      if (source instanceof SVGElement) {
+        if (source.matches('.wisp-icon') || source.parentElement?.closest('svg')) continue;
+        if (!source.closest('figure, .wisp-pele-body, .wisp-diagram-body')) continue;
+      }
+      enhance(source);
+    }
+
+    close.addEventListener('click', () => dialog.close());
+    dialog.addEventListener('click', (event) => {
+      if (event.target === dialog) dialog.close();
+    });
+    dialog.addEventListener('close', () => {
+      mediaSlot.replaceChildren();
+      const trigger = activeTrigger;
+      activeTrigger = null;
+      if (trigger?.isConnected) trigger.focus();
+    });
+  })();
+</script>

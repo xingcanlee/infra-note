@@ -9,6 +9,7 @@ import '@fontsource-variable/inter/wght-italic.css';
 import '@fontsource-variable/noto-sans-sc';
 import '@fontsource-variable/jetbrains-mono';
 import '../wisp/styles/global.css';
+import '../wisp/styles/lightbox.css';
 import '../wisp/styles/code.css';
 import interLatinUrl from '@fontsource-variable/inter/files/inter-latin-wght-normal.woff2?url';
 import config from '../wisp.config';
@@ -16,6 +17,7 @@ import SkipLink from '../wisp/components/SkipLink.astro';
 import Header from '../wisp/components/Header.astro';
 import Footer from '../wisp/components/Footer.astro';
 import CopyButton from '../wisp/components/CopyButton.astro';
+import Lightbox from '../wisp/components/Lightbox.astro';
 
 export interface Props {
   /** 页面标题；不传时只显示站点名。会自动拼成 “标题 · 站点名” */
@@ -104,6 +106,7 @@ const ogLocale = lang.replace('-', '_');
       <slot />
     </main>
     <Footer />
+    <Lightbox />
     <CopyButton />
   </body>
 </html>

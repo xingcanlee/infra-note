@@ -3,9 +3,15 @@ dist/
 .astro/
 test-results/
 playwright-report/
+blob-report/
+coverage/
 .env
+.env.*
+!.env.example
 *.log
+*.tsbuildinfo
 .DS_Store
+Thumbs.db
 skills/wisp-diagram/scripts/node_modules/
 
 # Python

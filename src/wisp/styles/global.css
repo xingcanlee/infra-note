@@ -30,6 +30,8 @@
 
 @layer base {
   html {
+    /* 图表和图片不能把页面撑出水平滚动；代码、表格、公式在自身容器内滚动 */
+    overflow-x: clip;
     /* 移动端 16px，≥ 768px 时 17px */
     font-size: 100%;
     background-color: var(--wisp-bg);
@@ -46,6 +48,7 @@
 
   body {
     min-height: 100dvh;
+    overflow-x: clip;
     background-color: var(--wisp-bg);
     color: var(--wisp-fg);
     font-family: var(--wisp-font-sans);
@@ -166,8 +169,6 @@ html {
 }
 .wisp-scroll,
 .katex-display,
-.wisp-pele-body,
-.wisp-diagram-body,
 .prose pre,
 .prose table,
 .prose .wisp-table,
@@ -180,8 +181,6 @@ html {
 @supports not (scrollbar-color: auto) {
   .wisp-scroll::-webkit-scrollbar,
   .katex-display::-webkit-scrollbar,
-  .wisp-pele-body::-webkit-scrollbar,
-  .wisp-diagram-body::-webkit-scrollbar,
   .prose pre::-webkit-scrollbar,
   .prose table::-webkit-scrollbar,
   .prose .wisp-table::-webkit-scrollbar,
@@ -192,8 +191,6 @@ html {
   }
   .wisp-scroll::-webkit-scrollbar-track,
   .katex-display::-webkit-scrollbar-track,
-  .wisp-pele-body::-webkit-scrollbar-track,
-  .wisp-diagram-body::-webkit-scrollbar-track,
   .prose pre::-webkit-scrollbar-track,
   .prose table::-webkit-scrollbar-track,
   .prose .wisp-table::-webkit-scrollbar-track,
@@ -203,8 +200,6 @@ html {
   }
   .wisp-scroll::-webkit-scrollbar-thumb,
   .katex-display::-webkit-scrollbar-thumb,
-  .wisp-pele-body::-webkit-scrollbar-thumb,
-  .wisp-diagram-body::-webkit-scrollbar-thumb,
   .prose pre::-webkit-scrollbar-thumb,
   .prose table::-webkit-scrollbar-thumb,
   .prose .wisp-table::-webkit-scrollbar-thumb,
@@ -217,8 +212,6 @@ html {
   }
   .wisp-scroll::-webkit-scrollbar-thumb:hover,
   .katex-display::-webkit-scrollbar-thumb:hover,
-  .wisp-pele-body::-webkit-scrollbar-thumb:hover,
-  .wisp-diagram-body::-webkit-scrollbar-thumb:hover,
   .prose pre::-webkit-scrollbar-thumb:hover,
   .prose table::-webkit-scrollbar-thumb:hover,
   .prose .wisp-table::-webkit-scrollbar-thumb:hover,

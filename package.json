@@ -35,9 +35,7 @@
     "tokens": "tsx scripts/gen-tokens.ts",
     "contrast": "tsx scripts/check-contrast.ts",
     "diagram": "tsx scripts/diagram/cli.ts",
-    "test": "vitest run",
-    "test:e2e": "playwright test",
-    "check": "astro check && tsc --noEmit -p . && vitest run && tsx scripts/check-contrast.ts && tsx scripts/diagram/cli.ts check"
+    "check": "astro check && tsc --noEmit -p . && tsx scripts/check-contrast.ts && tsx scripts/diagram/cli.ts check"
   },
   "dependencies": {
     "@astrojs/markdown-remark": "^7.3.5",

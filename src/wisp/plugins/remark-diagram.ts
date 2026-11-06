@@ -75,7 +75,8 @@ export function remarkDiagram(options: RemarkDiagramOptions = {}): ReturnType<Pl
 
     // 文档顺序遍历：图片与 <Diagram> 共用序号
     visit(tree, (node, index, parent) => {
-      if (node.type === 'mdxJsxFlowElement' || node.type === 'mdxJsxTextElement') {
+      const nodeType = (node as { type: string }).type;
+      if (nodeType === 'mdxJsxFlowElement' || nodeType === 'mdxJsxTextElement') {
         const el = node as unknown as JsxElement;
         if (el.name !== 'Diagram') return;
         const src = el.attributes.find((a) => a.type === 'mdxJsxAttribute' && a.name === 'src')?.value;

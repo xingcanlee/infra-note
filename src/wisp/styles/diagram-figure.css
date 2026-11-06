@@ -74,24 +74,34 @@
 
 /* ---------- figure ---------- */
 .wisp-diagram {
-  margin-block: 2em;
+  margin-block: 1.5em;
+  max-width: 100%;
+  max-inline-size: 100%;
+  min-width: 0;
+}
+.wisp-diagram.wisp-wide {
+  max-width: none;
+  max-inline-size: none;
 }
 
 /*
  * 图表本体：SVG 去掉了 width/height，按容器宽度缩放，但不超过自然宽度（--wd-w）。
- * 窄屏上最多缩到自然宽度的 60%（14px 标签 ≈ 8.4px），再窄就横向滚动，避免文字小到看不清。
+ * 所有图表都允许缩小到容器宽度，避免 min-width 触发横向滚动或页面溢出。
  */
 .wisp-diagram-body {
   max-width: 100%;
-  overflow-x: auto;
-  overflow-y: hidden;
-  padding-block: 0.25em;
+  max-inline-size: 100%;
+  min-width: 0;
+  overflow-x: clip;
+  overflow-y: clip;
+  padding-block: 0.125em;
 }
 .wisp-diagram-body > svg {
   display: block;
   width: 100%;
   max-width: var(--wd-w, 100%);
-  min-width: calc(var(--wd-w, 0px) * 0.6);
+  max-inline-size: 100%;
+  min-width: 0;
   height: auto;
   margin-inline: auto;
   overflow: visible;
@@ -103,7 +113,7 @@
   flex-wrap: wrap;
   justify-content: center;
   gap: 0.25em 1.25em;
-  margin-top: 0.375em;
+  margin-top: 0.25em;
   font-size: 0.8125rem;
   line-height: 1.6;
 }
