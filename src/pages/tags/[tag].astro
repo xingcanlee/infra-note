@@ -1,0 +1,56 @@
+---
+import type { GetStaticPaths } from 'astro';
+import Base from '../../layouts/Base.astro';
+import PostCard from '../../wisp/components/PostCard.astro';
+import { getTags } from '../../wisp/utils/taxonomy';
+import { getReadingTimes } from '../../wisp/utils/reading';
+
+export const getStaticPaths = (async () => {
+  const terms = await getTags();
+  return terms.map((term) => ({ params: { tag: term.slug }, props: { term } }));
+}) satisfies GetStaticPaths;
+
+const { term } = Astro.props;
+const times = await getReadingTimes(term.posts);
+---
+
+<Base title={`#${term.name}`} description={`标签「${term.name}」下的 ${term.count} 篇文章`}>
+  <div class="wisp-container tax">
+    <header class="tax-header">
+      <h1>#{term.name}</h1>
+      <p>{term.count} 篇文章 · <a class="wisp-link" href="/tags/">全部标签</a></p>
+    </header>
+    <ul class="tax-list">
+      {term.posts.map((post, i) => (
+        <li>
+          <PostCard post={post} readingTime={times[i]} headingLevel={2} />
+        </li>
+      ))}
+    </ul>
+  </div>
+</Base>
+
+<style>
+  .tax {
+    padding-top: 3.5rem;
+  }
+  .tax-header {
+    margin-bottom: 2.5rem;
+  }
+  .tax-header h1 {
+    margin: 0;
+    font-size: 2rem;
+  }
+  .tax-header p {
+    margin: 0.5rem 0 0;
+    color: var(--wisp-muted);
+  }
+  .tax-list {
+    display: flex;
+    flex-direction: column;
+    gap: 2.75rem;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+</style>

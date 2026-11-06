@@ -1,0 +1,71 @@
+---
+/**
+ * 主题切换按钮：light → dark → system 循环。
+ * 当前偏好由 head 内联脚本写入 `<html data-theme-pref>`，图标据此用 CSS 显示，首屏无跳变。
+ * 本组件无 props。
+ */
+import Icon from './Icon.astro';
+
+export interface Props {}
+---
+
+<button type="button" class="wisp-theme-toggle" data-wisp-theme-toggle aria-label="切换主题">
+  <Icon name="sun" size={18} class="i-light" />
+  <Icon name="moon" size={18} class="i-dark" />
+  <Icon name="monitor" size={18} class="i-system" />
+</button>
+
+<style>
+  .wisp-theme-toggle {
+    display: inline-grid;
+    place-items: center;
+    width: 2.25rem;
+    height: 2.25rem;
+    margin-inline-end: -0.5rem;
+    border: 0;
+    border-radius: 6px;
+    background: transparent;
+    color: var(--wisp-muted);
+    cursor: pointer;
+    transition: color 150ms;
+  }
+  .wisp-theme-toggle:hover {
+    color: var(--wisp-fg);
+  }
+  .wisp-theme-toggle :global(svg) {
+    display: none;
+  }
+  :global(html:not([data-theme-pref='light']):not([data-theme-pref='dark'])) .wisp-theme-toggle :global(.i-system),
+  :global(html[data-theme-pref='light']) .wisp-theme-toggle :global(.i-light),
+  :global(html[data-theme-pref='dark']) .wisp-theme-toggle :global(.i-dark) {
+    display: block;
+  }
+</style>
+
+<script>
+  const d = document.documentElement;
+  const mq = matchMedia('(prefers-color-scheme: dark)');
+  const names: Record<string, string> = { light: '浅色', dark: '深色', system: '跟随系统' };
+  const next: Record<string, string> = { light: 'dark', dark: 'system', system: 'light' };
+  let pref = names[d.dataset.themePref!] ? d.dataset.themePref! : 'system';
+  const apply = () => {
+    d.dataset.themePref = pref;
+    d.dataset.theme = pref === 'dark' || (pref === 'system' && mq.matches) ? 'dark' : 'light';
+    document.querySelectorAll('[data-wisp-theme-toggle]').forEach((b) =>
+      b.setAttribute('aria-label', `主题：${names[pref]}（点击切换为${names[next[pref]!]}）`),
+    );
+  };
+  apply();
+  document.addEventListener('click', (e) => {
+    if (!(e.target as Element).closest?.('[data-wisp-theme-toggle]')) return;
+    pref = next[pref]!;
+    try {
+      localStorage.setItem('wisp-theme', pref);
+    } catch {}
+    apply();
+  });
+  mq.addEventListener('change', () => pref === 'system' && apply());
+  addEventListener('storage', (e) => {
+    if (e.key === 'wisp-theme') (pref = e.newValue && names[e.newValue] ? e.newValue : 'system'), apply();
+  });
+</script>

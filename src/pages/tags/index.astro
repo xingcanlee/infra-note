@@ -1,0 +1,50 @@
+---
+import Page from '../../layouts/Page.astro';
+import { getTags } from '../../wisp/utils/taxonomy';
+
+const terms = await getTags();
+---
+
+<Page title="标签" description={`共 ${terms.length} 个标签`} prose={false}>
+  {
+    terms.length === 0 ? (
+      <p class="empty">还没有标签。</p>
+    ) : (
+      <ul class="terms">
+        {terms.map((t) => (
+          <li>
+            <a href={`/tags/${t.slug}/`}>#{t.name}</a>
+            <span class="n" aria-label={`${t.count} 篇`}>{t.count}</span>
+          </li>
+        ))}
+      </ul>
+    )
+  }
+</Page>
+
+<style>
+  .terms {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.6rem 1.75rem;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+  .terms a {
+    color: var(--wisp-fg);
+    transition: color 150ms;
+  }
+  .terms a:hover {
+    color: var(--wisp-accent);
+  }
+  .n {
+    margin-inline-start: 0.35em;
+    color: var(--wisp-subtle);
+    font-size: 0.875rem;
+    font-variant-numeric: tabular-nums;
+  }
+  .empty {
+    color: var(--wisp-muted);
+  }
+</style>

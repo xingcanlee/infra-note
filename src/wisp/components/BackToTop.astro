@@ -1,0 +1,80 @@
+---
+/**
+ * 返回顶部：滚动超过一屏后在右下角淡入的圆形图标按钮。
+ * 点击平滑滚动到顶部（reduced-motion 下直接跳转），随后把焦点移到页面主标题（没有则 main）。无 JS 时不显示。
+ */
+import Icon from './Icon.astro';
+
+export interface Props {
+  label?: string;
+}
+const { label = '返回顶部' } = Astro.props;
+---
+
+<button type="button" class="wisp-top" aria-label={label} data-back-to-top>
+  <Icon name="arrow-up" size="1.125rem" />
+</button>
+
+<style>
+  .wisp-top {
+    position: fixed;
+    z-index: 40;
+    inset-block-end: max(1rem, env(safe-area-inset-bottom));
+    inset-inline-end: max(1rem, env(safe-area-inset-right));
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 2.5rem;
+    height: 2.5rem;
+    padding: 0;
+    border: 1px solid var(--wisp-border);
+    border-radius: 50%;
+    background: var(--wisp-bg);
+    color: var(--wisp-muted);
+    cursor: pointer;
+    opacity: 0;
+    visibility: hidden;
+    transition:
+      opacity 150ms,
+      visibility 150ms,
+      color 150ms;
+  }
+  .wisp-top[data-visible] {
+    opacity: 1;
+    visibility: visible;
+  }
+  .wisp-top:hover {
+    color: var(--wisp-accent);
+  }
+  @media print {
+    .wisp-top {
+      display: none;
+    }
+  }
+</style>
+
+<script>
+  const btn = document.querySelector<HTMLButtonElement>('[data-back-to-top]');
+  if (btn) {
+    let tick = false;
+    const update = () => {
+      tick = false;
+      btn.toggleAttribute('data-visible', scrollY > innerHeight);
+    };
+    addEventListener(
+      'scroll',
+      () => tick || ((tick = true), requestAnimationFrame(update)),
+      { passive: true },
+    );
+    update();
+    btn.addEventListener('click', () => {
+      const still = matchMedia('(prefers-reduced-motion: reduce)').matches;
+      scrollTo({ top: 0, behavior: still ? 'auto' : 'smooth' });
+      const t = document.querySelector<HTMLElement>('h1') ?? document.getElementById('main');
+      if (t) {
+        t.tabIndex = -1;
+        t.focus({ preventScroll: true });
+      }
+    });
+  }
+</script>

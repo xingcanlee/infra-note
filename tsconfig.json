@@ -1,0 +1,22 @@
+{
+  "extends": "astro/tsconfigs/strict",
+  "include": [
+    ".astro/types.d.ts",
+    "**/*"
+  ],
+  "exclude": [
+    "dist",
+    "node_modules",
+    "skills/wisp-diagram/scripts/node_modules"
+  ],
+  "compilerOptions": {
+    "paths": {
+      "@/*": [
+        "./src/*"
+      ]
+    },
+    "jsx": "react-jsx",
+    "jsxImportSource": "react",
+    "resolveJsonModule": true
+  }
+}

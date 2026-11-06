@@ -1,0 +1,62 @@
+---
+import type { GetStaticPaths } from 'astro';
+import Base from '../../layouts/Base.astro';
+import PostCard from '../../wisp/components/PostCard.astro';
+import Pagination from '../../wisp/components/Pagination.astro';
+import { getPosts, type PostEntry } from '../../wisp/utils/posts';
+import { getReadingTimes } from '../../wisp/utils/reading';
+import config from '../../wisp.config';
+
+export const getStaticPaths = (async () => {
+  const all = await getPosts();
+  const size = config.home.pageSize;
+  const total = Math.ceil(all.length / size);
+  // 第 1 页就是 /，这里从第 2 页开始
+  return Array.from({ length: Math.max(0, total - 1) }, (_, i) => {
+    const n = i + 2;
+    return { params: { page: String(n) }, props: { posts: all.slice((n - 1) * size, n * size), total } };
+  });
+}) satisfies GetStaticPaths;
+
+interface Props {
+  posts: PostEntry[];
+  total: number;
+}
+const { posts, total } = Astro.props;
+const current = Number(Astro.params.page);
+const times = await getReadingTimes(posts);
+---
+
+<Base title={`第 ${current} 页`}>
+  <div class="wisp-container list-page">
+    <h1 class="list-title">最新文章</h1>
+    <ul class="list">
+      {
+        posts.map((post, i) => (
+          <li>
+            <PostCard post={post} readingTime={times[i]} headingLevel={2} />
+          </li>
+        ))
+      }
+    </ul>
+    <Pagination current={current} total={total} />
+  </div>
+</Base>
+
+<style>
+  .list-page {
+    padding-top: 3.5rem;
+  }
+  .list-title {
+    margin: 0 0 2.5rem;
+    font-size: 2rem;
+  }
+  .list {
+    display: flex;
+    flex-direction: column;
+    gap: 2.75rem;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+</style>

@@ -1,0 +1,15 @@
+node_modules/
+dist/
+.astro/
+test-results/
+playwright-report/
+.env
+*.log
+.DS_Store
+skills/wisp-diagram/scripts/node_modules/
+
+# Python
+__pycache__/
+*.pyc
+.pytest_cache/
+.venv/

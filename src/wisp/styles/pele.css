@@ -1,0 +1,22 @@
+/* 自动生成，勿手改。来源：design/palette.json，运行 `pnpm tokens` 重新生成。 */
+
+.pele {
+  --pele-bg: transparent;
+  --pele-fg: var(--wisp-fg);
+  --pele-muted: var(--wisp-muted);
+  --pele-line: var(--wisp-muted);
+  --pele-surface: var(--wisp-surface);
+  --pele-surface-alt: var(--wisp-surface-2);
+  --pele-border: var(--wisp-border);
+  --pele-accent: var(--wisp-accent);
+  --pele-font: var(--wisp-font-sans);
+  --pele-radius: 8px;
+  --pele-series-1: var(--wisp-hue-blue);
+  --pele-series-2: var(--wisp-hue-amber);
+  --pele-series-3: var(--wisp-hue-green);
+  --pele-series-4: var(--wisp-hue-rose);
+  --pele-series-5: var(--wisp-hue-violet);
+  --pele-series-6: var(--wisp-hue-teal);
+  --pele-series-7: var(--wisp-hue-orange);
+  --pele-series-8: var(--wisp-hue-slate);
+}

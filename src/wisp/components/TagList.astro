@@ -1,0 +1,50 @@
+---
+/**
+ * 标签列表：`#标签名` 文本链接，muted，hover 变 accent。无胶囊背景。
+ */
+import config from '../../wisp.config';
+import { slugify } from '../utils/taxonomy';
+
+export interface Props {
+  /** 标签名（原文，链接时用 slugify + taxonomy.slugMap 生成 URL 段） */
+  tags: string[];
+  /** 链接前缀，默认 `/tags/` */
+  base?: string;
+  /** 额外 class */
+  class?: string;
+  /** 列表的无障碍名称，默认“标签” */
+  label?: string;
+}
+
+const { tags, base = '/tags/', class: className, label = '标签' } = Astro.props;
+---
+
+{
+  tags.length > 0 && (
+    <ul class:list={['wisp-tags', className]} aria-label={label}>
+      {tags.map((t) => (
+        <li>
+          <a href={`${base}${slugify(t, config.taxonomy.slugMap)}/`}>#{t}</a>
+        </li>
+      ))}
+    </ul>
+  )
+}
+
+<style>
+  .wisp-tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.25em 0.9em;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+  .wisp-tags a {
+    color: var(--wisp-muted);
+    transition: color 150ms;
+  }
+  .wisp-tags a:hover {
+    color: var(--wisp-accent);
+  }
+</style>

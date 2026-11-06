@@ -1,0 +1,75 @@
+---
+import Page from '../layouts/Page.astro';
+import { getPosts, groupByYear } from '../wisp/utils/posts';
+import { formatDate } from '../wisp/utils/date';
+import { toISODate } from '../wisp/utils/date';
+import config from '../wisp.config';
+
+const posts = await getPosts();
+const groups = groupByYear(posts);
+const short = (d: Date) => `${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}`;
+---
+
+<Page title="归档" description={`共 ${posts.length} 篇文章`} prose={false}>
+  {
+    groups.map(({ year, posts }) => (
+      <section class="year">
+        <h2>
+          {year} <span class="count">{posts.length}</span>
+        </h2>
+        <ul>
+          {posts.map((p) => (
+            <li>
+              <time datetime={toISODate(p.data.pubDate)} title={formatDate(p.data.pubDate, p.data.lang ?? config.site.lang)}>
+                {short(p.data.pubDate)}
+              </time>
+              <a href={`/posts/${p.id}/`} lang={p.data.lang}>{p.data.title}</a>
+            </li>
+          ))}
+        </ul>
+      </section>
+    ))
+  }
+</Page>
+
+<style>
+  .year + .year {
+    margin-top: 2.5rem;
+  }
+  h2 {
+    margin: 0 0 0.75rem;
+    font-size: 1.25rem;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+  }
+  .count {
+    margin-inline-start: 0.4em;
+    font-size: 0.875rem;
+    font-weight: 400;
+    color: var(--wisp-subtle);
+  }
+  ul {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+  li {
+    display: flex;
+    gap: 1.25rem;
+    align-items: baseline;
+    padding-block: 0.35rem;
+  }
+  time {
+    flex: none;
+    color: var(--wisp-muted);
+    font-size: 0.875rem;
+    font-variant-numeric: tabular-nums;
+  }
+  a {
+    color: var(--wisp-fg);
+    transition: color 150ms;
+  }
+  a:hover {
+    color: var(--wisp-accent);
+  }
+</style>

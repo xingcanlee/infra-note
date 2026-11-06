@@ -1,0 +1,80 @@
+---
+/**
+ * 顶栏：高 56px，不吸顶。左侧站点名，右侧导航与主题切换。
+ */
+import config from '../../wisp.config';
+import ThemeToggle from './ThemeToggle.astro';
+
+export interface Props {
+  /** 当前路径，用于给导航项加 aria-current；默认取 Astro.url.pathname */
+  currentPath?: string;
+}
+
+const { currentPath = Astro.url.pathname } = Astro.props;
+const norm = (p: string) => (p.endsWith('/') ? p : `${p}/`);
+const isCurrent = (href: string) => href !== '/' && norm(decodeURI(currentPath)).startsWith(norm(href));
+---
+
+<header class="wisp-header">
+  <div class="wisp-container wisp-header-inner">
+    <a href="/" class="wisp-brand" aria-current={currentPath === '/' ? 'page' : undefined}>{config.site.title}</a>
+    <nav aria-label="主导航" class="wisp-nav">
+      <ul>
+        {
+          config.nav.map((item) => (
+            <li>
+              <a href={item.href} aria-current={isCurrent(item.href) ? 'page' : undefined}>
+                {item.label}
+              </a>
+            </li>
+          ))
+        }
+      </ul>
+      <ThemeToggle />
+    </nav>
+  </div>
+</header>
+
+<style>
+  .wisp-header-inner {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    height: 56px;
+  }
+  .wisp-brand {
+    font-weight: 600;
+    font-size: 1.0625rem;
+    letter-spacing: 0.01em;
+    color: var(--wisp-fg);
+    white-space: nowrap;
+  }
+  .wisp-nav {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+  }
+  .wisp-nav ul {
+    display: flex;
+    gap: 1.25rem;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+  .wisp-nav a {
+    color: var(--wisp-muted);
+    font-size: 0.9375rem;
+    transition: color 150ms;
+    white-space: nowrap;
+  }
+  .wisp-nav a:hover,
+  .wisp-nav a[aria-current='page'] {
+    color: var(--wisp-fg);
+  }
+  @media (max-width: 23.99rem) {
+    .wisp-nav ul {
+      gap: 0.875rem;
+    }
+  }
+</style>
