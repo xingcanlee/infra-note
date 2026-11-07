@@ -68,7 +68,7 @@ vLLM 不会为每一个可能的 batch 临时创建一张图。它通常提前�
   → replay，或调用原来的 callable
 ```
 
-图固定的是地址、形状条件、launch 配置和依赖。每轮变化的是固定缓冲区中的内容。图桶、padding 和模式选择见 [vLLM 如何选图](../vllm-graph-04-vllm-dispatch/)。
+图固定的是地址、形状条件、launch 配置和依赖。每轮变化的是固定缓冲区中的内容。图桶、padding 和模式选择见 [vLLM 如何选图](../04-vllm-dispatch/)。
 
 ## 最小示例
 

@@ -50,22 +50,22 @@ Python / 模型代码
 
 ### 零设备入门
 
-1. [00 · 图模式入门：推理流程与提交开销](../vllm-graph-00-inference-overhead/)：理解 prefill、decode、batch、提交开销和三类图。
-2. [05 · 无设备练习：图桶、padding 与运行时选路](../vllm-graph-05-dispatch-practice/)：用纯 Python 练习图桶、padding 和模式回退。
-3. [01 · 编译图入门：torch.compile、FX 与断图](../vllm-graph-01-compile-graphs/)：在 CPU 上观察 FX 图，确认编译图不是设备图。
+1. [00 · 图模式入门：推理流程与提交开销](./00-inference-overhead/)：理解 prefill、decode、batch、提交开销和三类图。
+2. [05 · 无设备练习：图桶、padding 与运行时选路](./05-dispatch-practice/)：用纯 Python 练习图桶、padding 和模式回退。
+3. [01 · 编译图入门：torch.compile、FX 与断图](./01-compile-graphs/)：在 CPU 上观察 FX 图，确认编译图不是设备图。
 
 完成这三步后，你应能看懂“本轮工作 → 选择图桶 → 回退普通执行”的基本决策。
 
 ### CUDA Graph
 
-4. [02 · CUDA Graph：捕获、重放与固定地址](../vllm-graph-02-cuda-graph/)：理解 capture、instantiate、replay，以及为什么要向固定地址写入新数据。
-5. [03 · CUDA Graph 的边界：流、内存池与分段捕获](../vllm-graph-03-cuda-boundaries/)：补充流、内存池、通信和分段捕获。
+4. [02 · CUDA Graph：捕获、重放与固定地址](./02-cuda-graph/)：理解 capture、instantiate、replay，以及为什么要向固定地址写入新数据。
+5. [03 · CUDA Graph 的边界：流、内存池与分段捕获](./03-cuda-boundaries/)：补充流、内存池、通信和分段捕获。
 
 ### vLLM 与 Ascend
 
-6. [04 · vLLM 如何选图：模式、图桶与运行时分发](../vllm-graph-04-vllm-dispatch/)：把前面的概念对应到 `BatchDescriptor`、dispatcher、图桶和 padding。
-7. [06 · Ascend 图模式：NPUGraph、TorchAir 与 ACLGraph](../vllm-graph-06-ascend-graph/)：区分 `NPUGraph`、TorchAir、`npugraph_ex` 和 `ACLGraphWrapper` 所在的层次。
-8. [07 · Ascend 配置与排错：无设备阅读指南](../vllm-graph-07-ascend-debugging/)：学习如何从配置、日志和故障现象定位检查范围。
+6. [04 · vLLM 如何选图：模式、图桶与运行时分发](./04-vllm-dispatch/)：把前面的概念对应到 `BatchDescriptor`、dispatcher、图桶和 padding。
+7. [06 · Ascend 图模式：NPUGraph、TorchAir 与 ACLGraph](./06-ascend-graph/)：区分 `NPUGraph`、TorchAir、`npugraph_ex` 和 `ACLGraphWrapper` 所在的层次。
+8. [07 · Ascend 配置与排错：无设备阅读指南](./07-ascend-debugging/)：学习如何从配置、日志和故障现象定位检查范围。
 
 ## 三个容易混淆的区别
 

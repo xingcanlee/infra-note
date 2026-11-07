@@ -2,109 +2,109 @@
   "version": 1,
   "generator": "wisp-diagram@1",
   "entries": {
-    "src/content/posts/vllm-graph-00-inference-overhead/diagrams/00-execution-modes.drawio": {
+    "src/content/posts/vllm-graph/00-inference-overhead/diagrams/00-execution-modes.drawio": {
       "source": "sha256-905e330b58e58947db52f17790c7a816688f5603a921d5b353be85ed39b25bf3",
       "style": "clean",
       "exporter": "drawio-cli",
       "embedFonts": false,
       "outputs": {
-        "src/content/posts/vllm-graph-00-inference-overhead/diagrams/00-execution-modes.wisp.svg": "sha256-443edfc7e6c64833d5a682861f9bc8f2fe17b8ecc2f070d9cfcb515a8bf5385b"
+        "src/content/posts/vllm-graph/00-inference-overhead/diagrams/00-execution-modes.wisp.svg": "sha256-443edfc7e6c64833d5a682861f9bc8f2fe17b8ecc2f070d9cfcb515a8bf5385b"
       },
       "pages": [
         "Page-1"
       ]
     },
-    "src/content/posts/vllm-graph-00-inference-overhead/diagrams/00-inference-timeline.drawio": {
+    "src/content/posts/vllm-graph/00-inference-overhead/diagrams/00-inference-timeline.drawio": {
       "source": "sha256-25747f2c815b2d6a087b2d57ee5eecc4d6fdc14436bdd1b0dcf890d3e5a8a16d",
       "style": "clean",
       "exporter": "drawio-cli",
       "embedFonts": false,
       "outputs": {
-        "src/content/posts/vllm-graph-00-inference-overhead/diagrams/00-inference-timeline.wisp.svg": "sha256-bee93a6f4c81feecd4fd39977106a03658e1056f653d379fffc98398953416ee"
+        "src/content/posts/vllm-graph/00-inference-overhead/diagrams/00-inference-timeline.wisp.svg": "sha256-bee93a6f4c81feecd4fd39977106a03658e1056f653d379fffc98398953416ee"
       },
       "pages": [
         "Page-1"
       ]
     },
-    "src/content/posts/vllm-graph-01-compile-graphs/diagrams/01-compile-backend-panorama.drawio": {
+    "src/content/posts/vllm-graph/01-compile-graphs/diagrams/01-compile-backend-panorama.drawio": {
       "source": "sha256-42df98cfd5a9b94ceae2b2126ba5b8e96c02cf585de43edfb7412adde9133263",
       "style": "clean",
       "exporter": "drawio-cli",
       "embedFonts": false,
       "outputs": {
-        "src/content/posts/vllm-graph-01-compile-graphs/diagrams/01-compile-backend-panorama.wisp.svg": "sha256-05ff8c44bbe0ad575759355b1479b281201600ff9f91471a55d6985efead5484"
+        "src/content/posts/vllm-graph/01-compile-graphs/diagrams/01-compile-backend-panorama.wisp.svg": "sha256-05ff8c44bbe0ad575759355b1479b281201600ff9f91471a55d6985efead5484"
       },
       "pages": [
         "torch.compile 全景：从 FX 到设备图"
       ]
     },
-    "src/content/posts/vllm-graph-01-compile-graphs/diagrams/01-compile-stack.drawio": {
+    "src/content/posts/vllm-graph/01-compile-graphs/diagrams/01-compile-stack.drawio": {
       "source": "sha256-7bf88a7ce5c409d04f54e08031397823bdd2456a468ca88321949e7e30d29e91",
       "style": "clean",
       "exporter": "drawio-cli",
       "embedFonts": false,
       "outputs": {
-        "src/content/posts/vllm-graph-01-compile-graphs/diagrams/01-compile-stack.wisp.svg": "sha256-e19078b128d7df32674ca22ec69a8b8738d6377885f16ab5b8d7ffcd6df30d86"
+        "src/content/posts/vllm-graph/01-compile-graphs/diagrams/01-compile-stack.wisp.svg": "sha256-e19078b128d7df32674ca22ec69a8b8738d6377885f16ab5b8d7ffcd6df30d86"
       },
       "pages": [
         "Page-1"
       ]
     },
-    "src/content/posts/vllm-graph-01-compile-graphs/diagrams/01-graph-runtime-chain.drawio": {
+    "src/content/posts/vllm-graph/01-compile-graphs/diagrams/01-graph-runtime-chain.drawio": {
       "source": "sha256-40c472ae2505cd6c60a57c3dc3bdbc7446465d7885cde538880b88728d48f223",
       "style": "clean",
       "exporter": "drawio-cli",
       "embedFonts": false,
       "outputs": {
-        "src/content/posts/vllm-graph-01-compile-graphs/diagrams/01-graph-runtime-chain.wisp.svg": "sha256-a61c4001aa8a2ef717cd7c6e220a8fc917af1b8292cb1c762c72852ef0b422a1"
+        "src/content/posts/vllm-graph/01-compile-graphs/diagrams/01-graph-runtime-chain.wisp.svg": "sha256-a61c4001aa8a2ef717cd7c6e220a8fc917af1b8292cb1c762c72852ef0b422a1"
       },
       "pages": [
         "vLLM 图调用链：CUDA Graph 与 ACLGraph"
       ]
     },
-    "src/content/posts/vllm-graph-02-cuda-graph/diagrams/02-cuda-lifecycle.drawio": {
+    "src/content/posts/vllm-graph/02-cuda-graph/diagrams/02-cuda-lifecycle.drawio": {
       "source": "sha256-3dbd21bec637dec2869f0bbfce99a12a77ef1294a2da41e6cd2eef87bde8a4f6",
       "style": "clean",
       "exporter": "drawio-cli",
       "embedFonts": false,
       "outputs": {
-        "src/content/posts/vllm-graph-02-cuda-graph/diagrams/02-cuda-lifecycle.wisp.svg": "sha256-4a32bf3b8d911e96797ed5e179ed694268837a1666d48fc38936c249bf612b28"
+        "src/content/posts/vllm-graph/02-cuda-graph/diagrams/02-cuda-lifecycle.wisp.svg": "sha256-4a32bf3b8d911e96797ed5e179ed694268837a1666d48fc38936c249bf612b28"
       },
       "pages": [
         "Page-1"
       ]
     },
-    "src/content/posts/vllm-graph-04-vllm-dispatch/diagrams/04-runtime-dispatch.drawio": {
+    "src/content/posts/vllm-graph/04-vllm-dispatch/diagrams/04-runtime-dispatch.drawio": {
       "source": "sha256-27278acb92c9a15db15b5191fca4b6b103f7f87161bf5e55aa4597c567af7319",
       "style": "clean",
       "exporter": "drawio-cli",
       "embedFonts": false,
       "outputs": {
-        "src/content/posts/vllm-graph-04-vllm-dispatch/diagrams/04-runtime-dispatch.wisp.svg": "sha256-b61a54251d04726176dfcac5fef46d2b3b134e736a7ddfe6fa6055b34c2c645f"
+        "src/content/posts/vllm-graph/04-vllm-dispatch/diagrams/04-runtime-dispatch.wisp.svg": "sha256-b61a54251d04726176dfcac5fef46d2b3b134e736a7ddfe6fa6055b34c2c645f"
       },
       "pages": [
         "Page-1"
       ]
     },
-    "src/content/posts/vllm-graph-06-ascend-graph/diagrams/06-ascend-stack.drawio": {
+    "src/content/posts/vllm-graph/06-ascend-graph/diagrams/06-ascend-stack.drawio": {
       "source": "sha256-3d83febe1d69ac73c6f0bf84df9fbcfa6e6f26d5d654855a02a92d2eb64df3e7",
       "style": "clean",
       "exporter": "drawio-cli",
       "embedFonts": false,
       "outputs": {
-        "src/content/posts/vllm-graph-06-ascend-graph/diagrams/06-ascend-stack.wisp.svg": "sha256-97d065acec7290d89375f4a11b1b3c703991cc109000dcf99aafdc0ef8606665"
+        "src/content/posts/vllm-graph/06-ascend-graph/diagrams/06-ascend-stack.wisp.svg": "sha256-97d065acec7290d89375f4a11b1b3c703991cc109000dcf99aafdc0ef8606665"
       },
       "pages": [
         "Page-1"
       ]
     },
-    "src/content/posts/vllm-graph-06-ascend-graph/diagrams/06-npu-lifecycle.drawio": {
+    "src/content/posts/vllm-graph/06-ascend-graph/diagrams/06-npu-lifecycle.drawio": {
       "source": "sha256-a788d37380df1672656c55a79849c108f95ab4a33468ae5a44ef9a02bb4c4767",
       "style": "clean",
       "exporter": "drawio-cli",
       "embedFonts": false,
       "outputs": {
-        "src/content/posts/vllm-graph-06-ascend-graph/diagrams/06-npu-lifecycle.wisp.svg": "sha256-2099756c308b0313fa1d8a0a260c5abbaed01b11de5c9cf8ef53141c7439b7ca"
+        "src/content/posts/vllm-graph/06-ascend-graph/diagrams/06-npu-lifecycle.wisp.svg": "sha256-2099756c308b0313fa1d8a0a260c5abbaed01b11de5c9cf8ef53141c7439b7ca"
       },
       "pages": [
         "Page-1"
