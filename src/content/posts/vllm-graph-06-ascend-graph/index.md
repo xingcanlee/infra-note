@@ -1,6 +1,9 @@
 ---
 title: "Ascend 图模式：NPUGraph、TorchAir 与 ACLGraph"
 description: "按编译后端、vLLM 运行时和 ACL 层次区分 NPUGraph、TorchAir、npugraph_ex 与 ACLGraphWrapper。"
+series:
+  id: vllm-graph
+  order: 8
 pubDate: 2026-11-05
 tags: [Ascend, ACLGraph, NPUGraph, vLLM]
 category: AI Infra

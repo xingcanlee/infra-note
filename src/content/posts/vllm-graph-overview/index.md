@@ -1,6 +1,9 @@
 ---
 title: "vLLM 图模式入门：CUDA Graph 与 Ascend ACLGraph"
 description: "从普通执行开始，逐步理解编译图、CUDA Graph、vLLM 运行时选路和 Ascend ACLGraph。"
+series:
+  id: vllm-graph
+  order: 1
 pubDate: 2026-11-06
 tags: [vLLM, CUDA Graph, ACLGraph, Ascend]
 category: AI Infra

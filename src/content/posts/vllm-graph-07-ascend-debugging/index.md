@@ -1,6 +1,9 @@
 ---
 title: "Ascend 配置与排错：无设备阅读指南"
 description: "从软件层次、FULL decode 配置和故障现象出发，建立没有 NPU 也能执行的 Ascend 图模式排错路线。"
+series:
+  id: vllm-graph
+  order: 9
 pubDate: 2026-11-05
 tags: [Ascend, ACLGraph, vLLM, Debugging]
 category: AI Infra

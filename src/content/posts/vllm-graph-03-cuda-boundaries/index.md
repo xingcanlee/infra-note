@@ -1,6 +1,9 @@
 ---
 title: "CUDA Graph 的边界：流、内存池与分段捕获"
 description: "从预热、内存生命周期、多流通信和动态边界出发，判断完整模型中哪些区域适合进入 CUDA Graph。"
+series:
+  id: vllm-graph
+  order: 6
 pubDate: 2026-11-05
 tags: [CUDA Graph, PyTorch, vLLM]
 category: AI Infra

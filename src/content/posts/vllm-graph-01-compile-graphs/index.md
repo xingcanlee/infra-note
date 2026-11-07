@@ -1,6 +1,9 @@
 ---
 title: "编译图入门：torch.compile、FX 与断图"
 description: "在 CPU 上观察 torch.compile 生成的 FX 图，理解 guards、graph break，以及编译图与设备图的边界。"
+series:
+  id: vllm-graph
+  order: 4
 pubDate: 2026-11-05
 tags: [PyTorch, torch.compile, vLLM]
 category: AI Infra

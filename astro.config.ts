@@ -11,6 +11,7 @@ export default defineConfig({
         title: 'infra-note',
         description: 'LLM 推理基础设施笔记：编译图、设备图、运行时调度与性能排错。',
         author: 'xingcanlee',
+        authorGithub: 'https://github.com/xingcanlee',
         lang: 'zh-CN',
       },
       nav: [

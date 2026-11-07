@@ -1,6 +1,9 @@
 ---
 title: "图模式入门：推理流程与提交开销"
 description: "从 prefill、decode 和 kernel 提交开始，理解设备图如何减少大模型推理中的重复提交开销。"
+series:
+  id: vllm-graph
+  order: 2
 pubDate: 2026-11-05
 tags: [vLLM, CUDA Graph, ACLGraph]
 category: AI Infra

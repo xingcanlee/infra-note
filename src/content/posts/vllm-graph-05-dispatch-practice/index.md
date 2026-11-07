@@ -1,6 +1,9 @@
 ---
 title: "无设备练习：图桶、padding 与运行时选路"
 description: "用纯 Python 模拟图桶匹配、padding、FULL 与 PIECEWISE 回退，建立 vLLM 运行时选路的直觉。"
+series:
+  id: vllm-graph
+  order: 3
 pubDate: 2026-11-05
 tags: [vLLM, CUDA Graph, Python]
 category: AI Infra

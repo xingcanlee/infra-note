@@ -1,6 +1,9 @@
 ---
 title: "CUDA Graph：捕获、重放与固定地址"
 description: "走完 CUDA Graph 的准备、预热、捕获、实例化和重放，理解为什么每轮必须写回固定设备地址。"
+series:
+  id: vllm-graph
+  order: 5
 pubDate: 2026-11-05
 tags: [CUDA Graph, PyTorch, vLLM]
 category: AI Infra

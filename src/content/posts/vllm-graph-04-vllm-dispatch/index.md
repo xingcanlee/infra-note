@@ -1,6 +1,9 @@
 ---
 title: "vLLM 如何选图：模式、图桶与运行时分发"
 description: "跟随 BatchDescriptor、dispatcher 和 wrapper，理解 vLLM 如何匹配图桶、选择 FULL 或 PIECEWISE，并在不兼容时回退。"
+series:
+  id: vllm-graph
+  order: 7
 pubDate: 2026-11-05
 tags: [vLLM, CUDA Graph, Runtime]
 category: AI Infra
