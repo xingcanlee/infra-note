@@ -1,6 +1,6 @@
 ---
-title: "05 CSA：重叠压缩与块级稀疏选择"
-description: "沿一次前向跟踪重叠压缩、索引 top-k、窗口合并与 sink 分母。"
+title: "05 CSA：压缩条目与窗口如何合流"
+description: "沿一次 query 追踪重叠压缩、块级选择、窗口候选与 sink 分母。"
 series:
   id: deepseek
   order: 5
@@ -10,22 +10,36 @@ category: AI Infra
 toc: true
 ---
 
-## 从 token 压缩到压缩条目
+CSA（Compressed Sparse Attention）把 DSA 的选择单位从原始 token 换成压缩条目。这样做的核心收益是让选择器面对更短的序列，同时保留最近窗口中的原始细节。
 
-CSA（Compressed Sparse Attention）把 DSA 的选择单位从原始 token 改成压缩条目。V4 的压缩率 $m=4$，重叠压缩同时读取当前块的 a 流和上一块的 b 流，形成一条主压缩 KV；Indexer 从压缩 Key 中选 top-k，核心 attention 再把选中条目与原始窗口拼接。
+## 先生成可选择的条目
 
-![CSA 的重叠压缩、块选择与窗口合流](./diagrams/05-csa.drawio "图 05：CSA 只在完成的压缩条目上选择，并与局部窗口共同归一化")
+V4 的教学配置把压缩率记为 $m=4$。重叠压缩会同时读取当前块的 $a$ 流和上一块的 $b$ 流，生成一条主压缩 KV；完成边界之外的条目不能直接参加当前 query 的选择。
 
-压缩权重沿 token 轴对每个特征归一化，不是简单平均。条目只有在当前块最后一个 token 可见时才进入 cache；尾部不足一个块时保留 `kv_state`、`score_state` 与下一次重叠压缩需要的上一完整块。
+![CSA 的重叠压缩、块选择与窗口合流](./diagrams/05-csa.drawio "图 05：选择压缩条目，并与局部窗口共同归一化")
 
-## Indexer 与核心读取
+```mermaid
+flowchart LR
+  H[历史 token K/V] --> C[重叠压缩<br/>压缩条目]
+  C --> I[Indexer<br/>条目分数]
+  I --> T[top-k 压缩条目]
+  H --> W[最近窗口原始 K/V]
+  T --> F[候选合并]
+  W --> F
+  F --> S[sink-inclusive softmax]
+  S --> O[输出]
+```
 
-Indexer 使用独立的压缩 Key，先 mask 未完成块再 top-k。核心 Query 在选中压缩条目与窗口条目上计算自己的 logits，加入 sink 后只做一次联合 softmax。窗口和压缩条目覆盖同一原始 token 时也不去重，因为它们是两种不同分辨率的候选。
+Indexer 在压缩 Key 上打分并选 top-k；主 attention 再读取选中的压缩条目，把它们和原始窗口放进同一个候选列表。这里的“合流”意味着共享一个归一化分母，和 NSA 的三分支门控不同。
 
-Pro 与 Flash 的 hidden、head、窗口和输出分组不同，不能把某一 checkpoint 的形状套到另一版本。公开 demo 的 quant/dequant 只是数值模拟，不能直接当作生产 cache 字节布局。
+## sink 与重复覆盖
 
-## 来源
+sink 只有分母贡献，没有 Value。若候选 logits 为 $z_i$、sink logit 为 $z_0$，则输出权重和可以小于 1，剩余概率质量留在 sink 中。压缩条目和窗口条目来自不同表示，覆盖同一原始位置也不做按 token 去重。
 
-- [DeepSeek-V4 §2.3.1、Figure 3](https://arxiv.org/html/2606.19348v1#S2.SS3.SSS1)
-- [§4.2.1 Model Setups](https://arxiv.org/html/2606.19348v1#S4.SS2.SSS1)
-- [V4-Pro inference，revision b5968e9](https://huggingface.co/deepseek-ai/DeepSeek-V4-Pro/tree/b5968e9190ef611bbf34a7229255be88a0e937c1/inference)
+实现检查顺序应是：压缩条目完成边界 → Indexer mask → top-k → 候选 layout → 同一 softmax。任何一步提前合并都可能把未完成 token 或错误分母带进结果。
+
+## 不要把压缩率当吞吐
+
+$m$ 描述序列轴上的摘要密度，top-k 描述当前读取集合，窗口宽度描述局部保真度；缓存字节、索引扫描量和主 attention FLOPs 还受 head、量化和 kernel 布局影响。论文的性能数字属于特定实现，不能由一段 Python gather 推出。
+
+参考 [V4 §2.3.3 与 §4.2.1](https://arxiv.org/html/2606.19348v1#S2.SS3.SSS3)。

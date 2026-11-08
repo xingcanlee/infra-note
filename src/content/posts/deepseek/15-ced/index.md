@@ -1,6 +1,6 @@
 ---
-title: "15 CED：因果编码解码、全局 KV 与窗口重放"
-description: "区分 encoder 来源的全局 KV、decoder 局部 SWA 和 bounded replay 的近似。"
+title: "15 CED：把长 prompt 的全局 KV 提前算出"
+description: "区分因果 encoder 产生的全局 KV、decoder 局部窗口和 bounded replay 的近似边界。"
 series:
   id: deepseek
   order: 15
@@ -10,20 +10,28 @@ category: AI Infra
 toc: true
 ---
 
-## CED 的三个状态来源
+CED（Causal Encoder-Decoder）把长 prompt 的工作拆成两类：可提前生成的全局 KV，以及 decode 前仍需按 decoder 层重建的局部窗口状态。它改变的是 prefill 的工作组织，不是把 decoder 变成双向 encoder。
 
-CED（Causal Encoder-Decoder）把长 prompt 的大部分全局 KV 生成提前到因果 encoder 的最终状态。V4.1-Flash 前 20 层是因果 encoder，后 20 层是 decoder；encoder 仍遵守因果约束。decoder 全局 KV 可由 $H_{20}$ 通过各 Full 源层自己的投影产生，但局部 SWA KV 仍需按 decoder 层计算。
+## 三种状态来源
 
-![CED 的全局 KV 来源与窗口 bounded replay](./diagrams/15-ced.drawio "图 15：全局历史来自 encoder 末状态，局部窗口仍由 decoder 重建")
+```mermaid
+flowchart LR
+  P[长 prompt] --> E[因果 encoder<br/>只看左侧上下文]
+  E --> G[全局 KV<br/>供 decoder Full 层读取]
+  P --> W[最近窗口]
+  W --> D[decoder 局部 SWA KV]
+  G --> O[decode attention]
+  D --> O
+```
 
-长 prompt 的简化 token-layer 账本从 $NL$ 变为 $NL/2+WL/2$，其中 $W=128$ 的 decoder replay 只表达工作量近似，不是端到端时延保证。首次 decode 前要重建局部 SWA；cache 命中且缺少 encoder/decoder 局部状态时，按状态生命周期执行相应 replay。
+V4.1-Flash 的报告把前 20 层作为因果 encoder、后 20 层作为 decoder。encoder 仍遵守因果约束；decoder 的全局 KV 可以由 encoder 末状态经过各 Full 源层投影得到，但局部 SWA KV 仍要按 decoder 层计算。
 
-## Replay 是近似
+![CED 的全局 KV 来源与窗口 bounded replay](./diagrams/15-ced.drawio "图 15：全局历史来自 encoder，局部窗口由 decoder 重建")
 
-跨层局部依赖会累积，最后 $W$ 个位置的 bounded replay 不能严格还原完整 prompt 的高层状态。报告的影响很小是实验结论，不能改写为数学等价。全局 KV、持久化 cache、活跃窗口状态和 host DRAM 池也要分别计数。
+## replay 是有边界的近似
 
-公开最小 inference 主要展示参考算子与层循环，不完整展示报告中的 CED prefill 提前结束和生产 replay 路径。阅读代码时要保留这个版本边界。
+长 prompt 的 token-layer 工作量可以用 $NL/2+WL/2$ 做简化账本，其中 $W$ 是窗口宽度。这个式子只说明工作量方向；跨层局部依赖会累积，最后 $W$ 个位置的 bounded replay 不能严格还原完整 prompt 的高层状态。报告中“影响较小”是实验结论，不是数学等价。
 
-## 来源
+缓存命中时要分别检查 encoder 全局状态、decoder 局部状态、活跃窗口和 host DRAM 池。公开最小 inference 代码展示的参考算子可能没有覆盖报告中的完整 prefill 提前结束与生产 replay 路径。
 
-[V4.1 技术报告 §2.1–§3.2.2](https://huggingface.co/deepseek-ai/DeepSeek-V4.1-Flash/blob/314113f8a7dadb388215396ba5fbee2c610a04d6/DeepSeek_V41_Tech_Report.pdf)、[固定 inference](https://huggingface.co/deepseek-ai/DeepSeek-V4.1-Flash/tree/314113f8a7dadb388215396ba5fbee2c610a04d6/inference)。
+参考 [V4.1 技术报告 §2.1–§3.2.2](https://huggingface.co/deepseek-ai/DeepSeek-V4.1-Flash/blob/314113f8a7dadb388215396ba5fbee2c610a04d6/DeepSeek_V41_Tech_Report.pdf) 与固定 [inference 目录](https://huggingface.co/deepseek-ai/DeepSeek-V4.1-Flash/tree/314113f8a7dadb388215396ba5fbee2c610a04d6/inference)。

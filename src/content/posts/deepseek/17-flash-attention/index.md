@@ -1,6 +1,6 @@
 ---
-title: "17 FlashAttention：分块精确注意力、在线 softmax 与 GPU 实现"
-description: "从在线 softmax 状态推导分块前向、反向重算和 FA1–FA4 的 GPU 调度。"
+title: "17 FlashAttention：在线 softmax 如何沿 tile 流动"
+description: "从三种在线状态推导分块精确注意力，再连接到反向重算和稀疏 kernel。"
 series:
   id: deepseek
   order: 17
@@ -10,28 +10,42 @@ category: AI Infra
 toc: true
 ---
 
-## 为什么只保存三种状态
+FlashAttention 改变的是内存访问组织，不是 attention 的数学结果。在给定 mask、scale 和 dropout 语义下，它仍计算同一个 softmax，只是不把完整分数矩阵写回 HBM。
 
-FlashAttention 在给定 mask、scale 和 dropout 语义下计算同一个 attention，但不把完整分数矩阵和概率矩阵写回 HBM。对一行分数，保留最大值 $m$、相对指数和 $\ell$、以及 Value 加权分子 $u$：$m=\max s_j$，$\ell=\sum e^{s_j-m}$，$u=\sum e^{s_j-m}v_j$。
+## 一行只保留三种状态
 
-![FlashAttention 的在线 softmax 与 tile 数据流](./diagrams/17-flash-attention.drawio "图 17：每个 tile 更新最大值、分母和未归一化分子，最终结果与整行 softmax 一致")
+对当前 Query 行，维护最大值 $m$、相对指数和 $\ell$、Value 加权分子 $u$：
 
-新块到来时 $m'=\max(m,\max s)$、$\alpha=e^{m-m'}$，然后 $\ell'=\alpha\ell+\sum e^{s-m'}$、$u'=\alpha u+\sum e^{s-m'}v$。旧分母和旧分子必须使用同一个缩放。全块结束后 $O=u/\ell$、$LSE=m+\log\ell$。
+$$m=\max s_j,\qquad \ell=\sum_j e^{s_j-m},\qquad u=\sum_j e^{s_j-m}v_j.$$
 
-## 前向、反向与 GPU 版本
+处理新 tile 时：
 
-Query tile 保存逐行状态，Key/Value tile 循环更新；因果边界可以跳过完全在未来的 tile。反向只保存 O 与 LSE，重算 QK、mask 和概率块，再计算 dQ、dK、dV。dropout 路径还需重现相同 RNG 状态，不能只说重新设置 seed。
+$$m'=\max(m,\max s),\quad \alpha=e^{m-m'},$$
+$$\ell'=\alpha\ell+\sum e^{s-m'},\quad u'=\alpha u+\sum e^{s-m'}v.$$
 
-FA1 结合分块、在线 softmax 和反向重算；FA2 延迟归一化并调整 CTA/warp 分工；FA3 面向 Hopper 使用 TMA、WGMMA 和 warp specialization；FA4 面向 Blackwell 继续处理 TMEM、指数和归约成本。论文算法、源码分派和具体 GPU 配置需分层说明。
+最后输出 $O=u/\ell$，并用 $LSE=m+\log\ell$ 支持反向。
 
-## 与 DeepSeek kernel 的连接
+![FlashAttention 的在线 softmax 与 tile 数据流](./diagrams/17-flash-attention.drawio "图 17：每个 tile 更新最大值、分母和未归一化分子")
 
-给定稀疏候选后，V4.1 sparse attention kernel 仍用 `scores_max_prev`、`scores_max`、`scores_scale`、`sum_exp`、`acc_o` 维护同一在线状态，并在分母加入 attention sink。它优化的是给定访问集合的 attention，不因此变成全历史 dense attention。
+```mermaid
+flowchart LR
+  Q[Query tile] --> S[与 Key tile 点积]
+  K[Key / Value tile] --> S
+  S --> M[mask + 更新 m]
+  M --> L[缩放旧状态 + 累加新 exp]
+  V[Value tile] --> L
+  L --> O[O = u / l]
+  O --> R[写回输出]
+```
 
-## 来源
+旧分母和旧分子必须使用同一个 $\alpha$。因果边界允许跳过完全在未来的 tile，但不能跳过部分可见 tile 的 mask。
 
-- [FlashAttention](https://arxiv.org/abs/2205.14135v2)
-- [FlashAttention-2](https://tridao.me/publications/flash2/flash2.pdf)
-- [FlashAttention-3](https://arxiv.org/abs/2407.08608v2)
-- [FlashAttention-4](https://arxiv.org/abs/2603.05451v1)
-- [flash-attention 固定提交](https://github.com/Dao-AILab/flash-attention/tree/54b044c8cf897dfcc2577a665559d1bfda0bfc80)
+## 反向和版本
+
+前向通常保存 $O$ 与 LSE，反向重算 QK、mask 和概率块，再求 $dQ,dK,dV$。dropout 还需要重现相同 RNG 状态，单纯重新设置 seed 不足以证明一致。
+
+FA1 组合分块、在线 softmax 和反向重算；FA2 调整 CTA/warp 分工；FA3 面向 Hopper 引入 TMA、WGMMA 和 warp specialization；FA4 的优化点绑定更新后的硬件与实现。论文算法、源码分派和具体 GPU 配置要分开写。
+
+给定稀疏候选后，DeepSeek sparse kernel 仍可用 `scores_max_prev`、`scores_max`、`scores_scale`、`sum_exp`、`acc_o` 维护同一在线状态，并把 sink 加进分母。优化候选访问不等于恢复 dense 全历史。
+
+参考 [FlashAttention](https://arxiv.org/abs/2205.14135v2)、[FlashAttention-2](https://tridao.me/publications/flash2/flash2.pdf)、[FlashAttention-3](https://arxiv.org/abs/2407.08608v2)、[FlashAttention-4](https://arxiv.org/abs/2603.05451v1) 和 [flash-attention 固定提交](https://github.com/Dao-AILab/flash-attention/tree/54b044c8cf897dfcc2577a665559d1bfda0bfc80)。

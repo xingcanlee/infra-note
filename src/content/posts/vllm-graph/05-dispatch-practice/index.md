@@ -1,138 +1,62 @@
 ---
-title: "无设备练习：图桶、padding 与运行时选路"
-description: "用纯 Python 模拟图桶匹配、padding、FULL 与 PIECEWISE 回退，建立 vLLM 运行时选路的直觉。"
+title: "05 图桶选路：命中、padding 与回退"
+description: "用一个可交互的图示理解 descriptor 如何选择图桶，以及为什么输入变化会回退。"
 series:
   id: vllm-graph
-  order: 3
-pubDate: 2026-11-05
-tags: [vLLM, CUDA Graph, Python]
+  order: 6
+pubDate: 2026-11-08
+tags: [vLLM, Runtime, Scheduling]
 category: AI Infra
 toc: true
 ---
 
+import BucketSelector from './BucketSelector';
+
+图模式的第一步不是 replay，而是判断本轮输入能不能放进某个已经准备好的图桶。下面的播放器把这个判断拆成几帧：先读 descriptor，再选桶，最后决定 padding、图模式或回退。
+
 ## 练习范围
 
-本篇只使用 Python 标准库，不调用 vLLM、CUDA Graph 或 ACLGraph。它模拟四件事：选择图桶、计算 padding、在 FULL 和 PIECEWISE 之间回退，以及理解固定缓冲区的引用关系。
-
-不要把练习输出当作设备图或 vLLM 的执行证据。
-
-## 图桶模拟器
-
-把下面代码保存为 `graph_dispatch_demo.py`，使用 Python 3 运行。
-
-```python
-from bisect import bisect_left
-
-BUCKETS = (1, 2, 4, 8)
-FULL_KEYS = {1, 2, 4, 8}
-PIECEWISE_KEYS = {1, 2, 4, 8}
-
-
-def dispatch(num_tokens, uniform_decode, full_keys=FULL_KEYS):
-    index = bisect_left(BUCKETS, num_tokens)
-    if index == len(BUCKETS):
-        return "NONE", num_tokens, 0
-
-    padded = BUCKETS[index]
-    if uniform_decode and padded in full_keys:
-        mode = "FULL"
-    elif padded in PIECEWISE_KEYS:
-        mode = "PIECEWISE"
-    else:
-        return "NONE", num_tokens, 0
-
-    return mode, padded, padded - num_tokens
-
-
-for tokens, uniform in [(3, True), (6, True), (9, True), (6, False)]:
-    print(tokens, uniform, "->", dispatch(tokens, uniform))
-
-assert dispatch(3, True) == ("FULL", 4, 1)
-assert dispatch(6, True) == ("FULL", 8, 2)
-assert dispatch(9, True) == ("NONE", 9, 0)
-assert dispatch(6, False) == ("PIECEWISE", 8, 2)
-assert dispatch(6, True, full_keys={1, 2, 4}) == ("PIECEWISE", 8, 2)
+```mermaid
+flowchart LR
+  A["请求 / batch"] --> B["构造 descriptor"]
+  B --> C{"已有匹配图桶?"}
+  C -->|是| D["选择桶并 padding"]
+  C -->|否| E["NONE：普通或分段执行"]
+  D --> F["FULL / PIECEWISE replay"]
 ```
 
-预期输出：
+<BucketSelector client:visible />
 
-```text
-3 True -> ('FULL', 4, 1)
-6 True -> ('FULL', 8, 2)
-9 True -> ('NONE', 9, 0)
-6 False -> ('PIECEWISE', 8, 2)
-```
+## 播放器里的四个状态
 
-每行依次表示实际 token 数、是否满足 uniform decode、最终模式、执行 token 数和 padding 数。
+| 状态       | 发生了什么                                                       | 要观察的量                 |
+| ---------- | ---------------------------------------------------------------- | -------------------------- |
+| descriptor | 把 batch、token 上限、attention metadata 和 cache 状态整理成 key | 哪些字段会影响地址和 shape |
+| 命中桶     | 选择能容纳本轮工作的固定大小                                     | 桶大小与真实 batch 的差值  |
+| padding    | 用 mask 和 metadata 保持真实语义                                 | 无效槽位会增加多少工作     |
+| 回退       | 没有匹配桶时进入 `NONE` 或分段路径                               | 回退原因与后续是否仍正确   |
 
-## 四个案例
+播放器中的数字是教学输入，用来展示决策顺序；它不模拟 kernel、显存、CUDA stream、ACLGraph 或性能。
 
-| 输入 | 选择过程 | 结果 |
-| --- | --- | --- |
-| 3 个 uniform decode token | 向上匹配到 4，FULL key 存在。 | `FULL`，补 1。 |
-| 6 个 uniform decode token | 向上匹配到 8，FULL key 存在。 | `FULL`，补 2。 |
-| 9 个 token | 超过最大桶 8。 | `NONE`，保持 9 个实际 token。 |
-| 6 个非 uniform token | FULL 条件不满足，但 PIECEWISE key 存在。 | `PIECEWISE`，补 2。 |
+## 固定引用与回退
 
-从 `FULL_KEYS` 删除 8，6 个 uniform token 就会回退到 PIECEWISE。把 `BUCKETS` 增加到 16 并同步增加对应 key，9 个 token 就可以匹配 16 的桶。这些修改改变的是教学模型中的可用图集合；线上服务不会因为修改 Python 集合就动态完成设备捕获。
-
-## padding 比例
-
-如果 3 个 token 补到 4，额外槽位比例是 `1 / 3`。如果 6 个 token 补到 8，额外槽位比例是 `2 / 6`。
-
-```text
-额外槽位比例 = padding 数 / 实际 query token 数
-```
-
-这个比例只描述补齐的工作量，不等于延迟增加比例。attention 形状、kernel 选择、有效位置处理、通信和其他运行时开销都会影响时间。
-
-真实实验还要固定同一批请求，比较精确桶和向上补齐桶，并检查最终模式和实际设备时间线。
-
-## 固定引用
-
-下面的例子不是设备指针模拟，只用来说明“修改原对象”和“让变量指向新对象”的差别。
-
-```python
-buffer = [0, 0]
-reader = buffer
-
-buffer[:] = [3, 3]       # 修改同一个列表。
-assert reader == [3, 3]
-
-buffer = [4, 4]          # 变量改为指向另一个列表。
-assert reader == [3, 3]  # reader 仍引用原来的列表。
-```
-
-CUDA Graph 的静态输入有相似的使用要求：让新数值进入捕获时的那块存储。Tensor 的 `copy_` 原地写入和重新赋值不同。真实设备地址仍应通过 `data_ptr()` 等方式在硬件环境中检查。
-
-## 证据边界
-
-| 已知信息 | 可以下的结论 | 还不能下的结论 |
-| --- | --- | --- |
-| 编译缓存命中 | 找到可复用的编译产物。 | 本轮一定 replay 了设备图。 |
-| 某个 key 捕获成功 | 这个 key 曾建立过设备图。 | 真实请求一定命中它。 |
-| `Runtime Mode=FULL` | 本轮选择了 FULL 路径。 | wrapper 一定已经 replay。 |
-| profiler 出现 graph launch | 采集范围内发生了图提交。 | 端到端一定更快。 |
-| 一次运行更快 | 得到一个时间样本。 | 性能收益稳定且可复现。 |
-
-## 检查点
-
-1. 实际 token 数是 5，桶是 `[1, 2, 4, 8]`，uniform decode 为真，会补多少？
-2. 8 的 FULL key 不存在，但 PIECEWISE key 存在，最终模式是什么？
-3. 实际 token 数是 9，最大桶是 8，为什么不直接复用 8 的图？
+真实运行时不能因为“看起来相同”就复用图。descriptor 中的引用、stride、block table 或 attention metadata 变化，都应让 key 失配并选择新桶或 `NONE`。回退不是失败，它是动态输入的正确性路径。
 
 ## 有设备后的验证顺序
 
-1. 记录模型、软件提交、runner、attention 后端、dtype、设备和固定输入。
-2. 先确认普通 Eager 生成正确。
-3. 比较只编译、PIECEWISE 和 FULL 的配置，保持其他变量不变。
-4. 记录初始化、首轮和稳态结果，不要只记录一次总耗时。
-5. 同时保存实际 batch、padding、Runtime Mode 和 profiler 时间线。
+1. 固定软件、模型、dtype、prompt 长度和并发。
+2. 记录每个 descriptor 的 mode、bucket、padding 和命中情况。
+3. 用 profiler 观察 capture/replay、同步和通信。
+4. 分开比较首轮、稳态和回退比例。
+5. 只有在输出正确且样本足够后，才讨论吞吐和延迟。
 
-CUDA 可以使用 Nsight Systems，Ascend 可以使用 `torch_npu.profiler` 或 Ascend Profiling。采集 profiler 时应与正式计时分开，避免采集开销污染结果。
+## 检查点
 
-## 参考资料
+- 图桶先于 replay，`FULL`、`PIECEWISE`、`NONE` 是运行时路径。
+- padding 是可观测账本，不能直接换算成性能。
+- 回退分支应当可预测、可记录、可验证。
 
-- [vLLM 固定源码：dispatcher](https://github.com/vllm-project/vllm/blob/349b21487a607ed4912d71f5e8ba54b8e2ec3578/vllm/v1/cudagraph_dispatcher.py)
-- [vLLM：CUDA Graphs 设计](https://docs.vllm.ai/en/latest/design/cuda_graphs/)
-- [PyTorch：CUDA Graphs](https://docs.pytorch.org/docs/stable/notes/cuda.html#cuda-graphs)
+## 来源
+
+- [vLLM CUDA graph](https://github.com/vllm-project/vllm/blob/main/vllm/compilation/cuda_graph.py)
+- [vLLM-Ascend ACLGraph](https://github.com/vllm-project/vllm-ascend/tree/main/vllm_ascend/compilation)

@@ -1,6 +1,6 @@
 ---
-title: "04 DSA：Lightning Indexer 与稀疏 MLA"
-description: "说明 Lightning Indexer 如何先选位置，再由主 MLA 在候选集合内重新归一化。"
+title: "04 DSA：Indexer 先选位置，MLA 再重新归一化"
+description: "拆开 Lightning Indexer 与主 MLA 的职责，避免把选择分数当成注意力权重。"
 series:
   id: deepseek
   order: 4
@@ -10,23 +10,35 @@ category: AI Infra
 toc: true
 ---
 
-## Indexer 与主 MLA 分工
+DSA（DeepSeek Sparse Attention）在 MLA cache 之上增加一条轻量的索引路径。它的关键不是“算出一组近似权重”，而是先确定主 attention 可以读哪些位置。
 
-DSA（DeepSeek Sparse Attention）在 MLA 表示上增加 Lightning Indexer。Indexer 用独立 Query/Key 路径为历史位置打分，先屏蔽未来再做 causal top-k；主 MLA 根据位置集合读取 latent 和位置 Key，并在选中集合内重新计算 logits、softmax 与 PV。
+## 两套分数，两次归一化
 
-![DSA 共享选择集合但为各主 head 重新归一化](./diagrams/04-dsa.drawio "图 04：Indexer 只选择位置，主 MLA 各自计算集合内权重")
+```mermaid
+flowchart LR
+  Q[当前 Query] --> I[Lightning Indexer]
+  K[历史 Index Key] --> I
+  I --> M[causal mask]
+  M --> T[top-k 位置集合]
+  T --> G[gather latent + position Key]
+  Q --> A[主 MLA logits]
+  G --> A
+  A --> P[候选集合内 softmax]
+  P --> O[聚合 Value]
+```
 
-索引分数 $I_{t,s}=\sum_jw_{t,j}^I\operatorname{ReLU}(q_{t,j}^I\cdot k_s^I)$ 不是概率，也不能直接当作主注意力权重。主 MLA 的 $e_{t,s}^h$ 来自另一条投影路径；同一集合给不同主 head 的结果可以不同。
+Indexer 用独立的 Query/Key 路径得到 $I_{t,s}$，先屏蔽未来，再做 causal top-k。主 MLA 读取选中的 latent 和位置 Key，重新计算 logits、softmax 与 $PV$。Indexer 的分数只决定集合，不是最终输出的概率。
 
-## 两阶段训练与复杂度
+![DSA 共享选择集合但为各主 head 重新归一化](./diagrams/04-dsa.drawio "图 04：选择路径和主 attention 使用两套分数")
 
-dense warm-up 冻结主模型、训练 indexer；sparse training 打开 top-k，让主模型适应稀疏访问。top-k 的离散下标本身没有普通反向梯度，Indexer 通过独立 KL 目标学习，主模型通过 LM loss 学习。
+## 为什么必须先 mask
 
-主注意力从全历史变成约 $O(TK)$ 的候选计算，但 indexer 仍扫描历史，整体不是线性注意力。未选 latent 仍要保留，因为下一次 Query 可能选择它；必须有真正的 sparse gather/kernel 才可能把候选减少转成端到端收益。
+top-k 是排序操作。若先在包含未来位置的数组上取 top-k，再把未来位置删掉，合法历史可能已经被挤出候选集合。正确顺序是“mask → top-k → gather”；并列分数还要固定 tie-break 规则，才能让 CPU toy 与 kernel 结果可比。
 
-## 来源与版本
+主 MLA 在选中集合内重新做 softmax，分母只包含候选位置。候选变少不等于每个候选权重保持原来的值，也不等于缓存只剩 top-k 个 token。
 
-- [DeepSeek-V3.2 §2.1–§2.3](https://arxiv.org/html/2512.02556v1#S2.SS1)
-- [V3.2-Exp inference，固定 revision 87e509a](https://github.com/deepseek-ai/DeepSeek-V3.2-Exp/tree/87e509a2e5a100d221c97df52c6e8be7835f0057/inference)
+## 代码边界
 
-论文成本与 H800 结果保持原实验口径；本页没有加载真实权重或测量 GPU 性能。
+阅读实现时把 Indexer 的张量、主 MLA 的 latent/位置 cache、以及 gather 后的 candidate layout 分开标注。索引路径可以仍然扫描很长的历史；论文的稀疏收益还依赖块化、融合和硬件实现。
+
+参考 [V3.2 §2.1](https://arxiv.org/html/2512.02556v1#S2.SS1)。本文的 toy 输入只检查因果 top-k 和候选集合内归一化，没有运行真实权重或设备 kernel。

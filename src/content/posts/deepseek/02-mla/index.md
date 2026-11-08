@@ -1,6 +1,6 @@
 ---
-title: "02 MLA：联合压缩、矩阵吸收与解耦 RoPE"
-description: "从共享 latent、解耦 RoPE 和矩阵吸收推导 MLA 的缓存与计算路径。"
+title: "02 MLA：把多头历史压进共享 latent"
+description: "沿一条 token 的 Key/Value 路径，理解 MLA 的联合压缩、解耦 RoPE 与矩阵吸收。"
 series:
   id: deepseek
   order: 2
@@ -10,26 +10,45 @@ category: AI Infra
 toc: true
 ---
 
-## 缓存瓶颈与联合压缩
+标准 MHA 为每个历史 token 保存很多组 K/V。MLA 的问题更具体：能否让这些 head 共享一份低维历史表示，同时保留每个 Query head 的注意力差异？
 
-MLA（Multi-head Latent Attention）把同一历史位置的多头内容 Key/Value 联合表示为一个低维 latent，并额外保存共享位置 Key。它仍然访问全部因果可见位置；latent 缩小的是每个位置的表示，不是序列长度。
+## 数据流先于公式
 
-![MLA 的共享 latent、解耦 RoPE 与两次矩阵吸收](./diagrams/02-mla.drawio "图 02：MLA 在保留多头权重的同时共享历史缓存")
+```mermaid
+flowchart LR
+  X[token hidden state] --> DKV[Wᴰᴷⱽ<br/>压到 latent]
+  DKV --> C[共享 KV latent]
+  C --> UK[Wᵁᴷ_h<br/>当前 head 的 Key]
+  C --> UV[Wᵁⱽ_h<br/>当前 head 的 Value]
+  X --> QR[Query + 解耦 RoPE]
+  UK --> S[attention logits]
+  QR --> S
+  S --> O[按权重聚合 latent]
+  O --> UV
+```
 
-对列向量，KV latent 与内容上投影可写为 $c_s^{KV}=W^{DKV}x_s$、$k_s^{C,h}=W_h^{UK}c_s^{KV}$、$v_s^{C,h}=W_h^{UV}c_s^{KV}$。Query 也可以经过低秩路径，但历史 Query 不进入 KV cache。
+对列向量，一条可读的写法是 $c_s^{KV}=W^{DKV}x_s$、$k_s^{C,h}=W_h^{UK}c_s^{KV}$、$v_s^{C,h}=W_h^{UV}c_s^{KV}$。历史 cache 保存 latent 和位置分支，而不是每个 head 的完整内容 K/V。
 
-## 解耦 RoPE
+![MLA 的共享 latent、解耦 RoPE 与两次矩阵吸收](./diagrams/02-mla.drawio "图 02：MLA 共享历史表示，Query head 仍各自打分")
 
-若直接对内容分支做位置旋转，$R_t^\top R_s$ 会随历史位置变化，阻碍把内容上投影吸收到当前 Query。MLA 将内容分支与位置分支拆开：$q_t^h=[q_t^{C,h};q_t^{R,h}]$、$k_s^h=[k_s^{C,h};k_s^R]$，只有位置分支承担 RoPE。因此每 token、每层的吸收缓存是 $d_c+d_r$ 个元素。
+## 为什么要解耦 RoPE
 
-## 两次吸收
+如果内容分支也直接做旋转，内积里会出现随 $t,s$ 变化的 $R_t^\top R_s$，当前 Query 很难把固定上投影吸收掉。MLA 把 Query/Key 拆成内容分支和位置分支：
 
-Key 吸收把内容内积重排为 $\widetilde q_t^h=((W_h^{UK})^\top q_t^{C,h})$ 与 latent 的内积。Value 吸收先在 latent 空间聚合 $z_t^h=\sum_s\alpha_{t,s}^hc_s^{KV}$，再乘 $W_h^{UV}$。softmax 不被吸收到投影里，缩放仍由拼接后的 $d_n+d_r$ 决定。
+$$q_t^h=[q_t^{C,h};q_t^{R,h}],\qquad k_s^h=[k_s^{C,h};k_s^R].$$
 
-浮点求和顺序可能带来末位误差；若路径含 RMSNorm，归一化不能当作固定线性变换。V3 固定实现的 `wq_a → q_norm → wq_b`、`wkv_a`、`kv_norm`、`wkv_b` 与 `kv_cache/pe_cache` 是代码对照入口。
+只有位置分支承担 RoPE；内容分支共享 latent。这样缓存宽度变成 $d_c+d_r$，而不是每个 head 的完整 $d_k+d_v$。这减少的是“每个 token 的表示宽度”，不是把历史长度截断。
 
-## 来源
+## 两次矩阵吸收
+
+Key 吸收把 $q_t^{C,h\top}W_h^{UK}c_s^{KV}$ 重排为 $\widetilde q_t^{h\top}c_s^{KV}$，Value 吸收则先得到 latent 聚合 $z_t^h=\sum_s\alpha_{t,s}^hc_s^{KV}$，再乘 $W_h^{UV}$。softmax 仍在 logits 上执行，不能把归一化一起吸收到线性层。
+
+浮点求和顺序会带来末位差异；如果路径含 RMSNorm，仍要按代码顺序执行。阅读 V3 实现时，`wq_a → q_norm → wq_b`、`wkv_a`、`kv_norm`、`wkv_b` 以及 `kv_cache/pe_cache` 是最短的对照路径。
+
+## 来源与边界
 
 - [DeepSeek-V2 §2.1.1–§2.1.4、Table 1](https://arxiv.org/html/2405.04434v5#S2.SS1)
 - [DeepSeek-V2 附录 C](https://arxiv.org/html/2405.04434v5#A3)
-- [DeepSeek-V3 MLA 实现，固定提交 9b4e978](https://github.com/deepseek-ai/DeepSeek-V3/blob/9b4e9788e4a3a731f7567338ed15d3ec549ce03b/inference/model.py#L396-L497)
+- [DeepSeek-V3 固定实现](https://github.com/deepseek-ai/DeepSeek-V3/blob/9b4e9788e4a3a731f7567338ed15d3ec549ce03b/inference/model.py#L396-L497)
+
+论文给出的缓存和速度收益属于其模型配置与硬件条件；本页只解释表示和计算重排。
