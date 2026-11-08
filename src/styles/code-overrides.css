@@ -1,0 +1,4 @@
+/* Leave room for the larger touch copy button on narrow screens. */
+.wisp-code:has(.wisp-copy) .wisp-lang {
+  right: 3.5rem;
+}
