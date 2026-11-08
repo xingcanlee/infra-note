@@ -69,13 +69,15 @@ function Scene({ state }: { state: BucketState }) {
   const duration = reduce ? 0 : 0.2;
   const modeColor =
     state.mode === "NONE" ? "var(--wisp-sem-error)" : "var(--wisp-accent)";
+  // Wisp's lightbox enhances article SVGs before React hydrates; this marker keeps the player scene unchanged.
 
   return (
     <svg
       viewBox="0 0 680 188"
       role="img"
       aria-label={`batch ${state.batch}，max tokens ${state.maxTokens}，${state.mode}，padding ${state.padding}`}
-      style={{ width: "100%", height: "auto" }}
+      data-wisp-lightbox-trigger=""
+      style={{ width: "100%", height: "auto", cursor: "default" }}
     >
       <text x="32" y="28" fill="var(--wisp-fg)" fontSize="14">
         descriptor：batch={state.batch} · max_tokens={state.maxTokens}

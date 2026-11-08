@@ -41,12 +41,14 @@ const steps: Step<FlowState>[] = [
 function Flow({ state }: { state: FlowState }) {
   const reduce = useReducedMotion();
   const duration = reduce ? 0 : 0.22;
+  // Wisp's lightbox enhances article SVGs before React hydrates; this marker keeps the player scene unchanged.
   return (
     <svg
       viewBox="0 0 560 132"
       role="img"
       aria-label={`${stages[state.active]}：${state.detail}`}
-      style={{ width: "100%", height: "auto" }}
+      data-wisp-lightbox-trigger=""
+      style={{ width: "100%", height: "auto", cursor: "default" }}
     >
       {stages.slice(0, -1).map((_, i) => (
         <line

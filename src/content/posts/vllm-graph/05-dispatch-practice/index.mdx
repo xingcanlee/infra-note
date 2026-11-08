@@ -10,7 +10,7 @@ category: AI Infra
 toc: true
 ---
 
-import BucketSelector from './BucketSelector';
+import BucketSelector from "./BucketSelector";
 
 图模式的第一步不是 replay，而是判断本轮输入能不能放进某个已经准备好的图桶。下面的播放器把这个判断拆成几帧：先读 descriptor，再选桶，最后决定 padding、图模式或回退。
 
