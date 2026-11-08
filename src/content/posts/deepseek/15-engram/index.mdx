@@ -1,0 +1,229 @@
+---
+title: "15 Engram：在 MoE 之外再开一条稀疏的轴"
+description: "MoE 稀疏的是计算，Engram 稀疏的是存储——用 N-gram 哈希做 O(1) 查表，扩容不增加 FLOPs。"
+series:
+  id: deepseek
+  order: 17
+pubDate: 2026-11-08
+tags: [Engram, MoE, Memory, Sparsity, DeepSeek]
+category: AI Infra
+toc: true
+---
+
+第 13 篇的 MoE 把「参数多、计算少」做到了 3.5% 的激活比例。但它的稀疏有一个前提：**未激活的那些专家，仍然是神经网络的参数**，要参与训练、占显存、按 token 动态路由。
+
+Engram 问的是另一个问题：**有没有一类知识，根本不需要「计算」，只需要「查」？**
+
+读完你能回答：conditional memory 和 conditional computation 的区别、N-gram 哈希查表为什么是 $O(1)$ 且不增加 FLOPs、以及那条 U 型曲线说明了什么。
+
+## 先看一个例子
+
+「北京是中国的首」后面大概率是「都」。这个知识需要多层注意力和 FFN 去「推理」吗？不需要——它是一个**查表**就能解决的固定搭配。
+
+但标准 Transformer 没有「表」这个东西，它只能把这类局部模式**用深度和计算重建出来**。Engram 的做法是直接给它一张表：
+
+```mermaid
+flowchart LR
+  A["token 序列<br/>…中 国 的 首"] --> B["tokenizer 压缩<br/>NFKC / 大小写归一"]
+  B --> C["后缀 N-gram<br/>g = (国, 的, 首)"]
+  C --> D["多头哈希<br/>φ(g) → 行号"]
+  D --> E["查 embedding 表<br/>E[行号]"]
+  E --> F["门控 α<br/>当前上下文用不用这条"]
+  F --> G["卷积 + 残差<br/>并回主干"]
+```
+
+关键在于：**这条路径里没有矩阵乘，只有一次哈希和一次取行**。表扩大 10 倍，每个 token 的计算量**一点都不增加**。
+
+## 机制
+
+### 两条稀疏的轴
+
+这是本篇的核心区分：
+
+| | **MoE** | **Engram** |
+| --- | --- | --- |
+| 论文的叫法 | conditional **computation** | conditional **memory** |
+| 稀疏的是 | 计算（未选中的专家不算） | **存储**（只取固定几行） |
+| 如何选 | gate 打分后动态 top-$k$ 路由 | **确定性** N-gram 哈希 |
+| 扩容的代价 | 显存 + 训练复杂度，FLOPs 不变 | **只有存储**，FLOPs 完全不变 |
+| 能放在哪 | 必须在 GPU 显存 | HBM / 主机内存 / NVMe 多级 |
+
+最后一行是 Engram 独有的性质。因为访问分布服从 Zipf 定律（少数 N-gram 极高频、长尾极低频），可以把高频行放 HBM、长尾放更慢更大的存储（§2.5）。**MoE 的专家做不到这件事**——它们随时可能被任何 token 选中。
+
+### 查表路径
+
+**① tokenizer 压缩**：先把 token ID 按 NFKC、大小写归一等规则折叠成 canonical ID，再组成后缀 N-gram：
+
+$$
+x'_t=\mathcal{P}(x_t),\qquad g_{t,n}=(x'_{t-n+1},\dots,x'_t)
+$$
+
+论文说 128k 的 tokenizer 经此压缩后有效词表约减少 23%（§2.2）。这一步是为了让「Beijing」「beijing」「BEIJING」命中同一行。
+
+**② 多头哈希**（式 (1)–(2)）：对每个阶数 $n$ 和哈希头 $k$，用一个确定性的 multiplicative-XOR 哈希算出行号，取出对应行再拼接：
+
+$$
+z_{t,n,k}=\varphi_{n,k}(g_{t,n}),\quad \mathbf{e}_{t,n,k}=\mathbf{E}_{n,k}[z_{t,n,k}],\qquad
+\mathbf{e}_t=\big\|_{n=2}^{N}\big\|_{k=1}^{K}\mathbf{e}_{t,n,k}
+$$
+
+多头的作用是缓解哈希冲突：单个哈希撞了，其他头大概率没撞。（论文没有给出哈希的乘数与异或常数。）
+
+**③ 上下文门控**（式 (3)–(4)）：取出来的是**静态**的记忆，用不用得看当前上下文。当前隐藏状态当 Query，取回向量当 Key/Value：
+
+$$
+\mathbf{k}_t=\mathbf{W}_K\mathbf{e}_t,\quad \mathbf{v}_t=\mathbf{W}_V\mathbf{e}_t,\qquad
+\alpha_t=\sigma\!\left(\frac{\mathrm{RMSNorm}(\mathbf{h}_t)^\top \mathrm{RMSNorm}(\mathbf{k}_t)}{\sqrt{d}}\right),\quad
+\tilde{\mathbf{v}}_t=\alpha_t\mathbf{v}_t
+$$
+
+这个门控很重要：**查表是确定性的，但用不用是上下文决定的**。「首」后面不总是「都」——在「首席执行官」里就不是。$\alpha_t$ 负责把不合适的记忆按下去。
+
+**④ 并回主干**（式 (5)）：过 RMSNorm、深度可分离因果卷积（kernel $w=4$）和 SiLU，再加回门控值：
+
+$$
+\mathbf{Y}=\mathrm{SiLU}\big(\mathrm{Conv1D}(\mathrm{RMSNorm}(\tilde{\mathbf{V}}))\big)+\tilde{\mathbf{V}}
+$$
+
+卷积参数初始化为 0，使模块在训练开始时是恒等映射（§2.3、§4.1）——这是接入新模块的常见稳妥做法，不会一上来就扰乱已有的主干。
+
+### 稀疏预算怎么分：那条 U 型曲线
+
+论文把「MoE 和 Engram 各分多少」形式化成一个分配问题（§3.1）。定义总参数 $P_{\rm tot}$、每 token 激活参数 $P_{\rm act}$（决定 FLOPs），稀疏预算是两者之差：
+
+$$
+P_{\rm sparse}=P_{\rm tot}-P_{\rm act}
+$$
+
+令 $\rho$ 是稀疏预算里分给 MoE 的比例：
+
+$$
+P^{(\rm sparse)}_{\rm MoE}=\rho\,P_{\rm sparse},\qquad P_{\rm Engram}=(1-\rho)P_{\rm sparse}
+$$
+
+$\rho=1$ 是纯 MoE。**固定 $P_{\rm tot}$ 和 $P_{\rm act}$**（也就是固定参数量和 FLOPs）扫描 $\rho$，validation loss 呈 **U 型**：
+
+| $\rho$ | 含义 | 结果 |
+| --- | --- | --- |
+| 100% | 纯 MoE | loss 1.7248（10B 档） |
+| **≈80%** | **最优点** | **loss 1.7109** |
+| ≈40% | Engram 占太多 | 已退回纯 MoE 水平 |
+| → 0% | 纯 Engram | 更差 |
+
+两端都差，原因相反（§3.1）：
+
+- **纯 MoE 端**缺少静态记忆，被迫用深度和计算去重建局部模式——浪费了算力。
+- **纯 Engram 端**缺少动态计算，查表替代不了上下文推理。
+
+最优点在 $\rho\approx75\%$–$80\%$，即**约 20%–25% 的稀疏预算给 Engram**。
+
+这条曲线是本篇最值得记住的结论：**它说明两条轴不是互相替代，而是互补**。如果 Engram 只是「另一种存参数的方式」，曲线应该单调；U 型意味着两者各自擅长不同的东西。
+
+另一组实验（§3.2）固定约 3B 的 MoE backbone 和 568M 激活参数，只扫 Engram 的 slot 数（$2.58\times10^5$ 到 $1.0\times10^7$，最多新增约 13B 参数）：**loss 对 slot 数呈 log-linear/幂律下降，而计算完全不变**。
+
+### 27B 的对照实验
+
+论文的主实验（§4.1–4.2，表 1）设计得很干净：
+
+| 模型 | 总参数 | 激活参数 | 构成 |
+| --- | --- | --- | --- |
+| MoE-27B | 26.7B | 3.8B | DeepSeekMoE，2 shared + 72 routed，top-6 |
+| **Engram-27B** | **26.7B** | **3.8B** | routed 从 72 减到 55，省下的换成 5.7B Engram（$\rho=74.3\%$） |
+| Engram-40B | 39.5B | 3.8B | 同样 backbone，Engram 表扩到 18.5B |
+
+**Engram-27B 和 MoE-27B 是 iso-parameter 且 iso-FLOPs 的**——总参数相同、激活参数相同，只是把一部分专家换成了查表。结果（表 1）：
+
+| | MoE-27B | Engram-27B | 差 |
+| --- | --- | --- | --- |
+| Pile loss | 1.960 | 1.950 | −0.010 |
+| MMLU | 57.4 | 60.4 | **+3.0** |
+| CMMLU | 57.9 | 61.9 | **+4.0** |
+| BBH | 50.9 | 55.9 | **+5.0** |
+| ARC-Challenge | 70.1 | 73.8 | +3.7 |
+| HumanEval | 37.8 | 40.8 | +3.0 |
+| GSM8K | 58.4 | 60.6 | +2.2 |
+
+Engram 模块插在第 2 和第 15 层，最大 $N=3$、$K=8$ 个哈希头、维度 1280；embedding 用 Adam，学习率是普通参数的 5 倍且不加 weight decay（§4.1）。
+
+> 一处要注意的不一致：**论文摘要写 MMLU +3.4，而正文表 1 是 +3.0**。本文以表格和正文为准。
+
+### 工程：预取
+
+哈希地址是**确定性**的——前向开始之前就能算出要取哪些行。于是可以在计算前面几层时，**异步从主机内存经 PCIe 把 embedding 取回来**，用计算掩盖通信（§2.5）。
+
+论文报告把 100B 参数的表 offload 到主机内存，实测额外开销 **< 3%**。
+
+模块插在第几层因此有两重约束：**放得越深，能用来掩盖通信的计算窗口越长；但消融显示插得早一些对「重建局部模式」更有利**。两个方向相反，所以要折中——这也解释了为什么是第 2 层和第 15 层这种一早一中的组合。
+
+## 代码实现
+
+> 完整可运行脚本见文章目录下的 `toy.py`。
+
+```python
+def ngram_keys(ids, t, max_n=3, n_heads=8, table_sizes=None):
+    """后缀 N-gram → 多头哈希 → 行号。确定性，无矩阵乘。"""
+    rows = []
+    for n in range(2, max_n + 1):
+        if t - n + 1 < 0:
+            rows.extend([(n, k, 0) for k in range(n_heads)])
+            continue
+        g = tuple(ids[t - n + 1:t + 1])
+        for k in range(n_heads):
+            h = 1469598103934665603 ^ (k * 1099511628211)    # 每个头一个不同的种子
+            for x in g:
+                h = ((h ^ x) * 1099511628211) & 0xFFFFFFFFFFFFFFFF
+            rows.append((n, k, h % table_sizes[(n, k)]))      # ← O(1)，与表大小无关
+    return rows
+```
+
+输出：
+
+```
+序列 'the capital of china is' → token ids [1, 2, 3, 4, 5]
+
+位置 4 取回的行（max_n=3, K=4）：
+  n=2 head=0 → 行  344 / 2003
+  n=2 head=1 → 行 1824 / 2003
+  ...共 8 行，每个位置固定取 8 行
+
+同样的 N-gram 在不同位置命中同一行 ✓（确定性）
+大小写/全角不同的写法命中同一行 ✓（tokenizer 压缩）
+
+表扩容对计算量的影响：
+  表     2,003 行 → 每 token 查 8 行，0 次乘加
+  表 2,000,003 行 → 每 token 查 8 行，0 次乘加
+  表扩大 1000 倍，每 token 的查表工作量完全不变 ✓
+
+对照 MoE（第 13 篇）：
+  专家从 64 扩到 256，激活仍是 8 个 → FLOPs 不变，但 256 份专家参数都要在显存里
+  Engram 表扩大               → FLOPs 不变，且长尾部分可以放主机内存 / NVMe
+
+稀疏预算分配（论文 §3.1，10B 档）：
+  ρ=100%（纯 MoE）  loss 1.7248
+  ρ≈80%（最优）     loss 1.7109   ← 低 0.0139
+
+27B 对照（同参数、同激活）：MMLU 57.4 → 60.4（+3.0），BBH 50.9 → 55.9（+5.0）
+```
+
+## 代价与边界
+
+- Engram 省的是 FLOPs，**不省存储**——它把参数挪到了更便宜的存储层级，总量反而更大（Engram-40B 有 39.5B 参数）。
+- 哈希必然有冲突。多头缓解但不能消除；论文没有给出冲突率的测量。
+- 查表是静态的：它记住的是训练语料里的 N-gram 统计，**不能处理训练时没见过的搭配**，也不随上下文更新。动态推理仍然要靠主干——这正是 U 型曲线右端下降的原因。
+- 预取依赖「地址提前可知」。这条性质很强，但也意味着 Engram 的位置受通信窗口约束，不能随便插。
+- 「< 3% 开销」是论文在其硬件与互联条件下的实测，不可照搬。本机没有 GPU，本篇未做任何性能验证。
+- U 型曲线的最优点 $\rho\approx75\%$–$80\%$ 绑定论文的计算档位（$2\times10^{20}$ 与 $6\times10^{20}$ FLOPs）与数据，换配置要重新扫。
+
+## 自测
+
+1. conditional computation 和 conditional memory 的区别是什么？为什么只有后者能放到主机内存？
+2. 为什么表扩大 1000 倍不增加每 token 的 FLOPs？这和 MoE 扩专家有什么本质不同？
+3. 门控 $\alpha_t$ 解决什么问题？去掉它会怎样（想想「首席执行官」）？
+4. U 型曲线的两端为什么都差？各自缺了什么？
+5. 为什么 Engram 的位置既不能太浅也不能太深？两个约束分别是什么？
+
+## 来源
+
+- [Conditional Memory via Scalable Lookup](https://arxiv.org/abs/2601.07372) §2.1–2.3（模块结构与式 (1)–(5)）、§2.5（Zipf 分布与预取）、§3.1（稀疏分配与 U 型曲线，式 (7)）、§3.2（记忆 scaling）、§4.1–4.2 表 1（27B 对照）、§5.1–5.2 表 2（长上下文）
+- 上一篇：[14 · MTP 与推测解码](../14-mtp/)
+- 下一篇：[16 · mHC](../16-mhc/)——注意力和 FFN 都动过了，剩下残差流。

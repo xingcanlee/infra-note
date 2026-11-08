@@ -1,0 +1,232 @@
+---
+title: "10 CSA：先把序列压短，再稀疏地读"
+description: "V4 把压缩和稀疏叠成一个机制——两级相乘的省法，以及为什么它必须额外挂一条滑动窗口。"
+series:
+  id: deepseek
+  order: 12
+pubDate: 2026-11-08
+tags: [CSA, Sparse Attention, DeepSeek, Long Context]
+category: AI Infra
+toc: true
+---
+
+import BranchView from '../../../../explainers/react/BranchView';
+
+上一篇留下两个问题：Lightning Indexer 仍是 $O(L^2)$，而且 $k=2048$ 固定不变——上下文到 128K 时只覆盖 1.6% 的历史，再长就更稀。
+
+CSA（Compressed Sparse Attention，DeepSeek-V4）的思路是把两件事叠起来：**先把序列压短 $m$ 倍，再在压短后的序列上做 DSA**。读完你能回答：两级省法为什么是相乘的、压缩为什么要做成重叠的、以及为什么压缩之后反而必须额外挂一条滑动窗口。
+
+## 先看一个例子
+
+把每 $m$ 个 token 的 KV 合成一个条目。$m=4$、序列 1M 时，注意力面对的序列只有 25 万——**然后再在这 25 万里挑 $k$ 个**。
+
+<BranchView
+  client:visible
+  l={16}
+  branches={[
+    { id: 'csa', name: '压缩+稀疏主分支', role: '每 4 个 token 压成 1 个条目，再按 indexer 打分挑 top-k', fn: (t, s) => s <= t && s % 4 === 0 && s < t - 2, gate: 0.7, unit: 'block' },
+    { id: 'win', name: '滑动窗口分支', role: '最近 n_win 个未压缩 token，补回压缩拿不到的局部细节', fn: (t, s) => s <= t && t - s < 4, gate: 0.3 },
+  ]}
+  title="图 10-1：CSA 的两条分支——压缩后的稀疏主分支，加一条未压缩的窗口"
+/>
+
+两级的效果是**相乘**的：
+
+$$
+\underbrace{\frac{1}{m}}_{\text{压缩}}\times\underbrace{\frac{k}{L/m}}_{\text{稀疏}}=\frac{k}{L}
+$$
+
+单看最终比例似乎和纯 DSA 一样，但差别在于：indexer 现在只需要给 $L/m$ 个条目打分，**那个 $O(L^2)$ 的常数直接除以了 $m^2$**。这正是上一篇指出的瓶颈所在。
+
+完整的流水线（注意上半是压缩+稀疏主分支，下面那条并列的窗口分支是用来补洞的）：
+
+![CSA 的流水线：hidden state 经两套投影产生重叠的压缩源，加可学习位置偏置后在 2m 个元素上 softmax 得到压缩条目；再压一次得到 indexer key，打分取 top-k；另有一条未压缩的滑动窗口分支补上块内细节，两者合流后做共享 KV 的 MQA](./diagrams/10-csa-pipeline.drawio "图 10-2：CSA 的完整流水线——压缩、稀疏选择、窗口分支与分组输出投影")
+
+## 机制
+
+### ① 压缩：两套权重、重叠的块
+
+论文先从 hidden state $H\in\mathbb{R}^{n\times d}$ 产出两套 KV 和两套压缩权重（§2.3.1 式 (9)–(10)）：
+
+$$
+C^{a}=H W^{aKV},\quad C^{b}=H W^{bKV};\qquad
+Z^{a}=H W^{aZ},\quad Z^{b}=H W^{bZ}
+$$
+
+对第 $i$ 个压缩位置，取 $C^a$ 的 $[mi,\,m(i+1)-1]$ 区间与 $C^b$ 的 $[m(i-1),\,mi-1]$ 区间——**也就是当前块和前一块**——加上可学习的位置偏置后在这 $2m$ 个元素上做 softmax（式 (11)）：
+
+$$
+[S^{a};S^{b}]=\mathrm{Softmax}_{\text{row}}\big([Z^{a}_{mi:m(i+1)-1}+B^{a};\ Z^{b}_{m(i-1):mi-1}+B^{b}]\big)
+$$
+
+再按这个权重加权求和（式 (12)）：
+
+$$
+C^{\mathrm{Comp}}_{i}=\sum_{j=mi}^{m(i+1)-1}S^{a}_{j}\odot C^{a}_{j}+\sum_{j=m(i-1)}^{mi-1}S^{b}_{j}\odot C^{b}_{j}
+$$
+
+三个要点：
+
+1. **压缩是「学出来的加权求和」，不是池化。** 权重 $S$ 由 $Z$ 过 softmax 得到，$Z$ 和 $C$ 都是从 hidden state 投影来的。哪个 token 在块里更重要，由模型自己决定。
+2. **每个条目看 $2m$ 个 token，但序列只缩到 $1/m$。** 因为相邻条目的取值区间重叠（第 $i$ 个条目用了第 $i$ 块和第 $i-1$ 块）。这和第 08 篇 NSA 取 $d<l$ 是同一个考虑：**减轻块边界把信息切碎**。
+3. $\odot$ 是逐元素乘，所以 $S$ 和 $C$ 同形——每个维度各自加权，不是整个向量共用一个标量权重。
+
+$i=0$ 时没有前一块，$Z^b$ 区间填 $-\infty$、$C^b$ 区间填 0。
+
+### ② 在压缩条目上做稀疏选择
+
+对压缩后的 KV 再压一次，得到 indexer 用的 key $K^{\mathrm{IComp}}\in\mathbb{R}^{(n/m)\times c^I}$。然后是上一篇那套 Lightning Indexer（式 (13)–(16)）：
+
+$$
+\mathbf{c}_{t}^{Q}=\mathbf{h}_{t}W^{DQ},\qquad
+\mathbf{q}_{t}^{I}=\mathbf{c}_{t}^{Q}W^{IUQ},\qquad
+\mathbf{w}_{t}^{I}=\mathbf{h}_{t}W^{w}
+$$
+
+$$
+I_{t,s}=\sum_{h=1}^{n_{h}^{I}} w_{t,h}^{I}\cdot\mathrm{ReLU}\big(\mathbf{q}^{I}_{t,h}\cdot K^{\mathrm{IComp}}_{s}\big)
+$$
+
+形式和第 09 篇式 (1) 完全一样——**同一个 indexer，只是喂给它的序列短了 $m$ 倍**。只对 $s<\lfloor t/m\rfloor$ 的压缩块打分以保证因果性，然后取 top-$k$（式 (17)）：
+
+$$
+\mathcal{C}^{\mathrm{SprsComp}}_{t}=\{C^{\mathrm{Comp}}_{s}\mid I_{t,s}\in\mathrm{Top\text{-}k}(I_{t,:})\}
+$$
+
+注意 indexer 的 query 来自 $\mathbf{c}_t^Q$——这个 query latent 同时也用来生成主注意力的 query（式 (18)），**两者共用一次低秩投影**。
+
+### ③ 共享 KV 的 MQA 与分组输出投影
+
+每个压缩条目**同时当 key 和 value**（式 (19)）：
+
+$$
+\mathbf{o}_{t,i}=\mathrm{CoreAttn}(\text{query}=\mathbf{q}_{t,i},\ \text{key}=\mathcal{C}^{\mathrm{SprsComp}}_t,\ \text{value}=\mathcal{C}^{\mathrm{SprsComp}}_t)
+$$
+
+这是 MQA：所有 query head 共享同一份压缩 KV。第 09 篇那条规律在这里第四次出现——**选择的粒度必须和 KV 共享的粒度对齐**，否则稀疏省不到访存。
+
+因为 $c\,n_h$ 很大（$c=512$、$n_h$ 到 128），直接投影回 $d$ 维的输出矩阵会非常大。论文把 $n_h$ 个 head 分成 $g$ 组，每组从 $c(n_h/g)$ 维投到 $d_g$ 维，再把 $g\,d_g$ 维拼起来投回 $d$ 维（§2.3.1「Grouped Output Projection」）。这是纯粹的参数量控制。
+
+### ④ 为什么必须额外挂一条滑动窗口
+
+这是 CSA 最容易被忽略、但逻辑上最必然的一点。
+
+严格因果的压缩只允许 query 读**它之前的**压缩块。而当前 token 自己所在的那个块还没压完——**query 读不到和自己同块的其他 token**（§2.3.3）。可偏偏近处的 token 往往是最相关的。
+
+所以 CSA 必须额外生成最近 $n_{\text{win}}$ 个 token 的**未压缩** KV，和压缩 KV 一起进入 core attention。论文取 $n_{\text{win}}=128$。
+
+动画里那条窗口分支就是干这个的：它不是锦上添花，是压缩机制留下的洞必须被补上。
+
+### ⑤ 三个稳定性设计
+
+论文在 §2.3.3 还列了三件事，都值得注意：
+
+- **Query/KV RMSNorm**：core attention 之前对每个 query head 和那唯一一份压缩 KV head 做 RMSNorm，避免 attention logits 爆炸。
+- **部分 RoPE**：query、KV 条目和 core-attention 输出的**最后 64 维**用 RoPE；输出用位置 $-i$ 的 RoPE，使输出带上相对位置信息。注意这和第 05 篇 MLA 的「解耦 RoPE」思路一致——只让一小段维度承担位置。
+- **Attention sink**：每个 head 有一个**可学习的** sink logit $z'_h$，直接加进 softmax 的分母（式 (27)）：
+
+$$
+s_{h,i,j}=\frac{\exp(z_{h,i,j})}{\sum_k \exp(z_{h,i,k})+\exp(z'_h)}
+$$
+
+这一步很妙：分母多了一项，**每个 head 的注意力权重之和可以小于 1，甚至接近 0**。回想第 07 篇说的——attention sink 现象的一种解释是「softmax 强制权重和为 1，用不掉的权重得有地方去」。V4 的做法是直接给它一个官方的泄洪口，而不是让它去挤占真实 token。
+
+## 超参数
+
+论文 §4.2.1 给出的配置：
+
+| 参数                     | V4-Flash | V4-Pro |
+| ------------------------ | -------- | ------ |
+| 压缩率 $m$               | 4        | 4      |
+| top-$k$                  | 512      | 1024   |
+| 滑动窗口 $n_{\text{win}}$ | 128      | 128    |
+| indexer head 数 $n_h^I$  | 64       | 64     |
+| indexer head 维 $c^I$    | 128      | 128    |
+| query/KV head 维 $c$     | 512      | 512    |
+| query 压缩维 $d_c$       | 1024     | 1536   |
+| query head 数 $n_h$      | 64       | 128    |
+| 输出投影组数 $g$         | 8        | 16     |
+| 组内中间维 $d_g$         | 1024     | 1024   |
+
+KV 存储用混合精度：**RoPE 的那 64 维用 BF16，其余维度用 FP8**，论文称相对纯 BF16 让 KV cache 几乎减半（§2.3.4）。
+
+整体效率（§1、图 1，条件是 **1M token 上下文、单 token 推理**，相对 DeepSeek-V3.2）：
+
+| 模型     | 推理 FLOPs | KV cache |
+| -------- | ---------- | -------- |
+| V4-Pro   | 27%        | 10%      |
+| V4-Flash | 10%        | 7%       |
+
+## 代码实现
+
+> 完整可运行脚本见文章目录下的 `toy.py`。
+
+```python
+import numpy as np
+
+def csa_compress(H, W_aKV, W_bKV, W_aZ, W_bZ, B_a, B_b, m):
+    """式 (9)–(12)：重叠的两套区间 + 可学习位置偏置 + 逐元素加权求和。"""
+    n, _ = H.shape
+    C_a, C_b = H @ W_aKV, H @ W_bKV
+    Z_a, Z_b = H @ W_aZ, H @ W_bZ
+    out = []
+    for i in range(n // m):
+        za = Z_a[m * i:m * (i + 1)] + B_a                    # 当前块
+        ca = C_a[m * i:m * (i + 1)]
+        if i == 0:                                            # 第 0 个条目没有前一块
+            zb = np.full((m, Z_b.shape[1]), -np.inf)
+            cb = np.zeros((m, C_b.shape[1]))
+        else:
+            zb = Z_b[m * (i - 1):m * i] + B_b                 # 前一块（重叠来源）
+            cb = C_b[m * (i - 1):m * i]
+        z = np.concatenate([za, zb], axis=0)                  # 2m 个元素一起 softmax
+        s = np.exp(z - z.max(axis=0)) / np.exp(z - z.max(axis=0)).sum(axis=0)
+        out.append((s[:m] * ca).sum(0) + (s[m:] * cb).sum(0))
+    return np.array(out)                                      # (n/m, c)
+```
+
+`toy.py` 的输出：
+
+```
+原始序列 64 个 token → 压缩成 16 个条目（m=4，压到 1/4）
+每个压缩条目实际看了 8 个 token（2m），但序列只缩到 1/4 —— 相邻条目重叠
+压缩权重是学出来的：同一块内各 token 的权重 [0.06 0.58 0.02 0.05]，不是均匀的 0.25
+
+两级省法（1M 上下文、m=4、k=1024）：
+  压缩：1048576 → 262144 个条目（1/4）
+  稀疏：262144 → 1024 个条目（1/256）
+  合计读 1024 / 1048576 = 0.098% 的历史
+  indexer 打分对数：从 1.1e+12 降到 6.9e+10（省 16 倍 = m²）
+
+窗口分支补洞：当前 token 所在块内的其他 token，压缩分支读不到
+  位置 63 的同块邻居 [60, 61, 62]：压缩分支 ✗，窗口分支 ✓
+```
+
+注意那行权重：这 4 个数加起来只有 0.71，剩下的 0.29 分给了来自**前一块**的另外 4 个元素——因为 softmax 是在 $2m=8$ 个元素上一起做的。这就是「重叠压缩」在数值上的样子。
+
+最后那段验证的是 ④ 节的说法：同块邻居确实只能靠窗口分支拿到。
+
+## 代价与边界
+
+- 两级叠加意味着两级的损失也叠加：压缩把块内细节平均掉，稀疏再丢掉没选中的块。CSA 靠「重叠压缩」和「窗口分支」分别补这两个洞，但不可能完全补回。
+- indexer 的 $O((L/m)^2)$ 比 DSA 的 $O(L^2)$ 小 $m^2$ 倍，但**仍然是平方级**。$m=4$ 只是把这个问题推后，没有消除。
+- 压缩是严格因果的，所以当前块内的信息必须靠窗口补。窗口 $n_{\text{win}}=128$ 是个固定预算。
+- **论文中未找到**：按层的 bytes/token 对照表（论文全文没有出现 MLA 这个术语，也没有给 CSA 与 MLA 的逐层数值对照）；CSA 与 HCA 的层数比例或交错周期；CSA/HCA 的单独消融实验表。
+- 「27% FLOPs / 10% KV cache」是论文在 **1M 上下文、单 token 推理**这个特定条件下、相对 V3.2 的整体估算（图 1），不是逐层或逐分支的拆解，也不是本机实测。
+- 论文 §2.3 开头明确说只讲核心思想、省略了细节，建议参考开源实现。压缩权重 $Z$ 与位置偏置 $B$ 的初始化与训练约束论文中未给出。
+
+## 自测
+
+1. 两级省法为什么是相乘的？如果只做压缩不做稀疏，或只做稀疏不做压缩，各自少了什么？
+2. 压缩把 $O(L^2)$ 的 indexer 变成了多少？这解决了第 09 篇指出的瓶颈吗，还是推后了？
+3. 每个压缩条目看 $2m$ 个 token，为什么序列长度只缩到 $1/m$ 而不是 $1/(2m)$？
+4. 为什么 CSA 必须额外挂一条滑动窗口？这个洞是哪一步造成的？
+5. 可学习的 sink logit 让注意力权重之和可以小于 1。联系第 07 篇的 attention sink 现象，说明这样做解决了什么。
+6. 动手：在 `toy.py` 里把 $m$ 从 4 调到 8，看 indexer 的打分对数和压缩条目数怎么变；再看同块邻居的数量怎么变——窗口分支的压力是不是更大了？
+
+## 来源
+
+- [DeepSeek-V4](https://arxiv.org/abs/2606.19348) §2.3（CSA 与 HCA 总览）、§2.3.1（压缩与稀疏选择，式 (9)–(19)）、§2.3.3（窗口分支、RMSNorm、部分 RoPE、attention sink 式 (27)）、§2.3.4（混合精度 KV）、§4.2.1（超参数）、§1 与图 1（整体效率）
+- 图 3「Core architectures of CSA」是论文中对应本篇机制的结构图
+- 上一篇：[09 · DSA](../09-dsa/)（CSA 的稀疏部分就是 DSA）
+- 下一篇：[11 · HCA](../11-hca/)——同一篇论文里的另一种选择：压得更狠，但不做稀疏。

@@ -1,0 +1,184 @@
+---
+title: "13 DeepSeekMoE：参数很多，计算很少"
+description: "注意力省完了，参数大头在 FFN——路由、共享专家、无辅助损失的负载均衡是怎么配合的。"
+series:
+  id: deepseek
+  order: 15
+pubDate: 2026-11-08
+tags: [MoE, Routing, DeepSeek, AI Infra]
+category: AI Infra
+toc: true
+---
+
+import RoutingFlow from '../../../../explainers/react/RoutingFlow';
+
+前面十几篇都在注意力里打转。但回到第 00 篇那张层结构图：一层里还有另一半——**FFN**，而且它才是参数的大头。
+
+V3 的数字说明一切：671B 总参数，每个 token 只激活 37B。**98% 的参数在这一轮没有参与计算**。这是怎么做到的，代价是什么，就是本篇的内容。
+
+读完你能回答：MoE 为什么能「参数多、计算少」、共享专家解决什么问题、以及 DeepSeek 为什么要用 bias 而不是辅助损失做负载均衡。
+
+## 先看一个例子
+
+把一个大 FFN 换成 $N$ 个小 FFN（**专家**），再加一个很小的线性层（**gate**）决定每个 token 用哪几个。
+
+关键在于「每个 token」——路由是逐 token 的，不是逐句子的。同一句话里，「读」可能路由到专家 0 和 3，「注意力」可能路由到专家 1 和 4：
+
+<RoutingFlow client:visible title="图 13-1：MoE 路由——打分、分组、选 top-k、加权合并，最后加上共享专家" />
+
+动画里 6 个路由专家选 2 个，V3 实际是 **256 选 8**。激活比例：
+
+$$
+\frac{8 + 1}{256 + 1} = \frac{9}{257} \approx 3.5\%
+$$
+
+计算量按激活的专家算，容量按总参数算——这就是 MoE 的全部交易。
+
+## 机制
+
+### 路由
+
+gate 对每个专家打一个分，选最高的 $k$ 个，按分数加权合并它们的输出：
+
+$$
+\begin{aligned}
+s_{i} &= \mathrm{Gate}(x)_i & &\text{(每个专家一个分数)}\\
+\mathcal{T} &= \mathrm{TopK}(\{s_i + b_i\},\, k) & &\text{(选谁：用加了 bias 的分数)}\\
+g_i &= \frac{s_i}{\sum_{j\in\mathcal{T}} s_j}\cdot \lambda,\quad i\in\mathcal{T} & &\text{(权重：用不含 bias 的原始分数)}\\
+y &= \sum_{i\in\mathcal{T}} g_i\,E_i(x) \;+\; E_{\text{shared}}(x)
+\end{aligned}
+$$
+
+**注意第 2 行和第 3 行用的分数不同**，这是 DeepSeek 设计里最容易被忽略的一处：$b_i$ 只影响「选谁」，不进入权重。下一节解释为什么。
+
+### 共享专家
+
+V3 里除了 256 个路由专家，还有 1 个**共享专家**：每个 token 都要过它，不参与路由。
+
+为什么需要它？考虑语法、常识这类所有 token 都要用的能力。如果没有共享专家，每个路由专家都得各自学一份——**冗余**，而且挤占了它们专精的容量。把通用部分抽出来固定执行，路由专家就可以真正分工。
+
+在动画里它是最下面那个单独的框：没有箭头从 gate 指向它，因为它不需要被选中。
+
+### 负载均衡：为什么用 bias 而不是辅助损失
+
+路由是逐 token 的，于是会出现一个系统问题：**token 可能挤在少数几个专家上**。热门专家所在的 GPU 累死，其余的闲着——整批的速度由最慢的那张卡决定。更糟的是马太效应：被选中多的专家训练得更好，于是被选中得更多。
+
+传统做法是加一个**辅助损失**（auxiliary loss）惩罚不均衡。问题在于这个损失和语言建模目标是冲突的：为了均衡，模型会被迫把 token 送给并不擅长它的专家，**损害质量**。
+
+DeepSeek 的做法是给每个专家一个可调的 bias $b_i$：专家过载就调低它的 bias，空闲就调高。因为 $b_i$ 只参与**选择**、不参与**权重**，所以：
+
+- 它能改变负载分布（改变了选谁）；
+- 它不污染输出（权重仍由原始分数 $s_i$ 决定）；
+- 它不在损失函数里，因此不与语言建模目标竞争梯度。
+
+这就是「无辅助损失的负载均衡」（auxiliary-loss-free load balancing）的核心。本篇的 `toy.py` 直接验证了这个性质：被 bias 顶进 top-k 的专家，权重仍然很小。
+
+### 分组：为什么还要限制组数
+
+V3 的配置里有 `n_expert_groups` 和 `n_limited_groups`。专家分布在多台机器上，一个 token 如果打到很多个组，就要和很多台机器通信——**跨机通信比计算贵得多**。
+
+所以先按组筛选、再在组内选 top-k：限制了单个 token 的通信扇出。这是纯粹的系统约束，不是建模需要。动画里 2 组保留 1 组就是这个过程。
+
+## 代码实现
+
+> 完整可运行脚本见文章目录下的 `toy.py`。
+
+```python
+import numpy as np
+
+def softmax(z):
+    e = np.exp(z - z.max())
+    return e / e.sum()
+
+def moe_layer(x, gate_w, experts, shared, topk=2, bias=None, n_groups=1, topk_groups=1):
+    n_experts = len(experts)
+    scores = softmax(x @ gate_w)                 # gate：一个很小的线性层
+    sel = scores + (bias if bias is not None else 0)   # 只影响选择
+
+    # ① 分组筛选：限制通信扇出
+    if n_groups > 1:
+        per = n_experts // n_groups
+        g_score = [sel[g * per:(g + 1) * per].max() for g in range(n_groups)]
+        kept = set(np.argsort(g_score)[::-1][:topk_groups])
+        in_kept = np.array([(i // per) in kept for i in range(n_experts)])
+        sel = np.where(in_kept, sel, -np.inf)
+
+    # ② top-k
+    chosen = np.sort(np.argsort(sel)[::-1][:topk])
+
+    # ③ 权重用原始分数归一化（不含 bias）—— 关键
+    w = scores[chosen] / scores[chosen].sum()
+
+    # ④ 只跑被选中的专家
+    y = sum(wi * experts[i](x) for wi, i in zip(w, chosen))
+    return y + shared(x), chosen, w
+```
+
+`toy.py` 的输出：
+
+```
+不加 bias：token「读」选中专家 [0 4]，权重 [0.54 0.46]
+加 bias  ：token「读」选中专家 [0 1]，权重 [0.79 0.21]
+          专家 1 被 bias 顶进来了，但它的权重只有 0.21 —— bias 没有污染输出 ✓
+
+分组 2 保留 1 组：选中 [0 1]
+分组 2 保留 2 组：选中 [0 4]（等于不分组）
+
+激活比例：V3 配置 (256 选 8 + 1 共享) = 3.50%
+FLOPs 比：相对同参数量的稠密 FFN ≈ 3.5%
+```
+
+最后两行的对照值得注意：**MoE 层的激活比例（3.5%）和整个模型公布的「671B 中激活 37B」（5.5%）不是一回事**。后者还包含注意力、embedding 和共享专家——那些部分每个 token 都要全额计算。看到「激活比例」时要先确认它在说哪一层。
+
+### 真实实现在哪
+
+DeepSeek-V3 参考实现（commit `9b4e9788`，`inference/model.py`）：
+
+| 概念            | 位置                | 说明                                                                   |
+| --------------- | ------------------- | ---------------------------------------------------------------------- |
+| `Gate` 定义     | `model.py:535-564`  | `topk`、`n_groups`、`topk_groups`、`route_scale`，`weight` 形状 `(n_routed_experts, dim)` |
+| `Gate.forward`  | `model.py:576-598`  | 打分 → 分组 → top-k → 归一化 → 乘 `route_scale`                         |
+| 可选 bias       | `model.py:535-564`  | **只在 `dim == 7168` 时存在**，即只有 671B 那档配置带 bias              |
+| `Expert`        | `model.py:601-633`  | SwiGLU：`w2(silu(w1 x) * w3 x)`，与第 00 篇的 `MLP` 同构                |
+| 共享专家        | `model.py:649-667`  | `shared_experts = MLP(dim, n_shared_experts * moe_inter_dim)`           |
+| 合并            | `model.py:679-693`  | 先算 `z = shared_experts(x)`，路由结果 `y` 经 `all_reduce` 后返回 `y + z` |
+| 专家并行切分    | `model.py:658-666`  | `n_local_experts = n_routed_experts // world_size`，每个 rank 只实例化自己那段 |
+
+两个实现细节：
+
+1. **共享专家与路由专家是并行算的**，最后相加（`y + z`）。共享专家不经过 gate，所以它的计算与路由结果无关，可以和路由重叠。
+2. `dist.all_reduce(y)` 在加上共享专家输出**之前**执行（`model.py:684-693`）。因为每个 rank 只持有一部分专家，路由结果必须先跨 rank 求和；而共享专家在每个 rank 上都有，不需要通信。顺序搞反会重复累加。
+
+671B 的配置（`configs/config_671B.json`）：
+
+| 字段                  | 值   |
+| --------------------- | ---- |
+| `n_routed_experts`    | 256  |
+| `n_shared_experts`    | 1    |
+| `n_activated_experts` | 8    |
+| `n_layers`            | 61   |
+| `dim`                 | 7168 |
+
+## 代价与边界
+
+- MoE 用**显存**换**计算**：全部 256 个专家的参数都要常驻，只是每轮少数参与计算。所以它降低的是 FLOPs 和延迟，不是显存占用。
+- 路由是逐 token 的动态行为，负载天然不均。bias 能缓解，不能消除；真实部署还要靠专家并行、分组限制和通信优化（DeepEP 一类）。
+- 分组限制通信扇出，代价是搜索空间变小——可能选不到真正最合适的专家。这是系统与建模的直接冲突。
+- top-k 是不可导的。训练时怎么让 gate 学到有用的打分，是 MoE 的核心难点，本篇没有展开（属于训练侧）。
+- 「激活 3.5% 参数」不等于「快 28 倍」。实际收益受通信、负载不均、kernel 效率影响，必须实测。本机无 GPU，本篇不给性能数字。
+
+## 自测
+
+1. MoE 降低了 FLOPs，它降低显存占用吗？为什么？
+2. 为什么 bias 只用于选择、不用于权重？如果让它进入权重会发生什么？
+3. 没有共享专家会怎样？用「冗余」和「容量」两个词解释。
+4. V3 是 256 选 8。如果改成 64 选 8，激活比例和模型容量各怎么变？
+5. 动手：在 `toy.py` 里把 `topk_groups` 从 1 调到 2，看选中的专家怎么变。这说明分组限制付出了什么代价？
+
+## 来源
+
+- [DeepSeekMoE: Towards Ultimate Expert Specialization](https://arxiv.org/abs/2401.06066)（细粒度专家 + 共享专家）
+- [DeepSeek-V3 技术报告](https://arxiv.org/abs/2412.19437)（无辅助损失负载均衡）
+- [DeepSeek-V3 参考实现 `model.py`](https://github.com/deepseek-ai/DeepSeek-V3/blob/9b4e9788e4a3a731f7567338ed15d3ec549ce03b/inference/model.py#L535-L693)
+- 配置来自本地快照 `reference/DeepSeek-V3/inference/configs/config_671B.json`
+- 下一篇：[MTP 与推测解码](../11-mtp/)（尚未按本系列约定重写）——参数的问题解决了，但一次只出一个 token 还是太慢。

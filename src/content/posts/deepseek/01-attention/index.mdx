@@ -1,0 +1,198 @@
+---
+title: "01 注意力从零推一遍"
+description: "把打分、掩码、softmax、加权求和四步拆开，用能手算的数字跑一遍因果注意力。"
+series:
+  id: deepseek
+  order: 3
+pubDate: 2026-11-08
+tags: [Attention, Softmax, AI Infra]
+category: AI Infra
+toc: true
+---
+
+import AttentionGrid from '../../../../explainers/react/AttentionGrid';
+
+上一篇我们确认了一层 Transformer 里**只有注意力让位置之间交换信息**，并且把它压缩成了 5 行 NumPy。现在把那 5 行拆开。
+
+本篇要解决的问题很具体：位置 3 的「注意力」这个 token，凭什么决定要从「我」「在」「读」里各取多少？读完你能回答：那个 $L\times L$ 的矩阵每一格是什么意思、softmax 为什么必须在那一步出现、因果掩码挡住了什么。
+
+## 先看一个例子
+
+还是上一篇的 4 个 token。模型先用三个权重矩阵把每个位置的向量投影成三份，各有分工——这是全系列最该记住的一张表：
+
+| 名字           | 符号  | 角色                             | 一句话                       |
+| -------------- | ----- | -------------------------------- | ---------------------------- |
+| Query（查询）  | $q_t$ | 当前位置**想找什么**             | 「我在找一个动词的宾语」     |
+| Key（键）      | $k_s$ | 历史位置**能提供什么**（索引用） | 「我是个动词」               |
+| Value（值）    | $v_s$ | 历史位置**实际交出的内容**       | 「这个动词的语义向量」       |
+
+Key 和 Value 是两份不同的东西：Key 只用来**被匹配**，Value 才是**被取走**的内容。这个分离后面每一篇都在用——MLA 压缩的是它们的存储，稀疏注意力改的是匹配之后读谁。
+
+取 $d_k = 4$，本系列固定的 toy 数值是：
+
+```
+位置 s:        0 我        1 在        2 读        3 注意力
+q (查询)  [ 1, 2, 0,-1] [ 3,-2, 1, 0] [-1, 1, 2, 3] [ 0,-1,-2, 1]
+k (键)    [-2, 1, 3, 0] [ 1, 0,-1, 2] [ 2, 3, 0,-2] [-1,-2, 1, 1]
+v (值)    [ 0, 3,-1, 2] [ 1,-1, 2, 0] [ 3, 0, 1,-2] [-2, 2, 0, 3]
+```
+
+## 四步，一步一帧
+
+动画把每个位置的计算完整走一遍。**建议先只看第 1 行**（位置 0），它只读自己，最简单；然后看第 3 行，它要在 4 个位置之间分配权重：
+
+<AttentionGrid client:visible title="图 01-1：因果注意力的四步——打分、掩码、softmax、加权求和" />
+
+矩阵的第 $t$ 行第 $s$ 列，就是「位置 $t$ 对位置 $s$ 的关注程度」。右上三角是空的：那是未来，还没生成。
+
+## 机制
+
+### ① 打分：内积当相似度
+
+位置 $t$ 对位置 $s$ 的原始分数是两个向量的内积，再除以 $\sqrt{d_k}$：
+
+$$
+e_{t,s} = \frac{q_t^\top k_s}{\sqrt{d_k}}
+$$
+
+内积为什么能当相似度？$q^\top k = \sum_i q_i k_i$，两个向量在相同维度上同号且都大时，乘积为正且大；方向相反时为负。所以内积大 = 这个 Key 符合当前 Query 要找的东西。
+
+手算一格：位置 2（读）对位置 0（我），$q_2 = [-1,1,2,3]$，$k_0 = [-2,1,3,0]$：
+
+$$
+q_2^\top k_0 = (-1)(-2) + (1)(1) + (2)(3) + (3)(0) = 2 + 1 + 6 + 0 = 9,\qquad e_{2,0} = \frac{9}{\sqrt 4} = 4.5
+$$
+
+除以 $\sqrt{d_k}$ 的原因是：$d_k$ 个乘积加起来，和的波动幅度大约按 $\sqrt{d_k}$ 增长。不缩放的话，维度越大分数越极端，下一步的 softmax 会变成「只取最大的那个」，梯度几乎消失。这个除法不改变谁大谁小，只改变分布的陡峭程度。
+
+### ② 掩码：挡住未来
+
+生成第 $t$ 个 token 时，$t$ 之后的 token 还不存在。所以把 $s > t$ 的分数设成 $-\infty$：
+
+$$
+e_{t,s} \leftarrow -\infty \quad (s > t)
+$$
+
+这叫**因果掩码**（causal mask）。$-\infty$ 而不是 0，是因为掩码要作用在 softmax **之前**：$\exp(-\infty) = 0$，这样归一化时那些位置彻底不参与分母。如果在 softmax 之后再把它们置 0，每行的和就不再是 1 了。
+
+这一步是本系列第 06–12 篇的全部战场：**那些机制改的就是「哪些 $s$ 被挡住」**。因果掩码是最宽松的一种——它只挡未来，左边全读。
+
+### ③ softmax：把分数变成权重
+
+$$
+\alpha_{t,s} = \frac{\exp(e_{t,s})}{\sum_{s'\le t}\exp(e_{t,s'})}
+$$
+
+softmax 做两件事：把任意实数变成正数（指数），再除以总和使每行加起来为 1。于是 $\alpha_{t,\cdot}$ 是一个概率分布，注意力输出是 Value 的**加权平均**，数值不会被放大。
+
+实现上一定要先减去该行最大值：$\exp(e - \max e)$。数学上结果相同（分子分母同乘一个常数），但 $\exp(1000)$ 会溢出成 `inf`。本系列的 toy 实现和真实 kernel 都这么做，第 18 篇的 FlashAttention 正是把这个技巧推广成了「在线」版本。
+
+### ④ 加权求和：取走 Value
+
+$$
+o_t = \sum_{s\le t}\alpha_{t,s}\, v_s
+$$
+
+权重作用在 Value 上，不是 Key 上。位置 $t$ 的输出是它读过的所有历史 Value 的加权平均。
+
+四步合起来写成矩阵形式，就是你在论文里看到的那一行：
+
+$$
+\mathrm{Attention}(Q,K,V) = \mathrm{softmax}\!\left(\frac{QK^\top}{\sqrt{d_k}} + M\right)V
+$$
+
+其中 $M$ 是掩码矩阵（允许处为 0，禁止处为 $-\infty$）。现在这一行里每个符号你都推过了。
+
+### 多头：同时问几个问题
+
+一个 Query 向量只能表达一种「我在找什么」。实际做法是把 $d$ 维切成 $n_h$ 份，每份独立做上面四步，最后拼起来再过一个输出投影：
+
+$$
+\mathrm{MHA}(x) = \mathrm{Concat}(o^1,\dots,o^{n_h})\,W^O,\qquad o^h = \mathrm{Attention}(Q^h, K^h, V^h)
+$$
+
+关键点：**每个 head 有自己的 $Q,K,V$**。所以缓存历史时，每个 token 要存 $n_h$ 组 K 和 V——这正是下一篇要算的那笔账。
+
+## 代码实现
+
+逐步打印版，验证上面每一步：
+
+> 本篇的完整可运行脚本在文章目录下的 `toy.py`，其中的结论都写成了 `assert`。跑 `uv run --with numpy python toy.py` 即可自己验证一遍。
+
+
+```python
+import numpy as np
+
+tokens = ['我', '在', '读', '注意力']
+q = np.array([[1, 2, 0, -1], [3, -2, 1, 0], [-1, 1, 2, 3], [0, -1, -2, 1]], dtype=float)
+k = np.array([[-2, 1, 3, 0], [1, 0, -1, 2], [2, 3, 0, -2], [-1, -2, 1, 1]], dtype=float)
+v = np.array([[0, 3, -1, 2], [1, -1, 2, 0], [3, 0, 1, -2], [-2, 2, 0, 3]], dtype=float)
+L, d_k = q.shape
+
+# ① 打分
+scores = q @ k.T / np.sqrt(d_k)
+print('① 原始分数 e[2][0] =', scores[2, 0])          # 4.5，与手算一致
+
+# ② 因果掩码：上三角置 -inf
+mask = np.tril(np.ones((L, L), dtype=bool))
+scores = np.where(mask, scores, -np.inf)
+
+# ③ softmax（先减行最大值）
+shifted = scores - scores.max(axis=-1, keepdims=True)
+w = np.exp(shifted)
+w /= w.sum(axis=-1, keepdims=True)
+print('③ 每行权重之和 =', w.sum(axis=-1))             # [1. 1. 1. 1.]
+print('③ 位置 3 的权重 =', w[3].round(3))
+
+# ④ 加权求和
+out = w @ v
+print('④ 输出形状 =', out.shape)                      # (4, 4)
+print('④ 位置 0 的输出 =', out[0], '== v[0]:', np.allclose(out[0], v[0]))
+```
+
+三个可核对的结论：
+
+1. `e[2][0] == 4.5`，与上面手算相同。
+2. 每行权重之和为 1，因此输出是加权平均。
+3. **位置 0 的输出恰好等于 `v[0]`**——它只能读自己，权重必然是 1。这是检查因果掩码是否写对的最快方法。
+
+把掩码换成别的形状，这段代码就变成了后面各篇的机制。本站把它抽成了统一的接口（`src/explainers/core/masks.ts`），动画和文章用的是同一份定义：
+
+```python
+def causal(t, s, L):            return s <= t
+def sliding_window(w):          return lambda t, s, L: s <= t and t - s < w
+def block_select(size, keep):   return lambda t, s, L: s <= t and t // size - s // size < keep
+```
+
+### 真实实现在哪
+
+DeepSeek-V3 参考实现（commit `9b4e9788`）里没有「朴素注意力」这个类——它直接是 MLA。可以对照的是同样四步的位置：
+
+| 步骤          | 源码位置                           | 说明                                                      |
+| ------------- | ---------------------------------- | --------------------------------------------------------- |
+| 打分 + 缩放   | `model.py:479`（naive 分支）       | `einsum("bshd,bthd->bsht", q, k_cache) * self.softmax_scale` |
+| 掩码          | `model.py:488-489`                 | `scores += mask.unsqueeze(1)`（prefill 时为上三角 `-inf`） |
+| softmax       | `model.py:490`                     | `scores.softmax(dim=-1, dtype=torch.float32)`，归一化升到 FP32 |
+| 加权求和      | `model.py:492`                     | `einsum("bsht,bthd->bshd", scores, v_cache)`              |
+
+`einsum("bshd,bthd->bsht", q, k)` 读法：`b` batch、`s` 当前 Query 位置、`t` 被读取位置、`h` head、`d` head 维度。重复出现又不在输出里的 `d` 被求和消掉——就是第 00 篇说的「中间维度被消掉」。这个下标写法在后面几篇会反复出现，值得现在就读顺。
+
+## 代价与边界
+
+- 分数矩阵是 $L\times L$。$L=4096$ 时每个 head 每层有 1678 万个元素；$L$ 翻倍，它翻 4 倍。计算量同样按 $L^2$ 增长。
+- 这一篇每次都重算全部位置。生成第 $t$ 个 token 时，前 $t-1$ 个位置的 K/V 其实和上一轮完全一样——下一篇用缓存消掉这部分重复。
+- toy 数值是整数、单 head、无 batch、无 RoPE（位置编码）。它能验证算术和掩码，不能反映真实注意力的分布形态。
+- 内积当相似度是一个**设计选择**，不是唯一可能；但本系列涉及的所有变体都保留了它，只改参与打分的对象和范围。
+
+## 自测
+
+1. 为什么掩码必须加在 softmax 之前？如果在之后把被掩位置置 0，哪条性质会被破坏？
+2. $\sqrt{d_k}$ 这个除法改变了分数的大小顺序吗？它实际影响的是什么？
+3. 位置 0 的输出必然等于 $v_0$。如果你的实现里不是，可能错在哪一步？
+4. 动手：把上面代码的 `mask` 换成 `sliding_window(2)` 的矩阵形式，打印位置 3 的权重。哪些位置的权重变成了 0？位置 3 还能（间接）用到位置 0 的信息吗？——这个问题第 07 篇会正式回答。
+
+## 来源
+
+- [Attention Is All You Need](https://arxiv.org/abs/1706.03762) §3.2.1（缩放点积注意力）、§3.2.2（多头）
+- [DeepSeek-V3 参考实现 `model.py`](https://github.com/deepseek-ai/DeepSeek-V3/blob/9b4e9788e4a3a731f7567338ed15d3ec549ce03b/inference/model.py#L479-L492)
+- 下一篇：[02 · KV Cache：缓存什么、要多大](../02-kv-cache/)——消掉重复计算，然后算一笔显存账。

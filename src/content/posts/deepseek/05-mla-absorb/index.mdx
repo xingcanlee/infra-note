@@ -1,0 +1,223 @@
+---
+title: "05 MLA 的两个技巧：解耦 RoPE 与矩阵吸收"
+description: "为什么位置编码必须单独走一条分支，以及上投影的计算为什么可以不花——两件事其实是同一件事。"
+series:
+  id: deepseek
+  order: 7
+pubDate: 2026-11-08
+tags: [MLA, RoPE, KV Cache, DeepSeek]
+category: AI Infra
+toc: true
+---
+
+import AbsorbView from '../../../../explainers/react/AbsorbView';
+
+上一篇把缓存从 40960 个数压到 576 个，但留下两个没回答的问题：
+
+1. 缓存里那段「位置分支」是什么，为什么不能一起压进 latent？
+2. 读取时要把 latent 上投影成 K/V，这笔计算量不是又加回来了吗？
+
+这两个问题的答案是耦合的：**正因为位置编码被单独拎出去，上投影的计算才可以被「吸收」掉。** 读完你能回答解耦 RoPE 到底在解耦什么、矩阵吸收为什么是恒等变形而不是近似、以及为什么 softmax 不能一起吸收。
+
+## 先看一个例子：RoPE 在做什么
+
+先补上位置编码。注意力的打分 $q_t^\top k_s$ 本身不含任何位置信息——把序列打乱，分数完全不变。所以位置必须另外注入。
+
+RoPE（旋转位置编码）的做法是：**把向量按位置旋转一个角度**。取最简单的 2 维情形，位置 $t$ 对应旋转矩阵
+
+$$
+R_t = \begin{bmatrix}\cos t\theta & -\sin t\theta\\ \sin t\theta & \cos t\theta\end{bmatrix}
+$$
+
+把 $q_t$ 和 $k_s$ 各自旋转后再打分，关键性质出现了：
+
+$$
+(R_t q_t)^\top (R_s k_s) = q_t^\top R_t^\top R_s k_s = q_t^\top R_{s-t}\, k_s
+$$
+
+因为旋转矩阵满足 $R_t^\top R_s = R_{s-t}$。**分数只依赖相对位置 $s-t$**，不依赖绝对位置。这正是我们想要的：「前面第 3 个词」这种关系在句子里平移后应该保持不变。
+
+真实实现把 $d_r$ 维每两维配成一对，各对用不同的 $\theta$，所以能同时表达不同尺度的距离。
+
+这个「平移不变」可以直接验证——同样相隔 3 个位置，无论在句子的什么地方，分数都相同（`toy.py` 的输出）：
+
+```
+相对距离 3 的分数在位置 5/9/100 处都是 -0.122813 ✓
+```
+
+## 为什么 RoPE 会破坏吸收
+
+现在看上一篇的内容分支打分。把上投影写进来：
+
+$$
+e_{t,s} = (q_t^{C})^\top k_s^{C} = (q_t^{C})^\top W^{UK}_h c_s
+$$
+
+这个式子有一个关键性质：$W^{UK}_h$ **是个常量矩阵**，和 $t$、$s$ 都无关。所以可以重新结合：
+
+$$
+(q_t^{C})^\top W^{UK}_h c_s = \big((W^{UK}_h)^\top q_t^{C}\big)^\top c_s = \tilde q_t^\top c_s
+$$
+
+先把 $W^{UK}_h$ 乘进 Query，得到一个 $d_c$ 维的 $\tilde q_t$，然后**直接和缓存里的 latent 做内积**——完全不需要把 latent 展开成 K。这就是矩阵吸收。
+
+如果对内容分支也做 RoPE，会发生什么？
+
+$$
+(R_t q_t^{C})^\top (R_s W^{UK}_h c_s) = (q_t^{C})^\top \underbrace{R_t^\top R_s}_{= R_{s-t}} W^{UK}_h c_s
+$$
+
+现在夹在中间的是 $R_{s-t}W^{UK}_h$，**它依赖 $s-t$，也就是依赖当前算的是哪一对位置**。$\tilde q_t$ 不再是一个固定向量：每个历史位置 $s$ 都需要一个不同的折叠结果。吸收失效，只能老老实实把每个 $c_s$ 展开成 $k_s$。
+
+于是 MLA 的设计就被逼出来了——**把需要 RoPE 的部分和需要吸收的部分分开**：
+
+$$
+q_t^h=[\,\underbrace{q_t^{C,h}}_{\text{走 latent，可吸收}};\ \underbrace{q_t^{R,h}}_{\text{带 RoPE}}\,],\qquad
+k_s^h=[\,\underbrace{k_s^{C,h}}_{\text{由 latent 重建}};\ \underbrace{k_s^{R}}_{\text{带 RoPE，所有 head 共享}}\,]
+$$
+
+打分变成两项相加：
+
+$$
+e_{t,s}^h = (q_t^{C,h})^\top W^{UK}_h c_s \;+\; (q_t^{R,h})^\top k_s^{R}
+$$
+
+第一项用吸收，第二项维度很小（$d_r=64$）且 $k_s^R$ 所有 head 共用一份。缓存因此是 $d_c + d_r$：latent 加位置分支，两者都省不掉，但都很窄。
+
+![MLA 把 Query 和 Key 各自拆成内容分支与位置分支：只有位置分支承担 RoPE，内容分支的上投影矩阵与位置无关，因此可以被吸收进 Query](./diagrams/05-decoupled-rope.drawio "图 05-1：解耦 RoPE——内容分支走共享 latent，位置分支单独带旋转")
+
+## 吸收前后的计算顺序
+
+同一个式子的两种结合方式，代价差别很大。动画分别走一遍，注意底部的乘法计数和「是否物化 K」：
+
+<AbsorbView client:visible mode="naive" title="图 05-2a：朴素顺序——每个历史位置都要先展开成 K" />
+
+<AbsorbView client:visible mode="absorb" title="图 05-2b：吸收顺序——先折进 Query，然后直接用 latent 打分" />
+
+两条路径的打分结果**完全相同**（动画里最后一列的数字一致）。差别在于：
+
+| | 每个历史位置的乘法 | 固定成本        | 要物化 K 吗 |
+| --- | --- | --- | --- |
+| 朴素 | $d_k d_c + d_k$ | 0               | 要，$L\times d_k$ 个元素 |
+| 吸收 | $d_c$           | $d_k d_c$（一次） | 不要        |
+
+代入 V3 的 $d_k = 128$（内容分支 `qk_nope_head_dim`）、$d_c = 512$：
+
+$$
+\text{朴素} = L\times(128\times512 + 128) = 65664L,\qquad
+\text{吸收} = 128\times512 + 512L = 65536 + 512L
+$$
+
+`toy.py` 跑出来的实际数字：
+
+```
+L=  4096：朴素    268,959,744 次乘法   吸收    2,162,688 次   124.4×
+L=131072：朴素  8,606,711,808 次乘法   吸收   67,174,400 次   128.1×
+```
+
+$L$ 越大，比值越趋近 $d_k = 128$（因为固定成本 $d_kd_c$ 被摊薄）。直觉上说得通：朴素顺序为每个历史位置都重做一遍上投影，而吸收顺序把上投影只做在「只有一个」的 Query 上——省下的倍数就是「历史有多少个位置共用了这一次投影」。
+
+Value 侧同理。朴素写法是 $o_t=\sum_s \alpha_{t,s}W^{UV}_h c_s$；把常量矩阵提出来：
+
+$$
+o_t^h = W^{UV}_h \underbrace{\Big(\sum_s \alpha_{t,s}^h c_s\Big)}_{z_t^h,\ d_c\ \text{维}}
+$$
+
+先在 latent 空间里加权求和，最后只做一次上投影。同样不需要把 V 展开。
+
+### 为什么 softmax 不能一起吸收
+
+因为吸收依赖的是**线性性**：$(Ax)^\top y = x^\top(A^\top y)$ 这种重结合只对线性运算成立。softmax 含指数和除法，是非线性的：
+
+$$
+\mathrm{softmax}(Ax) \neq A\,\mathrm{softmax}(x)
+$$
+
+所以归一化必须在 logits 上、在两项相加之后执行，不能挪到线性层里去。这也划定了吸收的边界：**只有 softmax 之前的 Key 侧、和 softmax 之后的 Value 侧可以吸收，中间那一步不行**。
+
+## 代码实现
+
+> 完整可运行脚本见文章目录下的 `toy.py`。
+
+```python
+import numpy as np
+
+n_heads, d_c, d_nope, d_rope, d_v, L = 2, 3, 4, 2, 4, 4
+
+rng = np.random.default_rng(0)
+c = rng.normal(size=(L, d_c))              # 缓存里的 latent
+k_pe = rng.normal(size=(L, d_rope))        # 缓存里的位置分支（所有 head 共享）
+q_c = rng.normal(size=(n_heads, d_nope))   # 当前 token 的内容分支 Query
+q_r = rng.normal(size=(n_heads, d_rope))   # 当前 token 的位置分支 Query
+W_uk = rng.normal(size=(n_heads, d_nope, d_c))
+W_uv = rng.normal(size=(n_heads, d_v, d_c))
+
+def naive(h):
+    """先把 latent 展开成 K/V，再按常规注意力算。"""
+    k_c = c @ W_uk[h].T                                  # (L, d_nope) ← 物化出来了
+    v = c @ W_uv[h].T                                    # (L, d_v)
+    e = k_c @ q_c[h] + k_pe @ q_r[h]                      # 两项相加
+    a = np.exp(e - e.max()); a /= a.sum()
+    return a @ v
+
+def absorb(h):
+    """把上投影折进 Query / 折到输出侧，全程不展开 K/V。"""
+    q_tilde = W_uk[h].T @ q_c[h]                          # (d_c,) ← 吸收 Key 侧
+    e = c @ q_tilde + k_pe @ q_r[h]                       # 直接和 latent 内积
+    a = np.exp(e - e.max()); a /= a.sum()
+    z = a @ c                                             # (d_c,) 在 latent 空间里聚合
+    return W_uv[h] @ z                                    # 最后一次上投影 ← 吸收 Value 侧
+
+for h in range(n_heads):
+    assert np.allclose(naive(h), absorb(h)), ' 吸收是恒等变形，结果必须相同'
+print('两条路径逐位相同 ✓')
+```
+
+这段代码是本篇的核心验证：**吸收不是近似，是同一个式子的不同算法**。
+
+一个真实存在的细节：虽然数学上恒等，浮点求和顺序不同会带来末位差异。上面用 `np.allclose` 而不是 `==`。在 FP8/BF16 下这个差异会更明显，所以切换实现路径时不能期待逐位复现，要按容差比较。
+
+### 真实实现在哪
+
+DeepSeek-V3 参考实现（commit `9b4e9788`）把两条路径都写了出来，由 `attn_impl` 选择：
+
+| 内容                | 位置                 | 代码                                                        |
+| ------------------- | -------------------- | ----------------------------------------------------------- |
+| RoPE 频率预计算     | `model.py:297-375`   | 含 YaRN 的长上下文修正，返回 $(seqlen, d_r/2)$ 的复数因子     |
+| 应用旋转            | `model.py:378-393`   | `view_as_complex` 两两配对后乘频率，再还原实数               |
+| Q/K 的解耦切分      | `model.py:465-470`   | `q_nope, q_pe = split(q, [qk_nope_head_dim, qk_rope_head_dim])`；`kv, k_pe = split(wkv_a(x), [kv_lora_rank, qk_rope_head_dim])` |
+| **朴素路径**        | `model.py:476-479`   | `k = cat([k_nope, k_pe.expand(...)])` → 物化完整 K → `einsum("bshd,bthd->bsht")` |
+| **吸收路径（Key）** | `model.py:483`       | `q_nope = einsum("bshd,hdc->bshc", q_nope, wkv_b[:, :qk_nope_head_dim])` ← 把 $W^{UK}$ 折进 Query |
+| 吸收路径的打分      | `model.py:486-487`   | `einsum("bshc,btc->bsht", q_nope, kv_cache) + einsum("bshr,btr->bsht", q_pe, pe_cache)` ← 两项相加 |
+| softmax             | `model.py:490`       | 在两项相加之后，升到 FP32                                   |
+| **吸收路径（Value）** | `model.py:494-495` | `einsum("bsht,btc->bshc", scores, kv_cache)` 先在 latent 空间聚合，再 `einsum("bshc,hdc->bshd", x, wkv_b[:, -v_head_dim:])` |
+
+几点对照：
+
+1. 吸收路径的打分那两个 `einsum` 正好是公式里的两项：`btc` 读的是 `kv_cache`（latent），`btr` 读的是 `pe_cache`（位置分支）。**代码里从来没有出现完整的 K。**
+2. `k_pe.expand(-1, -1, n_local_heads, -1)` 只出现在朴素路径——位置分支本来只有一份，朴素路径为了拼成完整 K 才把它广播到每个 head。吸收路径不需要这次广播。
+3. 吸收路径开头有一句 `weight_dequant`（`model.py:481`）：因为要把 `wkv_b` 当成普通矩阵参与 einsum，FP8 权重必须先反量化。这是吸收在量化模型上的真实成本。
+
+## 代价与边界
+
+- 吸收省掉的是「为每个历史位置重做上投影」和「物化 K/V」。付出的是：$\tilde q$ 的维度是 $d_c$（512）而不是 $d_k$（128），所以打分这一步每个位置读的数变多了——它换来的是不读 $L\times d_k$ 的 K。在 decode（$L$ 很大）时这笔交易划算，prefill 时未必，所以实现里两条路径都保留。
+- 吸收要求上投影矩阵与位置无关。任何把位置相关变换塞进内容分支的改动都会让它失效。
+- 位置分支 $d_r$ 省不掉，而且必须缓存——它是「解耦」的代价。
+- 浮点顺序差异真实存在；量化模型上还要加反量化开销。
+- 本篇所有计算量都是**乘法次数**的理论估计，不是时间。真实收益取决于 kernel、访存和硬件，必须用 profiler 确认。
+
+## 自测
+
+1. 用一句话说明：为什么对内容分支做 RoPE 会让矩阵吸收失效？式子里哪一项变成了与 $(t,s)$ 都有关？
+2. $R_t^\top R_s = R_{s-t}$ 这个性质为什么对「相对位置」很重要？如果用可学习的绝对位置嵌入，吸收还成立吗？
+3. 为什么 softmax 不能被吸收？这给吸收划出了什么边界？
+4. V3 的 $d_k=128$、$d_c=512$。$L=128\text{K}$ 时两条路径的乘法次数各是多少？比值是多少，为什么正好接近 $d_k$？
+5. 动手：在 `toy.py` 里把 `absorb` 的 `q_tilde` 改成对每个历史位置单独折叠（模拟 RoPE 污染内容分支的情形），看乘法次数怎么变。
+
+## 来源
+
+- [DeepSeek-V2 技术报告 §2.1.3（解耦 RoPE）、附录 C](https://arxiv.org/html/2405.04434v5#S2.SS1)
+- [RoFormer: Enhanced Transformer with Rotary Position Embedding](https://arxiv.org/abs/2104.09864)（RoPE 原文）
+- [YaRN: Efficient Context Window Extension](https://arxiv.org/abs/2309.00071)（V3 的频率修正所用方法）
+- [DeepSeek-V3 参考实现 `model.py`](https://github.com/deepseek-ai/DeepSeek-V3/blob/9b4e9788e4a3a731f7567338ed15d3ec549ce03b/inference/model.py#L476-L495)（两条路径的对照）
+- 下一篇：[06 · 稀疏注意力地图](../06-sparse-map/)——表示已经压到底了，下一刀砍在「要读哪些位置」上。

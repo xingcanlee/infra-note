@@ -1,0 +1,188 @@
+---
+title: "02 KV Cache：缓存什么、要多大"
+description: "消掉 decode 的重复计算，然后把显存账本算清楚——这是后面所有压缩工作的起点。"
+series:
+  id: deepseek
+  order: 4
+pubDate: 2026-11-08
+tags: [KV Cache, Decode, AI Infra]
+category: AI Infra
+toc: true
+---
+
+import KVCacheView from '../../../../explainers/react/KVCacheView';
+import CacheBars from '../../../../explainers/react/CacheBars';
+
+上一篇的实现有个明显的浪费：生成第 4 个 token 时，它把前 3 个位置的 Key 和 Value 又算了一遍——而这些值和上一轮**一模一样**。
+
+本篇先消掉这部分重复，然后算一笔账：消掉之后，省下的时间变成了多少显存。读完你能回答：为什么 K/V 能缓存而 Q 不能、缓存大小的公式、以及为什么这个公式让后面十几篇都在想办法把它变小。
+
+## 先看一个例子
+
+回到 $k_s = W^K x_s$ 这个式子。注意右边只有 $x_s$：**位置 $s$ 的 Key 只依赖位置 $s$ 自己**。又因为因果掩码保证 $x_s$ 不会被未来的 token 改写，所以一旦算出来，$k_s$ 和 $v_s$ 永远不变。
+
+| 轮次 | 新 token | 需要的 K/V        | 其中新算的 | 其中与上轮相同 |
+| ---- | -------- | ----------------- | ---------- | -------------- |
+| 1    | 我       | $k_0, v_0$        | 1 个       | 0 个           |
+| 2    | 在       | $k_{0..1}, v_{0..1}$ | 1 个    | 1 个           |
+| 3    | 读       | $k_{0..2}, v_{0..2}$ | 1 个    | 2 个           |
+| 4    | 注意力   | $k_{0..3}, v_{0..3}$ | 1 个    | 3 个           |
+
+不缓存的话，第 $t$ 轮要算 $t$ 个位置的 K/V；缓存之后只算 1 个。生成 $n$ 个 token 的总工作量从 $O(n^2)$ 降到 $O(n)$。
+
+Query 为什么不缓存？因为 $q_t$ 只在第 $t$ 轮用一次——它是「本轮的问题」，下一轮会换成新的问题。K/V 是「历史的答案」，才需要留着。
+
+## 缓存的生命周期
+
+动画走一遍 prefill 建表、decode 读表再追加。注意右侧的账本随行数增长，以及最后一行的对照：**不用缓存时本轮要重算多少个 token**。
+
+<KVCacheView client:visible prefill={2} title="图 02-1：prefill 建表，decode 每轮读全表并追加一行" />
+
+两个阶段的性质完全不同，这个区别会一直用到 vLLM 系列：
+
+| 阶段        | 一次处理         | 计算量         | 瓶颈通常在           |
+| ----------- | ---------------- | -------------- | -------------------- |
+| **prefill** | 整段 prompt      | 随 prompt 长度 | 算力（矩阵乘很大）   |
+| **decode**  | 1 个 token       | 很小且固定     | **显存带宽**（要把整个 cache 读一遍） |
+
+decode 的算术量极小，却要把缓存里所有历史 K/V 从显存搬到计算单元。所以 decode 是**带宽受限**的：缓存越大，每个 token 越慢。这句话是本系列和 vLLM 系列共同的主线——缓存变小既省显存，也直接变快。
+
+## 账本
+
+一个 token 在一层里要存多少个数？每个 head 一份 K（$d_k$ 个数）和一份 V（$d_v$ 个数），共 $n_h$ 个 head：
+
+$$
+\text{每 token 每层} = n_h (d_k + d_v)
+$$
+
+乘上 token 数、层数和每个数的字节数：
+
+$$
+\text{总字节} = n_h (d_k + d_v) \times L \times n_{\text{layers}} \times \text{bytes}
+$$
+
+四个因子里，$n_h$、$d_k$、$d_v$、$n_{\text{layers}}$ 由模型结构定死，`bytes` 由量化决定（BF16 是 2），只有 $L$ 随请求变化。**而且它是线性增长、没有上限的**——这是长上下文服务的核心矛盾：模型权重是固定开销，KV cache 是按请求、按长度累加的开销。
+
+代入一组接近大模型的结构参数感受一下量级——$n_h = 128$、$d_k = d_v = 128$、61 层、BF16：
+
+```python
+def cache_bytes(n_h, d_k, d_v, tokens, layers, dtype_bytes=2):
+    return n_h * (d_k + d_v) * tokens * layers * dtype_bytes
+
+gib = 1024 ** 3
+print(cache_bytes(128, 128, 128, 4096, 61) / gib)        # 15.25
+print(cache_bytes(128, 128, 128, 128 * 1024, 61) / gib)  # 488.0
+```
+
+**一个 4096 token 的请求就要 15.25 GiB，128K 上下文要 488 GiB。** 这还只是一个请求，而且不含模型权重。单卡显存通常是 80 GiB 量级——所以照这个公式做下去，长上下文服务根本无法成立。
+
+接下来十几篇的工作，本质上都是在这个公式的某个因子上做手脚。下面的动画把四种缓存方案放在同一配置下对照。现在只看第一条（MHA），后面两篇会逐条解释其余三条怎么来的：
+
+<CacheBars client:visible nH={8} dK={128} dV={128} nGroups={2} dC={512} dR={64} tokens={4096} layers={61} title="图 02-2：同一配置下四种缓存方案的宽度（后三条是第 03、04 篇的内容）" />
+
+注意这里的对照前提：**同一个 $n_h$ 和 $d_k$**。跨模型比较缓存大小没有意义，因为它们的结构参数不同。
+
+## 代码实现
+
+带缓存与不带缓存的对照，验证两件事：输出完全相同，以及重复计算真的被消掉了。
+
+> 本篇的完整可运行脚本在文章目录下的 `toy.py`，其中的结论都写成了 `assert`。跑 `uv run --with numpy python toy.py` 即可自己验证一遍。
+
+
+```python
+import numpy as np
+
+rng = np.random.default_rng(0)
+d, d_k, n_layers = 8, 4, 2
+W = [{n: rng.normal(size=(d, d_k)) * 0.3 for n in 'qkv'} for _ in range(n_layers)]
+
+def softmax(z):
+    z = z - z.max(-1, keepdims=True)
+    e = np.exp(z)
+    return e / e.sum(-1, keepdims=True)
+
+kv_calls = 0        # 统计 K/V 投影被执行了多少个 token 次
+
+def layer(x_hist, w, cache=None):
+    """x_hist: (t+1, d) 到目前为止的全部 hidden state。返回最后一个位置的输出。"""
+    global kv_calls
+    if cache is None:                       # 无缓存：每轮重算全部历史的 K/V
+        k, v = x_hist @ w['k'], x_hist @ w['v']
+        kv_calls += len(x_hist)
+    else:                                   # 有缓存：只算最后一个位置，追加进去
+        x_new = x_hist[-1:]
+        cache['k'].append(x_new @ w['k'])
+        cache['v'].append(x_new @ w['v'])
+        kv_calls += 1
+        k, v = np.concatenate(cache['k']), np.concatenate(cache['v'])
+    q = x_hist[-1:] @ w['q']                # Query 只要当前位置
+    return softmax(q @ k.T / np.sqrt(d_k)) @ v
+
+def run(n_tokens, use_cache):
+    global kv_calls
+    kv_calls = 0
+    rng2 = np.random.default_rng(42)
+    x = rng2.normal(size=(n_tokens, d))     # 固定输入，保证两种路径可比
+    caches = [{'k': [], 'v': []} for _ in range(n_layers)] if use_cache else None
+    outs = []
+    for t in range(n_tokens):
+        h = x[: t + 1]
+        for li in range(n_layers):
+            o = layer(h, W[li], caches[li] if caches else None)
+        outs.append(o)
+    return np.concatenate(outs), kv_calls
+
+n = 64
+out_no, calls_no = run(n, use_cache=False)
+out_yes, calls_yes = run(n, use_cache=True)
+
+print('输出是否相同：', np.allclose(out_no, out_yes))       # True
+print(f'K/V 投影次数：无缓存 {calls_no}，有缓存 {calls_yes}')
+print(f'理论值：无缓存 n(n+1)/2×层数 = {n * (n + 1) // 2 * n_layers}，有缓存 n×层数 = {n * n_layers}')
+```
+
+输出：
+
+```
+输出是否相同： True
+K/V 投影次数：无缓存 4160，有缓存 128
+理论值：无缓存 n(n+1)/2×层数 = 4160，有缓存 n×层数 = 128
+```
+
+缓存把 $O(n^2)$ 变成 $O(n)$，且**结果逐位相同**（缓存不是近似，是消除重复）。这个「等价性检查」是后面每篇 toy 实现都要做的事：先证明没改变语义，再谈省了什么。
+
+注意这个 toy 为了简洁，第 2 层用了第 1 层的输出做输入的近似写法；真实实现里每层有自己的 hidden state 序列。它只用于说明调用次数的量级差异。
+
+### 真实实现在哪
+
+DeepSeek-V3 参考实现（commit `9b4e9788`）把缓存声明为固定大小的 buffer，按位置切片写入——不是 Python list：
+
+| 内容            | 源码位置            | 形状                                                             |
+| --------------- | ------------------- | ---------------------------------------------------------------- |
+| naive 分支缓存  | `model.py:439-441`  | `k_cache: (max_batch, max_seq_len, n_local_heads, qk_head_dim)`、`v_cache` 同理 |
+| 写入            | `model.py:477-478`  | `self.k_cache[:bsz, start_pos:end_pos] = k`                      |
+| absorb 分支缓存 | `model.py:442-444`  | `kv_cache: (max_batch, max_seq_len, kv_lora_rank)`、`pe_cache: (…, qk_rope_head_dim)` |
+| 写入            | `model.py:484-485`  | 写入归一化后的 latent 与 RoPE 分支                               |
+
+两点值得注意。第一，`start_pos:end_pos` 这个切片写法同时支持 prefill（一次写多行）和 decode（一次写一行），**代码里没有两条分开的路径**。第二，`absorb` 分支缓存的根本不是 K 和 V，而是一个 `kv_cache` 加一个 `pe_cache`——这就是 MLA，第 04 篇的主题。
+
+## 代价与边界
+
+- 缓存把计算换成了显存占用和显存带宽。省下的是重复的投影计算，付出的是「必须一直留着」的空间。
+- 缓存按 $L$ 线性增长且没有上限。服务系统因此要处理：显存放不下时怎么办（抢占、换出）、长度不同的请求怎么拼 batch、空间碎片怎么管理。这些属于运行时问题，是 vLLM 系列的内容。
+- 本篇的账本只算 KV cache，没算模型权重、激活、通信缓冲和框架开销。真实部署里这些都要加上。
+- 公式里的 `bytes` 取决于缓存的量化精度；把缓存量化到 FP8 能再减半，但那是另一条正交的路线（有精度代价），本系列不展开。
+- 「decode 是带宽受限」是对典型配置的结构性判断，不是本机实测。要确认某个部署里的实际瓶颈，必须用 profiler。
+
+## 自测
+
+1. 为什么 K/V 可以缓存而 Q 不行？如果模型不是因果的（能看到未来），缓存还成立吗？
+2. 某模型 $n_h = 128$、$d_k = d_v = 128$、61 层、BF16。一个 4096 token 的请求，KV cache 占多少？换成 128K 上下文呢？
+3. 上题的结果说明：要把缓存降一个数量级，公式里哪些因子**可以**动、哪些**不能**动？
+4. 动手：把上面代码的 `n` 改成 128，看两种路径的调用次数比值怎么变。这个比值趋近于什么？
+
+## 来源
+
+- [DeepSeek-V3 参考实现 `model.py`](https://github.com/deepseek-ai/DeepSeek-V3/blob/9b4e9788e4a3a731f7567338ed15d3ec549ce03b/inference/model.py#L439-L444)（缓存 buffer 的声明与写入）
+- [vLLM PagedAttention 论文](https://arxiv.org/abs/2309.06180)（缓存的空间管理，本系列不展开）
+- 下一篇：[03 · MQA 与 GQA：第一次妥协](../03-mqa-gqa/)——公式里的 $n_h$ 是第一个被动的因子。

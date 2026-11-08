@@ -1,0 +1,197 @@
+---
+title: "21 CSA2：沿第三个维度压缩——层"
+description: "条目、序列都压过了，V4.1 开始跨层共享 KV；Full / Reindex / Reuse 让缓存共享与索引复用分开调。"
+series:
+  id: deepseek
+  order: 23
+pubDate: 2026-11-08
+tags: [CSA2, V4.1, KV Cache, Sparse Attention, FP4]
+category: AI Infra
+toc: true
+---
+
+import LayerModes from '../../../../explainers/react/LayerModes';
+
+第 02 篇那个公式有四个因子，前面各篇已经动过三个：
+
+$$
+\text{KV cache 字节} = \underbrace{(d_c+d_r)}_{\text{04、05 篇}} \times \underbrace{L}_{\text{06–12 篇}} \times \underbrace{n_{\text{layers}}}_{\textbf{本篇}} \times \underbrace{\text{bytes}}_{\textbf{本篇}}
+$$
+
+**剩下两个都在这一篇**：层数和每个数占几个字节。CSA2 跨层共享 KV，FP4 量化压字节宽度。
+
+读完你能回答：三种层 mode 各自复用什么、为什么「缓存共享」和「索引复用」要解耦、以及 890 bytes/token 是怎么来的。
+
+> V4.1-Flash 用的是**纯 CSA2**，不是 V4 的 CSA–HCA 混合（§2.1、§2.3）。第 10、11 篇讲的是 V4。
+
+## 先看一个例子
+
+CSA（第 10 篇）已经沿两个维度压过了：**条目**（每 $m$ 个 token 压成一个）和**序列**（top-$k$ 稀疏选择）。CSA2 加上第三个：**层**。
+
+想法很直接——相邻层的注意力往往看向相似的位置，那么**后面的层能不能直接用前面那层的 KV 和选择结果？**
+
+<LayerModes client:visible title="图 21-1：每层指定一种 mode，缓存与索引分开复用" />
+
+三种 mode（§2.3.1）：
+
+| mode | main KV | indexer K | indexer Q + 打分 | Top-K |
+| --- | --- | --- | --- | --- |
+| **Full** | 本层生成 | 本层投影 | **跑** | 新产生 |
+| **Reindex** | 复用最近 Full 层 | 复用最近 Full 层 | **跑** | 新产生 |
+| **Reuse** | 复用最近 Full 层 | — | 不跑 | 复用最近一次的 |
+
+**三种 mode 都要算本层自己的 main Q 和 SWA KV**——复用的只是 main KV 和 Top-K。
+
+## 为什么要分成三档
+
+如果只有 Full 和 Reuse 两档，那就是「要么全自己算、要么全抄」。Reindex 这一档的存在说明了一件重要的事：
+
+> **「共享缓存」和「共享选择」是两个可以分开的决定。**
+
+Reindex 复用了前一层的 main KV（**不新增缓存**），但用自己的 indexer Q 重新打分——**同一份历史，这一层可以看向不同的位置**。
+
+这为什么有意义？因为缓存和选择的代价来源不同：
+
+- 缓存是**存储**代价，共享它直接减少显存；
+- 打分是**计算**代价，共享它减少 FLOPs，但会让所有层被迫关注同一批位置。
+
+不同层关注不同位置是有价值的（第 01 篇：多头的意义就是同时问几个问题，层间同理）。Reindex 让你**只付存储的那份节省，不牺牲注意力的多样性**。
+
+动画里默认的配置 `Full, Reindex, Reuse, Reuse, Full, Reindex, Reuse, Reuse` 就是这个取舍的体现：
+
+```
+缓存降到 25%（8 层只有 2 份 main KV），indexer 降到 50%（8 层跑 4 次）
+```
+
+两个比例**不一样**——这正是解耦的意义。
+
+## CSA2 相对 CSA 的简化
+
+除了跨层复用，CSA2 还把 CSA 砍掉了几样东西（§2.3）：
+
+| CSA（V4） | CSA2（V4.1） |
+| --- | --- |
+| 相邻压缩条目之间有**重叠**的源条目（第 10 篇式 (11)–(12) 的 $C^a/C^b$ 两套） | **去掉重叠** |
+| 压缩时用**绝对位置嵌入** | **去掉** |
+| indexer K 从 hidden state 走**独立的压缩路径** | **直接从 main KV 投影** |
+
+第三条和跨层共享是配套的：既然 main KV 要跨层共享，那么从它投影出 indexer K 就顺理成章——**共享一份 main KV，就等于同时共享了 indexer K**。CSA 里那条独立路径反而会妨碍复用。
+
+第一条值得一提：第 10 篇讲过重叠是为了「减轻块边界把信息切碎」。CSA2 去掉它，说明在 V4.1 的配置下这个收益不足以抵消复杂度——**论文没有给出去掉重叠的消融对照**，这是我们无法核实的部分。
+
+## Hierarchical Sparse Indexer
+
+跨层复用解决了「每层都要打分」，但还有一个问题：**Full 层自己那次打分仍然要扫全部历史**，是 $O(L)$ 的。
+
+CSA2 的做法（§2.3.2，图 5）：
+
+1. **decoder 的第一个 Full 层**扫描完整因果上下文，按 block 的最大 indexer score 建一个 **candidate pool**；
+2. 后续的 **Reindex 层只在这个 pool 内**重新选 Top-K；
+3. **Reuse 层**继续复用最近的 Top-K。
+
+关键结论：**固定 pool 大小后，后续 indexer 的每 query 打分量与上下文长度无关**。
+
+这正好接上第 09 篇留下的那个问题——DSA 的 Lightning Indexer 虽然常数小，但仍是 $O(L^2)$，序列够长时它自己会变成瓶颈（第 09 篇 toy 的第 ② 组：128K 时 indexer 占总量 88.9%）。**层级化把这个平方项限制在「第一个 Full 层」一次**，后面的层都在固定大小的 pool 里挑。
+
+## FP4：最后一个因子
+
+公式里还剩 `bytes`。V4.1 把 QAT 从 V4 已用的 FP4 indexer query/key 扩展到 **main KV cache**（§2.4.4）：
+
+| 项 | 取值 |
+| --- | --- |
+| 格式 | OCP 标准 **MXFP4** |
+| 数值格式 | **E2M1**（4 bit） |
+| scale | 每 **16 channels** 一个 **E4M3** scale |
+| 第二级 global scale | **省略** |
+| 量化时机 | 在 RoPE **之后** |
+| non-RoPE 与 RoPE 分量 | 同一种量化格式 |
+| **SWA KV** | **仍保留 FP8**（对量化敏感） |
+
+省略 global scale 的理由很具体：省略后格式支持的最大幅值是 $448\times6=2688$，而训练中观察到的最大幅值约为 **10**——离上限差两个数量级，所以不会造成可测的精度下降，同时简化了 cache layout。
+
+**注意最后一行**：SWA KV 对量化敏感，仍用 FP8。又一次印证第 09 篇那条规律的反面——**不是所有东西都能降精度，要看它参与什么**。indexer 的打分只用来排序，可以 FP8 甚至 FP4；SWA KV 直接进加权求和，就不行。
+
+论文没有给出独立的百分比精度下降数字，只说 marginal / no measurable decrease。
+
+## 三件事叠起来
+
+```
+每 token 的 global KV cache ≈ 890 bytes，约为 V4-Flash 的 1/4
+                              ↑ CSA2 跨层复用 + FP4
+
+persistent KV footprint ≈ V4-Flash 的 1/8
+                          ↑ 再加上 CED + SWA Bounded Replay（第 20 篇）
+```
+
+两个数字口径不同：前者是**每 token 的宽度**，后者是**持久存储的总占用**（因为 SWA KV 被移出了 persistent cache）。第 20 篇已经强调过，这里再确认一次。
+
+## 代码实现
+
+> 完整可运行脚本见文章目录下的 `toy.py`，纯 Python。
+
+```python
+def plan_layers(modes):
+    """返回每层的 main KV 来源与 Top-K 来源。"""
+    kv_from, topk_from = [], []
+    last_full = last_topk = None
+    for l, m in enumerate(modes):
+        if m == 'full':
+            last_full = last_topk = l
+            kv_from.append(l); topk_from.append(l)
+        elif m == 'reindex':
+            last_topk = l                      # KV 共享，但自己打分
+            kv_from.append(last_full); topk_from.append(l)
+        else:                                  # reuse
+            kv_from.append(last_full); topk_from.append(last_topk)
+    return kv_from, topk_from
+```
+
+输出：
+
+```
+8 层的三种配置（每层都 Full 则需 8 份 KV、8 次 indexer）
+
+配置                                          KV 份数    indexer 次数
+全 Full                                          8             8
+F,Ri,Ri,Ri,F,Ri,Ri,Ri（只共享缓存）                    2             8
+F,Ri,Re,Re,F,Ri,Re,Re（默认）                       2             4
+F,Re,Re,Re,F,Re,Re,Re（全复用）                      2             2
+
+中间两行 KV 份数相同、indexer 次数不同 —— 缓存共享与索引复用确实是分开的 ✓
+
+层级 indexer：第一个 Full 层建 pool，后续只在 pool 内挑
+  上下文 128K，pool=2048：
+    首个 Full 层打分   131,072 次（O(L)）
+    后续每个 Reindex     2,048 次（与上下文长度无关）
+    8 层共打分 137,216 次；若每层都扫全上下文则要 1,048,576 次（省 86.9%）
+
+FP4 的动态范围：
+  省略 global scale 后最大幅值 448 × 6 = 2688
+  训练中观察到的最大幅值约 10 → 余量 268.8 倍
+```
+
+## 代价与边界
+
+- 跨层共享 KV 意味着**相邻层被迫看同一份历史表示**。Reindex 保住了「看哪里」的自由，但「看到的内容」是共享的——这和第 03 篇 GQA 的取舍是同一类。
+- mode 的分配是**静态**的（每层预先指定），不随输入变化。论文**没有给出分配策略或消融**，默认配置是本文动画为说明问题而设的，不是论文配置。
+- 层级 indexer 的 candidate pool 一旦建错，后续所有 Reindex 层都只能在错的池子里挑。**第一个 Full 层的质量决定上限。**
+- FP4 只用于 main KV；SWA KV 仍是 FP8。论文未给出独立的精度下降百分比。
+- CSA2 去掉了 CSA 的重叠压缩与绝对位置嵌入，**论文没有给出这两处简化的消融对照**。
+- 论文在 §2.3/§2.3.1 **没有给出带编号的 CSA2 注意力数学公式**，其正式定义就是上述 mode 机制加文字描述。本篇不替它补公式。
+- 890 bytes/token（1/4）和 persistent footprint 1/8 是两个口径，不可混用、不可相乘。
+- 本机没有 GPU，本篇所有数字要么是按公式算的，要么是论文数字并标注了条件。
+
+## 自测
+
+1. 三种 mode 分别复用什么、自己算什么？哪一项是三种都要算的？
+2. 为什么需要 Reindex 这一档？只有 Full 和 Reuse 会损失什么？
+3. CSA2 为什么把 indexer K 改成直接从 main KV 投影？这和跨层共享有什么关系？
+4. 层级 indexer 解决了第 09 篇留下的哪个问题？它把 $O(L)$ 的打分限制在哪里？
+5. 为什么 main KV 可以 FP4 而 SWA KV 要保留 FP8？用第 09 篇「打分 vs 加权求和」的区分回答。
+6. 动手：在 `toy.py` 里设计一组 16 层的 mode，要求 KV 份数 ≤ 4 且 indexer 次数 ≤ 8，看看能有几种不同的排法。
+
+## 来源
+
+- [DeepSeek-V4.1-Flash](https://arxiv.org/abs/2609.19969) §2.1（纯 CSA2 概览）、§2.3（相对 CSA 的简化与三维压缩）、§2.3.1（Full / Reindex / Reuse 三种 mode）、§2.3.2 与图 5（Hierarchical Sparse Indexer）、§2.4.4（MXFP4 / E2M1 / E4M3 与动态范围）、摘要与图 1(b)（890 bytes/token、1/4、1/8）
+- 上一篇：[20 · CED](../20-ced/)
+- 回到 [系列首页](../)，或转向 [vLLM 图模式系列](../../vllm-graph/)

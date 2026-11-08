@@ -1,76 +1,164 @@
 ---
-title: "00 图模式先修：一次 decode 到底提交了什么"
-description: "先把请求、调度、kernel 提交、设备执行和 KV cache 串起来，再理解编译图与 CUDA Graph。"
+title: "00 一次 decode 到底提交了什么"
+description: "设备上的计算很小，时间却花掉了——先把 CPU 提交和设备执行这两条车道分开看。"
 series:
   id: vllm-graph
-  order: 1
+  order: 2
 pubDate: 2026-11-08
-tags: [vLLM, Inference, CUDA Graph, ACLGraph]
+tags: [vLLM, Inference, CUDA Graph, Decode]
 category: AI Infra
 toc: true
 ---
 
-import InferenceTimeline from "./InferenceTimeline";
+import SubmitTimeline from '../../../../explainers/react/SubmitTimeline';
 
-这套文章从一个很小的问题开始：**一次 decode 为什么会有“提交开销”**。先把请求在 CPU、调度器和设备之间经过的边界画清楚，再谈编译图、CUDA Graph 或 ACLGraph。没有 GPU/NPU 也能读懂这一层。
+DeepSeek 系列把「模型算什么」讲完了：MLA 压缩表示，稀疏注意力减少读取，MoE 只激活一小部分专家。所有这些都在减少**设备上要做的算术**。
 
-<InferenceTimeline client:visible />
+这一套笔记处理另一层问题：**算术减少之后，时间就会同比减少吗？**
 
-## 先区分 prefill 与 decode
+答案是不会。因为每一个算子都要由 CPU 提交给设备，而提交的次数不会因为算子变小而减少。读完你能回答：一次 decode 的工作怎么分到两条车道上、「提交开销」具体是哪一段、以及为什么它恰好在 decode 阶段最致命。
 
-prefill 把整段输入一次送入模型，工作量随着 prompt 长度增长；decode 每轮通常只生成一个 token，却仍要读历史 KV cache、执行完整层堆栈并写回新 K/V。于是 decode 的设备计算可能很小，但 Python 调度、shape 检查和 kernel launch 的次数并不会随之消失。
+## 先看一个例子
 
-```mermaid
-flowchart LR
-  A["请求与 prompt"] --> B["prefill：建立 KV cache"]
-  B --> C["decode：追加一个 token"]
-  C --> D["读取历史 KV"]
-  D --> E["写回新 KV"]
-  E --> C
+两层 decode，每层 5 个算子。设备执行合计 7.8 个时间单位。假设每次提交要占 CPU 1 个单位：
+
+<SubmitTimeline client:visible mode="eager" title="图 00-1：eager——10 个算子提交 10 次，看下面那条车道的红色虚线段" />
+
+红色虚线段是**设备在空等**：活还没交下来，它只能闲着。这一轮里设备空闲占了 30.4%。
+
+关键在于：**上面那条车道的长度和算子的大小无关**。把模型改小、把注意力做稀疏，下面那条车道会缩短，上面那条纹丝不动。于是算子越小，空闲占比越高。
+
+## 为什么偏偏是 decode
+
+第 02 篇（DeepSeek 系列）已经分过 prefill 和 decode。这里只看提交这一侧：
+
+| | prefill | decode |
+| --- | --- | --- |
+| 一次处理 | 整段 prompt（几百上千 token） | **1 个 token** |
+| 每个算子的设备工作量 | 大（矩阵很大） | **很小** |
+| 算子个数 | 和 decode 一样 | 和 prefill 一样 |
+| 提交开销占比 | 低（被计算掩盖） | **高** |
+
+**算子个数由模型层数决定，和这一轮处理几个 token 无关。** prefill 时每个算子要算几百个 token，提交那点开销被淹没了；decode 时每个算子只算 1 个 token，提交开销就浮上水面。
+
+所以「图模式」这类技术几乎总是在讲 decode。
+
+## 五个边界
+
+一轮请求要穿过五层，不要把它们混成一个：
+
+1. **请求**：新 token、position、采样参数、cache 句柄进入运行时。
+2. **调度器**：把活跃请求合并成一个 batch，决定这一轮的形状。
+3. **CPU 提交**：把算子交给设备——eager 是一个一个交，图模式是一次交一批。
+4. **设备执行**：GPU/NPU 从固定地址读输入，按已确定的顺序执行 kernel。
+5. **写回**：输出和 KV cache 写回，下一轮复用同一批地址。
+
+本系列后面讲的编译图（第 02 篇）作用在第 3 层之前——它决定「有哪些算子要提交」；设备图（第 03 篇）作用在第 3 层——它决定「这些算子要提交几次」。**两者不是一回事**，可以叠加，也可以单独用。
+
+## 图模式消掉了哪一段
+
+把同样 10 个算子换成分段图：能连续捕获的片段打包成一张图，attention 这类捕获不了的算子仍然单独提交。
+
+<SubmitTimeline client:visible mode="piecewise" title="图 00-2：piecewise——5 次提交，空闲段明显变短" />
+
+三种模式的对照（同样 10 个算子、设备合计 7.8、每次逐算子提交花 1、一次图 replay 花 1.2）：
+
+| 模式      | 提交次数 | CPU 总耗时 | 墙钟 | 设备空闲      |
+| --------- | -------- | ---------- | ---- | ------------- |
+| eager     | 10       | 10.0       | 11.2 | 3.4（30.4%）  |
+| piecewise | 5        | 5.6        | 9.1  | 1.3（14.3%）  |
+| full      | 1        | 1.2        | 9.0  | 1.2（13.3%）  |
+
+三点结论：
+
+1. **设备干活的总量完全没变**（都是 7.8）。图模式不改变计算，只改变提交。
+2. 墙钟从 11.2 降到 9.0，降的全部是空闲。
+3. **存在一个下界**：9.0 ≈ 7.8 + 1.2，即「设备工作量 + 第一次提交」。第一次提交永远无法被掩盖。再怎么优化提交，也不可能突破设备本身的工作量。
+
+### 图模式不是无条件更快
+
+把提交开销调便宜（每次 0.2 而不是 1），同一组算子：
+
+| 模式      | 提交次数 | CPU 总耗时 | 墙钟     | 设备空闲     |
+| --------- | -------- | ---------- | -------- | ------------ |
+| eager     | 10       | 2.0        | **8.0**  | 0.2（2.5%）  |
+| piecewise | 5        | 4.0        | 9.0      | 1.2（13.3%） |
+| full      | 1        | 1.2        | 9.0      | 1.2（13.3%） |
+
+**eager 反而最快。** 因为这个设定里一次图 replay 的固定成本（1.2）比 5 次逐算子提交（1.0）还贵，而提交本来就已经被设备计算掩盖了——没有空闲可省，图模式只剩下自己的开销。
+
+这不是玩具模型的怪癖，而是图模式的真实适用条件：**只有当提交开销确实暴露在关键路径上时，它才有收益**。算子足够大、batch 足够大、提交足够便宜的场景里，图模式可能毫无帮助甚至略有损失。所以任何「开了图模式快了多少」的说法，都必须绑定具体的模型、batch 和硬件。
+
+## 代码实现
+
+> 完整可运行脚本见文章目录下的 `toy.py`，不需要 GPU、不需要装 PyTorch。
+
+```python
+def plan(ops, mode, launch_cost=1.0, graph_launch=1.2):
+    """把算子分组成若干次提交，再把 CPU 与设备两条车道排出来。"""
+    if mode == 'eager':
+        groups = [([i], 'op') for i in range(len(ops))]
+    elif mode == 'full':
+        assert not any(o['break'] for o in ops), 'full 要求所有算子都能被捕获'
+        groups = [(list(range(len(ops))), 'graph')]
+    else:                                        # piecewise：在 break 处切开
+        groups, cur = [], []
+        for i, o in enumerate(ops):
+            if o['break']:
+                if cur: groups.append((cur, 'graph'))
+                groups.append(([i], 'op')); cur = []
+            else:
+                cur.append(i)
+        if cur: groups.append((cur, 'graph'))
+
+    cpu = dev = 0.0
+    out = []
+    for idx, kind in groups:
+        cpu_end = cpu + (graph_launch if kind == 'graph' else launch_cost)
+        dev_start = max(dev, cpu_end)            # 设备不能早于提交完成
+        dev_end = dev_start + sum(ops[i]['exec'] for i in idx)
+        out.append((idx, kind, cpu, cpu_end, dev_start, dev_end))
+        cpu, dev = cpu_end, dev_end
+    return out
 ```
 
-图模式针对的是重复提交的路径。它不会替换 attention、改变采样结果，也不会自动减少 padding、通信或显存读写。
+这段 Python 和页面上那个动画是**同一个模型**（动画的 TypeScript 版在 `src/explainers/core/submit.ts`，带单测）。文中的每个数字都可以用 `toy.py` 复现。
 
-## 一轮请求的五个边界
+它只是一个排程模型，**不是性能模拟器**：`exec` 和 `launch_cost` 是示意参数，不对应任何真实硬件。它能说明「哪一段被消掉了」，不能预测任何实际加速比。
 
-1. **请求**：新 token、position、采样参数和 cache 句柄进入运行时。
-2. **调度器**：合并活跃请求，形成 batch descriptor，并决定本轮是否满足某个图桶。
-3. **CPU 提交**：eager 路径逐个调用算子；图路径把固定的设备工作作为一次 replay 提交。
-4. **设备执行**：GPU 或 NPU 读取固定地址中的输入，执行已经捕获的 kernel 序列。
-5. **状态写回**：输出和 KV cache 写回，下一轮复用同一批地址。
+## 真实实现在哪
 
-这五层不能混成一个“图”。编译图描述算子依赖，设备图记录一次设备工作，调度器负责判断当前输入能不能使用这张图。
+vLLM 里对应的概念（本地快照 commit `cf5cea2d`）：
 
-## 三种路径
+| 概念             | 位置                                         | 说明                                                        |
+| ---------------- | -------------------------------------------- | ----------------------------------------------------------- |
+| 编译模式         | `vllm/config/compilation.py:38-51`           | `CompilationMode`：`NONE` / `STOCK_TORCH_COMPILE` / `DYNAMO_TRACE_ONCE` / `VLLM_COMPILE` |
+| 设备图模式       | `vllm/config/compilation.py:129-164`         | `CUDAGraphMode`：`NONE` / `PIECEWISE` / `FULL` / `FULL_DECODE_ONLY` / `FULL_AND_PIECEWISE` |
+| 为什么要分段     | `vllm/config/compilation.py:583-600`         | `splitting_ops` 默认把 attention 列为切分点                 |
+| 官方说明         | `docs/design/cuda_graphs.md`                 | 各模式的语义与取舍                                          |
 
-![工作先提交、kernel 后执行，设备图将多次提交合并为一次 graph launch](./diagrams/00-inference-timeline.drawio "图 00-1：eager 与设备图的提交边界")
+注意 `CUDAGraphMode` 里有 `FULL_DECODE_ONLY` 和 `FULL_AND_PIECEWISE` 两个组合值——这正好印证上面那条结论：**decode 用整图、prefill/mixed 用分段**，因为两个阶段的提交开销占比完全不同。设计里已经把这件事区分开了。
 
-| 路径   | 记录的对象                   | 适合回答的问题                   |
-| ------ | ---------------------------- | -------------------------------- |
-| Eager  | 每个 Python/算子调用         | 逻辑是否正确、形状是否变化       |
-| 编译图 | FX/后端可优化的算子图        | 哪些算子能融合或生成 callable    |
-| 设备图 | 固定地址、形状和 launch 依赖 | 如何重复提交已经准备好的设备工作 |
+## 代价与边界
 
-![编译图和设备图可以分别使用，也可以叠加](./diagrams/00-execution-modes.drawio "图 00-2：编译图与设备图属于不同层次")
+- 图模式省的是提交，不是计算。设备工作量是硬下界。
+- 它要求形状、地址、stream 在重放时保持不变。为此要预先分配固定缓冲区、按 batch 大小准备多个图实例——这些约束是第 03、04 篇的内容。
+- 捕获本身有代价（时间和显存）。图实例越多，启动越慢、显存占用越高。
+- 本文的时间线是示意模型。真实收益必须用 profiler 在固定模型、输入长度、并发和采样设置下对照测量。
+- 本机没有 GPU/NPU，本系列不运行任何设备捕获，也不给实测数字。
 
-编译图可以产生更快的 callable，但不等于已经捕获了设备图；设备图可以包住 eager 产生的固定工作，也不等于完成了编译优化。
+## 自测
 
-## 捕获与重放的限制
+1. 为什么提交开销在 decode 阶段比 prefill 阶段更致命？（提示：算子个数由什么决定）
+2. 图模式把墙钟从 11.2 降到 9.0。为什么不能再低？这个下界由什么决定？
+3. 在什么情况下 eager 反而比图模式快？举出两个会让图模式失去收益的条件。
+4. 编译图和设备图分别作用在五个边界的哪一层？只做其中一个会发生什么？
+5. 动手：在 `toy.py` 里把每个算子的 `exec` 乘以 10（模拟大 batch），重新算三种模式的空闲占比。图模式还值得吗？
 
-捕获前要完成预热、分配稳定的输入/输出缓冲区，并确定流、shape 和内存池。重放时只能更新图允许更新的地址；重新给 Python 变量赋值，不会改变图里保存的设备指针。batch、sequence length、attention 元数据或通信路径变化时，运行时可能选择另一个图桶，或者回退到 eager。
+## 来源
 
-因此“捕获成功”只说明某个 key 建过图，“replay 出现”也只说明采集范围内发生了图提交。端到端收益还要固定模型、软件、输入长度、并发、采样和稳态区间，用 profiler 对照。
-
-## 无设备阅读路线
-
-- 先用 [05 · 无设备练习](../05-dispatch-practice/) 熟悉图桶、padding 和回退。
-- 再看 [01 · 编译图](../01-compile-graphs/)，区分 FX graph 与设备 graph。
-- 最后进入 [02 · CUDA Graph](../02-cuda-graph/) 和 [06 · Ascend 图模式](../06-ascend-graph/)。
-
-## 来源与边界
-
-- [PyTorch CUDA Graph 文档](https://docs.pytorch.org/docs/stable/notes/cuda.html#constraints)
-- [PyTorch CUDA Graph 博客](https://pytorch.org/blog/accelerating-pytorch-with-cuda-graphs/)
-- vLLM 与 vLLM-Ascend 的源码版本、图桶策略和硬件限制见 [parent page](../)。
-
-本文用示意数据解释提交边界，没有 GPU/NPU 实测，也不把图模式当作性能保证。
+- [vLLM CUDA Graphs 设计文档](https://github.com/vllm-project/vllm/blob/main/docs/design/cuda_graphs.md)
+- [vLLM torch.compile 设计文档](https://github.com/vllm-project/vllm/blob/main/docs/design/torch_compile.md)
+- [PyTorch CUDA Graph 文档](https://docs.pytorch.org/docs/stable/notes/cuda.html#cuda-graphs)
+- 源码行号按本地快照 `reference/vllm`（commit `cf5cea2d`）
+- 下一篇：[编译图](../02-compile-graphs/)（尚未按本系列约定重写）——「一个算子被提交」之前，torch.compile 先决定了有哪些算子。

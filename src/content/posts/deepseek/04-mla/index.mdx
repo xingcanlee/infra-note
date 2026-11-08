@@ -1,0 +1,242 @@
+---
+title: "04 MLA：共享一份 latent"
+description: "不再缓存 K 和 V，而是缓存一个所有 head 共享的低维向量——用真实配置算出 71 倍差距是怎么来的。"
+series:
+  id: deepseek
+  order: 6
+pubDate: 2026-11-08
+tags: [MLA, KV Cache, Attention, DeepSeek]
+category: AI Infra
+toc: true
+---
+
+import MLAFlow from '../../../../explainers/react/MLAFlow';
+import CacheBars from '../../../../explainers/react/CacheBars';
+
+上一篇走到了尽头：MQA 把 $n_h$ 压成 1，**只要还按「存 K 和 V」的方式缓存，就不可能比它更省**。而代价是所有 head 被迫共用同一份历史内容。
+
+MLA（Multi-head Latent Attention）的做法是换掉被缓存的对象。一句话：**缓存一份所有 head 共享的低维向量，读取时再用每个 head 自己的矩阵把它展开成那个 head 的 K 和 V。**
+
+读完你能回答：MLA 和 MQA 共享的东西有什么本质不同、为什么「压缩」在这里不等于「有损」、以及 V3 真实配置下 71 倍的差距是怎么算出来的。
+
+## 先看一个例子
+
+取 $d=8$、$d_c=3$、2 个 head、$d_k=d_v=4$。第 0 个 token 的 hidden state 和下投影矩阵：
+
+$$
+x_0 = [1, 0, 2, -1, 0, 1, 1, 0],\qquad
+W^{DKV} = \begin{bmatrix}
+1 & 0 & -1 & 0 & 1 & 0 & 0 & -1\\
+0 & 1 & 0 & 1 & -1 & 0 & 1 & 0\\
+-1 & 0 & 1 & 0 & 0 & 1 & 0 & 1
+\end{bmatrix}
+$$
+
+逐行算（这就是第 00 篇的矩阵乘）：
+
+$$
+\begin{aligned}
+c_0[0] &= 1\cdot1 + 0\cdot0 + (-1)\cdot2 + 0\cdot(-1) + 1\cdot0 + 0\cdot1 + 0\cdot1 + (-1)\cdot0 = -1\\
+c_0[1] &= 0 + 0 + 0 + 1\cdot(-1) + (-1)\cdot0 + 0 + 1\cdot1 + 0 = 0\\
+c_0[2] &= (-1)\cdot1 + 0 + 1\cdot2 + 0 + 0 + 1\cdot1 + 0 + 1\cdot0 = 2
+\end{aligned}
+$$
+
+所以 $c_0 = [-1, 0, 2]$：**8 维压成 3 维，而这 3 个数就是缓存里关于位置 0 的全部内容**（再加一小段位置分支）。
+
+关键区别在下一步。head 0 和 head 1 各有自己的上投影矩阵，从**同一个** $c_0$ 算出**不同的** Key：
+
+$$
+k_0^{h=0} = W^{UK}_0 c_0,\qquad k_0^{h=1} = W^{UK}_1 c_0
+$$
+
+和 MQA 对比一下，差别就清楚了：
+
+| | 共享的是什么 | 每个 head 拿到的 K/V |
+| --- | --- | --- |
+| MQA | **结果**：一份算好的 K/V | 完全相同 |
+| MLA | **原料**：一份压缩表示 | 各不相同（各自上投影） |
+
+MQA 共享成品，MLA 共享半成品。这就是 MLA 能在缓存接近 MQA 的同时保住「每个 head 提取不同侧面」能力的原因。
+
+## 数据流
+
+动画走一遍完整路径。重点看两处：虚线框里的内容（缓存的全部）、以及最后几帧同一个 latent 被两个 head 展开成不同的 K/V：
+
+<MLAFlow client:visible title="图 04-1：MLA 的三步——压缩、入缓存、读取时按 head 重建" />
+
+## 机制
+
+### 形式化
+
+$$
+\begin{aligned}
+c_s^{KV} &= W^{DKV} x_s & &\text{(下投影，所有 head 共享)}\\
+k_s^{C,h} &= W_h^{UK} c_s^{KV} & &\text{(每个 head 自己的 Key)}\\
+v_s^{C,h} &= W_h^{UV} c_s^{KV} & &\text{(每个 head 自己的 Value)}
+\end{aligned}
+$$
+
+缓存里存的是 $c_s^{KV}$（$d_c$ 个数）加一段位置分支（$d_r$ 个数，下一篇解释为什么必须分开）：
+
+$$
+\text{每 token 每层} = d_c + d_r
+$$
+
+和 MHA 的 $n_h(d_k+d_v)$ 相比，**$n_h$ 这个因子彻底消失了**。head 数再多也不增加缓存——这是 MLA 最重要的性质。
+
+### 「压缩」为什么不是「有损」
+
+这是最容易误解的一点。看起来 8 维压成 3 维肯定丢了信息，但注意上投影的复合形式：
+
+$$
+k_s^{C,h} = W_h^{UK}\,W^{DKV} x_s = \big(W_h^{UK}W^{DKV}\big)x_s
+$$
+
+括号里是一个 $d_k\times d$ 的矩阵。也就是说，**从 $x_s$ 到 $k_s^{C,h}$ 整体就是一个线性映射**，和 MHA 的 $W^{K,h}x_s$ 形状完全相同。区别只在于：MHA 的 $n_h$ 个矩阵彼此独立，而 MLA 的 $n_h$ 个矩阵被强制分解成「共享的 $W^{DKV}$ × 各自的 $W_h^{UK}$」，秩不超过 $d_c$。
+
+两个结论随之而来：
+
+1. **给定这套参数，缓存 latent 与缓存 K/V 完全等价**，不是近似——下面的代码会逐位验证这一点。省掉的是「把同一份信息按 head 展开后重复存储」的冗余。
+2. 真正的约束不在推理，而在**模型容量**：$W^{K,h}$ 被限制成低秩分解形式。MLA 不是对训练好的 MHA 做 SVD 压缩，而是从一开始就按这个结构训练的。所以它属于模型结构，不是推理期的后处理技巧。
+
+### 真实配置下的账
+
+DeepSeek-V3 671B 的配置（`inference/configs/config_671B.json`）：
+
+| 字段               | 值   |
+| ------------------ | ---- |
+| `n_layers`         | 61   |
+| `dim`              | 7168 |
+| `n_heads`          | 128  |
+| `kv_lora_rank`     | 512  |
+| `qk_nope_head_dim` | 128  |
+| `qk_rope_head_dim` | 64   |
+| `v_head_dim`       | 128  |
+
+每 token 每层：
+
+$$
+\begin{aligned}
+\text{MLA} &= d_c + d_r = 512 + 64 = 576\\
+\text{若按 MHA 存} &= n_h(d_k + d_v) = 128\times(128{+}64{+}128) = 40960
+\end{aligned}
+$$
+
+$$
+\frac{40960}{576} = \frac{640}{9} \approx 71.1
+$$
+
+换成 BF16 的实际字节（$\times L\times 61\times 2$）：
+
+| 上下文   | MLA 实际缓存 | 若按 MHA 存 | 倍数    |
+| -------- | ------------ | ----------- | ------- |
+| 4096     | 0.268 GiB    | 19.06 GiB   | 71.1×   |
+| 128K     | 8.58 GiB     | 610 GiB     | 71.1×   |
+
+**128K 上下文从 610 GiB 变成 8.58 GiB**——前者任何单机都放不下，后者在一张卡上有余量。这就是 MLA 存在的理由。
+
+论文给的是元素数口径。DeepSeek-V2 技术报告 Table 1 把 MLA 写成 $(d_c + d_h^R)\,l \approx \tfrac{9}{2}d_h l$，并在表注里说明：
+
+> For DeepSeek-V2, $d_c$ is set to $4d_h$ and $d_h^R$ is set to $d_h/2$. So, its KV cache is equal to GQA with only 2.25 groups, but its performance is stronger than MHA.
+
+「**相当于 2.25 组的 GQA，但质量强于 MHA**」——这句话是 MLA 的完整卖点：缓存接近极端共享的水平，质量却没有按共享的代价下降。
+
+（另一个常被引用的数字是 V2 README 里的「KV cache 减少 93.3%」。那是 V2 相对 DeepSeek 67B 的**系统级**比较，涉及两个模型的全部结构差异，不能当作 MLA 对 MHA 的纯维度比。）
+
+四种方案放在一起看（$n_h=8$ 的小配置，所以倍数不如 V3 那么夸张——倍数随 head 数增长）：
+
+<CacheBars client:visible nH={8} dK={128} dV={128} nGroups={2} dC={512} dR={64} tokens={4096} layers={61} title="图 04-2：MLA 与前三种方案的宽度对照" />
+
+## 代码实现
+
+> 完整可运行脚本见文章目录下的 `toy.py`。
+
+```python
+import numpy as np
+
+d, d_c, n_heads, d_k, d_v = 8, 3, 2, 4, 4
+
+x = np.array([1, 0, 2, -1, 0, 1, 1, 0], dtype=float)          # 第 0 个 token
+W_dkv = np.array([[1, 0, -1, 0, 1, 0, 0, -1],
+                  [0, 1, 0, 1, -1, 0, 1, 0],
+                  [-1, 0, 1, 0, 0, 1, 0, 1]], dtype=float)     # (d_c, d)
+W_uk = [np.array([[1, 0, 1], [0, 1, -1], [1, -1, 0], [0, 1, 1]], dtype=float),
+        np.array([[-1, 1, 0], [1, 0, 1], [0, 1, 1], [1, 1, -1]], dtype=float)]  # 每个 (d_k, d_c)
+
+# ① 下投影：缓存里只放这个
+c = W_dkv @ x
+print('c0 =', c)                                   # [-1. 0. 2.]  与正文手算一致
+
+# ② 读取时按 head 上投影
+k0, k1 = W_uk[0] @ c, W_uk[1] @ c
+print('head0 的 Key =', k0)
+print('head1 的 Key =', k1)
+assert not np.allclose(k0, k1), '同一个 latent，不同的 W_uk，得到不同的 Key'
+
+# ③ 等价性：缓存 latent 再上投影 == 直接用复合矩阵算 K（逐位相同，不是近似）
+for h in range(n_heads):
+    W_k_equiv = W_uk[h] @ W_dkv                    # (d_k, d) 等价的 MHA 投影矩阵
+    assert np.allclose(W_uk[h] @ (W_dkv @ x), W_k_equiv @ x)
+
+# ④ 账本：head 数不再影响缓存宽度
+for n_h in (2, 8, 128):
+    print(f'n_h={n_h:>3}：MLA {d_c + 2} 个数，按 MHA 存 {n_h * (d_k + d_v)} 个数')
+```
+
+输出：
+
+```
+c0 = [-1.  0.  2.]
+head0 的 Key = [ 1. -2. -1.  2.]
+head1 的 Key = [ 1.  1.  2.  -3.]
+n_h=  2：MLA 5 个数，按 MHA 存 16 个数
+n_h=  8：MLA 5 个数，按 MHA 存 64 个数
+n_h=128：MLA 5 个数，按 MHA 存 1024 个数
+```
+
+第 ③ 步是本篇最重要的验证：**缓存 latent 不是有损压缩**。第 ④ 步展示了那条性质——MLA 的宽度完全不随 head 数变化。
+
+### 真实实现在哪
+
+DeepSeek-V3 参考实现（commit `9b4e9788`，`inference/model.py`）：
+
+| 概念             | 位置            | 代码                                                                     |
+| ---------------- | --------------- | ------------------------------------------------------------------------ |
+| 下投影 $W^{DKV}$ | `model.py:430-433` | `wkv_a: dim → kv_lora_rank + qk_rope_head_dim`（latent 与位置分支一起出） |
+| latent 归一化    | `model.py:431`  | `kv_norm = RMSNorm(kv_lora_rank)`                                        |
+| 上投影 $W^{UK}, W^{UV}$ | `model.py:433` | `wkv_b: kv_lora_rank → n_heads × (qk_nope_head_dim + v_head_dim)`，**两者合在一个矩阵里** |
+| 切分 latent 与位置分支 | `model.py:468-470` | `kv, k_pe = split(wkv_a(x), [kv_lora_rank, qk_rope_head_dim])`           |
+| 缓存声明         | `model.py:442-444` | `kv_cache: (max_batch, max_seq, kv_lora_rank)`、`pe_cache: (…, qk_rope_head_dim)` |
+| 缓存写入         | `model.py:484-485` | `kv_cache[…] = kv_norm(kv)`、`pe_cache[…] = k_pe.squeeze(2)`              |
+
+三个实现细节值得注意：
+
+1. `wkv_a` 一次产出 latent 和位置分支（宽度 `kv_lora_rank + qk_rope_head_dim`），所以代码里要 `split`。
+2. `wkv_b` 把 $W^{UK}$ 和 $W^{UV}$ 合成一个矩阵，用 `view(n_local_heads, -1, kv_lora_rank)` 之后按 `[:qk_nope_head_dim]` 和 `[-v_head_dim:]` 切开。
+3. **写入缓存的是 `kv_norm(kv)`，归一化之后的值**。所以上投影作用在归一化后的 latent 上；自己实现时顺序错了结果就不对。
+
+另外注意 Query 也有一条低秩路径（`wq_a → q_norm → wq_b`，`model.py:424-430`、`461-465`，V3 的 `q_lora_rank=1536`）。那是为了省**参数和激活**，与缓存无关——Query 不进缓存。两件事不要混。
+
+## 代价与边界
+
+- 省下缓存宽度，付出的是**上投影的计算**：每次读取都要把 latent 展开成 K/V。看起来这把带宽问题换成了算力问题——下一篇说明这笔计算可以通过「矩阵吸收」大部分消掉。
+- $W^{K,h}$ 被限制成低秩分解形式，这是容量上的真实约束。$d_c$ 太小会掉质量，取值要靠训练验证，不能事后调。
+- MLA 必须从头训练（或专门适配），不能把 MHA 权重直接转过来。
+- 位置分支 $d_r$ 是另加的，不能省——下一篇解释为什么 RoPE 迫使它独立存在。
+- 上面 71 倍是**按同一结构参数的维度口径算的**，不含量化、分页、运行时元数据和框架开销；也不是本机实测。论文的质量结论绑定其训练配置。
+
+## 自测
+
+1. MQA 和 MLA 都在「共享」，共享的东西有什么本质不同？为什么 MLA 的 head 还能提取不同侧面？
+2. 为什么说「缓存 latent 与缓存 K/V 等价」？这个等价性的前提是什么（提示：复合矩阵）？
+3. V3 的 $n_h=128$。如果把 head 数翻倍到 256（其他不变），MLA 的缓存宽度变成多少？按 MHA 存呢？
+4. 动手：在 `toy.py` 里把 `d_c` 从 3 改成 1，再看第 ③ 步的等价性断言是否仍然成立。它还成立吗？这说明等价性与 $d_c$ 的大小有关系吗？（再想：那 $d_c$ 影响的到底是什么？）
+
+## 来源
+
+- [DeepSeek-V2 技术报告 §2.1.1–§2.1.4、Table 1](https://arxiv.org/html/2405.04434v5#S2.SS1)（MLA 的提出与缓存对照）
+- [DeepSeek-V3 技术报告](https://arxiv.org/abs/2412.19437)
+- [DeepSeek-V3 参考实现 `model.py`](https://github.com/deepseek-ai/DeepSeek-V3/blob/9b4e9788e4a3a731f7567338ed15d3ec549ce03b/inference/model.py#L424-L497)
+- 配置数字来自本地快照 `reference/DeepSeek-V3/inference/configs/config_671B.json`
+- 下一篇：[05 · MLA 的两个技巧](../05-mla-absorb/)——解耦 RoPE 为什么必需，以及上投影的计算怎么被吸收掉。

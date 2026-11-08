@@ -1,0 +1,201 @@
+---
+title: "18 FlashAttention：公式没变，怎么算变了"
+description: "在线 softmax 让注意力不必物化 L×L 分数矩阵——以及 FA-4 为什么要用 FMA 去模拟指数函数。"
+series:
+  id: deepseek
+  order: 20
+pubDate: 2026-11-08
+tags: [FlashAttention, Kernel, Online Softmax, GPU]
+category: AI Infra
+toc: true
+---
+
+import OnlineSoftmaxView from '../../../../explainers/react/OnlineSoftmaxView';
+
+前面十七篇都在改**算什么**：压缩表示、减少读取、稀疏激活、多猜几个 token。这一篇不改任何数学——**算出来的结果逐位相同**，变的只是**怎么算**。
+
+回到第 01 篇那个朴素实现：它先算出完整的 $L\times L$ 分数矩阵，再 softmax，再乘 V。$L=4096$ 时这个矩阵有 1678 万个元素，要写进显存再读回来。**而注意力的算术量其实不大——时间花在搬运上。**
+
+读完你能回答：在线 softmax 怎么做到不物化分数矩阵、为什么它在数学上是精确的、以及 FA-4 为什么要在 Blackwell 上用加法去模拟指数函数。
+
+## 先看一个例子
+
+softmax 看起来必须先看完整行：要减去最大值，就得先知道最大值；要归一化，就得先知道总和。
+
+**在线 softmax 的技巧是：先用「目前为止的最大值」算，之后发现更大的，再把已有结果补偿回来。**
+
+<OnlineSoftmaxView client:visible title="图 18-1：在线 softmax——8 个分数分 4 块处理，全程只保留 3 个标量" />
+
+注意底部那三个盒子：无论序列多长，**内存里只有 $m$、$\ell$、$O$ 三个标量**（真实实现里 $O$ 是一个 $d$ 维向量）。朴素实现要存 $L$ 个分数，这里是 $O(1)$。
+
+## 机制
+
+### 三个递推式
+
+处理第 $j$ 块（$S_j=QK_j^\top$）：
+
+$$
+\begin{aligned}
+m_j &= \max\big(m_{j-1},\ \mathrm{rowmax}(S_j)\big) & &\text{(更新 running max)}\\
+\ell_j &= e^{m_{j-1}-m_j}\,\ell_{j-1}+\mathrm{rowsum}\big(e^{S_j-m_j}\big) & &\text{(更新 running sum)}\\
+O_j &= e^{m_{j-1}-m_j}\,O_{j-1}+e^{S_j-m_j}V_j & &\text{(更新未归一化输出)}
+\end{aligned}
+$$
+
+最后一次性归一化：$\mathrm{Output}=O_{\rm final}/\ell_{\rm final}$。
+
+关键是那个 $e^{m_{j-1}-m_j}$ **补偿因子**。之前的 $\ell_{j-1}$ 和 $O_{j-1}$ 是按旧的最大值 $m_{j-1}$ 算的；现在最大值变成了 $m_j$，所以要乘 $e^{m_{j-1}-m_j}$ 把它们换算到新基准上。
+
+因为 $m_j\ge m_{j-1}$，这个因子总是 $\le 1$——**只会缩小，不会溢出**。
+
+### 为什么它是精确的
+
+这不是近似。softmax 的平移不变性保证了：
+
+$$
+\frac{e^{x_i-c}}{\sum_j e^{x_j-c}}=\frac{e^{x_i}}{\sum_j e^{x_j}}\qquad\text{对任意 }c
+$$
+
+在线版本只是**在遍历过程中换了几次 $c$**，每换一次就把已有的部分和按比例换算过去。最终的分子分母都等价于用全局最大值算出来的结果。
+
+`toy.py` 里用 `assert` 验证了这一点：**块大小取 1、2、3、4、8 都得到同一个结果**，与朴素实现在 1e-12 容差内相同。
+
+### 省下了什么
+
+| | 朴素实现 | 在线 softmax |
+| --- | --- | --- |
+| 分数矩阵 | 物化 $L\times L$，写显存再读回 | **从不物化**，块内算完就丢 |
+| 中间状态 | $O(L)$ 每行 | **$O(1)$**（三个标量） |
+| 显存读写 | 多次往返 | 一次遍历 |
+| 算术量 | 基本相同 | 基本相同（多了补偿乘法） |
+
+**注意最后一行：在线 softmax 的乘法次数其实略多**（多了补偿因子）。它赢在访存——而注意力本来就是访存受限的。这是贯穿本站两个系列的同一个道理：**决定速度的常常不是算术量，而是数据搬运**（vLLM 系列第 00 篇讲的是另一种搬运：kernel 提交）。
+
+## FlashAttention-4：当硬件失衡时
+
+FA-2 主要沿序列维并行提高占用率，FA-3 针对 Hopper 做 warp specialization。**FA-4 面对的是一个新问题：Blackwell 上各个单元的能力严重失衡。**
+
+| 单元 | B200 | H100 | 倍数 |
+| --- | --- | --- | --- |
+| Tensor core（BF16 MMA） | 8192 ops/clock/SM | 4096 | **2×** |
+| MUFU（算指数的单元） | 16 ops/clock/SM | 16 | **1×** |
+| SMEM 读 | 128 bytes/clock/SM | 128 | **1×** |
+
+矩阵乘快了一倍，**而算指数的单元一点没变**。于是瓶颈从矩阵乘转移到了 softmax 本身——注意力 kernel 里最不起眼的那个 $e^x$。
+
+论文的 roofline（表 1）把这件事量化了：$M=N=d=128$ 的前向，MMA 要 1024 cycles，而 **exp 也要 1024 cycles**——指数运算和矩阵乘一样贵。
+
+### 用加法模拟指数
+
+既然专用的指数单元不够用，就**用富余的 FMA（乘加）单元去算指数**（§3.1.3 式 (4)–(5)）：
+
+$$
+2^x=2^{\lfloor x\rfloor}\cdot 2^{x-\lfloor x\rfloor},\qquad
+2^{x_{\rm frac}}\approx\sum_{i=0}^{n}p_i\,x_{\rm frac}^i
+$$
+
+整数部分直接写进 IEEE754 的指数位（白送），小数部分用 Horner 形式的多项式——**全是 FMA**。于是指数的工作被分摊到 FMA 和 MUFU 两种单元上，绕开了瓶颈。
+
+代价是精度：论文报告 **3 阶多项式在 99% 的输入上误差不超过 1 个 BF16 ULP**（表 2）。
+
+这是一个很能说明问题的设计：**当某个单元成为瓶颈时，可以用另一个单元「换算」过去，哪怕理论上后者并不擅长这件事。**
+
+### 条件重缩放
+
+第二个优化直接作用在上面那三个递推式上。注意补偿因子 $e^{m_{j-1}-m_j}$：如果新块的最大值只比原来大一点点，这个因子接近 1，**那次对整个 $O$ 向量的乘法几乎白做**。
+
+FA-4 的做法（§3.1.4 式 (6)）是加一个阈值 $\tau$：
+
+$$
+O_j=\begin{cases}
+e^{m_{j-1}-m_j}O_{j-1}+e^{S_j-m_j}V_j, & m_j-m_{j-1}>\tau\\[4pt]
+O_{j-1}+e^{S_j-m_{j-1}}V_j, & m_j-m_{j-1}\le\tau
+\end{cases}
+$$
+
+最大值涨得不多时**跳过重缩放**，沿用旧的 $m_{j-1}$ 做指数直接累加。论文取 $\tau=\log_2(256)=8$（以 2 为底）。
+
+为什么安全？因为跳过只是让指数的基准暂时偏低一点，$e^{S_j-m_{j-1}}$ 比 $e^{S_j-m_j}$ 大，但只要差距在 $\tau$ 以内就不会溢出——**用一点数值余量换掉一次向量乘法**。
+
+打开条件重缩放看看（同一组数据）：
+
+<OnlineSoftmaxView client:visible conditional={true} tau={8} title="图 18-2：FA-4 的条件重缩放——注意哪些块被跳过了" />
+
+实现上还有一个细节：为了避免 warp divergence，**只要 warp 里有任一线程需要重缩放，整个 warp 就一起做**。
+
+### 其他两项
+
+- **2-CTA MMA**：同一个 thread-block cluster 里的两个 CTA 协作完成一次 MMA，每个 CTA 只加载 operand B 的一半（$M=256$、$N=K=128$）。反向传播里它把 SMEM 相对 MMA 的超额从约 30% 降到约 5%（表 3）。
+- **Tensor memory（TMEM）**：256 KB/SM 的片上中间结果存储，MMA 可以异步直接写进去，缓解寄存器压力、支持更大的 tile。
+
+## 代码实现
+
+> 完整可运行脚本见文章目录下的 `toy.py`。本站的 TypeScript 版（动画用的同一份）在 `src/explainers/core/online-softmax.ts`，带单测。
+
+```python
+def online_softmax_dot(scores, values, block_size, tau=None):
+    """分块遍历，只保留 m / l / o 三个标量。tau 不为 None 时启用 FA4 的条件重缩放。"""
+    m, l, o = float('-inf'), 0.0, 0.0
+    for b in range(0, len(scores), block_size):
+        s, v = scores[b:b + block_size], values[b:b + block_size]
+        prev_m, new_m = m, max(m, max(s))
+        grew = float('inf') if prev_m == float('-inf') else new_m - prev_m
+
+        if tau is None or grew > tau:                    # 重缩放
+            scale = 0.0 if prev_m == float('-inf') else math.exp(prev_m - new_m)
+            l = scale * l + sum(math.exp(x - new_m) for x in s)
+            o = scale * o + sum(math.exp(x - new_m) * vi for x, vi in zip(s, v))
+            m = new_m
+        else:                                            # 跳过重缩放
+            l += sum(math.exp(x - prev_m) for x in s)
+            o += sum(math.exp(x - prev_m) * vi for x, vi in zip(s, v))
+    return o / l                                         # 只归一化一次
+```
+
+输出：
+
+```
+朴素实现（先物化整行）                 = 6.119585
+在线 softmax（块大小 1）           = 6.119585   ✓  峰值只存 3 个标量
+在线 softmax（块大小 2）           = 6.119585   ✓
+在线 softmax（块大小 3）           = 6.119585   ✓
+在线 softmax（块大小 8）           = 6.119585   ✓
+条件重缩放（τ=8）                  = 6.119585   ✓  重缩放 1 次，跳过 3 次
+
+分数全部 +1000（测溢出）：
+  朴素实现（不减最大值）→ OverflowError
+  在线 softmax          → 6.119585   ✓ running max 保证了稳定性
+
+显存：L=4096 时
+  朴素：物化 4096×4096 = 16,777,216 个分数
+  在线：3 个标量（输出向量另算）
+  比值：5,592,405 倍
+```
+
+中间那段值得注意：**在线 softmax 不只是省显存，它本身就是数值稳定的**——running max 扮演了第 01 篇那个「先减去最大值」的角色，而且是增量地做。不减最大值的朴素实现在 +1000 后直接 `OverflowError`，而在线版本结果不变（softmax 的平移不变性）。
+
+## 代价与边界
+
+- 在线 softmax 省的是**访存**，不是算术。它的乘法次数略多于朴素实现。
+- 本篇的 toy 是单行标量版，真实 kernel 要同时处理一个 tile 的多行、多头，并把 Q/K/V 的分块载入 SRAM——那部分才是工程难点，本篇没有展开。
+- 条件重缩放用数值余量换计算。$\tau$ 取大了会让 $e^{S_j-m_{j-1}}$ 接近溢出，$\tau=8$（以 2 为底）是论文在 BF16 下的选择，换精度要重新评估。
+- FA-4 的所有优化都**绑定 Blackwell 的硬件特性**。那张失衡表换一代硬件就不成立——论文也提到 B300/GB300 的 MUFU 翻倍到 32，届时模拟指数的必要性会下降。
+- 性能数字的条件（§5）：单张 B200、BF16、hidden dimension 2048、序列 1k–32k、batch 调整到总 token 数 32k。**FA-3 在 B200 上跑不起来，所以没有 FA-3 的对照曲线。**
+- **本机没有 GPU，本篇没有运行任何 kernel**。1.3× cuDNN 9.13、2.7× Triton、1613 TFLOPs/s（约理论峰值 71%）都是论文数字，不是本地实测。
+
+## 自测
+
+1. 在线 softmax 是近似还是精确？用 softmax 的哪条性质解释？
+2. 补偿因子 $e^{m_{j-1}-m_j}$ 为什么总是 $\le 1$？这对数值稳定性意味着什么？
+3. 在线 softmax 的算术量比朴素实现多还是少？那它为什么更快？
+4. 为什么 FA-4 要用 FMA 去模拟 $2^x$？从 B200 那张失衡表解释。
+5. 条件重缩放跳过了什么？它用什么换什么？$\tau$ 取太大会怎样？
+6. 动手：在 `toy.py` 里把 $\tau$ 从 8 调到 100，看跳过次数和结果误差怎么变。什么时候结果开始不对？
+
+## 来源
+
+- [FlashAttention](https://arxiv.org/abs/2205.14135)（分块与在线 softmax 的原始工作）
+- [FlashAttention-4](https://arxiv.org/abs/2603.05451) §2.2（Blackwell 的单元失衡数字、TMEM、2-CTA）、§3.1.2（ping-pong pipeline）、§3.1.3 式 (4)–(5)（模拟指数，表 2 的误差）、§3.1.4 式 (6)（条件重缩放）、§3.2.3（2-CTA backward）、§5（benchmark 条件与结果）
+- 本站实现：`src/explainers/core/online-softmax.ts`（含单测，动画与文章共用）
+- 上一篇：[17 · DSpark](../17-dspark/)
+- 下一篇：[19 · 一次 decode 的全链路](../19-full-path/)——把 00–18 串成一条路径。

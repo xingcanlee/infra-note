@@ -1,0 +1,189 @@
+---
+title: "06 无设备练习：自己写一遍选路"
+description: "六道练习题，从桶匹配到回退诊断，全部在 CPU 上用纯 Python 完成。"
+series:
+  id: vllm-graph
+  order: 8
+pubDate: 2026-11-08
+tags: [vLLM, Practice, CUDA Graph, Dispatch]
+category: AI Infra
+toc: true
+---
+
+import BucketDispatch from '../../../../explainers/react/BucketDispatch';
+
+前面五篇都是在读。这一篇动手——把选路逻辑自己写一遍，并且亲手制造几次回退。
+
+**不需要 GPU/NPU，不需要装 PyTorch、CUDA 或 CANN。** 全部用纯 Python。练习文件在文章目录下的 `exercises.py`，参考实现在 `toy.py`。
+
+```bash
+uv run python exercises.py      # 跑练习，未完成的会提示
+uv run python toy.py            # 参考实现与全部断言
+```
+
+## 为什么值得自己写一遍
+
+读源码时很容易产生「我懂了」的错觉。但下面这些问题，不自己写一遍很难答对：
+
+- batch 是 5，桶有 `[2, 4, 8]`，命中哪个？padding 多少？
+- 同一个 batch，LoRA 数从 0 变成 1，还能命中吗？
+- 桶上限 8，来了个 batch 9，会发生什么？**会报错吗？**
+
+## 练习一：实现兼容性检查
+
+把第 05 篇那六项条件写出来。这是全部练习的基础。
+
+```python
+def is_compatible(desc, req):
+    """desc: 一张已捕获的图；req: 本轮 batch。返回 True/False。
+
+    六项条件（顺序与 vLLM 源码一致）：
+      1. desc.uniform_token_count 为 None，或与 req 相等
+      2. desc.max_query_len 为 None，或（req 的不为 None 且 desc 的 >= req 的）
+      3. desc.num_reqs 为 None，或 >= req.num_reqs
+      4. desc.num_tokens >= req.num_tokens
+      5. desc.num_active_loras == req.num_active_loras      ← 相等，不是 >=
+      6. desc.num_ubatches == req.num_ubatches              ← 相等，不是 >=
+    """
+    raise NotImplementedError
+```
+
+**陷阱**：第 2 条不是简单的 `>=`。源码注释写着「a caller that does not track max_query_len must not match one that does」——图有约束而调用方传 `None` 时，**不能匹配**。
+
+## 练习二：实现 dispatch
+
+```python
+def dispatch(graphs, req):
+    """按顺序找第一个兼容的图；都不兼容时返回 eager 描述符（cg_mode='NONE'）。"""
+    raise NotImplementedError
+```
+
+**陷阱**：是「第一个够大的」，不是「最接近的」，也不是「最大的」。所以候选的顺序会影响 padding——这正是源码把 decode 图插到队首的原因。
+
+## 练习三：算 padding 浪费
+
+```python
+def padding_waste(desc, req):
+    """返回 (浪费的 token 数, 浪费比例)。回退 eager 时浪费为 0。"""
+    raise NotImplementedError
+```
+
+想清楚：**回退时 padding 为什么是 0？** （eager 按真实形状跑，不需要对齐到任何桶。所以回退虽然慢，却没有算力浪费——它是另一种代价。）
+
+## 练习四：制造三种回退
+
+写出三个 batch，分别因为**不同的条件**回退：
+
+| 练习 | 要触发的条件 |
+| --- | --- |
+| 4a | 条件 4（token 容量不够） |
+| 4b | 条件 5（LoRA 数不等） |
+| 4c | 条件 1（非统一批次配 decode 图） |
+
+跑完观察一件事：**三次回退，程序都没有报错**，返回的都是合法的 `cg_mode='NONE'` 描述符。
+
+## 练习五：设计桶
+
+给定一个 batch 分布，选一套桶使「平均 padding 浪费」最小，同时图的数量不超过 8。
+
+```python
+WORKLOAD = (
+    [1] * 600 +            # 60% 是单请求 decode
+    [2] * 150 + [3] * 80 + [4] * 60 +
+    [8] * 50 + [16] * 30 + [32] * 20 + [64] * 10
+)
+
+def choose_buckets(workload, max_graphs=8):
+    """返回一个桶列表（升序）。目标：命中率高、padding 少、图不超过 max_graphs。"""
+    raise NotImplementedError
+```
+
+`toy.py` 的参考实现对照了三套方案：
+
+```
+workload：1000 轮，60% 是 batch=1，长尾到 64
+
+方案                               图数      命中率     平均 padding 浪费
+均匀 [8,16,24,32,40,48,56,64]       8   100.0%             71.8%
+2 的幂 [1,2,4,8,16,32,64]           7   100.0%              2.0%
+贴着分布 [1, 2, 3, 4, 8, 16, 32, 64]    8   100.0%              0.0%
+```
+
+**均匀分桶是最差的**：60% 的请求是 batch=1，却被 padding 到 8，白算 87.5%——平均浪费高达 71.8%。而贴着实际分布选桶，用同样 8 张图把浪费压到 0（因为桶恰好落在实际出现的 batch 上）。
+
+三套方案的命中率都是 100%，差别**全在 padding**。这说明选桶时「能不能命中」往往不是难点，「命中之后浪费多少」才是。
+
+这就是「小 batch 密、大 batch 疏」的来由：**桶应该贴着负载的分布，而不是贴着数轴**。
+
+## 练习六：从日志诊断回退
+
+给一段模拟日志，判断回退原因：
+
+```
+iter 1041  reqs=3  tokens=3   uniform=True   loras=0  → FULL(4)
+iter 1042  reqs=3  tokens=3   uniform=True   loras=1  → NONE
+iter 1043  reqs=5  tokens=37  uniform=False  loras=0  → PIECEWISE(64)
+iter 1044  reqs=9  tokens=9    uniform=True   loras=0  → NONE
+```
+
+问：1042 和 1044 分别因为哪一条回退？（答案在 `toy.py` 里。）
+
+这是最接近真实排错的一道题。实际服务中你拿到的就是这种表格——**没有「原因」那一列，要自己对照条件推**。
+
+<BucketDispatch
+  client:visible
+  graphs={[
+    { cgMode: 'FULL', numTokens: 1, numReqs: 1, uniformTokenCount: 1, maxQueryLen: 1 },
+    { cgMode: 'FULL', numTokens: 2, numReqs: 2, uniformTokenCount: 1, maxQueryLen: 1 },
+    { cgMode: 'FULL', numTokens: 4, numReqs: 4, uniformTokenCount: 1, maxQueryLen: 1 },
+    { cgMode: 'FULL', numTokens: 8, numReqs: 8, uniformTokenCount: 1, maxQueryLen: 1 },
+  ]}
+  req={{ numReqs: 9, numTokens: 9, uniformTokenCount: 1, maxQueryLen: 1 }}
+  title="图 06-1：练习六的 iter 1044——九个请求，最大的桶只有 8"
+/>
+
+## 参考实现的输出
+
+```
+练习一～三：
+  batch 5/5 统一 → 命中 FULL(8)，padding 3 token (37.5%)
+  batch 9/9 统一 → 回退 eager，padding 0（eager 按真实形状跑）
+
+练习四：三种回退，没有一个报错
+  4a token 容量不够   → NONE
+  4b LoRA 数不等      → NONE
+  4c 非统一批次       → NONE
+
+练习五：见上表
+
+练习六：
+  iter 1042 → 条件 5：LoRA 数不等（图捕获时 loras=0，本轮 loras=1）
+  iter 1044 → 条件 4：token 容量不够（最大的桶是 8，本轮 9）
+```
+
+## 做完之后，检查这几件事
+
+1. 你的 `is_compatible` 对「图有 `max_query_len` 而调用方传 `None`」返回 False 了吗？
+2. 你的 `dispatch` 返回的是第一个兼容的，还是你排序后挑的「最合适」的？
+3. 回退时 padding 是 0 吗？想清楚为什么。
+4. 练习五里，你的桶是贴着分布还是贴着数轴？
+5. 三次回退都没报错——你能说出在真实服务里怎么才能发现它们吗？
+
+## 代价与边界
+
+- 这些练习只复刻**匹配逻辑**。真实系统还要处理捕获时机、显存、内存池、attention 后端的支持级别、DP/TP 的协调——那些都不在这里。
+- `WORKLOAD` 是人造分布。真实负载要自己采样，而且会随时间变化（白天和夜里的 batch 分布可能完全不同）。
+- 练习里的「padding 浪费」只算 token 数，不等于实际算力浪费：padding 的位置也要过完整的模型层。
+- 本机没有 GPU/NPU，这里不运行任何真实捕获，也不给时间数字。
+
+## 下一步
+
+做完这六题，你已经能读懂 vLLM 里和图模式相关的大部分配置与日志了。剩下两篇：
+
+- [Ascend 图模式](../07-ascend/)：同一套抽象换到 ACLGraph / TorchAir 上长什么样。
+- [排错](../08-debugging/)：真实服务里日志显示回退、捕获失败或变慢时，按什么顺序查。
+
+## 来源
+
+- 匹配逻辑对照本地快照 `reference/vllm`（commit `cf5cea2d`）的 `vllm/v1/worker/gpu/cudagraph_utils.py:115-142`
+- 上一篇：[05 · vLLM 选路](../05-dispatch/)
