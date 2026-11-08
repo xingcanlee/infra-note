@@ -2,6 +2,210 @@
   "version": 1,
   "generator": "wisp-diagram@1",
   "entries": {
+    "src/content/posts/deepseek/01-attention-kv-cache/diagrams/01-attention-kv-cache.drawio": {
+      "source": "sha256-61ab5ce9fcdc47b016e5164659468c6184c7645401d135abac1a4e3be3f71acd",
+      "style": "clean",
+      "exporter": "drawio-cli",
+      "embedFonts": false,
+      "outputs": {
+        "src/content/posts/deepseek/01-attention-kv-cache/diagrams/01-attention-kv-cache.wisp.svg": "sha256-fafb2b1bcf07cf817482c953b0b5f9e3d1c9b887ff0cc1ec3b4434e7b97897eb"
+      },
+      "pages": [
+        "基础与符号：从标准注意力到 KV Cache"
+      ]
+    },
+    "src/content/posts/deepseek/02-mla/diagrams/02-mla.drawio": {
+      "source": "sha256-c70c7353a120807a6c315c41b3fac2a1390fa04b3273c334cb6fc885d17ed7f8",
+      "style": "clean",
+      "exporter": "drawio-cli",
+      "embedFonts": false,
+      "outputs": {
+        "src/content/posts/deepseek/02-mla/diagrams/02-mla.wisp.svg": "sha256-2a148fdaf7b45424ae839c54faebc9a2fba7be8ae2ccd6e43722a937ff89754f"
+      },
+      "pages": [
+        "MLA：联合压缩、矩阵吸收与解耦 RoPE"
+      ]
+    },
+    "src/content/posts/deepseek/03-nsa/diagrams/03-nsa.drawio": {
+      "source": "sha256-5d7a678c5c96d6f718cf716080bed1179097bc5a5846a509fd5000b1f5c94a11",
+      "style": "clean",
+      "exporter": "drawio-cli",
+      "embedFonts": false,
+      "outputs": {
+        "src/content/posts/deepseek/03-nsa/diagrams/03-nsa.wisp.svg": "sha256-0e24a4cb751de5d5284afaea5175da4dbfc3210b35d392a8587ee66a82d0a8c1"
+      },
+      "pages": [
+        "NSA：压缩、选块与窗口的三分支注意力"
+      ]
+    },
+    "src/content/posts/deepseek/04-dsa/diagrams/04-dsa.drawio": {
+      "source": "sha256-2e56e82ff961f8e21d1ae84e6944cfbb99941314f6de4e3c45abaaef6f9dff76",
+      "style": "clean",
+      "exporter": "drawio-cli",
+      "embedFonts": false,
+      "outputs": {
+        "src/content/posts/deepseek/04-dsa/diagrams/04-dsa.wisp.svg": "sha256-ace1f09016b9769500ebac2d15ff7c1a9cab43c61fc82c7f3889e41e76d98745"
+      },
+      "pages": [
+        "DSA：Lightning Indexer 与稀疏 MLA"
+      ]
+    },
+    "src/content/posts/deepseek/05-csa/diagrams/05-csa.drawio": {
+      "source": "sha256-632a6203891ec16a94fc195e44220b1c3e8c4ecf514c1136a56ad26086805630",
+      "style": "clean",
+      "exporter": "drawio-cli",
+      "embedFonts": false,
+      "outputs": {
+        "src/content/posts/deepseek/05-csa/diagrams/05-csa.wisp.svg": "sha256-b9d29b920330d8784ac0b7903e85be371434095be73d992bd78e34362d212f7b"
+      },
+      "pages": [
+        "CSA：重叠压缩与块级稀疏选择"
+      ]
+    },
+    "src/content/posts/deepseek/06-hca/diagrams/06-hca.drawio": {
+      "source": "sha256-a430e8a2f2e81cb11a397ecbd23603890f9c28f3800b76034d96161cbd1bb7b3",
+      "style": "clean",
+      "exporter": "drawio-cli",
+      "embedFonts": false,
+      "outputs": {
+        "src/content/posts/deepseek/06-hca/diagrams/06-hca.wisp.svg": "sha256-c13b3f3ae7202f628ec2cd2f818752bbfeaff6390e3007ade626677d4d48f40c"
+      },
+      "pages": [
+        "HCA：重度压缩与逐层混合注意力"
+      ]
+    },
+    "src/content/posts/deepseek/07-swa/diagrams/07-swa.drawio": {
+      "source": "sha256-96bb66926dcd8ff19aa79e8acf72e96c54b4e49b5f1fcba93eaf73b442d1b9fe",
+      "style": "clean",
+      "exporter": "drawio-cli",
+      "embedFonts": false,
+      "outputs": {
+        "src/content/posts/deepseek/07-swa/diagrams/07-swa.wisp.svg": "sha256-4610382bbce44d30727037a1afd235aa110b5682c82c93171c2a501c104eab89"
+      },
+      "pages": [
+        "SWA：固定窗口局部注意力与层内组合"
+      ]
+    },
+    "src/content/posts/deepseek/08-attention-comparison/diagrams/08-attention-comparison.drawio": {
+      "source": "sha256-6666cb54b9bbaa2cb982ed2cc160f6bb762a13f73b746f68ebc76249f1416fd0",
+      "style": "clean",
+      "exporter": "drawio-cli",
+      "embedFonts": false,
+      "outputs": {
+        "src/content/posts/deepseek/08-attention-comparison/diagrams/08-attention-comparison.wisp.svg": "sha256-5600729d0967f25ce4017b54394e3c24117ca4f86f66fb58e6bbdb3149c3979f"
+      },
+      "pages": [
+        "MLA、NSA、DSA、CSA、HCA、SWA 对照与常见误解"
+      ]
+    },
+    "src/content/posts/deepseek/09-experiments/diagrams/09-experiments.drawio": {
+      "source": "sha256-df8de8c825db10da63e90bdf7798ba807e769213cec3cd85a278eece5e86ed42",
+      "style": "clean",
+      "exporter": "drawio-cli",
+      "embedFonts": false,
+      "outputs": {
+        "src/content/posts/deepseek/09-experiments/diagrams/09-experiments.wisp.svg": "sha256-69553121d07ac076bbfd9897f65902b3c8f7f5107dff26c39f8f2a114dc7bcde"
+      },
+      "pages": [
+        "代码与实验：原始脚本、验证结果与实现边界"
+      ]
+    },
+    "src/content/posts/deepseek/10-deepseek-moe/diagrams/10-deepseek-moe.drawio": {
+      "source": "sha256-4ca3e79529089204665ffe82fcae121895b15bb5f5354e446731277c135387d3",
+      "style": "clean",
+      "exporter": "drawio-cli",
+      "embedFonts": false,
+      "outputs": {
+        "src/content/posts/deepseek/10-deepseek-moe/diagrams/10-deepseek-moe.wisp.svg": "sha256-6732b3223301121ae8b545bf6f669769c35873119f167a7b3de2af1c9e375882"
+      },
+      "pages": [
+        "DeepSeekMoE：细粒度专家、路由与负载均衡"
+      ]
+    },
+    "src/content/posts/deepseek/11-mtp/diagrams/11-mtp.drawio": {
+      "source": "sha256-7acd0ad6e0dbe3c894a5ff586c66f0ea72dd838b541003356c4c77db54b2ee4f",
+      "style": "clean",
+      "exporter": "drawio-cli",
+      "embedFonts": false,
+      "outputs": {
+        "src/content/posts/deepseek/11-mtp/diagrams/11-mtp.wisp.svg": "sha256-e1a91729644ccc64847d5ffde63dcffe0d9b11907a9761b193c77b2df62b3fac"
+      },
+      "pages": [
+        "MTP：顺序多 token 预测与推测解码"
+      ]
+    },
+    "src/content/posts/deepseek/12-engram/diagrams/12-engram.drawio": {
+      "source": "sha256-8652d8b0055ca569d493b3982d795b15b6363d4b17659420d0ef6139d107b389",
+      "style": "clean",
+      "exporter": "drawio-cli",
+      "embedFonts": false,
+      "outputs": {
+        "src/content/posts/deepseek/12-engram/diagrams/12-engram.wisp.svg": "sha256-959bd8839489fea222a0bc0c0c43cb38cc122ac9cd8d82862b7e17750166d2f6"
+      },
+      "pages": [
+        "Engram：条件记忆、N-gram 检索与 V4.1 集成"
+      ]
+    },
+    "src/content/posts/deepseek/13-mhc/diagrams/13-mhc.drawio": {
+      "source": "sha256-786b0792bf3e3653dcc5f5cf3d2414ab7be734620697fea4626c1878ba067486",
+      "style": "clean",
+      "exporter": "drawio-cli",
+      "embedFonts": false,
+      "outputs": {
+        "src/content/posts/deepseek/13-mhc/diagrams/13-mhc.wisp.svg": "sha256-73f72c70ab3efcbaf444febf3a5cc3df75a52c698ef12d16446821e4a502ab92"
+      },
+      "pages": [
+        "mHC：多流残差、双随机约束与 Single-Pass"
+      ]
+    },
+    "src/content/posts/deepseek/14-dspark/diagrams/14-dspark.drawio": {
+      "source": "sha256-2a555280cdb296654e72fbdeec89832756268ebeacd117a24809f33dd8410cbf",
+      "style": "clean",
+      "exporter": "drawio-cli",
+      "embedFonts": false,
+      "outputs": {
+        "src/content/posts/deepseek/14-dspark/diagrams/14-dspark.wisp.svg": "sha256-33623a74cd9243759c7e5a1076677ba70c8678d62e1e81e50bba4f4ccdca3685"
+      },
+      "pages": [
+        "DSpark：半自回归草稿与置信度调度"
+      ]
+    },
+    "src/content/posts/deepseek/15-ced/diagrams/15-ced.drawio": {
+      "source": "sha256-e3827d17eb92a61d8b6b93315c3fdcd42b74bda0aa7ae7a1a291fd0e46bd26d4",
+      "style": "clean",
+      "exporter": "drawio-cli",
+      "embedFonts": false,
+      "outputs": {
+        "src/content/posts/deepseek/15-ced/diagrams/15-ced.wisp.svg": "sha256-464e661c44a0a88ccdb441023fb49cc08b7564ac2956c3b195d4ce1565bf88bf"
+      },
+      "pages": [
+        "CED：因果编码解码、全局 KV 与窗口重放"
+      ]
+    },
+    "src/content/posts/deepseek/16-csa2/diagrams/16-csa2.drawio": {
+      "source": "sha256-9874ce3f8451da6a4f7c8cedd16aa06fc25138be94d91c5b018dae1225800bc4",
+      "style": "clean",
+      "exporter": "drawio-cli",
+      "embedFonts": false,
+      "outputs": {
+        "src/content/posts/deepseek/16-csa2/diagrams/16-csa2.wisp.svg": "sha256-db4ba597b1677b32d8434e6248afc11c9cccd6dc5d439a5b2043bc49a2640314"
+      },
+      "pages": [
+        "CSA2：跨层 KV 共享、索引复用与层级检索"
+      ]
+    },
+    "src/content/posts/deepseek/17-flash-attention/diagrams/17-flash-attention.drawio": {
+      "source": "sha256-57a419cd024e4920785aa9a0bde9ef7370c57d602a511d0cbd99230ff175c700",
+      "style": "clean",
+      "exporter": "drawio-cli",
+      "embedFonts": false,
+      "outputs": {
+        "src/content/posts/deepseek/17-flash-attention/diagrams/17-flash-attention.wisp.svg": "sha256-bf496bdae22763d09126d02e44f50f58ad128faebd6561ee3d2f027c41416701"
+      },
+      "pages": [
+        "FlashAttention：分块精确注意力、在线 softmax 与 GPU 实现"
+      ]
+    },
     "src/content/posts/vllm-graph/00-inference-overhead/diagrams/00-execution-modes.drawio": {
       "source": "sha256-905e330b58e58947db52f17790c7a816688f5603a921d5b353be85ed39b25bf3",
       "style": "clean",

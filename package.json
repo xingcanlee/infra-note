@@ -47,10 +47,14 @@
   "devDependencies": {
     "@astrojs/check": "^0.9.12",
     "@types/culori": "^4.0.1",
+    "@types/hast": "^3.0.5",
+    "@types/mdast": "^4.0.4",
     "@types/node": "^26.6.6",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
-    "typescript": "^6.0.3"
+    "typescript": "^6.0.3",
+    "unified": "^11.0.5",
+    "vfile": "^6.0.3"
   },
   "pnpm": {
     "onlyBuiltDependencies": [
