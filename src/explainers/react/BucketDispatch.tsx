@@ -82,15 +82,27 @@ function Scene({ s, focus }: { s: DispatchState; focus?: string[] }) {
               </g>
             )}
             {isMatch && (
-              <text
-                x={CHECK_X}
-                y={y + (ROW - 10) / 2}
-                dominantBaseline="central"
-                className="wisp-explainer__label"
-                style={{ fill: toneStroke('done') }}
-              >
-                {`✓ 命中 · padding ${s.padTokens} 个 token（${f((s.padTokens / g.numTokens) * 100, 1)}%）`}
-              </text>
+              <g style={{ color: toneStroke('done') }}>
+                {/* Lucide check 图标（不用 ✓ 字符） */}
+                <path
+                  d="M20 6 9 17l-5-5"
+                  transform={`translate(${CHECK_X} ${y + (ROW - 10) / 2 - 8}) scale(0.667)`}
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth={3}
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+                <text
+                  x={CHECK_X + 22}
+                  y={y + (ROW - 10) / 2}
+                  dominantBaseline="central"
+                  className="wisp-explainer__label"
+                  style={{ fill: 'currentColor' }}
+                >
+                  {`命中 · padding ${s.padTokens} 个 token（${f((s.padTokens / g.numTokens) * 100, 1)}%）`}
+                </text>
+              </g>
             )}
           </g>
         );
