@@ -45,12 +45,8 @@ result = static_out.clone()                        # ⑤ 结果在那块固定�
 
 ```mermaid
 flowchart LR
-  A["capture<br/>cudaStreamBeginCapture"] --> B["记录而不执行<br/>提交的工作被追加到图里"]
-  B --> C["instantiate<br/>cudaGraphInstantiate"]
-  C --> D["可执行图 cudaGraphExec_t"]
-  D --> E["replay<br/>cudaGraphLaunch"]
-  E --> F["一次提交，整段执行"]
-  E -.-> E
+  A["capture<br/>cudaStreamBeginCapture<br/>只记录，不执行"] --> C["instantiate<br/>cudaGraphInstantiate<br/>得到可执行图 cudaGraphExec_t"]
+  C --> E["replay（每轮重复）<br/>cudaGraphLaunch<br/>一次提交，整段执行"]
 ```
 
 | 阶段            | 做什么                                                       |

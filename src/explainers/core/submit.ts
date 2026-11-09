@@ -47,6 +47,8 @@ export interface SubmitState {
   mode: SubmitMode;
   ops: OpSpec[];
   launches: Launch[];
+  /** 整轮计划的全部提交（不随帧变化）：画面用它画出还没发生的提交的虚影，第一帧不至于是空车道 */
+  planned: Launch[];
   /** 已经走到第几次提交 */
   done: number;
   /** CPU 提交总耗时 */
@@ -150,6 +152,7 @@ export function submitFlow(opts: SubmitOptions): Timeline<SubmitState> {
     mode,
     ops,
     launches: launches.slice(0, done),
+    planned: launches,
     done,
     ...stats,
     cur,

@@ -66,7 +66,7 @@ function Scene({ s, focus }: { s: MatMulState; focus?: string[] }) {
       <svg
         className="wisp-explainer__svg"
         viewBox={`0 0 ${vbW} ${vbH}`}
-        style={{ minWidth: vbW * 0.72, maxWidth: vbW * 1.6 }}
+        style={{ minWidth: vbW * 0.8, maxWidth: vbW * 1.15 }}
         role="group"
         aria-label={`矩阵乘法 A(${m}×${K}) × B(${K}×${n}) = C(${m}×${n})`}
       >

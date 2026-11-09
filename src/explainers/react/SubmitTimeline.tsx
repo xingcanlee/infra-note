@@ -18,20 +18,23 @@ export interface SubmitTimelineProps {
 }
 
 const LEFT = 76;
-const TOP = 48;
 const LANE_H = 30;
 const LANE_GAP = 26;
-const SCALE = 34; // 每个时间单位多少像素
+const MAX_SCALE = 34; // 每个时间单位最多多少像素
+const FIT_W = 600; // 正文栏里舞台的可用宽度：时间轴长的场景压缩时间轴，而不是把字缩小
 
 function Scene({ s, focus }: { s: SubmitState; focus?: string[] }) {
   const hot = focusOf(focus, 'launch');
+  // 顶部只在会出现「同步点」标签时留空；nSync 是整轮统计，不随帧变化，画面高度不会跳
+  const TOP = s.nSync > 0 ? 34 : 6;
+  const SCALE = Math.min(MAX_SCALE, (FIT_W - LEFT - 70) / s.wall);
   const w = LEFT + s.wall * SCALE + 70;
   const h = TOP + 2 * LANE_H + LANE_GAP + 92;
   const cpuY = TOP;
   const devY = TOP + LANE_H + LANE_GAP;
 
   return (
-    <Stage width={w} height={h} label={`提交时间线：${s.mode} 模式，${s.nLaunch} 次提交`}>
+    <Stage width={w} height={h} maxScale={1} label={`提交时间线：${s.mode} 模式，${s.nLaunch} 次提交`}>
       <Caption x={0} y={cpuY + LANE_H / 2} text="CPU 提交" tone="q" />
       <Caption x={0} y={devY + LANE_H / 2} text="设备执行" tone="v" />
 
@@ -46,6 +49,26 @@ function Scene({ s, focus }: { s: SubmitState; focus?: string[] }) {
           rx={3}
           style={{ fill: 'var(--wisp-surface)', stroke: 'var(--wisp-border)', strokeWidth: 1 }}
         />
+      ))}
+
+      {/* 还没发生的提交：虚线轮廓，标出它们稍后会落在哪里 */}
+      {s.planned.slice(s.launches.length).map((l, k) => (
+        <g key={`p${k}`} style={{ opacity: 0.55 }}>
+          {[
+            [cpuY, l.cpuStart, l.cpuEnd],
+            [devY, l.devStart, l.devEnd],
+          ].map(([y, a, b], j) => (
+            <rect
+              key={j}
+              x={LEFT + a * SCALE}
+              y={y + 3}
+              width={Math.max((b - a) * SCALE, 2)}
+              height={LANE_H - 6}
+              rx={3}
+              style={{ fill: 'none', stroke: 'var(--wisp-muted)', strokeWidth: 1, strokeDasharray: '3 3' }}
+            />
+          ))}
+        </g>
       ))}
 
       {s.launches.map((l, i) => {

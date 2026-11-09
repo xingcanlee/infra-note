@@ -18,15 +18,16 @@ export interface MaskAtlasProps {
 }
 
 const PX = 13; // 每个格子的边长（小格，便于并排多张）
-const COL = 4; // 每行放几张
-const LABEL = 20;
+const MAX_COL = 4; // 每行最多放几张
+const FIT_W = 600; // 正文栏里舞台的可用宽度（viewBox 单位按 1:1 估算）：放不下就减少列数，而不是把字缩小
+const LABEL = 36; // 顶部坐标说明的高度：留够空，避免压住第一行小图的标题
 const VGAP = 52;
 
 /** 一张掩码缩略图。 */
 function MaskTile({ e, x, y, l, active, dim }: { e: MaskEntry; x: number; y: number; l: number; active: boolean; dim: boolean }) {
   const size = l * PX;
   return (
-    <g transform={`translate(${x} ${y})`} opacity={dim ? 0.16 : 1}>
+    <g transform={`translate(${x} ${y})`} opacity={dim ? 0.32 : 1}>
       <text x={0} y={-8} className="wisp-explainer__label" style={{ fill: active ? toneStroke('highlight') : 'var(--wisp-fg)' }}>
         {e.name}
       </text>
@@ -66,6 +67,7 @@ function Scene({ s, focus }: { s: MaskAtlasState; focus?: string[] }) {
   const hot = focusOf(focus, 'mask');
   const tileW = s.l * PX + 46;
   const tileH = s.l * PX + VGAP;
+  const COL = Math.max(1, Math.min(MAX_COL, Math.floor(FIT_W / tileW)));
   const rows = Math.ceil(s.all.length / COL);
   const w = COL * tileW;
   const h = LABEL + rows * tileH + 26;
