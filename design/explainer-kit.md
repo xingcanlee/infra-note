@@ -32,12 +32,12 @@ src/explainers/
 
 ```mdx
 import AttentionGrid from '../../../../explainers/react/AttentionGrid';
-import { slidingWindow } from '../../../../explainers/core/masks';
-
 <AttentionGrid client:visible />
 
-<AttentionGrid client:visible mask={slidingWindow(2)} title="滑动窗口 w=2：每行最多读 2 个位置" />
+<AttentionGrid client:visible mask="swa" title="滑动窗口 w=2：每行最多读 2 个位置" />
 ```
+
+`mask` 只接受 `maskCatalog()` 中的预设 id（如 `causal`、`swa`、`sink`、`strided`、`topk`）。不要传函数：Astro 客户端岛无法序列化函数 props，会导致 hydration 回退。
 
 ## 现有积木
 

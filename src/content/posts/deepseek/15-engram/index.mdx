@@ -63,8 +63,11 @@ $$
 **② 多头哈希**（式 (1)–(2)）：对每个阶数 $n$ 和哈希头 $k$，用一个确定性的 multiplicative-XOR 哈希算出行号，取出对应行再拼接：
 
 $$
-z_{t,n,k}=\varphi_{n,k}(g_{t,n}),\quad \mathbf{e}_{t,n,k}=\mathbf{E}_{n,k}[z_{t,n,k}],\qquad
-\mathbf{e}_t=\big\|_{n=2}^{N}\big\|_{k=1}^{K}\mathbf{e}_{t,n,k}
+\begin{aligned}
+z_{t,n,k} &= \varphi_{n,k}(g_{t,n})\\
+\mathbf{e}_{t,n,k} &= \mathbf{E}_{n,k}[z_{t,n,k}]\\
+\mathbf{e}_t &= \big\|_{n=2}^{N}\big\|_{k=1}^{K}\mathbf{e}_{t,n,k}
+\end{aligned}
 $$
 
 多头的作用是缓解哈希冲突：单个哈希撞了，其他头大概率没撞。（论文没有给出哈希的乘数与异或常数。）
@@ -72,9 +75,11 @@ $$
 **③ 上下文门控**（式 (3)–(4)）：取出来的是**静态**的记忆，用不用得看当前上下文。当前隐藏状态当 Query，取回向量当 Key/Value：
 
 $$
-\mathbf{k}_t=\mathbf{W}_K\mathbf{e}_t,\quad \mathbf{v}_t=\mathbf{W}_V\mathbf{e}_t,\qquad
-\alpha_t=\sigma\!\left(\frac{\mathrm{RMSNorm}(\mathbf{h}_t)^\top \mathrm{RMSNorm}(\mathbf{k}_t)}{\sqrt{d}}\right),\quad
-\tilde{\mathbf{v}}_t=\alpha_t\mathbf{v}_t
+\begin{aligned}
+\mathbf{k}_t &= \mathbf{W}_K\mathbf{e}_t,\quad \mathbf{v}_t=\mathbf{W}_V\mathbf{e}_t\\
+\alpha_t &= \sigma\!\left(\frac{\mathrm{RMSNorm}(\mathbf{h}_t)^\top \mathrm{RMSNorm}(\mathbf{k}_t)}{\sqrt{d}}\right)\\
+\tilde{\mathbf{v}}_t &= \alpha_t\mathbf{v}_t
+\end{aligned}
 $$
 
 这个门控很重要：**查表是确定性的，但用不用是上下文决定的**。「首」后面不总是「都」——在「首席执行官」里就不是。$\alpha_t$ 负责把不合适的记忆按下去。

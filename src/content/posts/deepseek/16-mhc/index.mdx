@@ -72,7 +72,11 @@ flowchart LR
 把上式展开到 $L$ 层（§1 式 (4)）：
 
 $$
-\mathbf{x}_L=\underbrace{\left(\prod_{i=1}^{L-l}\mathcal{H}_{L-i}^{res}\right)}_{\text{不再是恒等}}\mathbf{x}_l+\sum_{i=l}^{L-1}\left(\prod_{j=1}^{L-1-i}\mathcal{H}_{L-j}^{res}\right)\mathcal{H}_i^{post\top}\mathcal{F}(\cdot)
+\begin{aligned}
+\mathbf{x}_L &= \underbrace{\left(\prod_{i=1}^{L-l}\mathcal{H}_{L-i}^{res}\right)}_{\text{不再是恒等}}\mathbf{x}_l\\
+&\quad +\sum_{i=l}^{L-1}\left(\prod_{j=1}^{L-1-i}\mathcal{H}_{L-j}^{res}\right)\\
+&\qquad\ \mathcal{H}_i^{post\top}\mathcal{F}(\cdot)
+\end{aligned}
 $$
 
 对比标准残差：那里 $\mathbf{x}_l$ 前面的系数**就是 1**，原样直达。而这里它前面挂着一长串 $\mathcal{H}^{res}$ 的连乘。
@@ -96,7 +100,10 @@ $$
 mHC 的做法是：**不让 $\mathcal{H}^{res}$ 乱取值，而是把它投影到「双随机矩阵」构成的集合上**（Birkhoff polytope，§4.1 式 (6)）：
 
 $$
-\mathcal{P}(\mathcal{H}_l^{res})=\big\{\mathcal{H}_l^{res}\ \big|\ \mathcal{H}_l^{res}\mathbf{1}_n=\mathbf{1}_n,\ \ \mathbf{1}_n^\top\mathcal{H}_l^{res}=\mathbf{1}_n^\top,\ \ \mathcal{H}_l^{res}\ge 0\big\}
+\begin{aligned}
+&\mathcal{P}(\mathcal{H}_l^{res})=\big\{\mathcal{H}_l^{res}\ \big|\ \mathcal{H}_l^{res}\mathbf{1}_n=\mathbf{1}_n,\\
+&\qquad\ \mathbf{1}_n^\top\mathcal{H}_l^{res}=\mathbf{1}_n^\top,\ \ \mathcal{H}_l^{res}\ge 0\big\}
+\end{aligned}
 $$
 
 用人话说：**非负、每行和为 1、每列和为 1**。
@@ -116,9 +123,11 @@ $$
 给定一个任意矩阵，怎么把它变成双随机？先指数化保证非负，然后**交替做列归一化和行归一化**（§4.2 式 (9)）：
 
 $$
-\mathbf{M}^{(0)}=\exp(\tilde{\mathcal{H}}^{res}_l),\qquad
-\mathbf{M}^{(t)}=\mathcal{T}_r\big(\mathcal{T}_c(\mathbf{M}^{(t-1)})\big),\qquad
-\mathcal{H}_l^{res}=\mathbf{M}^{(t_{\max})}
+\begin{aligned}
+\mathbf{M}^{(0)} &= \exp(\tilde{\mathcal{H}}^{res}_l)\\
+\mathbf{M}^{(t)} &= \mathcal{T}_r\big(\mathcal{T}_c(\mathbf{M}^{(t-1)})\big)\\
+\mathcal{H}_l^{res} &= \mathbf{M}^{(t_{\max})}
+\end{aligned}
 $$
 
 归一化行会破坏列的和，归一化列又会破坏行的和——但反复交替会收敛。理论上要 $t_{\max}\to\infty$，**实践中 V4 取 $t_{\max}=20$**（§4.2、§4.2.1）。
@@ -126,9 +135,11 @@ $$
 三个映射的最终参数化（§4.2 式 (8)）：
 
 $$
-\mathcal{H}_l^{pre}=\sigma(\tilde{\mathcal{H}}_l^{pre}),\qquad
-\mathcal{H}_l^{post}=2\sigma(\tilde{\mathcal{H}}_l^{post}),\qquad
-\mathcal{H}_l^{res}=\mathrm{Sinkhorn\text{-}Knopp}(\tilde{\mathcal{H}}_l^{res})
+\begin{aligned}
+\mathcal{H}_l^{pre} &= \sigma(\tilde{\mathcal{H}}_l^{pre})\\
+\mathcal{H}_l^{post} &= 2\sigma(\tilde{\mathcal{H}}_l^{post})\\
+\mathcal{H}_l^{res} &= \mathrm{Sinkhorn\text{-}Knopp}(\tilde{\mathcal{H}}_l^{res})
+\end{aligned}
 $$
 
 $\sigma$ 是 sigmoid：$\mathcal{H}^{pre}$ 被限制在 $(0,1)$，$\mathcal{H}^{post}$ 在 $(0,2)$。**三个映射各用各的约束**，只有流间混合那个需要双随机。

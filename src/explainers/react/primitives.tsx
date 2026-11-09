@@ -159,15 +159,18 @@ export function Bar({
         transition={{ duration: reduce ? 0 : 0.3, ease: 'easeOut' }}
         style={{ fill: toneFill(tone), stroke: toneStroke(tone), strokeWidth: active ? 2 : 1 }}
       />
-      <text
-        x={x + Math.max(w, 1) + 8}
+      {/* 文本 x 与 rect 宽度用同一时长/缓动动画，避免动画期间文字悬空在最终位置 */}
+      <motion.text
         y={y + h / 2}
+        initial={false}
+        animate={{ x: x + Math.max(w, 1) + 8 }}
+        transition={{ duration: reduce ? 0 : 0.3, ease: 'easeOut' }}
         dominantBaseline="central"
         className="wisp-explainer__label"
         style={{ fill: 'var(--wisp-muted)' }}
       >
         {value}
-      </text>
+      </motion.text>
     </g>
   );
 }

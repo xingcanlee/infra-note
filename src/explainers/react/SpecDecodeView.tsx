@@ -69,7 +69,8 @@ function Scene({ s, focus }: { s: SpecState; focus?: string[] }) {
   const hot = focusOf(focus, 'draft');
   const base = s.committed.length - (s.phase === 'accept' || s.phase === 'reject' ? s.accepted + 1 : 0);
   const start = Math.max(0, s.phase === 'draft' || s.phase === 'verify' ? s.committed.length : base);
-  const w = LEFT + Math.max(s.truth.length, 8) * CELL + 40;
+  // 图例整行右缘 = LEFT + 3×160 + 57 = 623，比格子行（LEFT+8×62=582）更右，w 余量取 56 保证图例不贴边。
+  const w = LEFT + Math.max(s.truth.length, 8) * CELL + 56;
   const h = TOP + 3 * (H + 22) + 76;
 
   const rows = [
@@ -138,7 +139,7 @@ function Scene({ s, focus }: { s: SpecState; focus?: string[] }) {
           { tone: 'error', text: '被拒' },
           { tone: 'done', text: '已确定' },
         ]}
-        gap={148}
+        gap={160}
       />
     </Stage>
   );

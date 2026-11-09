@@ -11,7 +11,6 @@ toc: true
 ---
 
 import AttentionGrid from '../../../../explainers/react/AttentionGrid';
-import { topKByScore } from '../../../../explainers/core/masks';
 
 NSA 有一步很漂亮：**选块的分数是从压缩分支白捡的**。但这也是它的约束——选择的粒度被绑定在压缩分支的块上，而且选得好不好取决于压缩表示的质量。
 
@@ -25,7 +24,7 @@ DSA（DeepSeek Sparse Attention）的回答不是消除这个 $O(L^2)$，而是*
 
 静态稀疏（窗口、选块）的形状只取决于位置。按内容打分的稀疏，形状**随输入变化**——同一个位置，换一句话就可能读完全不同的历史：
 
-<AttentionGrid client:visible mask={topKByScore((t, s) => ((t * 3 + s * 5) % 7) / 7, 1)} showOutput={false} title="图 09-1：按打分取 top-k——每行挑中的位置不再是规则的几何形状" />
+<AttentionGrid client:visible mask="topk" showOutput={false} title="图 09-1：按打分取 top-k——每行挑中的位置不再是规则的几何形状" />
 
 这就是动态稀疏的价值：它能挑到**真正相关**的远处位置，而不只是「最近的」或「开头的」。代价就是那个打分。
 

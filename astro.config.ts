@@ -34,7 +34,6 @@ export default defineConfig({
       rss: { fullText: true },
       taxonomy: { slugMap: {} },
       palette: './design/palette.json',
-      customCss: ['./src/styles/code-overrides.css'],
     }),
     react(),
   ],

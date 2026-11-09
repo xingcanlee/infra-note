@@ -30,7 +30,8 @@ const LABEL: Record<LayerMode, string> = { full: 'Full', reindex: 'Reindex', reu
 
 function Scene({ s, focus }: { s: LayerState; focus?: string[] }) {
   const hot = focusOf(focus, 'layer');
-  const w = TK_X + 200;
+  // 图例整行右缘 = LEFT + 2×216 + 138（'Reuse（全复用）'）= 626，w 取 640 留 14px 余量。
+  const w = TK_X + 240;
   const h = TOP + s.nLayers * ROW + 86;
 
   return (
@@ -86,7 +87,7 @@ function Scene({ s, focus }: { s: LayerState; focus?: string[] }) {
           { tone: 'weight', text: 'Reindex（共享 KV，重打分）' },
           { tone: 'mask', text: 'Reuse（全复用）' },
         ]}
-        gap={168}
+        gap={216}
       />
     </Stage>
   );

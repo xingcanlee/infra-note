@@ -11,7 +11,6 @@ toc: true
 ---
 
 import AttentionGrid from '../../../../explainers/react/AttentionGrid';
-import { slidingWindow, windowWithSink } from '../../../../explainers/core/masks';
 
 上一篇搭好了坐标系：密度、单步代价上限、可达范围。这一篇用最简单的机制把三者之间的拉扯完整走一遍。
 
@@ -21,7 +20,7 @@ import { slidingWindow, windowWithSink } from '../../../../explainers/core/masks
 
 $W=2$，位置 3 只能读 {2, 3}：
 
-<AttentionGrid client:visible mask={slidingWindow(2)} title="图 07-1：滑动窗口 w=2——注意第 3 行，位置 0 和 1 被标成了 ×" />
+<AttentionGrid client:visible mask="swa" title="图 07-1：滑动窗口 w=2——注意第 3 行，位置 0 和 1 被标成了 ×" />
 
 读取集合是
 
@@ -67,7 +66,7 @@ $W=4$、$t=8$ 时就是 $\{5,6,7,8\}$。注意这是**逻辑位置**的集合，
 
 一个便宜且有效的修补：窗口之外，永远保留开头的几个位置。
 
-<AttentionGrid client:visible mask={windowWithSink(2, 1)} showOutput={false} title="图 07-2：窗口 + 1 个锚点——第 0 列始终可读" />
+<AttentionGrid client:visible mask="sink" showOutput={false} title="图 07-2：窗口 + 1 个锚点——第 0 列始终可读" />
 
 指标的变化（$L=8$）：密度从 41.7% 升到 58.3%，单步代价从 2 升到 3，但**单层可达范围直接从位置 6 变成位置 0**。花很小的代价买到了「永远能看到开头」。
 

@@ -31,11 +31,11 @@ function Scene({ s, focus }: { s: RouteState; focus?: string[] }) {
   const hot = focusOf(focus, 'expert');
   const hotShared = focusOf(focus, 'shared');
   const n = s.nExperts;
-  const w = EXPERT_X + EW + 230;
-  const h = TOP + n * (EH + GAP) + 92;
-
   const barMax = 110;
   const maxScore = Math.max(...s.scores, 0.0001);
+  // 打分文本从 EXPERT_X+EW+16+barMax+10 起，最长组合 "−1.2 → −0.96  w=0.35" ≈155px，再留 23px 右余量。
+  const w = EXPERT_X + EW + 16 + barMax + 178;
+  const h = TOP + n * (EH + GAP) + 92;
 
   return (
     <Stage width={w} height={h} label={`MoE 路由：${n} 个专家中选 ${s.chosen.length} 个`}>

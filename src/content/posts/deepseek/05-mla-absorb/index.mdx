@@ -72,8 +72,12 @@ $$
 于是 MLA 的设计就被逼出来了——**把需要 RoPE 的部分和需要吸收的部分分开**：
 
 $$
-q_t^h=[\,\underbrace{q_t^{C,h}}_{\text{走 latent，可吸收}};\ \underbrace{q_t^{R,h}}_{\text{带 RoPE}}\,],\qquad
-k_s^h=[\,\underbrace{k_s^{C,h}}_{\text{由 latent 重建}};\ \underbrace{k_s^{R}}_{\text{带 RoPE，所有 head 共享}}\,]
+\begin{aligned}
+q_t^h &=[\,\underbrace{q_t^{C,h}}_{\text{走 latent，可吸收}};\\
+&\qquad\ \underbrace{q_t^{R,h}}_{\text{带 RoPE}}\,]\\
+k_s^h &=[\,\underbrace{k_s^{C,h}}_{\text{由 latent 重建}};\\
+&\qquad\ \underbrace{k_s^{R}}_{\text{带 RoPE，所有 head 共享}}\,]
+\end{aligned}
 $$
 
 打分变成两项相加：
@@ -104,8 +108,10 @@ $$
 代入 V3 的 $d_k = 128$（内容分支 `qk_nope_head_dim`）、$d_c = 512$：
 
 $$
-\text{朴素} = L\times(128\times512 + 128) = 65664L,\qquad
-\text{吸收} = 128\times512 + 512L = 65536 + 512L
+\begin{aligned}
+\text{朴素} &= L\times(128\times512 + 128) = 65664L\\
+\text{吸收} &= 128\times512 + 512L = 65536 + 512L
+\end{aligned}
 $$
 
 `toy.py` 跑出来的实际数字：

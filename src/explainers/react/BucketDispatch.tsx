@@ -20,10 +20,13 @@ const TOP = 52;
 const ROW = 44;
 const BOXW = 190;
 const CHECK_X = 236;
+// 最长检查名 'ubatch 数（必须相等）' ≈148px + 文本偏移 14 = 162px 足迹，列距取 168。
+const CHECK_COL = 168;
 
 function Scene({ s, focus }: { s: DispatchState; focus?: string[] }) {
   const hot = focusOf(focus, 'graph');
-  const w = CHECK_X + 330;
+  // 第三列右缘 = CHECK_X + 2×CHECK_COL + 162 = 734，再留 18px 余量。
+  const w = CHECK_X + 2 * CHECK_COL + 180;
   const h = TOP + s.graphs.length * ROW + 120;
 
   return (
@@ -62,7 +65,7 @@ function Scene({ s, focus }: { s: DispatchState; focus?: string[] }) {
             {isCur && s.checks && (
               <g>
                 {s.checks.map((c, j) => (
-                  <g key={c.name} transform={`translate(${CHECK_X + (j % 3) * 108} ${y + (j < 3 ? 2 : 18)})`}>
+                  <g key={c.name} transform={`translate(${CHECK_X + (j % 3) * CHECK_COL} ${y + (j < 3 ? 2 : 18)})`}>
                     <rect
                       x={0}
                       y={0}

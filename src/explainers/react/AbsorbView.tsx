@@ -15,7 +15,8 @@ export interface AbsorbViewProps {
 
 const S = 34;
 const ROW = 40;
-const TOP = 34;
+// 顶部留一整行给 'q̃（已吸收 W^UK）' / 'q（内容分支）' 标题（≈135px 宽），格行从 TOP-30=28 开始，不再压字。
+const TOP = 58;
 const X_LAT = 92;
 
 function Scene({ s, focus }: { s: AbsorbState; focus?: string[] }) {

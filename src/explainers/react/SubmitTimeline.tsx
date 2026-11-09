@@ -51,6 +51,12 @@ function Scene({ s, focus }: { s: SubmitState; focus?: string[] }) {
       {s.launches.map((l, i) => {
         const active = hot.has(String(i));
         const isGraph = l.kind === 'graph';
+        // 段内标签：段宽 < 文本宽+8 时画到段上方并加引线，避免溢出压相邻段。
+        const opsText = `${l.ops.length} 个算子`;
+        const opsTextW = opsText.length * 11;
+        const segW = (l.devEnd - l.devStart) * SCALE;
+        const segCx = LEFT + ((l.devStart + l.devEnd) / 2) * SCALE;
+        const opsInside = segW >= opsTextW + 8;
         return (
           <g key={i}>
             {/* CPU 段 */}
@@ -108,17 +114,38 @@ function Scene({ s, focus }: { s: SubmitState; focus?: string[] }) {
                 </text>
               </>
             )}
-            {isGraph && l.ops.length > 1 && (
+            {isGraph && l.ops.length > 1 && opsInside && (
               <text
-                x={LEFT + ((l.devStart + l.devEnd) / 2) * SCALE}
+                x={segCx}
                 y={devY + LANE_H / 2}
                 textAnchor="middle"
                 dominantBaseline="central"
                 className="wisp-explainer__label"
                 style={{ fill: 'var(--wisp-fg)' }}
               >
-                {`${l.ops.length} 个算子`}
+                {opsText}
               </text>
+            )}
+            {isGraph && l.ops.length > 1 && !opsInside && (
+              <g>
+                <line
+                  x1={segCx}
+                  y1={devY - 10}
+                  x2={segCx}
+                  y2={devY + 2}
+                  style={{ stroke: 'var(--wisp-muted)', strokeWidth: 0.8 }}
+                />
+                <text
+                  x={segCx}
+                  y={devY - 15}
+                  textAnchor="middle"
+                  dominantBaseline="central"
+                  className="wisp-explainer__label"
+                  style={{ fill: 'var(--wisp-muted)' }}
+                >
+                  {opsText}
+                </text>
+              </g>
             )}
           </g>
         );

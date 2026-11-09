@@ -26,7 +26,9 @@ const TOP = 44;
 function Scene({ s, focus }: { s: OSState; focus?: string[] }) {
   const hot = focusOf(focus, 'score');
   const n = s.scores.length;
-  const w = LEFT + n * CW + 40;
+  // 宽度取内容最大右缘（分数行 vs 标量盒子行，结果框右缘 LEFT+486+168=722）+ 24px 余量。
+  const contentRight = Math.max(LEFT + n * CW, LEFT + 486 + 168);
+  const w = contentRight + 24;
   const h = TOP + CH + 150;
   const curStart = s.block * s.blockSize;
 

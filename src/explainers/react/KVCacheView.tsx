@@ -65,11 +65,13 @@ function Scene({ s, focus, layers, bytes }: { s: CacheState; focus?: string[]; l
       {/* 右侧账本 */}
       <g>
         <Caption x={panelX} y={TOP + 6} text={`方案：${s.scheme.name}`} tone="q" />
-        <Caption x={panelX} y={TOP + 28} text={`宽度 = ${s.scheme.formula}`} />
-        <Caption x={panelX} y={TOP + 50} text={`已缓存 ${s.cached} 行 × ${layers} 层`} />
-        <Caption x={panelX} y={TOP + 72} text={`≈ ${humanBytes(liveBytes)}（${bytes} 字节/数）`} tone="v" />
-        <Caption x={panelX} y={TOP + 102} text="本轮如果不用缓存：" />
-        <Caption x={panelX} y={TOP + 124} text={`要重算 ${s.recomputeWithout} 个 token 的 K/V`} tone="error" />
+        {/* 名称与公式分两行：MHA/GQA 公式加前缀约 250px，超过面板预算 230px 会被右缘裁切 */}
+        <Caption x={panelX} y={TOP + 28} text="宽度（每 token 每层）" />
+        <Caption x={panelX} y={TOP + 50} text={s.scheme.formula} />
+        <Caption x={panelX} y={TOP + 72} text={`已缓存 ${s.cached} 行 × ${layers} 层`} />
+        <Caption x={panelX} y={TOP + 94} text={`≈ ${humanBytes(liveBytes)}（${bytes} 字节/数）`} tone="v" />
+        <Caption x={panelX} y={TOP + 124} text="本轮如果不用缓存：" />
+        <Caption x={panelX} y={TOP + 146} text={`要重算 ${s.recomputeWithout} 个 token 的 K/V`} tone="error" />
       </g>
 
       <Legend

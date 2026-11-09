@@ -12,7 +12,6 @@ toc: true
 
 import MaskAtlas from '../../../../explainers/react/MaskAtlas';
 import AttentionGrid from '../../../../explainers/react/AttentionGrid';
-import { slidingWindow, strided } from '../../../../explainers/core/masks';
 
 前面三篇把「每个 token 在缓存里占多宽」从 40960 个数压到 576 个。但第 02 篇的公式里还有一个因子没动过：
 
@@ -28,9 +27,9 @@ $$
 
 把第 01 篇的因果掩码换成「滑动窗口 w=2」和「跨步 2」，都省掉了一部分读取：
 
-<AttentionGrid client:visible mask={slidingWindow(2)} showOutput={false} title="图 06-1a：滑动窗口 w=2——只读最近 2 个位置" />
+<AttentionGrid client:visible mask="swa" showOutput={false} title="图 06-1a：滑动窗口 w=2——只读最近 2 个位置" />
 
-<AttentionGrid client:visible mask={strided(2)} showOutput={false} title="图 06-1b：跨步 2——每隔一个位置读一个，外加当前位置" />
+<AttentionGrid client:visible mask="strided" showOutput={false} title="图 06-1b：跨步 2——每隔一个位置读一个，外加当前位置" />
 
 两者在 $L=8$ 时的密度分别是 41.7% 和 66.7%，看起来窗口「更省」。但这是个陷阱：
 
