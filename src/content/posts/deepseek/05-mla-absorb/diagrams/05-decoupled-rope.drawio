@@ -1,166 +1,115 @@
 <mxfile host="wisp-diagram">
   <diagram id="decoupled-rope" name="MLA：解耦 RoPE 与矩阵吸收">
-    <mxGraphModel dx="1800" dy="900" grid="1" gridSize="8" guides="1" page="0" math="1" shadow="0">
+    <mxGraphModel dx="800" dy="900" grid="1" gridSize="8" guides="1" page="0" math="1" shadow="0">
       <root>
         <mxCell id="0"/>
         <mxCell id="1" parent="0"/>
-
-        <mxCell id="title" value="MLA：解耦 RoPE 与矩阵吸收" style="text;html=1;align=left;verticalAlign=middle;fontFamily=Inter;fontSize=18;fontColor=#1d1d1f;fontStyle=1;" vertex="1" parent="1">
-          <mxGeometry x="32" y="16" width="960" height="32" as="geometry"/>
+        <mxCell id="query_label" value="Query 侧（当前 token \(t\)）" style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;fontFamily=Inter;fontSize=14;fontColor=#1d4ed8;" vertex="1" parent="1">
+          <mxGeometry x="0" y="0" width="296" height="24" as="geometry"/>
         </mxCell>
-        <mxCell id="query_label" value="Query 侧：拆成内容与位置两条分支" style="text;html=1;align=left;verticalAlign=middle;fontFamily=Inter;fontSize=14;fontColor=#1d4ed8;" vertex="1" parent="1">
-          <mxGeometry x="32" y="56" width="360" height="24" as="geometry"/>
+        <mxCell id="kv_label" value="Key / Value 侧（历史 token \(s\)）" style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;fontFamily=Inter;fontSize=14;fontColor=#15803d;" vertex="1" parent="1">
+          <mxGeometry x="344" y="0" width="296" height="24" as="geometry"/>
         </mxCell>
-        <mxCell id="kv_label" value="Key / Value 侧" style="text;html=1;align=left;verticalAlign=middle;fontFamily=Inter;fontSize=14;fontColor=#15803d;" vertex="1" parent="1">
-          <mxGeometry x="32" y="344" width="200" height="24" as="geometry"/>
+        <mxCell id="cache" value="latent KV cache" style="rounded=1;arcSize=4;whiteSpace=wrap;html=1;fillColor=#f4f4f2;strokeColor=#e2e2dd;strokeWidth=1.5;dashed=1;verticalAlign=top;align=center;spacingLeft=12;spacingRight=12;spacingTop=4;fontFamily=Inter;fontSize=12;fontColor=#5c6067;container=0;" vertex="1" parent="1">
+          <mxGeometry x="344" y="264" width="296" height="144" as="geometry"/>
         </mxCell>
-        <mxCell id="cache_label" value="MLA latent KV cache&lt;br&gt;每个历史 token 缓存 \(c_s^{KV}\) 与 \(k_s^R\)" style="text;html=1;align=left;verticalAlign=middle;fontFamily=Inter;fontSize=12;fontColor=#15803d;" vertex="1" parent="1">
-          <mxGeometry x="560" y="328" width="400" height="40" as="geometry"/>
+        <mxCell id="xt" value="hidden state \(\mathbf x_t\)" style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e2e8f0;strokeColor=#475569;strokeWidth=1.5;fontFamily=Inter;fontSize=14;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="48" y="32" width="200" height="40" as="geometry"/>
         </mxCell>
-
-        <mxCell id="xt" value="hidden state&lt;br&gt;\(\mathbf x_t\)" style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e2e8f0;strokeColor=#475569;strokeWidth=1.5;fontFamily=Inter;fontSize=14;fontColor=#1d1d1f;" vertex="1" parent="1">
-          <mxGeometry x="32" y="80" width="144" height="64" as="geometry"/>
-        </mxCell>
-        <mxCell id="wqa" value="wq_a&lt;br&gt;\(W_a^{DQ}\)" style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#ede9fe;strokeColor=#7c3aed;strokeWidth=1.5;fontFamily=Inter;fontSize=14;fontColor=#1d1d1f;" vertex="1" parent="1">
-          <mxGeometry x="208" y="80" width="128" height="64" as="geometry"/>
+        <mxCell id="wqa" value="wq_a： \(W_a^{DQ}\)" style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#ede9fe;strokeColor=#7c3aed;strokeWidth=1.5;fontFamily=Inter;fontSize=14;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="48" y="96" width="200" height="40" as="geometry"/>
         </mxCell>
         <mxCell id="qnorm" value="q_norm" style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e2e8f0;strokeColor=#475569;strokeWidth=1.5;fontFamily=Inter;fontSize=14;fontColor=#1d1d1f;" vertex="1" parent="1">
-          <mxGeometry x="368" y="80" width="112" height="64" as="geometry"/>
+          <mxGeometry x="48" y="160" width="200" height="40" as="geometry"/>
         </mxCell>
-        <mxCell id="wqb" value="wq_b&lt;br&gt;\(W^{UQ}\)" style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#ede9fe;strokeColor=#7c3aed;strokeWidth=1.5;fontFamily=Inter;fontSize=14;fontColor=#1d1d1f;" vertex="1" parent="1">
-          <mxGeometry x="512" y="80" width="128" height="64" as="geometry"/>
+        <mxCell id="wqb" value="wq_b： \(W^{UQ}\)" style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#ede9fe;strokeColor=#7c3aed;strokeWidth=1.5;fontFamily=Inter;fontSize=14;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="48" y="224" width="200" height="40" as="geometry"/>
         </mxCell>
-        <mxCell id="qc" value="内容 query&lt;br&gt;\(\mathbf q_t^{C,h}\)，\(d_{\mathrm{nope}}=128\)&lt;br&gt;不做 RoPE" style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#dbeafe;strokeColor=#1d4ed8;strokeWidth=1.5;fontFamily=Inter;fontSize=14;fontColor=#1d1d1f;" vertex="1" parent="1">
-          <mxGeometry x="688" y="64" width="240" height="80" as="geometry"/>
+        <mxCell id="qc" value="内容 query \(\mathbf q_t^{C,h}\)&lt;br&gt;\(d_{\mathrm{nope}}=128\)&lt;br&gt;不做 RoPE" style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#dbeafe;strokeColor=#1d4ed8;strokeWidth=1.5;fontFamily=Inter;fontSize=14;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="0" y="304" width="136" height="88" as="geometry"/>
         </mxCell>
-        <mxCell id="qr" value="位置 query&lt;br&gt;\(\mathbf q_t^{R,h}\)，\(d_r=64\)&lt;br&gt;施加 \(\mathrm{RoPE}(R_t)\)" style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#dbeafe;strokeColor=#1d4ed8;strokeWidth=1.5;fontFamily=Inter;fontSize=14;fontColor=#1d1d1f;" vertex="1" parent="1">
-          <mxGeometry x="688" y="176" width="240" height="80" as="geometry"/>
+        <mxCell id="qr" value="位置 query \(\mathbf q_t^{R,h}\)&lt;br&gt;\(d_r=64\)&lt;br&gt;施加 \(\mathrm{RoPE}(R_t)\)" style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#dbeafe;strokeColor=#1d4ed8;strokeWidth=1.5;fontFamily=Inter;fontSize=14;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="160" y="304" width="136" height="88" as="geometry"/>
         </mxCell>
-
-        <mxCell id="xs" value="hidden state&lt;br&gt;\(\mathbf x_s\)" style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e2e8f0;strokeColor=#475569;strokeWidth=1.5;fontFamily=Inter;fontSize=14;fontColor=#1d1d1f;" vertex="1" parent="1">
-          <mxGeometry x="32" y="400" width="144" height="64" as="geometry"/>
+        <mxCell id="xs" value="hidden state \(\mathbf x_s\)" style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e2e8f0;strokeColor=#475569;strokeWidth=1.5;fontFamily=Inter;fontSize=14;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="392" y="32" width="200" height="40" as="geometry"/>
         </mxCell>
-        <mxCell id="wkva" value="wkv_a&lt;br&gt;\(W^{DKV}\)" style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#ede9fe;strokeColor=#7c3aed;strokeWidth=1.5;fontFamily=Inter;fontSize=14;fontColor=#1d1d1f;" vertex="1" parent="1">
-          <mxGeometry x="208" y="400" width="160" height="64" as="geometry"/>
+        <mxCell id="wkva" value="wkv_a： \(W^{DKV}\)" style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#ede9fe;strokeColor=#7c3aed;strokeWidth=1.5;fontFamily=Inter;fontSize=14;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="392" y="96" width="200" height="40" as="geometry"/>
         </mxCell>
         <mxCell id="kvnorm" value="kv_norm" style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e2e8f0;strokeColor=#475569;strokeWidth=1.5;fontFamily=Inter;fontSize=14;fontColor=#1d1d1f;" vertex="1" parent="1">
-          <mxGeometry x="400" y="400" width="112" height="64" as="geometry"/>
+          <mxGeometry x="392" y="160" width="200" height="40" as="geometry"/>
         </mxCell>
-        <mxCell id="ckv" value="共享内容 latent&lt;br&gt;\(\mathbf c_s^{KV}\)，\(d_c=512\)" style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#dcfce7;strokeColor=#15803d;strokeWidth=1.5;fontFamily=Inter;fontSize=14;fontColor=#1d1d1f;" vertex="1" parent="1">
-          <mxGeometry x="560" y="384" width="336" height="80" as="geometry"/>
+        <mxCell id="ckv" value="内容 latent \(\mathbf c_s^{KV}\)&lt;br&gt;\(d_c=512\)&lt;br&gt;不做 RoPE" style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#dcfce7;strokeColor=#15803d;strokeWidth=1.5;fontFamily=Inter;fontSize=14;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="352" y="304" width="136" height="88" as="geometry"/>
         </mxCell>
-        <mxCell id="kr" value="共享位置 key&lt;br&gt;\(\mathbf k_s^R\)，\(d_r=64\)&lt;br&gt;所有 head 共享，施加 \(\mathrm{RoPE}(R_s)\)" style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#dcfce7;strokeColor=#15803d;strokeWidth=1.5;fontFamily=Inter;fontSize=14;fontColor=#1d1d1f;" vertex="1" parent="1">
-          <mxGeometry x="560" y="496" width="336" height="80" as="geometry"/>
+        <mxCell id="kr" value="位置 key \(\mathbf k_s^R\)&lt;br&gt;\(d_r=64\)，共享&lt;br&gt;施加 \(\mathrm{RoPE}(R_s)\)" style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#dcfce7;strokeColor=#15803d;strokeWidth=1.5;fontFamily=Inter;fontSize=14;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="496" y="304" width="136" height="88" as="geometry"/>
         </mxCell>
-
-        <mxCell id="score" value="$$e_{t,s}^{h}=(\mathbf q_t^{C,h})^{\top}\mathbf W_h^{UK}\mathbf c_s+(\mathbf q_t^{R,h})^{\top}\mathbf k_s^R$$&lt;br&gt;内容项 + RoPE 位置项" style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#ccfbf1;strokeColor=#0f766e;strokeWidth=2.5;fontFamily=Inter;fontSize=14;fontColor=#1d1d1f;" vertex="1" parent="1">
-          <mxGeometry x="1056" y="248" width="400" height="176" as="geometry"/>
+        <mxCell id="score" value="\(\displaystyle e_{t,s}^{h}=(\mathbf q_t^{C,h})^{\top}\mathbf W_h^{UK}\mathbf c_s+(\mathbf q_t^{R,h})^{\top}\mathbf k_s^R\)&lt;br&gt;内容项 + RoPE 位置项" style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#ccfbf1;strokeColor=#0f766e;strokeWidth=2.5;fontFamily=Inter;fontSize=14;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="0" y="448" width="640" height="96" as="geometry"/>
+        </mxCell>
+        <mxCell id="param_note" value="共享投影 \(W_h^{UK}\)、\(W_h^{UV}\) 与 \(t,s\) 无关，可以预先吸收进 Query / Value" style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;fontFamily=Inter;fontSize=12;fontColor=#7c3aed;" vertex="1" parent="1">
+          <mxGeometry x="168" y="552" width="472" height="32" as="geometry"/>
         </mxCell>
         <mxCell id="softmax" value="softmax" style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#ccfbf1;strokeColor=#0f766e;strokeWidth=1.5;fontFamily=Inter;fontSize=14;fontColor=#1d1d1f;" vertex="1" parent="1">
-          <mxGeometry x="1504" y="296" width="128" height="80" as="geometry"/>
+          <mxGeometry x="0" y="592" width="120" height="56" as="geometry"/>
         </mxCell>
         <mxCell id="aggregate" value="按权重聚合 latent&lt;br&gt;\(z_t^h=\sum_s \alpha_{t,s}^h\mathbf c_s\)" style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#ccfbf1;strokeColor=#0f766e;strokeWidth=1.5;fontFamily=Inter;fontSize=14;fontColor=#1d1d1f;" vertex="1" parent="1">
-          <mxGeometry x="1680" y="296" width="208" height="80" as="geometry"/>
+          <mxGeometry x="168" y="592" width="232" height="56" as="geometry"/>
         </mxCell>
         <mxCell id="out" value="输出&lt;br&gt;\(\mathbf o_t^h=\mathbf W_h^{UV}\mathbf z_t^h\)" style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#ede9fe;strokeColor=#7c3aed;strokeWidth=2.5;fontFamily=Inter;fontSize=14;fontColor=#1d1d1f;" vertex="1" parent="1">
-          <mxGeometry x="1936" y="296" width="176" height="80" as="geometry"/>
+          <mxGeometry x="448" y="592" width="192" height="56" as="geometry"/>
         </mxCell>
-        <mxCell id="param_note" value="共享投影 \(W_h^{UK}\) / \(W_h^{UV}\)&lt;br&gt;与 \(t,s\) 无关，可预吸收进 Query / Value" style="text;html=1;align=left;verticalAlign=middle;fontFamily=Inter;fontSize=12;fontColor=#7c3aed;" vertex="1" parent="1">
-          <mxGeometry x="1056" y="456" width="448" height="48" as="geometry"/>
+        <mxCell id="note" value="只有位置分支承担 RoPE；内容分支走共享 latent，上投影矩阵与位置无关，因此可以被吸收。缓存里每个历史 token 只存 \(\mathbf c_s^{KV}\) 与 \(\mathbf k_s^R\)，位置 key 在所有 head 间共享。" style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;fontFamily=Inter;fontSize=12;fontColor=#5c6067;" vertex="1" parent="1">
+          <mxGeometry x="0" y="664" width="640" height="40" as="geometry"/>
         </mxCell>
-        <mxCell id="note" value="只有位置分支承担 RoPE；内容分支走共享 latent，因此上投影矩阵与位置无关，可以被吸收。" style="text;html=1;align=left;verticalAlign=middle;fontFamily=Inter;fontSize=12;fontColor=#5c6067;" vertex="1" parent="1">
-          <mxGeometry x="32" y="632" width="1600" height="32" as="geometry"/>
-        </mxCell>
-
-        <mxCell id="e_xt_wqa" value="" style="endArrow=classic;html=1;strokeColor=#1d1d1f;strokeWidth=1.5;edgeStyle=orthogonalEdgeStyle;rounded=1;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="1" source="xt" target="wqa">
+        <mxCell id="e1_xt_wqa" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;endArrow=classic;html=1;strokeColor=#1d1d1f;strokeWidth=1.5;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="xt" target="wqa">
           <mxGeometry relative="1" as="geometry"/>
         </mxCell>
-        <mxCell id="e_wqa_qnorm" value="" style="endArrow=classic;html=1;strokeColor=#7c3aed;strokeWidth=1.5;edgeStyle=orthogonalEdgeStyle;rounded=1;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="1" source="wqa" target="qnorm">
+        <mxCell id="e2_wqa_qnorm" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;endArrow=classic;html=1;strokeColor=#7c3aed;strokeWidth=1.5;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="wqa" target="qnorm">
           <mxGeometry relative="1" as="geometry"/>
         </mxCell>
-        <mxCell id="e_qnorm_wqb" value="" style="endArrow=classic;html=1;strokeColor=#7c3aed;strokeWidth=1.5;edgeStyle=orthogonalEdgeStyle;rounded=1;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="1" source="qnorm" target="wqb">
+        <mxCell id="e3_qnorm_wqb" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;endArrow=classic;html=1;strokeColor=#7c3aed;strokeWidth=1.5;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="qnorm" target="wqb">
           <mxGeometry relative="1" as="geometry"/>
         </mxCell>
-        <mxCell id="e_wqb_qc" value="" style="endArrow=classic;html=1;strokeColor=#1d4ed8;strokeWidth=1.5;edgeStyle=orthogonalEdgeStyle;rounded=1;exitX=1;exitY=0.25;entryX=0;entryY=0.5;" edge="1" parent="1" source="wqb" target="qc">
-          <mxGeometry relative="1" as="geometry">
-            <Array as="points">
-              <mxPoint x="664" y="96"/>
-              <mxPoint x="664" y="104"/>
-            </Array>
-          </mxGeometry>
-        </mxCell>
-        <mxCell id="e_wqb_qr" value="" style="endArrow=classic;html=1;strokeColor=#1d4ed8;strokeWidth=1.5;edgeStyle=orthogonalEdgeStyle;rounded=1;exitX=1;exitY=0.75;entryX=0;entryY=0.5;" edge="1" parent="1" source="wqb" target="qr">
-          <mxGeometry relative="1" as="geometry">
-            <Array as="points">
-              <mxPoint x="672" y="128"/>
-              <mxPoint x="672" y="216"/>
-            </Array>
-          </mxGeometry>
-        </mxCell>
-
-        <mxCell id="e_xs_wkva" value="" style="endArrow=classic;html=1;strokeColor=#1d1d1f;strokeWidth=1.5;edgeStyle=orthogonalEdgeStyle;rounded=1;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="1" source="xs" target="wkva">
+        <mxCell id="e4_wqb_qc" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;endArrow=classic;html=1;strokeColor=#1d4ed8;strokeWidth=1.5;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="wqb" target="qc">
           <mxGeometry relative="1" as="geometry"/>
         </mxCell>
-        <mxCell id="e_wkva_kvnorm" value="" style="endArrow=classic;html=1;strokeColor=#7c3aed;strokeWidth=1.5;edgeStyle=orthogonalEdgeStyle;rounded=1;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="1" source="wkva" target="kvnorm">
+        <mxCell id="e5_wqb_qr" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;endArrow=classic;html=1;strokeColor=#1d4ed8;strokeWidth=1.5;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="wqb" target="qr">
           <mxGeometry relative="1" as="geometry"/>
         </mxCell>
-        <mxCell id="e_kvnorm_ckv" value="" style="endArrow=classic;html=1;strokeColor=#15803d;strokeWidth=1.5;edgeStyle=orthogonalEdgeStyle;rounded=1;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="1" source="kvnorm" target="ckv">
-          <mxGeometry relative="1" as="geometry">
-            <Array as="points">
-              <mxPoint x="544" y="432"/>
-              <mxPoint x="544" y="424"/>
-            </Array>
-          </mxGeometry>
-        </mxCell>
-        <mxCell id="e_kvnorm_kr" value="" style="endArrow=classic;html=1;strokeColor=#15803d;strokeWidth=1.5;edgeStyle=orthogonalEdgeStyle;rounded=1;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="1" source="kvnorm" target="kr">
-          <mxGeometry relative="1" as="geometry">
-            <Array as="points">
-              <mxPoint x="528" y="432"/>
-              <mxPoint x="528" y="536"/>
-            </Array>
-          </mxGeometry>
-        </mxCell>
-
-        <mxCell id="e_qc_score" value="" style="endArrow=classic;html=1;strokeColor=#1d4ed8;strokeWidth=1.5;edgeStyle=orthogonalEdgeStyle;rounded=1;exitX=1;exitY=0.5;entryX=0;entryY=0.125;" edge="1" parent="1" source="qc" target="score">
-          <mxGeometry relative="1" as="geometry">
-            <Array as="points">
-              <mxPoint x="992" y="104"/>
-              <mxPoint x="992" y="270"/>
-            </Array>
-          </mxGeometry>
-        </mxCell>
-        <mxCell id="e_qr_score" value="" style="endArrow=classic;html=1;strokeColor=#1d4ed8;strokeWidth=1.5;edgeStyle=orthogonalEdgeStyle;rounded=1;exitX=1;exitY=0.5;entryX=0;entryY=0.375;" edge="1" parent="1" source="qr" target="score">
-          <mxGeometry relative="1" as="geometry">
-            <Array as="points">
-              <mxPoint x="976" y="216"/>
-              <mxPoint x="976" y="314"/>
-            </Array>
-          </mxGeometry>
-        </mxCell>
-        <mxCell id="e_ckv_score" value="" style="endArrow=classic;html=1;strokeColor=#15803d;strokeWidth=1.5;edgeStyle=orthogonalEdgeStyle;rounded=1;exitX=1;exitY=0.5;entryX=0;entryY=0.625;" edge="1" parent="1" source="ckv" target="score">
-          <mxGeometry relative="1" as="geometry">
-            <Array as="points">
-              <mxPoint x="1008" y="424"/>
-              <mxPoint x="1008" y="358"/>
-            </Array>
-          </mxGeometry>
-        </mxCell>
-        <mxCell id="e_kr_score" value="" style="endArrow=classic;html=1;strokeColor=#15803d;strokeWidth=1.5;edgeStyle=orthogonalEdgeStyle;rounded=1;exitX=1;exitY=0.5;entryX=0;entryY=0.875;" edge="1" parent="1" source="kr" target="score">
-          <mxGeometry relative="1" as="geometry">
-            <Array as="points">
-              <mxPoint x="1024" y="536"/>
-              <mxPoint x="1024" y="402"/>
-            </Array>
-          </mxGeometry>
-        </mxCell>
-
-        <mxCell id="e_score_softmax" value="" style="endArrow=classic;html=1;strokeColor=#0f766e;strokeWidth=1.5;edgeStyle=orthogonalEdgeStyle;rounded=1;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="1" source="score" target="softmax">
+        <mxCell id="e6_xs_wkva" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;endArrow=classic;html=1;strokeColor=#1d1d1f;strokeWidth=1.5;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="xs" target="wkva">
           <mxGeometry relative="1" as="geometry"/>
         </mxCell>
-        <mxCell id="e_softmax_aggregate" value="" style="endArrow=classic;html=1;strokeColor=#0f766e;strokeWidth=1.5;edgeStyle=orthogonalEdgeStyle;rounded=1;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="1" source="softmax" target="aggregate">
+        <mxCell id="e7_wkva_kvnorm" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;endArrow=classic;html=1;strokeColor=#7c3aed;strokeWidth=1.5;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="wkva" target="kvnorm">
           <mxGeometry relative="1" as="geometry"/>
         </mxCell>
-        <mxCell id="e_aggregate_out" value="" style="endArrow=classic;html=1;strokeColor=#7c3aed;strokeWidth=2.5;edgeStyle=orthogonalEdgeStyle;rounded=1;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="1" source="aggregate" target="out">
+        <mxCell id="e8_kvnorm_ckv" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;endArrow=classic;html=1;strokeColor=#15803d;strokeWidth=1.5;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="kvnorm" target="ckv">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e9_kvnorm_kr" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;endArrow=classic;html=1;strokeColor=#15803d;strokeWidth=1.5;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="kvnorm" target="kr">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e10_qc_score" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;endArrow=classic;html=1;strokeColor=#1d4ed8;strokeWidth=1.5;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.1062;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="qc" target="score">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e11_qr_score" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;endArrow=classic;html=1;strokeColor=#1d4ed8;strokeWidth=1.5;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.3563;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="qr" target="score">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e12_ckv_score" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;endArrow=classic;html=1;strokeColor=#15803d;strokeWidth=1.5;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.6562;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="ckv" target="score">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e13_kr_score" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;endArrow=classic;html=1;strokeColor=#15803d;strokeWidth=1.5;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.8812;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="kr" target="score">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e14_score_softmax" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;endArrow=classic;html=1;strokeColor=#0f766e;strokeWidth=1.5;exitX=0.0938;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="score" target="softmax">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e15_softmax_aggregate" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;endArrow=classic;html=1;strokeColor=#0f766e;strokeWidth=1.5;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="softmax" target="aggregate">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e16_aggregate_out" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;endArrow=classic;html=1;strokeColor=#7c3aed;strokeWidth=2.5;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="aggregate" target="out">
           <mxGeometry relative="1" as="geometry"/>
         </mxCell>
       </root>

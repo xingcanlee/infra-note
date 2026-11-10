@@ -3,51 +3,51 @@
   "generator": "wisp-diagram@1",
   "entries": {
     "src/content/posts/deepseek/05-mla-absorb/diagrams/05-decoupled-rope.drawio": {
-      "source": "sha256-3e72aa797131aa43a66ecb3f4f06328785f06e0e27e856717dd3778c1bdfc5e8",
+      "source": "sha256-19abd1be50d6105403ef5f73fa2b63e7c3903a057652f4782388d61d3192ab9b",
       "style": "clean",
-      "exporter": "drawio-cli",
+      "exporter": "drawio-browser",
       "embedFonts": false,
       "outputs": {
-        "src/content/posts/deepseek/05-mla-absorb/diagrams/05-decoupled-rope.wisp.svg": "sha256-be29ddeb47e988dfc769239c8deac38a20464e5c5dbff1b180f1f7dfc35187fa"
+        "src/content/posts/deepseek/05-mla-absorb/diagrams/05-decoupled-rope.wisp.svg": "sha256-3430ed9a13c91bb863f0ebd65111a5048efc8694418d6cf0dcee8f171a21fcf7"
       },
       "pages": [
         "MLA：解耦 RoPE 与矩阵吸收"
       ]
     },
     "src/content/posts/deepseek/08-nsa/diagrams/08-nsa-branches.drawio": {
-      "source": "sha256-729ee84e49f8bfb9f347ce82519a456df2dfa832f796a924113e44c35b65eab2",
+      "source": "sha256-2ae60efca5331415f59bbac0151d0081544d2b6fd0d508ff519ce98b6d63ef77",
       "style": "clean",
-      "exporter": "drawio-cli",
+      "exporter": "drawio-browser",
       "embedFonts": false,
       "outputs": {
-        "src/content/posts/deepseek/08-nsa/diagrams/08-nsa-branches.wisp.svg": "sha256-7d76539e6dfde43287e1860f5735386fa636c239d5b6ae5e886ee296c00ff551"
+        "src/content/posts/deepseek/08-nsa/diagrams/08-nsa-branches.wisp.svg": "sha256-ccc71181af5b9fddd36f88393b5b6482fff9097574e8f5cc7896cdfd21ef2190"
       },
       "pages": [
         "NSA：压缩、选块、窗口三分支与门控融合"
       ]
     },
     "src/content/posts/deepseek/09-dsa/diagrams/09-dsa-indexer.drawio": {
-      "source": "sha256-5ada34b876f55177d7d07353e519b5fa82f85e3786fe46712b90c46db74944e9",
+      "source": "sha256-0e19962430541799536b7e9a500fe54c37e4a3b65108a6d2f7fa42a426cc4b01",
       "style": "clean",
-      "exporter": "drawio-cli",
+      "exporter": "drawio-browser",
       "embedFonts": false,
       "outputs": {
-        "src/content/posts/deepseek/09-dsa/diagrams/09-dsa-indexer.wisp.svg": "sha256-a57b9e1892d94cd35facab2d9ad1aef4d552d1db3b554b99a1ce631e2ef29e0d"
+        "src/content/posts/deepseek/09-dsa/diagrams/09-dsa-indexer.wisp.svg": "sha256-a2e81f7763961de0fe9a9320fde18e933fb9d93e5d490287473e2177d5cadef9"
       },
       "pages": [
         "DSA：Lightning Indexer 在 MLA 之上做 top-k 选择"
       ]
     },
     "src/content/posts/deepseek/10-csa/diagrams/10-csa-pipeline.drawio": {
-      "source": "sha256-354ccbb7f097e7956553550784835e6471d8b5de6b3a7361f04d13c9fe084247",
+      "source": "sha256-551919bd8aa090095a59aea9b8844a0d4ac78035c43deba512051d420ca81df4",
       "style": "clean",
-      "exporter": "drawio-cli",
+      "exporter": "drawio-browser",
       "embedFonts": false,
       "outputs": {
-        "src/content/posts/deepseek/10-csa/diagrams/10-csa-pipeline.wisp.svg": "sha256-9ccfa43374690e8fd8d18b09237f2c5e221cf03eef398902c82ca72207ee80d0"
+        "src/content/posts/deepseek/10-csa/diagrams/10-csa-pipeline.wisp.svg": "sha256-caca9492adf1a752650ff6f0c97d4d026415305bc468d6408d5f642b68673d20"
       },
       "pages": [
-        "CSA：重叠压缩、稀疏选择、窗口补洞与 MQA 输出"
+        "CSA：先按 m 压缩，再在压缩条目上做稀疏选择"
       ]
     }
   }
