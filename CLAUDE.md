@@ -5,7 +5,7 @@
 ## 约定
 
 - **外观规范先读 `node_modules/astro-wisp/DESIGN.md`**（字体、配色、圆角、间距、组件样式、品牌原则）。站点不另写视觉规范；覆盖样式或写讲解组件时遵守它：颜色只用令牌、图标只用 Lucide（不用 emoji / Unicode 字符）、圆角 3px / 4px。
-- 文章标题以编号开头（如「05 MLA 的两个技巧」）时，主题会把编号排成章节号；图表自然宽度尽量 ≤ 1000px，否则正文栏里会被缩小。
+- 文章标题以编号开头（如「05 MLA 的两个技巧」）时，主题会把编号排成章节号；图表按正文栏宽度画（自然宽度 640–700px，流程从上到下），更宽会被缩小。
 - 站点与主题配置在 `astro.config.ts`，主题来自 npm 包 `astro-wisp`。
 - 文章放在 `src/content/posts/`，页面放在 `src/content/pages/`。
 - 颜色覆盖使用 `design/palette.json`，通过 `wisp({ palette })` 生成 `--wisp-*` / `--wd-*` 令牌。
