@@ -24,11 +24,30 @@ const LABEL = 36; // 顶部坐标说明的高度：留够空，避免压住第�
 const VGAP = 52;
 
 /** 一张掩码缩略图。 */
-function MaskTile({ e, x, y, l, active, dim }: { e: MaskEntry; x: number; y: number; l: number; active: boolean; dim: boolean }) {
+function MaskTile({
+  e,
+  x,
+  y,
+  l,
+  active,
+  dim,
+}: {
+  e: MaskEntry;
+  x: number;
+  y: number;
+  l: number;
+  active: boolean;
+  dim: boolean;
+}) {
   const size = l * PX;
   return (
     <g transform={`translate(${x} ${y})`} opacity={dim ? 0.32 : 1}>
-      <text x={0} y={-8} className="wisp-explainer__label" style={{ fill: active ? toneStroke('highlight') : 'var(--wisp-fg)' }}>
+      <text
+        x={0}
+        y={-8}
+        className="wisp-explainer__label"
+        style={{ fill: active ? toneStroke('highlight') : 'var(--wisp-fg)' }}
+      >
         {e.name}
       </text>
       {/* 格子：可读=绿，不读但在因果范围内=灰，未来=空 */}
@@ -54,9 +73,21 @@ function MaskTile({ e, x, y, l, active, dim }: { e: MaskEntry; x: number; y: num
         }),
       )}
       {active && (
-        <rect x={-3} y={-3} width={size + 6} height={size + 6} rx={3} style={{ fill: 'none', stroke: toneStroke('highlight'), strokeWidth: 2 }} />
+        <rect
+          x={-3}
+          y={-3}
+          width={size + 6}
+          height={size + 6}
+          rx={3}
+          style={{ fill: 'none', stroke: toneStroke('highlight'), strokeWidth: 2 }}
+        />
       )}
-      <text x={0} y={size + 12} className="wisp-explainer__label" style={{ fill: 'var(--wisp-muted)' }}>
+      <text
+        x={0}
+        y={size + 12}
+        className="wisp-explainer__label"
+        style={{ fill: 'var(--wisp-muted)' }}
+      >
         {`${f(e.density * 100, 0)}% · 单步≤${e.maxRow}`}
       </text>
     </g>

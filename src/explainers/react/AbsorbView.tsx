@@ -34,9 +34,18 @@ function Scene({ s, focus }: { s: AbsorbState; focus?: string[] }) {
   const h = TOP + Math.max(l, 2) * ROW + 86;
 
   return (
-    <Stage width={w} height={h} label={`${s.mode === 'naive' ? '朴素' : '吸收'}顺序：${l} 个历史位置的打分`}>
+    <Stage
+      width={w}
+      height={h}
+      label={`${s.mode === 'naive' ? '朴素' : '吸收'}顺序：${l} 个历史位置的打分`}
+    >
       {/* 当前 Query */}
-      <Caption x={0} y={10} text={s.mode === 'absorb' ? 'q̃（已吸收 W^UK）' : 'q（内容分支）'} tone="q" />
+      <Caption
+        x={0}
+        y={10}
+        text={s.mode === 'absorb' ? 'q̃（已吸收 W^UK）' : 'q（内容分支）'}
+        tone="q"
+      />
       {s.mode === 'absorb'
         ? s.qTilde.map((val, i) => (
             <Cell
@@ -51,7 +60,14 @@ function Scene({ s, focus }: { s: AbsorbState; focus?: string[] }) {
             />
           ))
         : s.q.map((val, i) => (
-            <Cell key={`q${i}`} x={X_LAT + i * S} y={TOP - 30} size={S - 4} tone="q" text={f(val)} />
+            <Cell
+              key={`q${i}`}
+              x={X_LAT + i * S}
+              y={TOP - 30}
+              size={S - 4}
+              tone="q"
+              text={f(val)}
+            />
           ))}
 
       {/* 历史 latent：缓存里真正存着的 */}
@@ -155,7 +171,12 @@ export default function AbsorbView({ mode = 'absorb', title }: AbsorbViewProps) 
   return (
     <Explainer
       steps={steps}
-      title={title ?? (mode === 'naive' ? '朴素顺序：先展开 K，再打分' : '吸收顺序：先折进 Query，直接用 latent 打分')}
+      title={
+        title ??
+        (mode === 'naive'
+          ? '朴素顺序：先展开 K，再打分'
+          : '吸收顺序：先折进 Query，直接用 latent 打分')
+      }
     >
       {(step) => <Scene s={step.state} focus={step.focus} />}
     </Explainer>

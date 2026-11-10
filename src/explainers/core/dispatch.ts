@@ -64,7 +64,10 @@ export function isCompatible(desc: GraphDesc, req: BatchReq): CheckResult {
     {
       name: '每请求 token 数',
       ok: dUtc === null || dUtc === req.uniformTokenCount,
-      detail: dUtc === null ? '图不限制（PIECEWISE）' : `图要求恰好 ${dUtc}，本轮 ${req.uniformTokenCount ?? '非统一'}`,
+      detail:
+        dUtc === null
+          ? '图不限制（PIECEWISE）'
+          : `图要求恰好 ${dUtc}，本轮 ${req.uniformTokenCount ?? '非统一'}`,
     },
     {
       name: 'query 长度上界',
@@ -105,7 +108,10 @@ export const eagerDesc = (req: BatchReq): GraphDesc => ({
 });
 
 /** 在候选图里按顺序找第一个兼容的；找不到返回 eager。 */
-export function dispatch(graphs: GraphDesc[], req: BatchReq): { desc: GraphDesc; matchedIndex: number | null } {
+export function dispatch(
+  graphs: GraphDesc[],
+  req: BatchReq,
+): { desc: GraphDesc; matchedIndex: number | null } {
   for (let i = 0; i < graphs.length; i++) {
     if (isCompatible(graphs[i], req).ok) return { desc: graphs[i], matchedIndex: i };
   }
@@ -140,7 +146,9 @@ export interface DispatchState {
 }
 
 export function dispatchFlow(graphs: GraphDesc[], req: BatchReq): Timeline<DispatchState> {
-  const snap = (over: Partial<DispatchState> & { phase: DispatchState['phase'] }): DispatchState => ({
+  const snap = (
+    over: Partial<DispatchState> & { phase: DispatchState['phase'] },
+  ): DispatchState => ({
     graphs,
     req,
     examined: 0,
@@ -166,7 +174,14 @@ export function dispatchFlow(graphs: GraphDesc[], req: BatchReq): Timeline<Dispa
     if (r.ok) {
       const pad = padding(g, req);
       tl.push({
-        state: snap({ phase: 'matched', examined: i + 1, cur: i, checks: r.checks, matched: i, padTokens: pad.tokens }),
+        state: snap({
+          phase: 'matched',
+          examined: i + 1,
+          cur: i,
+          checks: r.checks,
+          matched: i,
+          padTokens: pad.tokens,
+        }),
         caption: `候选 ${i}（${g.cgMode}，容量 ${g.numTokens} token）：六项全过 → 命中。本轮 ${req.numTokens} 个 token 要 padding 到 ${g.numTokens}，浪费 ${pad.tokens} 个（${f((pad.tokens / g.numTokens) * 100, 1)}%）。`,
         focus: [itemId('graph', i)],
       });

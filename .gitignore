@@ -5,6 +5,7 @@ test-results/
 playwright-report/
 blob-report/
 coverage/
+.uv-cache/
 .env
 .env.*
 !.env.example

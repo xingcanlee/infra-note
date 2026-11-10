@@ -56,12 +56,14 @@ describe('两条车道的排程', () => {
 
   it('设备车道不重叠（串行执行）', () => {
     const ls = plan('eager');
-    for (let i = 1; i < ls.length; i++) expect(ls[i].devStart).toBeGreaterThanOrEqual(ls[i - 1].devEnd);
+    for (let i = 1; i < ls.length; i++)
+      expect(ls[i].devStart).toBeGreaterThanOrEqual(ls[i - 1].devEnd);
   });
 
   it('CPU 车道不重叠（串行提交）', () => {
     const ls = plan('eager');
-    for (let i = 1; i < ls.length; i++) expect(ls[i].cpuStart).toBeGreaterThanOrEqual(ls[i - 1].cpuEnd);
+    for (let i = 1; i < ls.length; i++)
+      expect(ls[i].cpuStart).toBeGreaterThanOrEqual(ls[i - 1].cpuEnd);
   });
 });
 
@@ -79,7 +81,9 @@ describe('submitStats', () => {
   });
 
   it('piecewise 的墙钟不长于 eager', () => {
-    expect(submitStats(plan('piecewise'), ops).wall).toBeLessThanOrEqual(submitStats(plan('eager'), ops).wall);
+    expect(submitStats(plan('piecewise'), ops).wall).toBeLessThanOrEqual(
+      submitStats(plan('eager'), ops).wall,
+    );
   });
 
   it('算子越碎（设备执行越短），提交开销占比越高', () => {
@@ -139,7 +143,8 @@ describe('同步点', () => {
 
 describe('submitFlow 时间线', () => {
   it('每一步都有说明文字', () => {
-    for (const s of submitFlow({ mode: 'piecewise', ops })) expect(s.caption.length).toBeGreaterThan(0);
+    for (const s of submitFlow({ mode: 'piecewise', ops }))
+      expect(s.caption.length).toBeGreaterThan(0);
   });
 
   it('步数 = 提交次数 + 首尾两帧', () => {

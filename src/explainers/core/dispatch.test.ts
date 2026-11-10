@@ -1,5 +1,13 @@
 import { describe, expect, it } from 'vitest';
-import { dispatch, dispatchFlow, eagerDesc, isCompatible, padding, type BatchReq, type GraphDesc } from './dispatch';
+import {
+  dispatch,
+  dispatchFlow,
+  eagerDesc,
+  isCompatible,
+  padding,
+  type BatchReq,
+  type GraphDesc,
+} from './dispatch';
 
 const decodeGraph = (tokens: number, reqs: number): GraphDesc => ({
   cgMode: 'FULL',
@@ -37,13 +45,22 @@ describe('isCompatible 的六项检查', () => {
   });
 
   it('decode 图要求每请求 token 数严格相等', () => {
-    const r = isCompatible(decodeGraph(8, 8), { numReqs: 2, numTokens: 8, uniformTokenCount: 4, maxQueryLen: 4 });
+    const r = isCompatible(decodeGraph(8, 8), {
+      numReqs: 2,
+      numTokens: 8,
+      uniformTokenCount: 4,
+      maxQueryLen: 4,
+    });
     expect(r.ok).toBe(false);
     expect(r.checks[0].ok).toBe(false);
   });
 
   it('非统一批次配不上 decode 图', () => {
-    const r = isCompatible(decodeGraph(8, 8), { numReqs: 3, numTokens: 8, uniformTokenCount: null });
+    const r = isCompatible(decodeGraph(8, 8), {
+      numReqs: 3,
+      numTokens: 8,
+      uniformTokenCount: null,
+    });
     expect(r.ok).toBe(false);
   });
 
@@ -62,8 +79,12 @@ describe('isCompatible 的六项检查', () => {
 
   it('图约束 query 长度时，调用方必须也跟踪了它', () => {
     const g = { ...decodeGraph(8, 8), maxQueryLen: 4 };
-    expect(isCompatible(g, { numReqs: 1, numTokens: 2, uniformTokenCount: 1, maxQueryLen: null }).ok).toBe(false);
-    expect(isCompatible(g, { numReqs: 1, numTokens: 2, uniformTokenCount: 1, maxQueryLen: 2 }).ok).toBe(true);
+    expect(
+      isCompatible(g, { numReqs: 1, numTokens: 2, uniformTokenCount: 1, maxQueryLen: null }).ok,
+    ).toBe(false);
+    expect(
+      isCompatible(g, { numReqs: 1, numTokens: 2, uniformTokenCount: 1, maxQueryLen: 2 }).ok,
+    ).toBe(true);
   });
 
   it('六项检查齐全且顺序与源码一致', () => {
@@ -86,12 +107,22 @@ describe('dispatch', () => {
   });
 
   it('decode 图都装不下时落到 PIECEWISE', () => {
-    const r = dispatch(graphs, { numReqs: 12, numTokens: 12, uniformTokenCount: 1, maxQueryLen: 1 });
+    const r = dispatch(graphs, {
+      numReqs: 12,
+      numTokens: 12,
+      uniformTokenCount: 1,
+      maxQueryLen: 1,
+    });
     expect(r.desc.cgMode).toBe('PIECEWISE');
   });
 
   it('全都装不下时回退 eager', () => {
-    const r = dispatch(graphs, { numReqs: 40, numTokens: 40, uniformTokenCount: 1, maxQueryLen: 1 });
+    const r = dispatch(graphs, {
+      numReqs: 40,
+      numTokens: 40,
+      uniformTokenCount: 1,
+      maxQueryLen: 1,
+    });
     expect(r.matchedIndex).toBeNull();
     expect(r.desc.cgMode).toBe('NONE');
   });
@@ -133,7 +164,12 @@ describe('dispatchFlow 时间线', () => {
   });
 
   it('全不兼容时以回退收尾，并点明是静默的', () => {
-    const tl = dispatchFlow(graphs, { numReqs: 40, numTokens: 40, uniformTokenCount: 1, maxQueryLen: 1 });
+    const tl = dispatchFlow(graphs, {
+      numReqs: 40,
+      numTokens: 40,
+      uniformTokenCount: 1,
+      maxQueryLen: 1,
+    });
     const last = tl[tl.length - 1];
     expect(last.state.fellBack).toBe(true);
     expect(last.caption).toContain('静默');

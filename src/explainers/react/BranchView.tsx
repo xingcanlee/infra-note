@@ -7,7 +7,13 @@ import { useMemo } from 'react';
 import { Explainer, Stage, focusOf, formatNumber as f } from 'astro-wisp/explainers';
 import { toneFill, toneStroke, type Tone } from 'astro-wisp/explainers/core';
 import { branchCount, branchFlow, type BranchSpec, type BranchState } from '../core/branches';
-import { blockSelect, slidingWindow, strided, union as maskUnion, type MaskFn } from '../core/masks';
+import {
+  blockSelect,
+  slidingWindow,
+  strided,
+  union as maskUnion,
+  type MaskFn,
+} from '../core/masks';
 import { Caption, Legend } from './primitives';
 
 export interface BranchViewProps {
@@ -75,7 +81,14 @@ function Scene({ s, focus }: { s: BranchState; focus?: string[] }) {
     <Stage width={w} height={h} label={`多分支注意力：位置 ${s.t} 的 ${n} 条读取分支`}>
       <Caption x={LEFT} y={12} text={`历史位置 0 … ${s.l - 1}（当前 query 在位置 ${s.t}）`} />
       {/* 当前位置标记 */}
-      <rect x={LEFT + s.t * PX} y={TOP - 12} width={PX - 2} height={5} rx={1} style={{ fill: toneStroke('q') }} />
+      <rect
+        x={LEFT + s.t * PX}
+        y={TOP - 12}
+        width={PX - 2}
+        height={5}
+        rx={1}
+        style={{ fill: toneStroke('q') }}
+      />
 
       {s.branches.map((b, i) => {
         const y = TOP + i * ROWH;
@@ -83,10 +96,23 @@ function Scene({ s, focus }: { s: BranchState; focus?: string[] }) {
         const cnt = branchCount(b, s.t, s.l);
         return (
           <g key={b.id} opacity={s.reads[i] === null ? 0.35 : 1}>
-            <text x={LEFT - 12} y={y + 10} textAnchor="end" className="wisp-explainer__label" style={{ fill: toneStroke(TONES[i % TONES.length]) }}>
+            <text
+              x={LEFT - 12}
+              y={y + 10}
+              textAnchor="end"
+              className="wisp-explainer__label"
+              style={{ fill: toneStroke(TONES[i % TONES.length]) }}
+            >
               {b.name}
             </text>
-            <Strip y={y} l={s.l} t={s.t} reads={s.reads[i]} tone={TONES[i % TONES.length]} active={active} />
+            <Strip
+              y={y}
+              l={s.l}
+              t={s.t}
+              reads={s.reads[i]}
+              tone={TONES[i % TONES.length]}
+              active={active}
+            />
             <text
               x={LEFT + s.l * PX + 12}
               y={y + 10}
@@ -96,7 +122,13 @@ function Scene({ s, focus }: { s: BranchState; focus?: string[] }) {
             >
               {s.reads[i] === null ? '' : `读 ${cnt} 个 · gate ${f(b.gate)}`}
             </text>
-            <text x={LEFT - 12} y={y + 26} textAnchor="end" className="wisp-explainer__label" style={{ fill: 'var(--wisp-muted)' }}>
+            <text
+              x={LEFT - 12}
+              y={y + 26}
+              textAnchor="end"
+              className="wisp-explainer__label"
+              style={{ fill: 'var(--wisp-muted)' }}
+            >
               {b.unit === 'block' ? '压缩条目' : '原始 token'}
             </text>
           </g>
@@ -152,9 +184,28 @@ function Scene({ s, focus }: { s: BranchState; focus?: string[] }) {
 export function nsaBranches(blockL = 4, keepBlocks = 2, win = 4): BranchSpec[] {
   const compressed: MaskFn = (t, s) => s <= t && s % blockL === 0; // 每块一个压缩条目
   return [
-    { id: 'cmp', name: '压缩分支', role: '每 l 个 token 压成一个条目，提供粗粒度的全局视野', fn: compressed, gate: 0.3, unit: 'block' },
-    { id: 'slc', name: '选块分支', role: '按压缩分支的注意力分数挑出最相关的几个块，读其中的原始 token', fn: blockSelect(blockL, keepBlocks), gate: 0.5 },
-    { id: 'win', name: '窗口分支', role: '最近 w 个 token，保证局部细节不丢', fn: slidingWindow(win), gate: 0.2 },
+    {
+      id: 'cmp',
+      name: '压缩分支',
+      role: '每 l 个 token 压成一个条目，提供粗粒度的全局视野',
+      fn: compressed,
+      gate: 0.3,
+      unit: 'block',
+    },
+    {
+      id: 'slc',
+      name: '选块分支',
+      role: '按压缩分支的注意力分数挑出最相关的几个块，读其中的原始 token',
+      fn: blockSelect(blockL, keepBlocks),
+      gate: 0.5,
+    },
+    {
+      id: 'win',
+      name: '窗口分支',
+      role: '最近 w 个 token，保证局部细节不丢',
+      fn: slidingWindow(win),
+      gate: 0.2,
+    },
   ];
 }
 

@@ -1,6 +1,6 @@
 ---
-title: "00 一次 decode 到底提交了什么"
-description: "设备上的计算很小，时间却花掉了——先把 CPU 提交和设备执行这两条车道分开看。"
+title: '00 一次 decode 到底提交了什么'
+description: '设备上的计算很小，时间却花掉了——先把 CPU 提交和设备执行这两条车道分开看。'
 series:
   id: vllm-graph
   order: 2
@@ -22,7 +22,11 @@ DeepSeek 系列把「模型算什么」讲完了：MLA 压缩表示，稀疏注�
 
 两层 decode，每层 5 个算子。设备执行合计 7.8 个时间单位。假设每次提交要占 CPU 1 个单位：
 
-<SubmitTimeline client:visible mode="eager" title="图 00-1：eager——10 个算子提交 10 次，看下面那条车道的红色虚线段" />
+<SubmitTimeline
+  client:visible
+  mode="eager"
+  title="图 00-1：eager——10 个算子提交 10 次，看下面那条车道的红色虚线段"
+/>
 
 红色虚线段是**设备在空等**：活还没交下来，它只能闲着。这一轮里设备空闲占了 30.4%。
 
@@ -32,12 +36,12 @@ DeepSeek 系列把「模型算什么」讲完了：MLA 压缩表示，稀疏注�
 
 第 02 篇（DeepSeek 系列）已经分过 prefill 和 decode。这里只看提交这一侧：
 
-| | prefill | decode |
-| --- | --- | --- |
-| 一次处理 | 整段 prompt（几百上千 token） | **1 个 token** |
-| 每个算子的设备工作量 | 大（矩阵很大） | **很小** |
-| 算子个数 | 和 decode 一样 | 和 prefill 一样 |
-| 提交开销占比 | 低（被计算掩盖） | **高** |
+|                      | prefill                       | decode          |
+| -------------------- | ----------------------------- | --------------- |
+| 一次处理             | 整段 prompt（几百上千 token） | **1 个 token**  |
+| 每个算子的设备工作量 | 大（矩阵很大）                | **很小**        |
+| 算子个数             | 和 decode 一样                | 和 prefill 一样 |
+| 提交开销占比         | 低（被计算掩盖）              | **高**          |
 
 **算子个数由模型层数决定，和这一轮处理几个 token 无关。** prefill 时每个算子要算几百个 token，提交那点开销被淹没了；decode 时每个算子只算 1 个 token，提交开销就浮上水面。
 
@@ -59,15 +63,19 @@ DeepSeek 系列把「模型算什么」讲完了：MLA 压缩表示，稀疏注�
 
 把同样 10 个算子换成分段图：能连续捕获的片段打包成一张图，attention 这类捕获不了的算子仍然单独提交。
 
-<SubmitTimeline client:visible mode="piecewise" title="图 00-2：piecewise——5 次提交，空闲段明显变短" />
+<SubmitTimeline
+  client:visible
+  mode="piecewise"
+  title="图 00-2：piecewise——5 次提交，空闲段明显变短"
+/>
 
 三种模式的对照（同样 10 个算子、设备合计 7.8、每次逐算子提交花 1、一次图 replay 花 1.2）：
 
-| 模式      | 提交次数 | CPU 总耗时 | 墙钟 | 设备空闲      |
-| --------- | -------- | ---------- | ---- | ------------- |
-| eager     | 10       | 10.0       | 11.2 | 3.4（30.4%）  |
-| piecewise | 5        | 5.6        | 9.1  | 1.3（14.3%）  |
-| full      | 1        | 1.2        | 9.0  | 1.2（13.3%）  |
+| 模式      | 提交次数 | CPU 总耗时 | 墙钟 | 设备空闲     |
+| --------- | -------- | ---------- | ---- | ------------ |
+| eager     | 10       | 10.0       | 11.2 | 3.4（30.4%） |
+| piecewise | 5        | 5.6        | 9.1  | 1.3（14.3%） |
+| full      | 1        | 1.2        | 9.0  | 1.2（13.3%） |
 
 三点结论：
 
@@ -79,11 +87,11 @@ DeepSeek 系列把「模型算什么」讲完了：MLA 压缩表示，稀疏注�
 
 把提交开销调便宜（每次 0.2 而不是 1），同一组算子：
 
-| 模式      | 提交次数 | CPU 总耗时 | 墙钟     | 设备空闲     |
-| --------- | -------- | ---------- | -------- | ------------ |
-| eager     | 10       | 2.0        | **8.0**  | 0.2（2.5%）  |
-| piecewise | 5        | 4.0        | 9.0      | 1.2（13.3%） |
-| full      | 1        | 1.2        | 9.0      | 1.2（13.3%） |
+| 模式      | 提交次数 | CPU 总耗时 | 墙钟    | 设备空闲     |
+| --------- | -------- | ---------- | ------- | ------------ |
+| eager     | 10       | 2.0        | **8.0** | 0.2（2.5%）  |
+| piecewise | 5        | 4.0        | 9.0     | 1.2（13.3%） |
+| full      | 1        | 1.2        | 9.0     | 1.2（13.3%） |
 
 **eager 反而最快。** 因为这个设定里一次图 replay 的固定成本（1.2）比 5 次逐算子提交（1.0）还贵，而提交本来就已经被设备计算掩盖了——没有空闲可省，图模式只剩下自己的开销。
 
@@ -130,12 +138,12 @@ def plan(ops, mode, launch_cost=1.0, graph_launch=1.2):
 
 vLLM 里对应的概念（本地快照 commit `cf5cea2d`）：
 
-| 概念             | 位置                                         | 说明                                                        |
-| ---------------- | -------------------------------------------- | ----------------------------------------------------------- |
-| 编译模式         | `vllm/config/compilation.py:38-51`           | `CompilationMode`：`NONE` / `STOCK_TORCH_COMPILE` / `DYNAMO_TRACE_ONCE` / `VLLM_COMPILE` |
-| 设备图模式       | `vllm/config/compilation.py:129-164`         | `CUDAGraphMode`：`NONE` / `PIECEWISE` / `FULL` / `FULL_DECODE_ONLY` / `FULL_AND_PIECEWISE` |
-| 为什么要分段     | `vllm/config/compilation.py:583-600`         | `splitting_ops` 默认把 attention 列为切分点                 |
-| 官方说明         | `docs/design/cuda_graphs.md`                 | 各模式的语义与取舍                                          |
+| 概念         | 位置                                 | 说明                                                                                       |
+| ------------ | ------------------------------------ | ------------------------------------------------------------------------------------------ |
+| 编译模式     | `vllm/config/compilation.py:38-51`   | `CompilationMode`：`NONE` / `STOCK_TORCH_COMPILE` / `DYNAMO_TRACE_ONCE` / `VLLM_COMPILE`   |
+| 设备图模式   | `vllm/config/compilation.py:129-164` | `CUDAGraphMode`：`NONE` / `PIECEWISE` / `FULL` / `FULL_DECODE_ONLY` / `FULL_AND_PIECEWISE` |
+| 为什么要分段 | `vllm/config/compilation.py:583-600` | `splitting_ops` 默认把 attention 列为切分点                                                |
+| 官方说明     | `docs/design/cuda_graphs.md`         | 各模式的语义与取舍                                                                         |
 
 注意 `CUDAGraphMode` 里有 `FULL_DECODE_ONLY` 和 `FULL_AND_PIECEWISE` 两个组合值——这正好印证上面那条结论：**decode 用整图、prefill/mixed 用分段**，因为两个阶段的提交开销占比完全不同。设计里已经把这件事区分开了。
 

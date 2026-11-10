@@ -1,6 +1,6 @@
 ---
-title: "07 Ascend 图模式：同一套抽象换个后端"
-description: "ACLGraph、NPUGraph、TorchAir 各在哪一层——以及 vLLM-Ascend 的 wrapper 和 CUDA 版有一处关键不同。"
+title: '07 Ascend 图模式：同一套抽象换个后端'
+description: 'ACLGraph、NPUGraph、TorchAir 各在哪一层——以及 vLLM-Ascend 的 wrapper 和 CUDA 版有一处关键不同。'
 series:
   id: vllm-graph
   order: 9
@@ -47,13 +47,13 @@ flowchart TB
 
 逐层对照：
 
-| 层 | NVIDIA | Ascend | 位置 |
-| --- | --- | --- | --- |
-| 运行时模式 | `CUDAGraphMode` | **同一个枚举** | `vllm/config/compilation.py:129-164` |
-| 描述符 | `BatchDescriptor` | **同一个类** | `vllm/forward_context.py:29-53` |
-| 图 wrapper | `CUDAGraphWrapper`（`vllm/compilation/cuda_graph.py:144`） | `ACLGraphWrapper` | `vllm_ascend/compilation/acl_graph.py:66` |
-| 设备图对象 | `torch.cuda.CUDAGraph` | `torch.npu.NPUGraph` | `acl_graph.py:55-63`（`ACLGraphEntry`） |
-| 编译后端 | Inductor | `npugraph_ex`，回退 `torchair` | `vllm_ascend/compilation/compiler_interface.py:199-263` |
+| 层         | NVIDIA                                                     | Ascend                         | 位置                                                    |
+| ---------- | ---------------------------------------------------------- | ------------------------------ | ------------------------------------------------------- |
+| 运行时模式 | `CUDAGraphMode`                                            | **同一个枚举**                 | `vllm/config/compilation.py:129-164`                    |
+| 描述符     | `BatchDescriptor`                                          | **同一个类**                   | `vllm/forward_context.py:29-53`                         |
+| 图 wrapper | `CUDAGraphWrapper`（`vllm/compilation/cuda_graph.py:144`） | `ACLGraphWrapper`              | `vllm_ascend/compilation/acl_graph.py:66`               |
+| 设备图对象 | `torch.cuda.CUDAGraph`                                     | `torch.npu.NPUGraph`           | `acl_graph.py:55-63`（`ACLGraphEntry`）                 |
+| 编译后端   | Inductor                                                   | `npugraph_ex`，回退 `torchair` | `vllm_ascend/compilation/compiler_interface.py:199-263` |
 
 **通用层是真的共用的**，不是「各写一份长得像」。Ascend 通过平台 hook 把自己的 wrapper 注册进去（`vllm_ascend/platform.py:242-246`）：
 
@@ -115,11 +115,11 @@ except ImportError:
 
 所以三个名字各自归位：
 
-| 名字 | 哪一层 | 对应 NVIDIA 的 |
-| --- | --- | --- |
-| **TorchAir** / **npugraph_ex** | 编译图（torch.compile 后端） | Inductor |
-| **NPUGraph** | 设备图对象 | `torch.cuda.CUDAGraph` |
-| **ACLGraph** | 设备图机制的统称 | CUDA Graph |
+| 名字                           | 哪一层                       | 对应 NVIDIA 的         |
+| ------------------------------ | ---------------------------- | ---------------------- |
+| **TorchAir** / **npugraph_ex** | 编译图（torch.compile 后端） | Inductor               |
+| **NPUGraph**                   | 设备图对象                   | `torch.cuda.CUDAGraph` |
+| **ACLGraph**                   | 设备图机制的统称             | CUDA Graph             |
 
 把 TorchAir 和 ACLGraph 当成一回事，是读这块资料时最常见的错误。它们分属第 02 篇和第 03 篇讲的两种图，**可以单独开关**。
 

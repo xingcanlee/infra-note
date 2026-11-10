@@ -1,6 +1,6 @@
 ---
-title: "08 排错：变慢了、没走图、结果不对"
-description: "把前面七篇的判断串成一条排查路径——先确认在走哪条路，再找为什么。"
+title: '08 排错：变慢了、没走图、结果不对'
+description: '把前面七篇的判断串成一条排查路径——先确认在走哪条路，再找为什么。'
 series:
   id: vllm-graph
   order: 10
@@ -18,11 +18,11 @@ import SubmitTimeline from '../../../../explainers/react/SubmitTimeline';
 
 ## 三类症状
 
-| 症状 | 最可能的原因 | 去第几节 |
-| --- | --- | --- |
-| **开了图模式但没变快** | 根本没走图（静默回退），或者本来就没有可省的开销 | §1、§2 |
-| **结果不对 / 数值漂移** | 固定地址被破坏，或 CPU 工作被跳过 | §3 |
-| **启动很慢 / 显存爆** | 图太多（桶太密），或内存池问题 | §4 |
+| 症状                    | 最可能的原因                                     | 去第几节 |
+| ----------------------- | ------------------------------------------------ | -------- |
+| **开了图模式但没变快**  | 根本没走图（静默回退），或者本来就没有可省的开销 | §1、§2   |
+| **结果不对 / 数值漂移** | 固定地址被破坏，或 CPU 工作被跳过                | §3       |
+| **启动很慢 / 显存爆**   | 图太多（桶太密），或内存池问题                   | §4       |
 
 ## §1 第一步：确认在走哪条路
 
@@ -38,11 +38,11 @@ VLLM_LOGGING_LEVEL=DEBUG python -m vllm.entrypoints... 2>&1 | grep -i "capturing
 
 对应的源码位置：
 
-| 日志 | 位置 | 含义 |
-| --- | --- | --- |
-| `Capturing a cudagraph on (...)` | `vllm/compilation/cuda_graph.py:272` | 某个 key 的图**被捕获了** |
-| `Capturing ACL graph (...)` | `vllm_ascend/compilation/acl_graph.py:190` | 同上，Ascend |
-| `Skipping ... CUDA graph capture ...` | `vllm/v1/worker/gpu/model_runner.py:1142` | 压根没打算捕获 |
+| 日志                                  | 位置                                       | 含义                      |
+| ------------------------------------- | ------------------------------------------ | ------------------------- |
+| `Capturing a cudagraph on (...)`      | `vllm/compilation/cuda_graph.py:272`       | 某个 key 的图**被捕获了** |
+| `Capturing ACL graph (...)`           | `vllm_ascend/compilation/acl_graph.py:190` | 同上，Ascend              |
+| `Skipping ... CUDA graph capture ...` | `vllm/v1/worker/gpu/model_runner.py:1142`  | 压根没打算捕获            |
 
 **两个必须分清的事实**：
 
@@ -55,14 +55,14 @@ VLLM_LOGGING_LEVEL=DEBUG python -m vllm.entrypoints... 2>&1 | grep -i "capturing
 
 确认了「建了图但没用上」，就是回退。按第 05 篇那六项条件逐条对：
 
-| # | 条件 | 常见触发 | 怎么确认 |
-| - | --- | --- | --- |
-| 1 | 每请求 token 数相等 | batch 里混进了 prefill | 看这一轮是不是纯 decode |
-| 2 | query 长度上界 | 投机解码让 query_len > 1 | 看是否开了 MTP / speculative |
-| 3 | 请求数容量 | 并发超过最大桶 | 对比并发数与 `cudagraph_capture_sizes` |
-| 4 | token 容量 | 同上 | 同上 |
-| 5 | **LoRA 数相等** | 请求带了不同的 LoRA | 看是否启用 LoRA |
-| 6 | **ubatch 数相等** | 开了 DBO / 微批 | 看相关配置 |
+| #   | 条件                | 常见触发                 | 怎么确认                               |
+| --- | ------------------- | ------------------------ | -------------------------------------- |
+| 1   | 每请求 token 数相等 | batch 里混进了 prefill   | 看这一轮是不是纯 decode                |
+| 2   | query 长度上界      | 投机解码让 query_len > 1 | 看是否开了 MTP / speculative           |
+| 3   | 请求数容量          | 并发超过最大桶           | 对比并发数与 `cudagraph_capture_sizes` |
+| 4   | token 容量          | 同上                     | 同上                                   |
+| 5   | **LoRA 数相等**     | 请求带了不同的 LoRA      | 看是否启用 LoRA                        |
+| 6   | **ubatch 数相等**   | 开了 DBO / 微批          | 看相关配置                             |
 
 第 1 条是最常见的：**只要 batch 里混进一个 prefill，`uniform` 就为 false，整轮配不上 decode 图**。这也是 `FULL_DECODE_ONLY` 这个模式存在的原因——它承认了「只有纯 decode 轮次才有机会走整图」。
 
@@ -72,10 +72,19 @@ VLLM_LOGGING_LEVEL=DEBUG python -m vllm.entrypoints... 2>&1 | grep -i "capturing
 
 如果确认在 replay 却仍然没变快，回到第 00 篇那个结论：**图模式只在提交开销暴露在关键路径上时才有收益**。
 
-<SubmitTimeline client:visible mode="eager" launchCost={0.2} ops={[
-  { name: 'norm', exec: 3 }, { name: 'qkv', exec: 8 }, { name: 'attn', exec: 10 },
-  { name: 'out', exec: 6 }, { name: 'ffn', exec: 12 },
-]} title="图 08-1：算子够大时，eager 的设备空闲已经接近 0——这种情况下图模式没有可省的" />
+<SubmitTimeline
+  client:visible
+  mode="eager"
+  launchCost={0.2}
+  ops={[
+    { name: 'norm', exec: 3 },
+    { name: 'qkv', exec: 8 },
+    { name: 'attn', exec: 10 },
+    { name: 'out', exec: 6 },
+    { name: 'ffn', exec: 12 },
+  ]}
+  title="图 08-1：算子够大时，eager 的设备空闲已经接近 0——这种情况下图模式没有可省的"
+/>
 
 自检三个问题：
 
@@ -127,11 +136,11 @@ cudagraph_mode=NONE  + 编译关  → 还错吗？  错 → 和图模式无关�
 
 ## §4 启动慢 / 显存爆
 
-| 现象 | 原因 | 处理方向 |
-| --- | --- | --- |
-| 启动阶段卡很久 | 桶太多，每个都要 `_dummy_run` 捕获一遍 | 减少 `cudagraph_capture_sizes` |
-| 显存比 eager 高一截 | 每张图的私有内存池 + 固定缓冲区 | 同上；评估整图 vs 分段 |
-| 某些图每次启动都重编译 | 命中了不可缓存的情形（如含 Triton kernel 的图，第 07 篇） | 看编译缓存日志 |
+| 现象                   | 原因                                                      | 处理方向                       |
+| ---------------------- | --------------------------------------------------------- | ------------------------------ |
+| 启动阶段卡很久         | 桶太多，每个都要 `_dummy_run` 捕获一遍                    | 减少 `cudagraph_capture_sizes` |
+| 显存比 eager 高一截    | 每张图的私有内存池 + 固定缓冲区                           | 同上；评估整图 vs 分段         |
+| 某些图每次启动都重编译 | 命中了不可缓存的情形（如含 Triton kernel 的图，第 07 篇） | 看编译缓存日志                 |
 
 捕获发生在 `capture_model`（`vllm/v1/worker/gpu/model_runner.py:1132-1175`），由 `_dummy_run` 用假数据触发（`:878-900`）。**桶的数量直接决定启动时间和显存占用**——第 06 篇的练习五就是在做这个权衡。
 

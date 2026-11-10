@@ -39,7 +39,9 @@ function Scene({ s, focus }: { s: DispatchState; focus?: string[] }) {
         w={BOXW + 300}
         h={22}
         label={`${s.req.numReqs} 个请求 · ${s.req.numTokens} token · ${
-          s.req.uniformTokenCount !== null ? `每请求 ${s.req.uniformTokenCount}（统一）` : '长度不统一'
+          s.req.uniformTokenCount !== null
+            ? `每请求 ${s.req.uniformTokenCount}（统一）`
+            : '长度不统一'
         } · LoRA ${s.req.numActiveLoras ?? 0}`}
         tone="q"
         active={s.phase === 'intro'}
@@ -65,16 +67,29 @@ function Scene({ s, focus }: { s: DispatchState; focus?: string[] }) {
             {isCur && s.checks && (
               <g>
                 {s.checks.map((c, j) => (
-                  <g key={c.name} transform={`translate(${CHECK_X + (j % 3) * CHECK_COL} ${y + (j < 3 ? 2 : 18)})`}>
+                  <g
+                    key={c.name}
+                    transform={`translate(${CHECK_X + (j % 3) * CHECK_COL} ${y + (j < 3 ? 2 : 18)})`}
+                  >
                     <rect
                       x={0}
                       y={0}
                       width={10}
                       height={10}
                       rx={2}
-                      style={{ fill: toneFill(c.ok ? 'done' : 'error'), stroke: toneStroke(c.ok ? 'done' : 'error'), strokeWidth: 1 }}
+                      style={{
+                        fill: toneFill(c.ok ? 'done' : 'error'),
+                        stroke: toneStroke(c.ok ? 'done' : 'error'),
+                        strokeWidth: 1,
+                      }}
                     />
-                    <text x={14} y={5} dominantBaseline="central" className="wisp-explainer__label" style={{ fill: 'var(--wisp-muted)' }}>
+                    <text
+                      x={14}
+                      y={5}
+                      dominantBaseline="central"
+                      className="wisp-explainer__label"
+                      style={{ fill: 'var(--wisp-muted)' }}
+                    >
                       {c.name}
                     </text>
                   </g>
@@ -145,7 +160,11 @@ const DEFAULT_GRAPHS: GraphDesc[] = [
 
 const DEFAULT_REQ: BatchReq = { numReqs: 3, numTokens: 3, uniformTokenCount: 1, maxQueryLen: 1 };
 
-export default function BucketDispatch({ graphs = DEFAULT_GRAPHS, req = DEFAULT_REQ, title }: BucketDispatchProps) {
+export default function BucketDispatch({
+  graphs = DEFAULT_GRAPHS,
+  req = DEFAULT_REQ,
+  title,
+}: BucketDispatchProps) {
   const steps = useMemo(() => dispatchFlow(graphs, req), [graphs, req]);
   return (
     <Explainer steps={steps} title={title ?? '图桶选路：逐个检查候选，命中或回退'}>

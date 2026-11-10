@@ -4,7 +4,15 @@
  * 用在：DS 01（因果注意力）、DS 06–12（各种稀疏读取集合）。
  */
 import { useMemo } from 'react';
-import { CELL, Cell, Explainer, Label, Stage, focusOf, formatNumber as f } from 'astro-wisp/explainers';
+import {
+  CELL,
+  Cell,
+  Explainer,
+  Label,
+  Stage,
+  focusOf,
+  formatNumber as f,
+} from 'astro-wisp/explainers';
 import { attention, type AttnState } from '../core/attention';
 import { causal, maskCatalog, type MaskFn } from '../core/masks';
 import { Caption, Legend } from './primitives';
@@ -82,11 +90,12 @@ function Scene({ s, focus, showOutput }: { s: AttnState; focus?: string[]; showO
               const strong = hotScores.has(key) || hotWeights.has(key);
               // 权重按 0–1 的概率直接映射；logits 共用整张矩阵的绝对值上限。
               // sqrt 让 0.03 这类小权重仍有可见层级，同时保持大小顺序。
-              const heat = val === null
-                ? 0
-                : hasWeight
-                  ? Math.sqrt(Math.min(1, Math.max(0, val)))
-                  : Math.min(1, Math.abs(val) / scoreCeiling);
+              const heat =
+                val === null
+                  ? 0
+                  : hasWeight
+                    ? Math.sqrt(Math.min(1, Math.max(0, val)))
+                    : Math.min(1, Math.abs(val) / scoreCeiling);
               const fillOpacity = future ? 0.08 : !allowed ? 0.2 : 0.12;
               return (
                 <Cell
@@ -142,11 +151,25 @@ function Scene({ s, focus, showOutput }: { s: AttnState; focus?: string[]; showO
   );
 }
 
-export default function AttentionGrid({ tokens, q, k, v, mask, title, showOutput = true }: AttentionGridProps) {
+export default function AttentionGrid({
+  tokens,
+  q,
+  k,
+  v,
+  mask,
+  title,
+  showOutput = true,
+}: AttentionGridProps) {
   const steps = useMemo(() => {
     const toks = tokens ?? [...TOKENS].slice(0, DIMS.L);
     const base = toyQKV(toks.length, DIMS.dK);
-    return attention({ tokens: toks, q: q ?? base.q, k: k ?? base.k, v: v ?? base.v, mask: mask ? maskFor(mask) : causal });
+    return attention({
+      tokens: toks,
+      q: q ?? base.q,
+      k: k ?? base.k,
+      v: v ?? base.v,
+      mask: mask ? maskFor(mask) : causal,
+    });
   }, [tokens, q, k, v, mask]);
 
   return (

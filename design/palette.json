@@ -3,28 +3,56 @@
   "version": 1,
   "color": {
     "base": {
-      "bg":        { "light": "#fcfcfb", "dark": "#111214" },
-      "surface":   { "light": "#f4f4f2", "dark": "#18191c" },
+      "bg": { "light": "#fcfcfb", "dark": "#111214" },
+      "surface": { "light": "#f4f4f2", "dark": "#18191c" },
       "surface-2": { "light": "#ebebe7", "dark": "#202125" },
-      "border":    { "light": "#e2e2dd", "dark": "#2b2d31" },
-      "fg":        { "light": "#1d1d1f", "dark": "#e6e6e3" },
-      "muted":     { "light": "#5c6067", "dark": "#a0a4ab" },
-      "subtle":    { "light": "#8b9098", "dark": "#6b7078", "$comment": "仅用于非文本元素（分隔线、图标），对比度不满足正文 AA" },
-      "accent":    { "light": "#0f766e", "dark": "#4fd1c0" },
+      "border": { "light": "#e2e2dd", "dark": "#2b2d31" },
+      "fg": { "light": "#1d1d1f", "dark": "#e6e6e3" },
+      "muted": { "light": "#5c6067", "dark": "#a0a4ab" },
+      "subtle": {
+        "light": "#8b9098",
+        "dark": "#6b7078",
+        "$comment": "仅用于非文本元素（分隔线、图标），对比度不满足正文 AA"
+      },
+      "accent": { "light": "#0f766e", "dark": "#4fd1c0" },
       "accent-fg": { "light": "#ffffff", "dark": "#0b1f1d" },
-      "code-bg":   { "light": "#f6f6f4", "dark": "#16171a" },
+      "code-bg": { "light": "#f6f6f4", "dark": "#16171a" },
       "selection": { "light": "#ccf0ea", "dark": "#1d3d39" }
     },
     "hue": {
       "$comment": "8 色分类色板。stroke 用于线条/文字（≥4.5:1），fill 用于填充底色。顺序即 Pele --pele-series-1..8 的顺序。",
-      "blue":   { "stroke": { "light": "#1d4ed8", "dark": "#60a5fa" }, "fill": { "light": "#dbeafe", "dark": "#1b2740" } },
-      "amber":  { "stroke": { "light": "#b45309", "dark": "#fbbf24" }, "fill": { "light": "#fef3c7", "dark": "#38290c" } },
-      "green":  { "stroke": { "light": "#15803d", "dark": "#4ade80" }, "fill": { "light": "#dcfce7", "dark": "#122d1c" } },
-      "rose":   { "stroke": { "light": "#be123c", "dark": "#fb7185" }, "fill": { "light": "#ffe4e6", "dark": "#3a1620" } },
-      "violet": { "stroke": { "light": "#7c3aed", "dark": "#a78bfa" }, "fill": { "light": "#ede9fe", "dark": "#272040" } },
-      "teal":   { "stroke": { "light": "#0f766e", "dark": "#2dd4bf" }, "fill": { "light": "#ccfbf1", "dark": "#0f2c29" } },
-      "orange": { "stroke": { "light": "#c2410c", "dark": "#fb923c" }, "fill": { "light": "#ffedd5", "dark": "#3a2010" } },
-      "slate":  { "stroke": { "light": "#475569", "dark": "#94a3b8" }, "fill": { "light": "#e2e8f0", "dark": "#222831" } }
+      "blue": {
+        "stroke": { "light": "#1d4ed8", "dark": "#60a5fa" },
+        "fill": { "light": "#dbeafe", "dark": "#1b2740" }
+      },
+      "amber": {
+        "stroke": { "light": "#b45309", "dark": "#fbbf24" },
+        "fill": { "light": "#fef3c7", "dark": "#38290c" }
+      },
+      "green": {
+        "stroke": { "light": "#15803d", "dark": "#4ade80" },
+        "fill": { "light": "#dcfce7", "dark": "#122d1c" }
+      },
+      "rose": {
+        "stroke": { "light": "#be123c", "dark": "#fb7185" },
+        "fill": { "light": "#ffe4e6", "dark": "#3a1620" }
+      },
+      "violet": {
+        "stroke": { "light": "#7c3aed", "dark": "#a78bfa" },
+        "fill": { "light": "#ede9fe", "dark": "#272040" }
+      },
+      "teal": {
+        "stroke": { "light": "#0f766e", "dark": "#2dd4bf" },
+        "fill": { "light": "#ccfbf1", "dark": "#0f2c29" }
+      },
+      "orange": {
+        "stroke": { "light": "#c2410c", "dark": "#fb923c" },
+        "fill": { "light": "#ffedd5", "dark": "#3a2010" }
+      },
+      "slate": {
+        "stroke": { "light": "#475569", "dark": "#94a3b8" },
+        "fill": { "light": "#e2e8f0", "dark": "#222831" }
+      }
     },
     "semantic": {
       "$comment": "ML/算法讲解的固定语义色，所有文章、图表、交互组件一致使用。值为 hue 名。",
@@ -44,15 +72,45 @@
     }
   },
   "font": {
-    "sans": ["Inter Variable", "Noto Sans SC Variable", "-apple-system", "BlinkMacSystemFont", "PingFang SC", "HarmonyOS Sans SC", "MiSans", "Noto Sans CJK SC", "Microsoft YaHei", "sans-serif"],
-    "mono": ["JetBrains Mono Variable", "ui-monospace", "SFMono-Regular", "Menlo", "Consolas", "Noto Sans SC Variable", "PingFang SC", "monospace"],
+    "sans": [
+      "Inter Variable",
+      "Noto Sans SC Variable",
+      "-apple-system",
+      "BlinkMacSystemFont",
+      "PingFang SC",
+      "HarmonyOS Sans SC",
+      "MiSans",
+      "Noto Sans CJK SC",
+      "Microsoft YaHei",
+      "sans-serif"
+    ],
+    "mono": [
+      "JetBrains Mono Variable",
+      "ui-monospace",
+      "SFMono-Regular",
+      "Menlo",
+      "Consolas",
+      "Noto Sans SC Variable",
+      "PingFang SC",
+      "monospace"
+    ],
     "hand": ["Excalifont", "Virgil", "Noto Sans SC Variable", "PingFang SC", "sans-serif"],
     "$comment": "hand 仅用于 Excalidraw 手绘风图表。中文统一回落到 Noto Sans SC，不使用小赖体。"
   },
   "type": {
     "base-px": { "mobile": 16, "desktop": 17 },
     "line-height": { "body": 1.8, "heading": 1.35, "code": 1.65, "ui": 1.5 },
-    "scale-rem": { "xs": 0.8125, "sm": 0.875, "base": 1, "lg": 1.125, "h4": 1.0625, "h3": 1.25, "h2": 1.5, "h1": 2, "display": 2.5 },
+    "scale-rem": {
+      "xs": 0.8125,
+      "sm": 0.875,
+      "base": 1,
+      "lg": 1.125,
+      "h4": 1.0625,
+      "h3": 1.25,
+      "h2": 1.5,
+      "h1": 2,
+      "display": 2.5
+    },
     "weight": { "body": 400, "medium": 500, "strong": 600, "heading": 600 },
     "measure-em": 42
   },

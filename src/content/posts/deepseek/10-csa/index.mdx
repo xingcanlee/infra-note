@@ -1,6 +1,6 @@
 ---
-title: "10 CSA：先把序列压短，再稀疏地读"
-description: "V4 把压缩和稀疏叠成一个机制——两级相乘的省法，以及为什么它必须额外挂一条滑动窗口。"
+title: '10 CSA：先把序列压短，再稀疏地读'
+description: 'V4 把压缩和稀疏叠成一个机制——两级相乘的省法，以及为什么它必须额外挂一条滑动窗口。'
 series:
   id: deepseek
   order: 12
@@ -24,8 +24,21 @@ CSA（Compressed Sparse Attention，DeepSeek-V4）的思路是把两件事叠起
   client:visible
   l={16}
   branches={[
-    { id: 'csa', name: '压缩+稀疏主分支', role: '每 4 个 token 压成 1 个条目，再按 indexer 打分挑 top-k', fn: (t, s) => s <= t && s % 4 === 0 && s < t - 2, gate: 0.7, unit: 'block' },
-    { id: 'win', name: '滑动窗口分支', role: '最近 n_win 个未压缩 token，补回压缩拿不到的局部细节', fn: (t, s) => s <= t && t - s < 4, gate: 0.3 },
+    {
+      id: 'csa',
+      name: '压缩+稀疏主分支',
+      role: '每 4 个 token 压成 1 个条目，再按 indexer 打分挑 top-k',
+      fn: (t, s) => s <= t && s % 4 === 0 && s < t - 2,
+      gate: 0.7,
+      unit: 'block',
+    },
+    {
+      id: 'win',
+      name: '滑动窗口分支',
+      role: '最近 n_win 个未压缩 token，补回压缩拿不到的局部细节',
+      fn: (t, s) => s <= t && t - s < 4,
+      gate: 0.3,
+    },
   ]}
   title="图 10-1：CSA 的两条分支——压缩后的稀疏主分支，加一条未压缩的窗口"
 />
@@ -40,7 +53,7 @@ $$
 
 完整的流水线（注意上半是压缩+稀疏主分支，下面那条并列的窗口分支是用来补洞的）：
 
-![CSA 的流水线：hidden state 经两套投影产生重叠的压缩源，加可学习位置偏置后在 2m 个元素上 softmax 得到压缩条目；再压一次得到 indexer key，打分取 top-k；另有一条未压缩的滑动窗口分支补上块内细节，两者合流后做共享 KV 的 MQA](./diagrams/10-csa-pipeline.drawio "图 10-2：CSA 的完整流水线——压缩、稀疏选择、窗口分支与分组输出投影")
+![CSA 的流水线：hidden state 经两套投影产生重叠的压缩源，加可学习位置偏置后在 2m 个元素上 softmax 得到压缩条目；再压一次得到 indexer key，打分取 top-k；另有一条未压缩的滑动窗口分支补上块内细节，两者合流后做共享 KV 的 MQA](./diagrams/10-csa-pipeline.drawio '图 10-2：CSA 的完整流水线——压缩、稀疏选择、窗口分支与分组输出投影')
 
 ## 机制
 
@@ -135,18 +148,18 @@ $$
 
 论文 §4.2.1 给出的配置：
 
-| 参数                     | V4-Flash | V4-Pro |
-| ------------------------ | -------- | ------ |
-| 压缩率 $m$               | 4        | 4      |
-| top-$k$                  | 512      | 1024   |
+| 参数                      | V4-Flash | V4-Pro |
+| ------------------------- | -------- | ------ |
+| 压缩率 $m$                | 4        | 4      |
+| top-$k$                   | 512      | 1024   |
 | 滑动窗口 $n_{\text{win}}$ | 128      | 128    |
-| indexer head 数 $n_h^I$  | 64       | 64     |
-| indexer head 维 $c^I$    | 128      | 128    |
-| query/KV head 维 $c$     | 512      | 512    |
-| query 压缩维 $d_c$       | 1024     | 1536   |
-| query head 数 $n_h$      | 64       | 128    |
-| 输出投影组数 $g$         | 8        | 16     |
-| 组内中间维 $d_g$         | 1024     | 1024   |
+| indexer head 数 $n_h^I$   | 64       | 64     |
+| indexer head 维 $c^I$     | 128      | 128    |
+| query/KV head 维 $c$      | 512      | 512    |
+| query 压缩维 $d_c$        | 1024     | 1536   |
+| query head 数 $n_h$       | 64       | 128    |
+| 输出投影组数 $g$          | 8        | 16     |
+| 组内中间维 $d_g$          | 1024     | 1024   |
 
 KV 存储用混合精度：**RoPE 的那 64 维用 BF16，其余维度用 FP8**，论文称相对纯 BF16 让 KV cache 几乎减半（§2.3.4）。
 

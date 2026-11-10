@@ -21,7 +21,8 @@ function check(name: string, x: number[][]): void {
   const w = x[0].length;
   for (const row of x) {
     if (!Array.isArray(row) || row.length !== w) throw new Error(`矩阵 ${name} 各行长度不一致`);
-    for (const v of row) if (typeof v !== 'number' || !Number.isFinite(v)) throw new Error(`矩阵 ${name} 含非法数值`);
+    for (const v of row)
+      if (typeof v !== 'number' || !Number.isFinite(v)) throw new Error(`矩阵 ${name} 含非法数值`);
   }
 }
 
@@ -36,16 +37,27 @@ export function matmulStepCount(m: number, n: number, k: number): number {
 export function matmul(a: number[][], b: number[][]): Timeline<MatMulState> {
   check('A', a);
   check('B', b);
-  const m = a.length, K = a[0].length, n = b[0].length;
+  const m = a.length,
+    K = a[0].length,
+    n = b[0].length;
   if (b.length !== K) throw new Error(`尺寸不匹配：A 为 ${m}×${K}，B 为 ${b.length}×${n}`);
 
-  const c: (number | null)[][] = Array.from({ length: m }, () => Array<number | null>(n).fill(null));
+  const c: (number | null)[][] = Array.from({ length: m }, () =>
+    Array<number | null>(n).fill(null),
+  );
   const snap = (
-    phase: MatMulPhase, i: number | null, j: number | null, k: number | null, partial: number | null,
+    phase: MatMulPhase,
+    i: number | null,
+    j: number | null,
+    k: number | null,
+    partial: number | null,
   ): MatMulState => ({ a, b, c: c.map((r) => r.slice()), i, j, k, partial, phase });
 
   const tl: Timeline<MatMulState> = [
-    { state: snap('start', null, null, null, null), caption: `计算 C = A × B：A 为 ${m}×${K}，B 为 ${K}×${n}，C 为 ${m}×${n}` },
+    {
+      state: snap('start', null, null, null, null),
+      caption: `计算 C = A × B：A 为 ${m}×${K}，B 为 ${K}×${n}，C 为 ${m}×${n}`,
+    },
   ];
 
   for (let i = 0; i < m; i++) {

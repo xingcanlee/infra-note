@@ -58,13 +58,16 @@ export function attention(opts: AttnOptions): Timeline<AttnState> {
   const { tokens, q, k, v } = opts;
   const mask = opts.mask ?? causal;
   const l = q.length;
-  if (k.length !== l || v.length !== l) throw new Error(`Q/K/V 行数必须相同：${q.length}/${k.length}/${v.length}`);
+  if (k.length !== l || v.length !== l)
+    throw new Error(`Q/K/V 行数必须相同：${q.length}/${k.length}/${v.length}`);
   if (tokens.length !== l) throw new Error(`token 数（${tokens.length}）必须等于序列长度（${l}）`);
   const dk = k[0].length;
   const dv = v[0].length;
   const scale = opts.scale ?? 1 / Math.sqrt(dk);
 
-  const allowed = Array.from({ length: l }, (_, t) => Array.from({ length: l }, (_, s) => mask(t, s, l)));
+  const allowed = Array.from({ length: l }, (_, t) =>
+    Array.from({ length: l }, (_, s) => mask(t, s, l)),
+  );
   const scores: (number | null)[][] = Array.from({ length: l }, () => Array(l).fill(null));
   const weights: (number | null)[][] = Array.from({ length: l }, () => Array(l).fill(null));
   const out: (number | null)[][] = Array.from({ length: l }, () => Array(dv).fill(null));

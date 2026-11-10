@@ -1,6 +1,6 @@
 ---
-title: "05 vLLM 选路：这一轮走哪条路"
-description: "描述符、六项兼容检查、命中与回退——把 vLLM 真实的匹配逻辑一行行读完。"
+title: '05 vLLM 选路：这一轮走哪条路'
+description: '描述符、六项兼容检查、命中与回退——把 vLLM 真实的匹配逻辑一行行读完。'
 series:
   id: vllm-graph
   order: 7
@@ -34,10 +34,10 @@ import BucketDispatch from '../../../../explainers/react/BucketDispatch';
 
 ### 两个描述符
 
-| 名字 | 位置 | 作用 |
-| --- | --- | --- |
-| `BatchDescriptor` | `vllm/forward_context.py:29-53` | 放在 forward context 里，描述**这一轮的批次** |
-| `BatchExecutionDescriptor` | `vllm/v1/worker/gpu/cudagraph_utils.py:74-89` | 描述**一张已捕获的图**，以及该用什么模式跑 |
+| 名字                       | 位置                                          | 作用                                          |
+| -------------------------- | --------------------------------------------- | --------------------------------------------- |
+| `BatchDescriptor`          | `vllm/forward_context.py:29-53`               | 放在 forward context 里，描述**这一轮的批次** |
+| `BatchExecutionDescriptor` | `vllm/v1/worker/gpu/cudagraph_utils.py:74-89` | 描述**一张已捕获的图**，以及该用什么模式跑    |
 
 `BatchDescriptor` 的注释值得一读：
 
@@ -45,12 +45,12 @@ import BucketDispatch from '../../../../explainers/react/BucketDispatch';
 
 **字段越少越好**——因为每多一个字段，图的种类就可能成倍增加。这是这套设计的核心约束。它目前的字段：
 
-| 字段 | 含义 |
-| --- | --- |
-| `num_tokens` | 本轮 token 数 |
-| `num_reqs` | 请求数；**PIECEWISE 图可以为 `None`**（这类图能处理任意请求数） |
-| `uniform` | 是否所有请求的 token 数都相同 |
-| `num_active_loras` | 活跃的 LoRA 适配器数量 |
+| 字段               | 含义                                                            |
+| ------------------ | --------------------------------------------------------------- |
+| `num_tokens`       | 本轮 token 数                                                   |
+| `num_reqs`         | 请求数；**PIECEWISE 图可以为 `None`**（这类图能处理任意请求数） |
+| `uniform`          | 是否所有请求的 token 数都相同                                   |
+| `num_active_loras` | 活跃的 LoRA 适配器数量                                          |
 
 `BatchExecutionDescriptor` 多了 `cg_mode`、`uniform_token_count`、`max_query_len`、`num_ubatches`。
 
@@ -73,14 +73,14 @@ return (
 
 逐条读：
 
-| # | 条件 | 关系 | 为什么是这个关系 |
-| - | --- | --- | --- |
-| 1 | 每请求 token 数 | `None` 或**相等** | decode 图是为「每请求恰好 q 个 token」捕获的，多一个少一个都不行 |
-| 2 | query 长度上界 | `None` 或 `>=` | 图能容纳更长的 query；但**调用方必须也跟踪了这个值**，否则不能匹配带约束的图 |
-| 3 | 请求数 | `None` 或 `>=` | 容量够就行，少的部分 padding |
-| 4 | token 数 | `>=` | 同上 |
-| 5 | **LoRA 数** | **严格相等** | — |
-| 6 | **ubatch 数** | **严格相等** | — |
+| #   | 条件            | 关系              | 为什么是这个关系                                                             |
+| --- | --------------- | ----------------- | ---------------------------------------------------------------------------- |
+| 1   | 每请求 token 数 | `None` 或**相等** | decode 图是为「每请求恰好 q 个 token」捕获的，多一个少一个都不行             |
+| 2   | query 长度上界  | `None` 或 `>=`    | 图能容纳更长的 query；但**调用方必须也跟踪了这个值**，否则不能匹配带约束的图 |
+| 3   | 请求数          | `None` 或 `>=`    | 容量够就行，少的部分 padding                                                 |
+| 4   | token 数        | `>=`              | 同上                                                                         |
+| 5   | **LoRA 数**     | **严格相等**      | —                                                                            |
+| 6   | **ubatch 数**   | **严格相等**      | —                                                                            |
 
 **为什么 3、4 是「≥」而 5、6 必须「相等」？**
 
@@ -141,7 +141,7 @@ return BatchExecutionDescriptor(
 
 vLLM 文档里有一张图把这套设计画全了：
 
-![vLLM 当前的 CUDA Graph 设计：dispatch 由 runtime_mode 加 BatchDescriptor 显式决定，FULL wrapper 包在整个模型外，PIECEWISE wrapper 包在每个编译片段上](./images/vllm-current-design.webp "图 05-3：vLLM 官方的 CUDA Graph 设计图（来自 vLLM docs/design/cuda_graphs.md）")
+![vLLM 当前的 CUDA Graph 设计：dispatch 由 runtime_mode 加 BatchDescriptor 显式决定，FULL wrapper 包在整个模型外，PIECEWISE wrapper 包在每个编译片段上](./images/vllm-current-design.webp '图 05-3：vLLM 官方的 CUDA Graph 设计图（来自 vLLM docs/design/cuda_graphs.md）')
 
 对照前面讲的内容看三处：
 
@@ -155,17 +155,17 @@ vLLM 文档里有一张图把这套设计画全了：
 
 官方文档给的答案是**嵌套**：在整个模型外面包一个 `FULL` 模式的 wrapper，同时在编译出的每个片段里各包一个 `PIECEWISE` 模式的 wrapper。然后：
 
-| 本轮 runtime_mode | FULL wrapper | PIECEWISE wrapper | 结果 |
-| --- | --- | --- | --- |
-| `FULL` | 激活，捕获/重放整图 | **不激活**（模式不匹配） | 一次整图 replay |
-| `PIECEWISE` | 不激活 | 激活 | 分段 replay |
-| `NONE` | 不激活 | 不激活 | 全程 eager |
+| 本轮 runtime_mode | FULL wrapper        | PIECEWISE wrapper        | 结果            |
+| ----------------- | ------------------- | ------------------------ | --------------- |
+| `FULL`            | 激活，捕获/重放整图 | **不激活**（模式不匹配） | 一次整图 replay |
+| `PIECEWISE`       | 不激活              | 激活                     | 分段 replay     |
+| `NONE`            | 不激活              | 不激活                   | 全程 eager      |
 
 每个 wrapper 只认自己的模式，不匹配就直接透传。**于是两套图天然互斥，不需要额外的协调逻辑**——这正是第 07 篇 Ascend wrapper docstring 里那句「blindly trust」的来由：判断集中在 manager 一处，wrapper 只管执行。
 
 官方文档还给了一张 wrapper 内部的流程图：
 
-![CUDAGraphWrapper 的嵌套位置与 __call__ 内部流程：先看 runtime mode 是否匹配，不匹配就直接透传；匹配则按 key 查 cuda_graphs 表，命中就 Replay，没有就 Capture](./images/vllm-wrapper-flow.png "图 05-4：wrapper 的嵌套位置（左）与单个 wrapper 的判定流程（右）——来自 vLLM docs/design/cuda_graphs.md")
+![CUDAGraphWrapper 的嵌套位置与 __call__ 内部流程：先看 runtime mode 是否匹配，不匹配就直接透传；匹配则按 key 查 cuda_graphs 表，命中就 Replay，没有就 Capture](./images/vllm-wrapper-flow.png '图 05-4：wrapper 的嵌套位置（左）与单个 wrapper 的判定流程（右）——来自 vLLM docs/design/cuda_graphs.md')
 
 左半边是嵌套位置：`FULL` wrapper 包在 Model 外，`PIECEWISE` wrapper 包在 `SplitGraph` 之后的每个片段上，而且整个编译部分标着 **Only if vLLM compile enabled**——又一次说明编译图和设备图可以分开开关（第 02 篇）。
 
@@ -217,17 +217,17 @@ batch 3 请求 / 3 token / LoRA=1 → 回退 eager（没有够大的桶或条件
 
 ## 真实实现在哪
 
-| 概念 | 位置 |
-| --- | --- |
-| `BatchDescriptor` | `vllm/forward_context.py:29-53` |
-| `BatchExecutionDescriptor` | `vllm/v1/worker/gpu/cudagraph_utils.py:74-89` |
-| `_is_compatible`（六项条件） | `vllm/v1/worker/gpu/cudagraph_utils.py:115-142` |
-| `CudaGraphManager` | `vllm/v1/worker/gpu/cudagraph_utils.py:154-...` |
-| `dispatch`（候选与回退） | `vllm/v1/worker/gpu/cudagraph_utils.py:558-600` |
-| `run_fullgraph`（整图重放） | `vllm/v1/worker/gpu/cudagraph_utils.py:604-...` |
-| 捕获与重放的封装 | `vllm/compilation/cuda_graph.py:234-358` |
-| 捕获入口 | `vllm/v1/worker/gpu/model_runner.py:1132-1175`（`capture_model`） |
-| 桶的生成 | `vllm/config/compilation.py:78-126`、`1278-1302` |
+| 概念                         | 位置                                                              |
+| ---------------------------- | ----------------------------------------------------------------- |
+| `BatchDescriptor`            | `vllm/forward_context.py:29-53`                                   |
+| `BatchExecutionDescriptor`   | `vllm/v1/worker/gpu/cudagraph_utils.py:74-89`                     |
+| `_is_compatible`（六项条件） | `vllm/v1/worker/gpu/cudagraph_utils.py:115-142`                   |
+| `CudaGraphManager`           | `vllm/v1/worker/gpu/cudagraph_utils.py:154-...`                   |
+| `dispatch`（候选与回退）     | `vllm/v1/worker/gpu/cudagraph_utils.py:558-600`                   |
+| `run_fullgraph`（整图重放）  | `vllm/v1/worker/gpu/cudagraph_utils.py:604-...`                   |
+| 捕获与重放的封装             | `vllm/compilation/cuda_graph.py:234-358`                          |
+| 捕获入口                     | `vllm/v1/worker/gpu/model_runner.py:1132-1175`（`capture_model`） |
+| 桶的生成                     | `vllm/config/compilation.py:78-126`、`1278-1302`                  |
 
 三层的分工现在可以完整串起来了：
 

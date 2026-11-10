@@ -1,0 +1,10 @@
+allowBuilds:
+  esbuild: true
+  sharp: true
+  simple-git-hooks: true
+
+overrides:
+  '@astrojs/react>@vitejs/plugin-react': 6.1.1
+  '@napi-rs/wasm-runtime@1.2.4>@emnapi/runtime': 1.11.3
+  '@napi-rs/wasm-runtime@1.2.4>@emnapi/core': 1.11.3
+  rehype-katex>katex: 0.19.1

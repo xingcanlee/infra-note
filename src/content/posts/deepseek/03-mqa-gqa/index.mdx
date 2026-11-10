@@ -1,6 +1,6 @@
 ---
-title: "03 MQA 与 GQA：第一次妥协"
-description: "缓存公式里的 n_h 是最容易动的因子——让多个 Query head 共享 K/V，省了多少、丢了什么。"
+title: '03 MQA 与 GQA：第一次妥协'
+description: '缓存公式里的 n_h 是最容易动的因子——让多个 Query head 共享 K/V，省了多少、丢了什么。'
 series:
   id: deepseek
   order: 5
@@ -64,21 +64,37 @@ flowchart TB
 
 三者的区别只有一个参数：几个 Query head 共享一份 K/V。
 
-| 方案    | K/V 份数 | 每 token 每层缓存     | 相对 MHA        | 代价                                     |
-| ------- | -------- | --------------------- | --------------- | ---------------------------------------- |
-| MHA     | $n_h$    | $n_h(d_k+d_v)$        | 1               | 基线                                     |
-| GQA     | $g$      | $g(d_k+d_v)$          | $g/n_h$         | 同组 head 被迫共用同一套索引和内容       |
-| MQA     | 1        | $d_k+d_v$             | $1/n_h$         | 所有 head 共用，损失最大                 |
+| 方案 | K/V 份数 | 每 token 每层缓存 | 相对 MHA | 代价                               |
+| ---- | -------- | ----------------- | -------- | ---------------------------------- |
+| MHA  | $n_h$    | $n_h(d_k+d_v)$    | 1        | 基线                               |
+| GQA  | $g$      | $g(d_k+d_v)$      | $g/n_h$  | 同组 head 被迫共用同一套索引和内容 |
+| MQA  | 1        | $d_k+d_v$         | $1/n_h$  | 所有 head 共用，损失最大           |
 
 把这三条和 MLA 放在同一配置下对照（$n_h=8$，$d_k=d_v=128$，GQA 取 $g=2$）：
 
-<CacheBars client:visible nH={8} dK={128} dV={128} nGroups={2} dC={512} dR={64} tokens={4096} layers={61} title="图 03-1：缓存宽度对照——注意 MQA 已经把 n_h 这个因子完全消掉了" />
+<CacheBars
+  client:visible
+  nH={8}
+  dK={128}
+  dV={128}
+  nGroups={2}
+  dC={512}
+  dR={64}
+  tokens={4096}
+  layers={61}
+  title="图 03-1：缓存宽度对照——注意 MQA 已经把 n_h 这个因子完全消掉了"
+/>
 
 MQA 把 $n_h$ 消成 1，是这条路线的极限：**只要还按「存 K 和 V」的方式缓存，就不可能比它更省**。想再往下走，必须换一种缓存的东西——那就是 MLA。
 
 缓存变窄在动画里的样子（把方案换成 MQA，注意每行变短了，右侧账本同步下降）：
 
-<KVCacheView client:visible prefill={2} cfg={{ scheme: 'mqa', nH: 2, dK: 4, dV: 4 }} title="图 03-2：MQA 下的缓存——行数仍随长度增长，但每行窄了 n_h 倍" />
+<KVCacheView
+  client:visible
+  prefill={2}
+  cfg={{ scheme: 'mqa', nH: 2, dK: 4, dV: 4 }}
+  title="图 03-2：MQA 下的缓存——行数仍随长度增长，但每行窄了 n_h 倍"
+/>
 
 注意**行数并没有变少**。$L$ 这个因子还在，只是每行窄了。这是两条不同的轴：本篇压的是「每个 token 占多宽」，第 06–12 篇压的是「要读多少行」。
 

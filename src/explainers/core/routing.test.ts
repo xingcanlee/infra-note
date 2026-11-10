@@ -62,7 +62,10 @@ describe('均衡 bias', () => {
   });
 
   it('bias 不进入最终权重：权重仍由原始分数决定', () => {
-    const st = lastFor(0, routing({ ...base, nGroups: 1, topkGroups: 1, bias: [0, 5, 0, 0, 0, 0] }));
+    const st = lastFor(
+      0,
+      routing({ ...base, nGroups: 1, topkGroups: 1, bias: [0, 5, 0, 0, 0, 0] }),
+    );
     // 权重按 raw 分数归一化，所以被 bias 顶进来的专家 1 权重仍然很小
     const idx = st.chosen.indexOf(1);
     const other = 1 - idx;

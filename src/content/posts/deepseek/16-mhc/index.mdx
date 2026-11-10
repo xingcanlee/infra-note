@@ -1,6 +1,6 @@
 ---
-title: "16 mHC：把残差流加宽，又不让它爆"
-description: "Hyper-Connections 把残差流扩成 n 条，代价是丢掉恒等映射——mHC 用双随机矩阵把它找回来。"
+title: '16 mHC：把残差流加宽，又不让它爆'
+description: 'Hyper-Connections 把残差流扩成 n 条，代价是丢掉恒等映射——mHC 用双随机矩阵把它找回来。'
 series:
   id: deepseek
   order: 18
@@ -28,11 +28,11 @@ $$
 \mathbf{x}_{l+1}=\mathcal{H}_l^{res}\mathbf{x}_l+\mathcal{H}_l^{post\top}\mathcal{F}\big(\mathcal{H}_l^{pre}\mathbf{x}_l,\mathcal{W}_l\big)
 $$
 
-| 映射 | 形状 | 作用 |
-| --- | --- | --- |
-| $\mathcal{H}_l^{pre}$ | $1\times n$ | 把 $n$ 条流压成一条（$nC\to C$）喂给这一层 |
-| $\mathcal{H}_l^{post}$ | $1\times n$ | 把这一层的输出摊回 $n$ 条流（$C\to nC$） |
-| $\mathcal{H}_l^{res}$ | $n\times n$ | **在 $n$ 条流之间混合** |
+| 映射                   | 形状        | 作用                                       |
+| ---------------------- | ----------- | ------------------------------------------ |
+| $\mathcal{H}_l^{pre}$  | $1\times n$ | 把 $n$ 条流压成一条（$nC\to C$）喂给这一层 |
+| $\mathcal{H}_l^{post}$ | $1\times n$ | 把这一层的输出摊回 $n$ 条流（$C\to nC$）   |
+| $\mathcal{H}_l^{res}$  | $n\times n$ | **在 $n$ 条流之间混合**                    |
 
 画出来是这样（$n=4$，V4 的取值）：
 
@@ -148,11 +148,11 @@ $\sigma$ 是 sigmoid：$\mathcal{H}^{pre}$ 被限制在 $(0,1)$，$\mathcal{H}^{
 
 加宽残差流不是免费的（§3.2 表 2）：
 
-| 代价 | 量级 |
-| --- | --- |
-| 每 token 的 I/O | 约 $n$ 倍 |
-| 中间激活要保存 | 常常被迫开 gradient checkpointing |
-| 流水线并行的通信 | 约 $n$ 倍 |
+| 代价             | 量级                              |
+| ---------------- | --------------------------------- |
+| 每 token 的 I/O  | 约 $n$ 倍                         |
+| 中间激活要保存   | 常常被迫开 gradient checkpointing |
+| 流水线并行的通信 | 约 $n$ 倍                         |
 
 论文用一组 kernel 融合把这件事压下来（§4.3.1）：把除以 RMSNorm 范数的操作重排到矩阵乘之后、把两次扫描与反向矩阵乘融合、把 Sinkhorn 迭代放进单个 kernel（反向时在片上重算迭代而不是保存）。
 

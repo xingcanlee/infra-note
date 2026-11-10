@@ -1,6 +1,6 @@
 ---
-title: "01 注意力从零推一遍"
-description: "把打分、掩码、softmax、加权求和四步拆开，用能手算的数字跑一遍因果注意力。"
+title: '01 注意力从零推一遍'
+description: '把打分、掩码、softmax、加权求和四步拆开，用能手算的数字跑一遍因果注意力。'
 series:
   id: deepseek
   order: 3
@@ -20,11 +20,11 @@ import AttentionGrid from '../../../../explainers/react/AttentionGrid';
 
 还是上一篇的 4 个 token。模型先用三个权重矩阵把每个位置的向量投影成三份，各有分工——这是全系列最该记住的一张表：
 
-| 名字           | 符号  | 角色                             | 一句话                       |
-| -------------- | ----- | -------------------------------- | ---------------------------- |
-| Query（查询）  | $q_t$ | 当前位置**想找什么**             | 「我在找一个动词的宾语」     |
-| Key（键）      | $k_s$ | 历史位置**能提供什么**（索引用） | 「我是个动词」               |
-| Value（值）    | $v_s$ | 历史位置**实际交出的内容**       | 「这个动词的语义向量」       |
+| 名字          | 符号  | 角色                             | 一句话                   |
+| ------------- | ----- | -------------------------------- | ------------------------ |
+| Query（查询） | $q_t$ | 当前位置**想找什么**             | 「我在找一个动词的宾语」 |
+| Key（键）     | $k_s$ | 历史位置**能提供什么**（索引用） | 「我是个动词」           |
+| Value（值）   | $v_s$ | 历史位置**实际交出的内容**       | 「这个动词的语义向量」   |
 
 Key 和 Value 是两份不同的东西：Key 只用来**被匹配**，Value 才是**被取走**的内容。这个分离后面每一篇都在用——MLA 压缩的是它们的存储，稀疏注意力改的是匹配之后读谁。
 
@@ -119,7 +119,6 @@ $$
 
 > 本篇的完整可运行脚本在文章目录下的 `toy.py`，其中的结论都写成了 `assert`。跑 `uv run --with numpy python toy.py` 即可自己验证一遍。
 
-
 ```python
 import numpy as np
 
@@ -168,12 +167,12 @@ def block_select(size, keep):   return lambda t, s, L: s <= t and t // size - s 
 
 DeepSeek-V3 参考实现（commit `9b4e9788`）里没有「朴素注意力」这个类——它直接是 MLA。可以对照的是同样四步的位置：
 
-| 步骤          | 源码位置                           | 说明                                                      |
-| ------------- | ---------------------------------- | --------------------------------------------------------- |
-| 打分 + 缩放   | `model.py:479`（naive 分支）       | `einsum("bshd,bthd->bsht", q, k_cache) * self.softmax_scale` |
-| 掩码          | `model.py:488-489`                 | `scores += mask.unsqueeze(1)`（prefill 时为上三角 `-inf`） |
-| softmax       | `model.py:490`                     | `scores.softmax(dim=-1, dtype=torch.float32)`，归一化升到 FP32 |
-| 加权求和      | `model.py:492`                     | `einsum("bsht,bthd->bshd", scores, v_cache)`              |
+| 步骤        | 源码位置                     | 说明                                                           |
+| ----------- | ---------------------------- | -------------------------------------------------------------- |
+| 打分 + 缩放 | `model.py:479`（naive 分支） | `einsum("bshd,bthd->bsht", q, k_cache) * self.softmax_scale`   |
+| 掩码        | `model.py:488-489`           | `scores += mask.unsqueeze(1)`（prefill 时为上三角 `-inf`）     |
+| softmax     | `model.py:490`               | `scores.softmax(dim=-1, dtype=torch.float32)`，归一化升到 FP32 |
+| 加权求和    | `model.py:492`               | `einsum("bsht,bthd->bshd", scores, v_cache)`                   |
 
 `einsum("bshd,bthd->bsht", q, k)` 读法：`b` batch、`s` 当前 Query 位置、`t` 被读取位置、`h` head、`d` head 维度。重复出现又不在输出里的 `d` 被求和消掉——就是第 00 篇说的「中间维度被消掉」。这个下标写法在后面几篇会反复出现，值得现在就读顺。
 

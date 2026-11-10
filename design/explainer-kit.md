@@ -41,25 +41,25 @@ import AttentionGrid from '../../../../explainers/react/AttentionGrid';
 
 ## 现有积木
 
-| 组件            | 关键参数                                              | 讲什么                                             | 用在              |
-| --------------- | ----------------------------------------------------- | -------------------------------------------------- | ----------------- |
-| `AttentionGrid` | `mask`、`tokens`、`q/k/v`、`showOutput`               | 一行 Query 如何在读取集合内分配权重并聚合 Value     | DS 01、06–12      |
-| `KVCacheView`   | `cfg`（缓存方案）、`prefill`、`layers`                | prefill 建表、decode 读表再追加，右侧实时显存账本   | DS 02、03、04、11 |
-| `CacheBars`     | `nH/dK/dV/nGroups/dC/dR`、`tokens`、`layers`          | MHA / GQA / MQA / MLA 的宽度与总账对照              | DS 02、03、04     |
+| 组件            | 关键参数                                     | 讲什么                                            | 用在              |
+| --------------- | -------------------------------------------- | ------------------------------------------------- | ----------------- |
+| `AttentionGrid` | `mask`、`tokens`、`q/k/v`、`showOutput`      | 一行 Query 如何在读取集合内分配权重并聚合 Value   | DS 01、06–12      |
+| `KVCacheView`   | `cfg`（缓存方案）、`prefill`、`layers`       | prefill 建表、decode 读表再追加，右侧实时显存账本 | DS 02、03、04、11 |
+| `CacheBars`     | `nH/dK/dV/nGroups/dC/dR`、`tokens`、`layers` | MHA / GQA / MQA / MLA 的宽度与总账对照            | DS 02、03、04     |
 
 ## 计划中的积木
 
 按文章进度补充，接口沿用同一套协议：
 
-| 组件               | 讲什么                                      | 用在           |
-| ------------------ | ------------------------------------------- | -------------- |
-| `MatMulView`       | 矩阵乘逐元素累加（已有 `src/explainers/react/MatMul.tsx`，待并入本套命名） | DS 00、05      |
-| `AbsorbView`       | MLA 矩阵吸收前后的计算顺序重排              | DS 05          |
-| `RoutingFlow`      | token → gate 打分 → top-k 专家 → 合并       | DS 13、14      |
-| `OnlineSoftmax`    | 分块遍历中维护 running max / sum            | DS 18          |
-| `SubmitTimeline`   | CPU 提交与设备执行两条车道                  | DS 19、vLLM 00/01/03 |
-| `BucketDispatch`   | batch → 图桶匹配 → padding → replay / 回退  | vLLM 05、06    |
-| `LifecycleMachine` | 预热 → 捕获 → 重放 → 失效                   | vLLM 03、07    |
+| 组件               | 讲什么                                                                     | 用在                 |
+| ------------------ | -------------------------------------------------------------------------- | -------------------- |
+| `MatMulView`       | 矩阵乘逐元素累加（已有 `src/explainers/react/MatMul.tsx`，待并入本套命名） | DS 00、05            |
+| `AbsorbView`       | MLA 矩阵吸收前后的计算顺序重排                                             | DS 05                |
+| `RoutingFlow`      | token → gate 打分 → top-k 专家 → 合并                                      | DS 13、14            |
+| `OnlineSoftmax`    | 分块遍历中维护 running max / sum                                           | DS 18                |
+| `SubmitTimeline`   | CPU 提交与设备执行两条车道                                                 | DS 19、vLLM 00/01/03 |
+| `BucketDispatch`   | batch → 图桶匹配 → padding → replay / 回退                                 | vLLM 05、06          |
+| `LifecycleMachine` | 预热 → 捕获 → 重放 → 失效                                                  | vLLM 03、07          |
 
 ## 测试
 

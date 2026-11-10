@@ -28,5 +28,6 @@ jobs:
       - uses: astral-sh/setup-uv@v10.3.3
         with:
           enable-cache: true
-      - run: pnpm check
+      - name: Quality checks (types + lint + format + tests + assets)
+        run: pnpm check
       - run: pnpm build

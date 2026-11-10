@@ -59,7 +59,10 @@ function Scene({ s, focus }: { s: RouteState; focus?: string[] }) {
         const isChosen = s.chosen.includes(i);
         const isComputed = s.computed.includes(i);
         const groupKept = s.keptGroups.length === 0 || s.keptGroups.includes(s.group[i]);
-        const dim = s.phase !== 'intro' && s.phase !== 'score' && (!groupKept || (s.chosen.length > 0 && !isChosen));
+        const dim =
+          s.phase !== 'intro' &&
+          s.phase !== 'score' &&
+          (!groupKept || (s.chosen.length > 0 && !isChosen));
         const score = s.scores[i] ?? 0;
         const sel = s.selScores[i];
         const widx = s.chosen.indexOf(i);
@@ -84,7 +87,11 @@ function Scene({ s, focus }: { s: RouteState; focus?: string[] }) {
               width={Math.max((score / maxScore) * barMax, 1)}
               height={14}
               rx={3}
-              style={{ fill: toneFill(isChosen ? 'weight' : 'mask'), stroke: toneStroke(isChosen ? 'weight' : 'mask'), strokeWidth: 1 }}
+              style={{
+                fill: toneFill(isChosen ? 'weight' : 'mask'),
+                stroke: toneStroke(isChosen ? 'weight' : 'mask'),
+                strokeWidth: 1,
+              }}
               opacity={dim ? 0.3 : 1}
             />
             <text
@@ -97,10 +104,17 @@ function Scene({ s, focus }: { s: RouteState; focus?: string[] }) {
             >
               {f(score)}
               {sel !== null && sel !== score ? ` → ${f(sel)}` : ''}
-              {widx >= 0 && s.weights[widx] !== null && s.weights[widx] !== undefined ? `  w=${f(s.weights[widx]!)}` : ''}
+              {widx >= 0 && s.weights[widx] !== null && s.weights[widx] !== undefined
+                ? `  w=${f(s.weights[widx]!)}`
+                : ''}
             </text>
             {isChosen && (
-              <Arrow from={[TOKEN_X + 124, TOP + (n * (EH + GAP)) / 2]} to={[EXPERT_X - 6, y + EH / 2]} tone="weight" active={hot.has(String(i))} />
+              <Arrow
+                from={[TOKEN_X + 124, TOP + (n * (EH + GAP)) / 2]}
+                to={[EXPERT_X - 6, y + EH / 2]}
+                tone="weight"
+                active={hot.has(String(i))}
+              />
             )}
           </g>
         );
@@ -129,7 +143,11 @@ function Scene({ s, focus }: { s: RouteState; focus?: string[] }) {
       <Caption
         x={TOKEN_X}
         y={h - 34}
-        text={s.activated ? `本轮激活 ${s.activated} / ${n + s.nShared} 个专家` : `每个 token 只激活其中一小部分`}
+        text={
+          s.activated
+            ? `本轮激活 ${s.activated} / ${n + s.nShared} 个专家`
+            : `每个 token 只激活其中一小部分`
+        }
         tone="done"
       />
       <Legend

@@ -1,6 +1,6 @@
 ---
-title: "01 PyTorch 是怎么执行的"
-description: "一行 a + b 到底经过了什么——dispatcher、异步队列、同步点，以及提交开销从哪里来。"
+title: '01 PyTorch 是怎么执行的'
+description: '一行 a + b 到底经过了什么——dispatcher、异步队列、同步点，以及提交开销从哪里来。'
 series:
   id: vllm-graph
   order: 3
@@ -79,30 +79,34 @@ print(c[0, 0].item())      # ← 同步点：CPU 停下来，等 GPU 算完
 
 常见的同步点：
 
-| 操作                      | 为什么同步                       |
-| ------------------------- | -------------------------------- |
-| `.item()` / `.tolist()`   | 要把数值取回 Python              |
-| `.cpu()` / `.numpy()`     | 要把数据拷回主机内存             |
-| `print(tensor)`           | 要读出内容才能打印               |
-| `if tensor > 0:`          | 要拿到布尔值才能决定分支         |
-| `torch.cuda.synchronize()`| 显式等待                         |
+| 操作                       | 为什么同步               |
+| -------------------------- | ------------------------ |
+| `.item()` / `.tolist()`    | 要把数值取回 Python      |
+| `.cpu()` / `.numpy()`      | 要把数据拷回主机内存     |
+| `print(tensor)`            | 要读出内容才能打印       |
+| `if tensor > 0:`           | 要拿到布尔值才能决定分支 |
+| `torch.cuda.synchronize()` | 显式等待                 |
 
 同步点的代价不是「等待本身」，而是**它清空了流水线**：CPU 之前攒下的领先优势全部作废，之后要从零开始重新跑在 GPU 前面。
 
 <SubmitTimeline
   client:visible
-  ops={(() => { const o = decodeLayerOps(2).map((x) => ({ ...x })); o[4].sync = true; return o; })()}
+  ops={(() => {
+    const o = decodeLayerOps(2).map((x) => ({ ...x }));
+    o[4].sync = true;
+    return o;
+  })()}
   launchCost={0.2}
   title="图 01-2：中间插一个同步点——红色竖线处 CPU 被钉住，后面的空档都是它造成的"
 />
 
 对比一下（提交开销 0.2、10 个算子不变）：
 
-| | 墙钟 | 设备空闲 |
-| --- | --- | --- |
-| 无同步点 | 8.0 | 0.2（2.5%） |
-| 第 5 个算子后加一个同步点 | 8.2 | 0.4（4.9%） |
-| **每个算子后都同步** | 9.8 | 2.0（20.4%） |
+|                           | 墙钟 | 设备空闲     |
+| ------------------------- | ---- | ------------ |
+| 无同步点                  | 8.0  | 0.2（2.5%）  |
+| 第 5 个算子后加一个同步点 | 8.2  | 0.4（4.9%）  |
+| **每个算子后都同步**      | 9.8  | 2.0（20.4%） |
 
 一个同步点让空闲占比翻倍；而**每步都同步就等于完全放弃流水线**——空闲涨到 20.4%，CPU 和设备变成严格交替，谁也掩盖不了谁。
 
@@ -114,12 +118,12 @@ print(c[0, 0].item())      # ← 同步点：CPU 停下来，等 GPU 算完
 
 现在可以把本系列要讲的技术各自归位了：
 
-| 开销来源                       | 对应优化                     | 本系列哪篇 |
-| ------------------------------ | ---------------------------- | ---------- |
-| Python 解释 + dispatcher 查表  | **torch.compile**（编译图）  | 02         |
-| 每个 kernel 单独 launch        | **CUDA Graph**（设备图）     | 03         |
-| 同步点打断流水线               | 消除同步点 / 异步化          | 01、04     |
-| 设备上的算术本身               | 更好的 kernel、稀疏、量化    | DeepSeek 系列 |
+| 开销来源                      | 对应优化                    | 本系列哪篇    |
+| ----------------------------- | --------------------------- | ------------- |
+| Python 解释 + dispatcher 查表 | **torch.compile**（编译图） | 02            |
+| 每个 kernel 单独 launch       | **CUDA Graph**（设备图）    | 03            |
+| 同步点打断流水线              | 消除同步点 / 异步化         | 01、04        |
+| 设备上的算术本身              | 更好的 kernel、稀疏、量化   | DeepSeek 系列 |
 
 **这四行是正交的。** torch.compile 减少的是前两层的 Python 侧工作（算子融合后算子更少），CUDA Graph 减少的是第二层的提交次数——两者可以叠加，也可以只用一个。把它们混成「图模式」一个词，是读这一块资料时最容易出的错。
 
@@ -164,11 +168,11 @@ class FakeDevice:
 
 ## 真实实现在哪
 
-| 概念               | 位置                                        |
-| ------------------ | ------------------------------------------- |
-| 编译模式枚举       | `reference/vllm/vllm/config/compilation.py:38-51`（`CompilationMode`） |
-| 设备图模式枚举     | `reference/vllm/vllm/config/compilation.py:129-164`（`CUDAGraphMode`） |
-| 官方异步语义说明   | [PyTorch CUDA semantics](https://docs.pytorch.org/docs/stable/notes/cuda.html) |
+| 概念                 | 位置                                                                                                               |
+| -------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| 编译模式枚举         | `reference/vllm/vllm/config/compilation.py:38-51`（`CompilationMode`）                                             |
+| 设备图模式枚举       | `reference/vllm/vllm/config/compilation.py:129-164`（`CUDAGraphMode`）                                             |
+| 官方异步语义说明     | [PyTorch CUDA semantics](https://docs.pytorch.org/docs/stable/notes/cuda.html)                                     |
 | 官方 dispatcher 说明 | [Let's talk about the PyTorch dispatcher](https://blog.ezyang.com/2020/09/lets-talk-about-the-pytorch-dispatcher/) |
 
 本机没有 GPU，所以本篇不运行任何 CUDA 代码。想在有卡的机器上观察，用 `torch.profiler` 看 GPU 车道上的空档最直接。注意**不要**用 `CUDA_LAUNCH_BLOCKING=1` 来测性能——如上表所示，它本身就会把空闲推到 20% 量级。

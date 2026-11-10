@@ -1,6 +1,6 @@
 ---
-title: "关于"
-description: "关于 infra-note：一份记录 LLM 推理基础设施的学习笔记。"
+title: '关于'
+description: '关于 infra-note：一份记录 LLM 推理基础设施的学习笔记。'
 ---
 
 infra-note 是一份围绕 LLM 推理基础设施的技术笔记：关注模型如何被编译成计算图、如何下沉到内核与设备执行，以及运行时怎样调度、缓存和排错。

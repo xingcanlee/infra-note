@@ -58,7 +58,8 @@ export function onlineSoftmax(opts: OSOptions): Timeline<OSState> {
   const { scores, values, blockSize } = opts;
   const conditional = opts.conditional ?? false;
   const tau = opts.tau ?? 8;
-  if (scores.length !== values.length) throw new Error(`分数与 V 的长度必须相同：${scores.length}/${values.length}`);
+  if (scores.length !== values.length)
+    throw new Error(`分数与 V 的长度必须相同：${scores.length}/${values.length}`);
   if (blockSize < 1) throw new Error('块大小必须 ≥ 1');
 
   let m = -Infinity;

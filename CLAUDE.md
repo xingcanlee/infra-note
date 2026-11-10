@@ -16,4 +16,6 @@
 
 - `pnpm dev`
 - `pnpm build`
+- `pnpm check`（类型 + ESLint + Prettier + Vitest + 图表清单）
+- `pnpm lint` / `pnpm format` / `pnpm format:check`
 - `pnpm diagram build|check|lint`

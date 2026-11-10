@@ -1,6 +1,6 @@
 ---
-title: "13 DeepSeekMoE：参数很多，计算很少"
-description: "注意力省完了，参数大头在 FFN——路由、共享专家、无辅助损失的负载均衡是怎么配合的。"
+title: '13 DeepSeekMoE：参数很多，计算很少'
+description: '注意力省完了，参数大头在 FFN——路由、共享专家、无辅助损失的负载均衡是怎么配合的。'
 series:
   id: deepseek
   order: 15
@@ -24,7 +24,10 @@ V3 的数字说明一切：671B 总参数，每个 token 只激活 37B。**98% �
 
 关键在于「每个 token」——路由是逐 token 的，不是逐句子的。同一句话里，「读」可能路由到专家 0 和 3，「注意力」可能路由到专家 1 和 4：
 
-<RoutingFlow client:visible title="图 13-1：MoE 路由——打分、分组、选 top-k、加权合并，最后加上共享专家" />
+<RoutingFlow
+  client:visible
+  title="图 13-1：MoE 路由——打分、分组、选 top-k、加权合并，最后加上共享专家"
+/>
 
 动画里 6 个路由专家选 2 个，V3 实际是 **256 选 8**。激活比例：
 
@@ -134,15 +137,15 @@ FLOPs 比：相对同参数量的稠密 FFN ≈ 3.5%
 
 DeepSeek-V3 参考实现（commit `9b4e9788`，`inference/model.py`）：
 
-| 概念            | 位置                | 说明                                                                   |
-| --------------- | ------------------- | ---------------------------------------------------------------------- |
-| `Gate` 定义     | `model.py:535-564`  | `topk`、`n_groups`、`topk_groups`、`route_scale`，`weight` 形状 `(n_routed_experts, dim)` |
-| `Gate.forward`  | `model.py:576-598`  | 打分 → 分组 → top-k → 归一化 → 乘 `route_scale`                         |
-| 可选 bias       | `model.py:535-564`  | **只在 `dim == 7168` 时存在**，即只有 671B 那档配置带 bias              |
-| `Expert`        | `model.py:601-633`  | SwiGLU：`w2(silu(w1 x) * w3 x)`，与第 00 篇的 `MLP` 同构                |
-| 共享专家        | `model.py:649-667`  | `shared_experts = MLP(dim, n_shared_experts * moe_inter_dim)`           |
-| 合并            | `model.py:679-693`  | 先算 `z = shared_experts(x)`，路由结果 `y` 经 `all_reduce` 后返回 `y + z` |
-| 专家并行切分    | `model.py:658-666`  | `n_local_experts = n_routed_experts // world_size`，每个 rank 只实例化自己那段 |
+| 概念           | 位置               | 说明                                                                                      |
+| -------------- | ------------------ | ----------------------------------------------------------------------------------------- |
+| `Gate` 定义    | `model.py:535-564` | `topk`、`n_groups`、`topk_groups`、`route_scale`，`weight` 形状 `(n_routed_experts, dim)` |
+| `Gate.forward` | `model.py:576-598` | 打分 → 分组 → top-k → 归一化 → 乘 `route_scale`                                           |
+| 可选 bias      | `model.py:535-564` | **只在 `dim == 7168` 时存在**，即只有 671B 那档配置带 bias                                |
+| `Expert`       | `model.py:601-633` | SwiGLU：`w2(silu(w1 x) * w3 x)`，与第 00 篇的 `MLP` 同构                                  |
+| 共享专家       | `model.py:649-667` | `shared_experts = MLP(dim, n_shared_experts * moe_inter_dim)`                             |
+| 合并           | `model.py:679-693` | 先算 `z = shared_experts(x)`，路由结果 `y` 经 `all_reduce` 后返回 `y + z`                 |
+| 专家并行切分   | `model.py:658-666` | `n_local_experts = n_routed_experts // world_size`，每个 rank 只实例化自己那段            |
 
 两个实现细节：
 

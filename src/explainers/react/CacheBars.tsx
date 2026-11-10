@@ -36,8 +36,16 @@ function Scene({ s, focus }: { s: CacheBarsState; focus?: string[] }) {
   const h = 28 + s.all.length * ROW + 10;
 
   return (
-    <Stage width={w} height={h} label={`KV Cache 宽度对照：${s.shown.length} / ${s.all.length} 个方案`}>
-      <Caption x={LEFT} y={10} text={`每 token 每层缓存的标量数（${s.tokens} token × ${s.layers} 层 × ${s.bytes} 字节）`} />
+    <Stage
+      width={w}
+      height={h}
+      label={`KV Cache 宽度对照：${s.shown.length} / ${s.all.length} 个方案`}
+    >
+      <Caption
+        x={LEFT}
+        y={10}
+        text={`每 token 每层缓存的标量数（${s.tokens} token × ${s.layers} 层 × ${s.bytes} 字节）`}
+      />
       {s.all.map((info, i) => {
         const shown = i < s.shown.length;
         const total = info.perToken * s.tokens * s.layers * s.bytes;
@@ -73,7 +81,8 @@ export default function CacheBars({
   title,
 }: CacheBarsProps) {
   const steps = useMemo(
-    () => cacheBarsTimeline({ base: { nH, dK, dV, nGroups, dC, dR }, tokens, layers, bytesPerScalar }),
+    () =>
+      cacheBarsTimeline({ base: { nH, dK, dV, nGroups, dC, dR }, tokens, layers, bytesPerScalar }),
     [nH, dK, dV, nGroups, dC, dR, tokens, layers, bytesPerScalar],
   );
   return (

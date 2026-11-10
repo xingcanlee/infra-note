@@ -1,7 +1,16 @@
 import { describe, expect, it } from 'vitest';
 import { layerModeFlow, modeCost, type LayerMode } from './layer-modes';
 
-const modes: LayerMode[] = ['full', 'reindex', 'reuse', 'reuse', 'full', 'reindex', 'reuse', 'reuse'];
+const modes: LayerMode[] = [
+  'full',
+  'reindex',
+  'reuse',
+  'reuse',
+  'full',
+  'reindex',
+  'reuse',
+  'reuse',
+];
 const last = (ms: LayerMode[]) => {
   const tl = layerModeFlow({ modes: ms });
   return tl[tl.length - 1].state;
@@ -47,7 +56,16 @@ describe('开销统计', () => {
 
   it('缓存共享与索引复用可以分开调', () => {
     // 同样 2 份 KV，但 indexer 次数不同
-    const a = modeCost(['full', 'reindex', 'reindex', 'reindex', 'full', 'reindex', 'reindex', 'reindex']);
+    const a = modeCost([
+      'full',
+      'reindex',
+      'reindex',
+      'reindex',
+      'full',
+      'reindex',
+      'reindex',
+      'reindex',
+    ]);
     const b = modeCost(['full', 'reuse', 'reuse', 'reuse', 'full', 'reuse', 'reuse', 'reuse']);
     expect(a.nKv).toBe(b.nKv);
     expect(a.nIndexer).toBeGreaterThan(b.nIndexer);

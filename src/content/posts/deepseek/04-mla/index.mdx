@@ -1,6 +1,6 @@
 ---
-title: "04 MLA：共享一份 latent"
-description: "不再缓存 K 和 V，而是缓存一个所有 head 共享的低维向量——用真实配置算出 71 倍差距是怎么来的。"
+title: '04 MLA：共享一份 latent'
+description: '不再缓存 K 和 V，而是缓存一个所有 head 共享的低维向量——用真实配置算出 71 倍差距是怎么来的。'
 series:
   id: deepseek
   order: 6
@@ -52,10 +52,10 @@ $$
 
 和 MQA 对比一下，差别就清楚了：
 
-| | 共享的是什么 | 每个 head 拿到的 K/V |
-| --- | --- | --- |
-| MQA | **结果**：一份算好的 K/V | 完全相同 |
-| MLA | **原料**：一份压缩表示 | 各不相同（各自上投影） |
+|     | 共享的是什么             | 每个 head 拿到的 K/V   |
+| --- | ------------------------ | ---------------------- |
+| MQA | **结果**：一份算好的 K/V | 完全相同               |
+| MLA | **原料**：一份压缩表示   | 各不相同（各自上投影） |
 
 MQA 共享成品，MLA 共享半成品。这就是 MLA 能在缓存接近 MQA 的同时保住「每个 head 提取不同侧面」能力的原因。
 
@@ -129,10 +129,10 @@ $$
 
 换成 BF16 的实际字节（$\times L\times 61\times 2$）：
 
-| 上下文   | MLA 实际缓存 | 若按 MHA 存 | 倍数    |
-| -------- | ------------ | ----------- | ------- |
-| 4096     | 0.268 GiB    | 19.06 GiB   | 71.1×   |
-| 128K     | 8.58 GiB     | 610 GiB     | 71.1×   |
+| 上下文 | MLA 实际缓存 | 若按 MHA 存 | 倍数  |
+| ------ | ------------ | ----------- | ----- |
+| 4096   | 0.268 GiB    | 19.06 GiB   | 71.1× |
+| 128K   | 8.58 GiB     | 610 GiB     | 71.1× |
 
 **128K 上下文从 610 GiB 变成 8.58 GiB**——前者任何单机都放不下，后者在一张卡上有余量。这就是 MLA 存在的理由。
 
@@ -146,7 +146,18 @@ $$
 
 四种方案放在一起看（$n_h=8$ 的小配置，所以倍数不如 V3 那么夸张——倍数随 head 数增长）：
 
-<CacheBars client:visible nH={8} dK={128} dV={128} nGroups={2} dC={512} dR={64} tokens={4096} layers={61} title="图 04-2：MLA 与前三种方案的宽度对照" />
+<CacheBars
+  client:visible
+  nH={8}
+  dK={128}
+  dV={128}
+  nGroups={2}
+  dC={512}
+  dR={64}
+  tokens={4096}
+  layers={61}
+  title="图 04-2：MLA 与前三种方案的宽度对照"
+/>
 
 ## 代码实现
 
@@ -201,14 +212,14 @@ n_h=128：MLA 5 个数，按 MHA 存 1024 个数
 
 DeepSeek-V3 参考实现（commit `9b4e9788`，`inference/model.py`）：
 
-| 概念             | 位置            | 代码                                                                     |
-| ---------------- | --------------- | ------------------------------------------------------------------------ |
-| 下投影 $W^{DKV}$ | `model.py:430-433` | `wkv_a: dim → kv_lora_rank + qk_rope_head_dim`（latent 与位置分支一起出） |
-| latent 归一化    | `model.py:431`  | `kv_norm = RMSNorm(kv_lora_rank)`                                        |
-| 上投影 $W^{UK}, W^{UV}$ | `model.py:433` | `wkv_b: kv_lora_rank → n_heads × (qk_nope_head_dim + v_head_dim)`，**两者合在一个矩阵里** |
-| 切分 latent 与位置分支 | `model.py:468-470` | `kv, k_pe = split(wkv_a(x), [kv_lora_rank, qk_rope_head_dim])`           |
-| 缓存声明         | `model.py:442-444` | `kv_cache: (max_batch, max_seq, kv_lora_rank)`、`pe_cache: (…, qk_rope_head_dim)` |
-| 缓存写入         | `model.py:484-485` | `kv_cache[…] = kv_norm(kv)`、`pe_cache[…] = k_pe.squeeze(2)`              |
+| 概念                    | 位置               | 代码                                                                                      |
+| ----------------------- | ------------------ | ----------------------------------------------------------------------------------------- |
+| 下投影 $W^{DKV}$        | `model.py:430-433` | `wkv_a: dim → kv_lora_rank + qk_rope_head_dim`（latent 与位置分支一起出）                 |
+| latent 归一化           | `model.py:431`     | `kv_norm = RMSNorm(kv_lora_rank)`                                                         |
+| 上投影 $W^{UK}, W^{UV}$ | `model.py:433`     | `wkv_b: kv_lora_rank → n_heads × (qk_nope_head_dim + v_head_dim)`，**两者合在一个矩阵里** |
+| 切分 latent 与位置分支  | `model.py:468-470` | `kv, k_pe = split(wkv_a(x), [kv_lora_rank, qk_rope_head_dim])`                            |
+| 缓存声明                | `model.py:442-444` | `kv_cache: (max_batch, max_seq, kv_lora_rank)`、`pe_cache: (…, qk_rope_head_dim)`         |
+| 缓存写入                | `model.py:484-485` | `kv_cache[…] = kv_norm(kv)`、`pe_cache[…] = k_pe.squeeze(2)`                              |
 
 三个实现细节值得注意：
 

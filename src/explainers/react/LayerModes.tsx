@@ -54,11 +54,31 @@ function Scene({ s, focus }: { s: LayerState; focus?: string[] }) {
               tone={TONE[m]}
               active={hot.has(String(l))}
             />
-            <text x={KV_X} y={y + (ROW - 10) / 2} dominantBaseline="central" className="wisp-explainer__label" style={{ fill: toneStroke('v') }}>
-              {seen && s.kvFrom[l] !== null ? (s.kvFrom[l] === l ? '本层生成' : `← 第 ${s.kvFrom[l]} 层`) : ''}
+            <text
+              x={KV_X}
+              y={y + (ROW - 10) / 2}
+              dominantBaseline="central"
+              className="wisp-explainer__label"
+              style={{ fill: toneStroke('v') }}
+            >
+              {seen && s.kvFrom[l] !== null
+                ? s.kvFrom[l] === l
+                  ? '本层生成'
+                  : `← 第 ${s.kvFrom[l]} 层`
+                : ''}
             </text>
-            <text x={TK_X} y={y + (ROW - 10) / 2} dominantBaseline="central" className="wisp-explainer__label" style={{ fill: toneStroke('k') }}>
-              {seen && s.topkFrom[l] !== null ? (s.topkFrom[l] === l ? '本层打分' : `← 第 ${s.topkFrom[l]} 层`) : ''}
+            <text
+              x={TK_X}
+              y={y + (ROW - 10) / 2}
+              dominantBaseline="central"
+              className="wisp-explainer__label"
+              style={{ fill: toneStroke('k') }}
+            >
+              {seen && s.topkFrom[l] !== null
+                ? s.topkFrom[l] === l
+                  ? '本层打分'
+                  : `← 第 ${s.topkFrom[l]} 层`
+                : ''}
             </text>
           </g>
         );
@@ -93,12 +113,24 @@ function Scene({ s, focus }: { s: LayerState; focus?: string[] }) {
   );
 }
 
-const DEFAULT: LayerMode[] = ['full', 'reindex', 'reuse', 'reuse', 'full', 'reindex', 'reuse', 'reuse'];
+const DEFAULT: LayerMode[] = [
+  'full',
+  'reindex',
+  'reuse',
+  'reuse',
+  'full',
+  'reindex',
+  'reuse',
+  'reuse',
+];
 
 export default function LayerModes({ modes = DEFAULT, title }: LayerModesProps) {
   const steps = useMemo(() => layerModeFlow({ modes }), [modes]);
   return (
-    <Explainer steps={steps} title={title ?? 'CSA2：每层 Full / Reindex / Reuse，缓存与索引分开复用'}>
+    <Explainer
+      steps={steps}
+      title={title ?? 'CSA2：每层 Full / Reindex / Reuse，缓存与索引分开复用'}
+    >
       {(step) => <Scene s={step.state} focus={step.focus} />}
     </Explainer>
   );

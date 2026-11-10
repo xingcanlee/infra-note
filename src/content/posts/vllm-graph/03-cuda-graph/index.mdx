@@ -1,6 +1,6 @@
 ---
-title: "03 CUDA Graph：把一串提交录下来重放"
-description: "capture / instantiate / replay 三步，固定地址为什么是硬要求，以及官方列出的全部约束。"
+title: '03 CUDA Graph：把一串提交录下来重放'
+description: 'capture / instantiate / replay 三步，固定地址为什么是硬要求，以及官方列出的全部约束。'
 series:
   id: vllm-graph
   order: 5
@@ -49,20 +49,32 @@ flowchart LR
   C --> E["replay（每轮重复）<br/>cudaGraphLaunch<br/>一次提交，整段执行"]
 ```
 
-| 阶段            | 做什么                                                       |
-| --------------- | ------------------------------------------------------------ |
-| **capture**     | 把 stream 置于捕获模式；此后提交到该 stream 的工作**不执行**，而是追加进图 |
-| **instantiate** | 验证并把图实例化成可执行形式，一次性的准备成本集中在这里      |
+| 阶段            | 做什么                                                                         |
+| --------------- | ------------------------------------------------------------------------------ |
+| **capture**     | 把 stream 置于捕获模式；此后提交到该 stream 的工作**不执行**，而是追加进图     |
+| **instantiate** | 验证并把图实例化成可执行形式，一次性的准备成本集中在这里                       |
 | **replay**      | `cudaGraphLaunch` 一次提交整段工作；PyTorch 的 `CUDAGraph.replay()` 底层就是它 |
 
 收益回到第 00 篇那张图：提交从 N 次变成 1 次。
 
-<SubmitTimeline client:visible mode="full" ops={[
-  { name: 'norm', exec: 0.3 }, { name: 'qkv', exec: 0.8 }, { name: 'attn', exec: 1.0 },
-  { name: 'out', exec: 0.6 }, { name: 'ffn', exec: 1.2 },
-  { name: 'norm', exec: 0.3 }, { name: 'qkv', exec: 0.8 }, { name: 'attn', exec: 1.0 },
-  { name: 'out', exec: 0.6 }, { name: 'ffn', exec: 1.2 },
-]} launchCost={1} title="图 03-1：整图 replay——10 个算子，1 次提交" />
+<SubmitTimeline
+  client:visible
+  mode="full"
+  ops={[
+    { name: 'norm', exec: 0.3 },
+    { name: 'qkv', exec: 0.8 },
+    { name: 'attn', exec: 1.0 },
+    { name: 'out', exec: 0.6 },
+    { name: 'ffn', exec: 1.2 },
+    { name: 'norm', exec: 0.3 },
+    { name: 'qkv', exec: 0.8 },
+    { name: 'attn', exec: 1.0 },
+    { name: 'out', exec: 0.6 },
+    { name: 'ffn', exec: 1.2 },
+  ]}
+  launchCost={1}
+  title="图 03-1：整图 replay——10 个算子，1 次提交"
+/>
 
 ### 为什么必须固定地址
 
@@ -113,11 +125,11 @@ PyTorch 文档把约束分成两类，这个分法比约束本身更重要：
 
 第 01 篇的**同步点**和第 02 篇的 **graph break**，在这里第三次出现，而且仍然是同一批写法。这不是三个独立的坑，是同一件事在三层上的表现：
 
-| 层 | 名称 | 后果 |
-| --- | --- | --- |
-| 异步执行 | 同步点 | 流水线被清空 |
+| 层            | 名称        | 后果                   |
+| ------------- | ----------- | ---------------------- |
+| 异步执行      | 同步点      | 流水线被清空           |
 | torch.compile | graph break | 图被切断，融合机会减少 |
-| CUDA Graph | 无法捕获 | 要么报错，要么静默跳过 |
+| CUDA Graph    | 无法捕获    | 要么报错，要么静默跳过 |
 
 ### 为什么需要「图桶」
 
@@ -127,11 +139,11 @@ PyTorch 文档把约束分成两类，这个分法比约束本身更重要：
 
 ### 三个 API 的关系
 
-| API                            | 用法                                                     |
-| ------------------------------ | -------------------------------------------------------- |
-| `torch.cuda.CUDAGraph`         | 底层对象，配合 `capture_begin/end` 手动控制               |
-| `torch.cuda.graph(g)`          | context manager，自动处理 side stream，最常用            |
-| `torch.cuda.make_graphed_callables()` | 把 callable 的 forward/backward 都图化，训练用     |
+| API                                     | 用法                                           |
+| --------------------------------------- | ---------------------------------------------- |
+| `torch.cuda.CUDAGraph`                  | 底层对象，配合 `capture_begin/end` 手动控制    |
+| `torch.cuda.graph(g)`                   | context manager，自动处理 side stream，最常用  |
+| `torch.cuda.make_graphed_callables()`   | 把 callable 的 forward/backward 都图化，训练用 |
 | `torch.compile(mode="reduce-overhead")` | 编译图 + CUDA Graph 一起上（上一篇）           |
 
 `capture_error_mode` 控制捕获期间对「潜在不安全 API」的检查严格度：`global`（默认，阻止其他线程的不安全调用）、`thread_local`、`relaxed`。
@@ -190,13 +202,13 @@ class FakeGraph:
 
 vLLM 的封装（本地快照 commit `cf5cea2d`）：
 
-| 概念              | 位置                                               | 说明                                                       |
-| ----------------- | -------------------------------------------------- | ---------------------------------------------------------- |
-| 图模式枚举        | `vllm/config/compilation.py:129-164`               | `NONE` / `PIECEWISE` / `FULL` / `FULL_DECODE_ONLY` / `FULL_AND_PIECEWISE` |
-| 捕获与重放        | `vllm/compilation/cuda_graph.py:234-358`（`CUDAGraphWrapper.__call__`） | 首次匹配时在 `torch.cuda.graph(...)` 里捕获，之后 `entry.cudagraph.replay()` |
-| 图实例缓存        | `vllm/compilation/cuda_graph.py:126-136`（`CUDAGraphEntry`） | 按 `BatchDescriptor` 索引                                   |
-| 捕获入口          | `vllm/v1/worker/gpu/model_runner.py:1132-1175`     | `capture_model`：冻结 GC、清 cache，再逐个捕获              |
-| 预热              | `vllm/config/compilation.py:690-753`               | `cudagraph_num_of_warmups`——捕获前先跑几轮                  |
+| 概念       | 位置                                                                    | 说明                                                                         |
+| ---------- | ----------------------------------------------------------------------- | ---------------------------------------------------------------------------- |
+| 图模式枚举 | `vllm/config/compilation.py:129-164`                                    | `NONE` / `PIECEWISE` / `FULL` / `FULL_DECODE_ONLY` / `FULL_AND_PIECEWISE`    |
+| 捕获与重放 | `vllm/compilation/cuda_graph.py:234-358`（`CUDAGraphWrapper.__call__`） | 首次匹配时在 `torch.cuda.graph(...)` 里捕获，之后 `entry.cudagraph.replay()` |
+| 图实例缓存 | `vllm/compilation/cuda_graph.py:126-136`（`CUDAGraphEntry`）            | 按 `BatchDescriptor` 索引                                                    |
+| 捕获入口   | `vllm/v1/worker/gpu/model_runner.py:1132-1175`                          | `capture_model`：冻结 GC、清 cache，再逐个捕获                               |
+| 预热       | `vllm/config/compilation.py:690-753`                                    | `cudagraph_num_of_warmups`——捕获前先跑几轮                                   |
 
 两点值得注意：
 

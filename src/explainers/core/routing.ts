@@ -8,7 +8,8 @@
  */
 import { formatNumber as f, itemId, type Timeline } from 'astro-wisp/explainers/core';
 
-export type RoutePhase = 'intro' | 'score' | 'bias' | 'group' | 'topk' | 'norm' | 'expert' | 'shared' | 'done';
+export type RoutePhase =
+  'intro' | 'score' | 'bias' | 'group' | 'topk' | 'norm' | 'expert' | 'shared' | 'done';
 
 export interface RouteState {
   tokens: string[];
@@ -70,14 +71,17 @@ export function routing(opts: RouteOptions): Timeline<RouteState> {
   const nShared = opts.nShared ?? 1;
   const scoreFunc = opts.scoreFunc ?? 'softmax';
   const routeScale = opts.routeScale ?? 1;
-  if (nExperts % nGroups !== 0) throw new Error(`专家数（${nExperts}）必须能被组数（${nGroups}）整除`);
+  if (nExperts % nGroups !== 0)
+    throw new Error(`专家数（${nExperts}）必须能被组数（${nGroups}）整除`);
   if (topk > nExperts) throw new Error(`topk（${topk}）不能超过专家数（${nExperts}）`);
 
   const perGroup = nExperts / nGroups;
   const group = Array.from({ length: nExperts }, (_, i) => Math.floor(i / perGroup));
 
   const tl: Timeline<RouteState> = [];
-  const mk = (over: Partial<RouteState> & { t: number; phase: RoutePhase; scores: number[] }): RouteState => ({
+  const mk = (
+    over: Partial<RouteState> & { t: number; phase: RoutePhase; scores: number[] },
+  ): RouteState => ({
     tokens,
     selScores: Array(nExperts).fill(null),
     group,
@@ -124,11 +128,16 @@ export function routing(opts: RouteOptions): Timeline<RouteState> {
         return { g, v: Math.max(...inG) };
       });
       gScore.sort((a, b) => (b.v !== a.v ? b.v - a.v : a.g - b.g));
-      keptGroups = gScore.slice(0, topkGroups).map((x) => x.g).sort((a, b) => a - b);
+      keptGroups = gScore
+        .slice(0, topkGroups)
+        .map((x) => x.g)
+        .sort((a, b) => a - b);
       tl.push({
         state: mk({ t, phase: 'group', scores: raw, selScores: sel, keptGroups }),
         caption: `分组筛选：${nGroups} 组里保留 ${topkGroups} 组（第 ${keptGroups.join('、')} 组）。分组的目的是限制一个 token 会打到多少台机器上——跨机通信比计算贵。`,
-        focus: keptGroups.flatMap((g) => group.map((gg, i) => (gg === g ? itemId('expert', i) : '')).filter(Boolean)),
+        focus: keptGroups.flatMap((g) =>
+          group.map((gg, i) => (gg === g ? itemId('expert', i) : '')).filter(Boolean),
+        ),
       });
     }
 
@@ -137,7 +146,10 @@ export function routing(opts: RouteOptions): Timeline<RouteState> {
       .map((v, i) => ({ i, v }))
       .filter((x) => keptGroups.includes(group[x.i]))
       .sort((a, b) => (b.v !== a.v ? b.v - a.v : a.i - b.i));
-    const chosen = cands.slice(0, topk).map((x) => x.i).sort((a, b) => a - b);
+    const chosen = cands
+      .slice(0, topk)
+      .map((x) => x.i)
+      .sort((a, b) => a - b);
     tl.push({
       state: mk({ t, phase: 'topk', scores: raw, selScores: sel, keptGroups, chosen }),
       caption: `选出 top-${topk}：专家 ${chosen.join('、')}。其余 ${nExperts - chosen.length} 个专家这一轮完全不参与计算——它们的参数在显存里，但不产生 FLOPs。`,
@@ -157,7 +169,16 @@ export function routing(opts: RouteOptions): Timeline<RouteState> {
     for (const i of chosen) {
       computed.push(i);
       tl.push({
-        state: mk({ t, phase: 'expert', scores: raw, selScores: sel, keptGroups, chosen, weights, computed: [...computed] }),
+        state: mk({
+          t,
+          phase: 'expert',
+          scores: raw,
+          selScores: sel,
+          keptGroups,
+          chosen,
+          weights,
+          computed: [...computed],
+        }),
         caption: `专家 ${i} 处理「${tokens[t]}」，输出乘以权重 ${f(weights[chosen.indexOf(i)]!)} 后累加。`,
         focus: [itemId('expert', i)],
       });
@@ -181,7 +202,12 @@ export function routing(opts: RouteOptions): Timeline<RouteState> {
   }
 
   tl.push({
-    state: mk({ t: tokens.length - 1, phase: 'done', scores: Array(nExperts).fill(0), activated: topk + nShared }),
+    state: mk({
+      t: tokens.length - 1,
+      phase: 'done',
+      scores: Array(nExperts).fill(0),
+      activated: topk + nShared,
+    }),
     caption: `注意每个 token 选的专家可以完全不同——路由是逐 token 的。这带来一个系统问题：同一个 batch 里的 token 会散到不同专家上，负载可能极不均衡。`,
   });
 

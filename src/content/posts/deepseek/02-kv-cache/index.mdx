@@ -1,6 +1,6 @@
 ---
-title: "02 KV Cache：缓存什么、要多大"
-description: "消掉 decode 的重复计算，然后把显存账本算清楚——这是后面所有压缩工作的起点。"
+title: '02 KV Cache：缓存什么、要多大'
+description: '消掉 decode 的重复计算，然后把显存账本算清楚——这是后面所有压缩工作的起点。'
 series:
   id: deepseek
   order: 4
@@ -21,12 +21,12 @@ import CacheBars from '../../../../explainers/react/CacheBars';
 
 回到 $k_s = W^K x_s$ 这个式子。注意右边只有 $x_s$：**位置 $s$ 的 Key 只依赖位置 $s$ 自己**。又因为因果掩码保证 $x_s$ 不会被未来的 token 改写，所以一旦算出来，$k_s$ 和 $v_s$ 永远不变。
 
-| 轮次 | 新 token | 需要的 K/V        | 其中新算的 | 其中与上轮相同 |
-| ---- | -------- | ----------------- | ---------- | -------------- |
-| 1    | 我       | $k_0, v_0$        | 1 个       | 0 个           |
-| 2    | 在       | $k_{0..1}, v_{0..1}$ | 1 个    | 1 个           |
-| 3    | 读       | $k_{0..2}, v_{0..2}$ | 1 个    | 2 个           |
-| 4    | 注意力   | $k_{0..3}, v_{0..3}$ | 1 个    | 3 个           |
+| 轮次 | 新 token | 需要的 K/V           | 其中新算的 | 其中与上轮相同 |
+| ---- | -------- | -------------------- | ---------- | -------------- |
+| 1    | 我       | $k_0, v_0$           | 1 个       | 0 个           |
+| 2    | 在       | $k_{0..1}, v_{0..1}$ | 1 个       | 1 个           |
+| 3    | 读       | $k_{0..2}, v_{0..2}$ | 1 个       | 2 个           |
+| 4    | 注意力   | $k_{0..3}, v_{0..3}$ | 1 个       | 3 个           |
 
 不缓存的话，第 $t$ 轮要算 $t$ 个位置的 K/V；缓存之后只算 1 个。生成 $n$ 个 token 的总工作量从 $O(n^2)$ 降到 $O(n)$。
 
@@ -36,14 +36,18 @@ Query 为什么不缓存？因为 $q_t$ 只在第 $t$ 轮用一次——它是�
 
 动画走一遍 prefill 建表、decode 读表再追加。注意右侧的账本随行数增长，以及最后一行的对照：**不用缓存时本轮要重算多少个 token**。
 
-<KVCacheView client:visible prefill={2} title="图 02-1：prefill 建表，decode 每轮读全表并追加一行" />
+<KVCacheView
+  client:visible
+  prefill={2}
+  title="图 02-1：prefill 建表，decode 每轮读全表并追加一行"
+/>
 
 两个阶段的性质完全不同，这个区别会一直用到 vLLM 系列：
 
-| 阶段        | 一次处理         | 计算量         | 瓶颈通常在           |
-| ----------- | ---------------- | -------------- | -------------------- |
-| **prefill** | 整段 prompt      | 随 prompt 长度 | 算力（矩阵乘很大）   |
-| **decode**  | 1 个 token       | 很小且固定     | **显存带宽**（要把整个 cache 读一遍） |
+| 阶段        | 一次处理    | 计算量         | 瓶颈通常在                            |
+| ----------- | ----------- | -------------- | ------------------------------------- |
+| **prefill** | 整段 prompt | 随 prompt 长度 | 算力（矩阵乘很大）                    |
+| **decode**  | 1 个 token  | 很小且固定     | **显存带宽**（要把整个 cache 读一遍） |
 
 decode 的算术量极小，却要把缓存里所有历史 K/V 从显存搬到计算单元。所以 decode 是**带宽受限**的：缓存越大，每个 token 越慢。这句话是本系列和 vLLM 系列共同的主线——缓存变小既省显存，也直接变快。
 
@@ -78,7 +82,18 @@ print(cache_bytes(128, 128, 128, 128 * 1024, 61) / gib)  # 488.0
 
 接下来十几篇的工作，本质上都是在这个公式的某个因子上做手脚。下面的动画把四种缓存方案放在同一配置下对照。现在只看第一条（MHA），后面两篇会逐条解释其余三条怎么来的：
 
-<CacheBars client:visible nH={8} dK={128} dV={128} nGroups={2} dC={512} dR={64} tokens={4096} layers={61} title="图 02-2：同一配置下四种缓存方案的宽度（后三条是第 03、04 篇的内容）" />
+<CacheBars
+  client:visible
+  nH={8}
+  dK={128}
+  dV={128}
+  nGroups={2}
+  dC={512}
+  dR={64}
+  tokens={4096}
+  layers={61}
+  title="图 02-2：同一配置下四种缓存方案的宽度（后三条是第 03、04 篇的内容）"
+/>
 
 注意这里的对照前提：**同一个 $n_h$ 和 $d_k$**。跨模型比较缓存大小没有意义，因为它们的结构参数不同。
 
@@ -87,7 +102,6 @@ print(cache_bytes(128, 128, 128, 128 * 1024, 61) / gib)  # 488.0
 带缓存与不带缓存的对照，验证两件事：输出完全相同，以及重复计算真的被消掉了。
 
 > 本篇的完整可运行脚本在文章目录下的 `toy.py`，其中的结论都写成了 `assert`。跑 `uv run --with numpy python toy.py` 即可自己验证一遍。
-
 
 ```python
 import numpy as np
@@ -157,12 +171,12 @@ K/V 投影次数：无缓存 4160，有缓存 128
 
 DeepSeek-V3 参考实现（commit `9b4e9788`）把缓存声明为固定大小的 buffer，按位置切片写入——不是 Python list：
 
-| 内容            | 源码位置            | 形状                                                             |
-| --------------- | ------------------- | ---------------------------------------------------------------- |
-| naive 分支缓存  | `model.py:439-441`  | `k_cache: (max_batch, max_seq_len, n_local_heads, qk_head_dim)`、`v_cache` 同理 |
-| 写入            | `model.py:477-478`  | `self.k_cache[:bsz, start_pos:end_pos] = k`                      |
-| absorb 分支缓存 | `model.py:442-444`  | `kv_cache: (max_batch, max_seq_len, kv_lora_rank)`、`pe_cache: (…, qk_rope_head_dim)` |
-| 写入            | `model.py:484-485`  | 写入归一化后的 latent 与 RoPE 分支                               |
+| 内容            | 源码位置           | 形状                                                                                  |
+| --------------- | ------------------ | ------------------------------------------------------------------------------------- |
+| naive 分支缓存  | `model.py:439-441` | `k_cache: (max_batch, max_seq_len, n_local_heads, qk_head_dim)`、`v_cache` 同理       |
+| 写入            | `model.py:477-478` | `self.k_cache[:bsz, start_pos:end_pos] = k`                                           |
+| absorb 分支缓存 | `model.py:442-444` | `kv_cache: (max_batch, max_seq_len, kv_lora_rank)`、`pe_cache: (…, qk_rope_head_dim)` |
+| 写入            | `model.py:484-485` | 写入归一化后的 latent 与 RoPE 分支                                                    |
 
 两点值得注意。第一，`start_pos:end_pos` 这个切片写法同时支持 prefill（一次写多行）和 decode（一次写一行），**代码里没有两条分开的路径**。第二，`absorb` 分支缓存的根本不是 K 和 V，而是一个 `kv_cache` 加一个 `pe_cache`——这就是 MLA，第 04 篇的主题。
 

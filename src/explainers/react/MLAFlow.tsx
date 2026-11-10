@@ -87,9 +87,19 @@ function Scene({ s, focus }: { s: MlaState; focus?: string[] }) {
         width={dC * S + dR * S + 34}
         height={l * ROW + 10}
         rx={6}
-        style={{ fill: 'none', stroke: 'var(--wisp-sem-v)', strokeWidth: 1.5, strokeDasharray: '5 3' }}
+        style={{
+          fill: 'none',
+          stroke: 'var(--wisp-sem-v)',
+          strokeWidth: 1.5,
+          strokeDasharray: '5 3',
+        }}
       />
-      <Caption x={X_C - 8} y={TOP + l * ROW + 14} text={`↑ 缓存的全部内容：每 token ${s.widthMla} 个数`} tone="v" />
+      <Caption
+        x={X_C - 8}
+        y={TOP + l * ROW + 14}
+        text={`↑ 缓存的全部内容：每 token ${s.widthMla} 个数`}
+        tone="v"
+      />
 
       {/* 每个 token 一行 */}
       {s.tokens.map((tok, i) => {
@@ -108,7 +118,15 @@ function Scene({ s, focus }: { s: MlaState; focus?: string[] }) {
             />
             <Row x={X_C} y={y} values={s.c[i]} tone="v" hot={hotC} prefix="c" idx={i} />
             <Row x={X_PE} y={y} values={s.pe[i]} tone="k" hot={hotPe} prefix="pe" idx={i} />
-            {cur && <Arrow from={[X_X + S + 4, y + S / 2]} to={[X_C - 12, y + S / 2]} tone="v" active label="W^DKV" />}
+            {cur && (
+              <Arrow
+                from={[X_X + S + 4, y + S / 2]}
+                to={[X_C - 12, y + S / 2]}
+                tone="v"
+                active
+                label="W^DKV"
+              />
+            )}
           </g>
         );
       })}
@@ -121,7 +139,15 @@ function Scene({ s, focus }: { s: MlaState; focus?: string[] }) {
           <g key={`h${hh}`} opacity={s.h === null ? 0.5 : active ? 1 : 0.3}>
             <Label x={X_KV - 14} y={y + S / 2} text={`h${hh}`} tone="weight" anchor="end" />
             <Row x={X_KV} y={y} values={kh} tone="weight" hot={hotK} prefix="k" idx={hh} />
-            <Row x={X_KV + dK * S + 10} y={y} values={s.v[hh]} tone="weight" hot={hotV} prefix="v" idx={hh} />
+            <Row
+              x={X_KV + dK * S + 10}
+              y={y}
+              values={s.v[hh]}
+              tone="weight"
+              hot={hotV}
+              prefix="v"
+              idx={hh}
+            />
           </g>
         );
       })}
@@ -193,7 +219,15 @@ const X = [
 
 export default function MLAFlow({ tokens = ['我', '在', '读', '注意力'], title }: MLAFlowProps) {
   const steps = useMemo(
-    () => mlaFlow({ tokens, x: X.slice(0, tokens.length), wDkv: W_DKV, wKr: W_KR, wUk: W_UK, wUv: W_UV }),
+    () =>
+      mlaFlow({
+        tokens,
+        x: X.slice(0, tokens.length),
+        wDkv: W_DKV,
+        wKr: W_KR,
+        wUk: W_UK,
+        wUv: W_UV,
+      }),
     [tokens],
   );
   return (

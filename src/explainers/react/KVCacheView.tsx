@@ -4,7 +4,15 @@
  * 用在：DS 02（缓存是什么）、DS 03/04（换 scheme 看缓存宽度变化）、DS 11（跨层复用）。
  */
 import { useMemo } from 'react';
-import { CELL, Cell, Explainer, Label, Stage, focusOf, formatNumber as f } from 'astro-wisp/explainers';
+import {
+  CELL,
+  Cell,
+  Explainer,
+  Label,
+  Stage,
+  focusOf,
+  formatNumber as f,
+} from 'astro-wisp/explainers';
 import { cacheTimeline, humanBytes, type CacheConfig, type CacheState } from '../core/kv-cache';
 import { Caption, Legend } from './primitives';
 import { DIMS, TOKENS } from '../core/toy';
@@ -23,7 +31,17 @@ const GUT = 70;
 const TOP = 26;
 const SMALL = 30; // 缓存格子比注意力格子小，便于显示多列
 
-function Scene({ s, focus, layers, bytes }: { s: CacheState; focus?: string[]; layers: number; bytes: number }) {
+function Scene({
+  s,
+  focus,
+  layers,
+  bytes,
+}: {
+  s: CacheState;
+  focus?: string[];
+  layers: number;
+  bytes: number;
+}) {
   const l = s.tokens.length;
   const cols = s.rows[0].length;
   const gridW = cols * SMALL;
@@ -45,7 +63,13 @@ function Scene({ s, focus, layers, bytes }: { s: CacheState; focus?: string[]; l
         const isCur = s.cur === t;
         return (
           <g key={t} opacity={filled ? 1 : 0.4}>
-            <Label x={GUT - 10} y={TOP + t * CELL + CELL / 2} text={`${t} ${tok}`} tone={isCur ? 'q' : 'v'} anchor="end" />
+            <Label
+              x={GUT - 10}
+              y={TOP + t * CELL + CELL / 2}
+              text={`${t} ${tok}`}
+              tone={isCur ? 'q' : 'v'}
+              anchor="end"
+            />
             {s.rows[t].map((val, c) => (
               <Cell
                 key={c}
@@ -69,9 +93,19 @@ function Scene({ s, focus, layers, bytes }: { s: CacheState; focus?: string[]; l
         <Caption x={panelX} y={TOP + 28} text="宽度（每 token 每层）" />
         <Caption x={panelX} y={TOP + 50} text={s.scheme.formula} />
         <Caption x={panelX} y={TOP + 72} text={`已缓存 ${s.cached} 行 × ${layers} 层`} />
-        <Caption x={panelX} y={TOP + 94} text={`≈ ${humanBytes(liveBytes)}（${bytes} 字节/数）`} tone="v" />
+        <Caption
+          x={panelX}
+          y={TOP + 94}
+          text={`≈ ${humanBytes(liveBytes)}（${bytes} 字节/数）`}
+          tone="v"
+        />
         <Caption x={panelX} y={TOP + 124} text="本轮如果不用缓存：" />
-        <Caption x={panelX} y={TOP + 146} text={`要重算 ${s.recomputeWithout} 个 token 的 K/V`} tone="error" />
+        <Caption
+          x={panelX}
+          y={TOP + 146}
+          text={`要重算 ${s.recomputeWithout} 个 token 的 K/V`}
+          tone="error"
+        />
       </g>
 
       <Legend
@@ -88,12 +122,18 @@ function Scene({ s, focus, layers, bytes }: { s: CacheState; focus?: string[]; l
   );
 }
 
-export default function KVCacheView({ tokens, prefill = 2, cfg, layers = 61, bytesPerScalar = 2, title }: KVCacheViewProps) {
-  const config: CacheConfig = cfg ?? { scheme: 'mha', nH: DIMS.nH, dK: DIMS.dK, dV: DIMS.dV };
-  const steps = useMemo(
-    () => cacheTimeline({ tokens: tokens ?? [...TOKENS], prefill, cfg: config }),
-    [tokens, prefill, config.scheme, config.nH, config.dK, config.dV, config.nGroups, config.dC, config.dR],
-  );
+export default function KVCacheView({
+  tokens,
+  prefill = 2,
+  cfg,
+  layers = 61,
+  bytesPerScalar = 2,
+  title,
+}: KVCacheViewProps) {
+  const steps = useMemo(() => {
+    const config: CacheConfig = cfg ?? { scheme: 'mha', nH: DIMS.nH, dK: DIMS.dK, dV: DIMS.dV };
+    return cacheTimeline({ tokens: tokens ?? [...TOKENS], prefill, cfg: config });
+  }, [tokens, prefill, cfg]);
   return (
     <Explainer steps={steps} title={title ?? 'KV Cache：prefill 建表，decode 读表再追加'}>
       {(step) => <Scene s={step.state} focus={step.focus} layers={layers} bytes={bytesPerScalar} />}

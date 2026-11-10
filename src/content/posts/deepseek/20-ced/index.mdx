@@ -1,6 +1,6 @@
 ---
-title: "20 CED：把前半个模型变成编码器"
-description: "agent workflow 的 prefill 为什么这么贵——V4.1 让 decoder 的 global KV 直接由 encoder 末层生成。"
+title: '20 CED：把前半个模型变成编码器'
+description: 'agent workflow 的 prefill 为什么这么贵——V4.1 让 decoder 的 global KV 直接由 encoder 末层生成。'
 series:
   id: deepseek
   order: 22
@@ -82,20 +82,20 @@ $$
 
 两种 replay 的分工：
 
-| | 做什么 |
-| --- | --- |
-| **Encoder SWA Bounded Replay** | SWA KV 从 persistent cache 里拿掉；缺失时重放缓存前缀的最近 $n_{\rm win}$ 个 token 只重新生成 SWA KV（复用已缓存的 global KV），未缓存的后缀则同时生成两者 |
+|                                | 做什么                                                                                                                                                                                                         |
+| ------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Encoder SWA Bounded Replay** | SWA KV 从 persistent cache 里拿掉；缺失时重放缓存前缀的最近 $n_{\rm win}$ 个 token 只重新生成 SWA KV（复用已缓存的 global KV），未缓存的后缀则同时生成两者                                                     |
 | **Decoder SWA Bounded Replay** | CED 下 decoder 的 global KV 已由 encoder 输出投影得到，prefill 时只重放 prompt 最近 $n_{\rm win}$ 个 token，把这些 encoder 输出过一遍 decoder 层，生成 decode 起步需要的 SWA KV（**且不用于 prefix caching**） |
 
 ## 部署：两种 KV 分两层存
 
 这是本篇最有工程味的一处。既然 SWA KV 可以重放出来，**它就不必长期保存**（§3.2.1）：
 
-| | global KV | SWA KV |
-| --- | --- | --- |
-| 存在哪 | persistent KV cache | 每台机器约 **10% host DRAM** 的分布式短 TTL 内存池 |
-| 生命周期 | 至少 **72 小时** | 短 TTL |
-| miss 了怎么办 | 必须有 | **bounded replay 回填** |
+|               | global KV           | SWA KV                                             |
+| ------------- | ------------------- | -------------------------------------------------- |
+| 存在哪        | persistent KV cache | 每台机器约 **10% host DRAM** 的分布式短 TTL 内存池 |
+| 生命周期      | 至少 **72 小时**    | 短 TTL                                             |
+| miss 了怎么办 | 必须有              | **bounded replay 回填**                            |
 
 **「能重算的就不长期存」**——这是一个很干净的取舍：用少量重算换掉大量持久存储。结果是 persistent KV footprint 降到约 V4-Flash 的 **1/8**（§3.2.2、§2.1）。
 

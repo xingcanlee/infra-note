@@ -67,8 +67,12 @@ function Chip({
 
 function Scene({ s, focus }: { s: SpecState; focus?: string[] }) {
   const hot = focusOf(focus, 'draft');
-  const base = s.committed.length - (s.phase === 'accept' || s.phase === 'reject' ? s.accepted + 1 : 0);
-  const start = Math.max(0, s.phase === 'draft' || s.phase === 'verify' ? s.committed.length : base);
+  const base =
+    s.committed.length - (s.phase === 'accept' || s.phase === 'reject' ? s.accepted + 1 : 0);
+  const start = Math.max(
+    0,
+    s.phase === 'draft' || s.phase === 'verify' ? s.committed.length : base,
+  );
   // 图例整行右缘 = LEFT + 3×160 + 57 = 623，比格子行（LEFT+8×62=582）更右，w 余量取 56 保证图例不贴边。
   const w = LEFT + Math.max(s.truth.length, 8) * CELL + 56;
   const h = TOP + 3 * (H + 22) + 76;
@@ -80,7 +84,11 @@ function Scene({ s, focus }: { s: SpecState; focus?: string[] }) {
   ];
 
   return (
-    <Stage width={w} height={h} label={`推测解码：第 ${s.round} 轮，已产出 ${s.committed.length}/${s.truth.length}`}>
+    <Stage
+      width={w}
+      height={h}
+      label={`推测解码：第 ${s.round} 轮，已产出 ${s.committed.length}/${s.truth.length}`}
+    >
       {rows.map((r) => (
         <Caption key={r.label} x={0} y={r.y + H / 2} text={r.label} tone={r.tone} />
       ))}

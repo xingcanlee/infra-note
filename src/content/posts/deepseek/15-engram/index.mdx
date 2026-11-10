@@ -1,6 +1,6 @@
 ---
-title: "15 Engram：在 MoE 之外再开一条稀疏的轴"
-description: "MoE 稀疏的是计算，Engram 稀疏的是存储——N-gram 哈希 O(1) 查表、扩容不增 FLOPs；论文机制与 U 型分配律，加上 vLLM 与 vllm-ascend 的实现对照。"
+title: '15 Engram：在 MoE 之外再开一条稀疏的轴'
+description: 'MoE 稀疏的是计算，Engram 稀疏的是存储——N-gram 哈希 O(1) 查表、扩容不增 FLOPs；论文机制与 U 型分配律，加上 vLLM 与 vllm-ascend 的实现对照。'
 series:
   id: deepseek
   order: 17
@@ -48,19 +48,23 @@ flowchart LR
 
 整体结构如图 15-1（论文图 1）：Engram 作为旁路模块部署在个别层上，取回的静态记忆经门控融合到动态 hidden state，输入 embedding 与输出 un-embedding 保持原样。
 
-<Figure src={paperFig1} alt="论文图 1：Engram 模块结构——N-gram 哈希取回静态 embedding，与 hidden state 做缩放点积门控后加回残差流；模块仅部署在特定层" caption="图 15-1：Engram 架构总览（论文图 1）" />
+<Figure
+  src={paperFig1}
+  alt="论文图 1：Engram 模块结构——N-gram 哈希取回静态 embedding，与 hidden state 做缩放点积门控后加回残差流；模块仅部署在特定层"
+  caption="图 15-1：Engram 架构总览（论文图 1）"
+/>
 
 ### 两条稀疏的轴
 
 这是本篇的核心区分：
 
-| | **MoE** | **Engram** |
-| --- | --- | --- |
-| 论文的叫法 | conditional **computation** | conditional **memory** |
-| 稀疏的是 | 计算（未选中的专家不算） | **存储**（只取固定几行） |
-| 如何选 | gate 打分后动态 top-$k$ 路由 | **确定性** N-gram 哈希 |
+|            | **MoE**                       | **Engram**                   |
+| ---------- | ----------------------------- | ---------------------------- |
+| 论文的叫法 | conditional **computation**   | conditional **memory**       |
+| 稀疏的是   | 计算（未选中的专家不算）      | **存储**（只取固定几行）     |
+| 如何选     | gate 打分后动态 top-$k$ 路由  | **确定性** N-gram 哈希       |
 | 扩容的代价 | 显存 + 训练复杂度，FLOPs 不变 | **只有存储**，FLOPs 完全不变 |
-| 能放在哪 | 必须在 GPU 显存 | HBM / 主机内存 / NVMe 多级 |
+| 能放在哪   | 必须在 GPU 显存               | HBM / 主机内存 / NVMe 多级   |
 
 最后一行是 Engram 独有的性质。因为访问分布服从 Zipf 定律（少数 N-gram 极高频、长尾极低频），可以把高频行放 HBM、长尾放更慢更大的存储（§2.5）。**MoE 的专家做不到这件事**——它们随时可能被任何 token 选中。
 
@@ -116,11 +120,11 @@ $$
 
 **右栏是 decode 时逐 token 的执行**：压缩 id 组成 2/3-gram，rolling XOR 累乘得哈希，取模加偏移得 16 个行号。「张仲景」正是论文图 7 里高门控的例子，数值全部实算：
 
-![哈希的初始化与执行两栏：左栏加载时构造压缩表（NFKC/小写折叠）、奇乘数（每层 RNG 种子 10007×层号，随机整数 ×2+1）与质数桶（从 engram_vocab_size−1 取不重复质数，偏移为前缀和）；右栏 decode 时逐 token：压缩 id 组成 2/3-gram，rolling XOR 累乘得 h₂、h₃，行号 = h mod 质数 + 偏移共 16 行；下部为 n=2 与 n=3 各 8 个质数桶，命中桶标绿](./diagrams/15-engram-lookup.drawio "图 15-2：哈希执行——初始化（压缩表、奇乘数、质数桶）与逐 token 取行（数值实算）")
+![哈希的初始化与执行两栏：左栏加载时构造压缩表（NFKC/小写折叠）、奇乘数（每层 RNG 种子 10007×层号，随机整数 ×2+1）与质数桶（从 engram_vocab_size−1 取不重复质数，偏移为前缀和）；右栏 decode 时逐 token：压缩 id 组成 2/3-gram，rolling XOR 累乘得 h₂、h₃，行号 = h mod 质数 + 偏移共 16 行；下部为 n=2 与 n=3 各 8 个质数桶，命中桶标绿](./diagrams/15-engram-lookup.drawio '图 15-2：哈希执行——初始化（压缩表、奇乘数、质数桶）与逐 token 取行（数值实算）')
 
 这条链路里唯一的「计算」是异或乘和取模：表从每桶 10 万行扩到 226 万行（Engram-27B 尺度），每一步都不变。③–④ 的 shape 流：
 
-![查表与门控的 shape 流：16 个行号取回 [16,80] 的行，拼接成 [1280]，wkv 投影成 [5d]（4 份每分支 Key + 1 份共享 Value）；hidden state [4,d] 作为 Query 与 Key 归一化点积得 [4] 个门控标量，加权共享 Value 得 [4,d]，卷积后与残差相加](./diagrams/15-engram-lookup.drawio#page=2 "图 15-3：查表与门控——每个节点的输入输出 shape")
+![查表与门控的 shape 流：16 个行号取回 [16,80] 的行，拼接成 [1280]，wkv 投影成 [5d]（4 份每分支 Key + 1 份共享 Value）；hidden state [4,d] 作为 Query 与 Key 归一化点积得 [4] 个门控标量，加权共享 Value 得 [4,d]，卷积后与残差相加](./diagrams/15-engram-lookup.drawio#page=2 '图 15-3：查表与门控——每个节点的输入输出 shape')
 
 ### mHC 多分支：共享表与每分支门控
 
@@ -138,7 +142,11 @@ $$
 
 论文图 7 将 Engram-27B 的门控标注回原文：英文里「Alexander the Great」「the Milky Way」「By the way」这类多词实体和固定搭配处显著激活，中文里「四大发明」「张仲景」这类成语与历史人名处显著激活。门控确实在「局部静态模式完成时」激活——这正是设计意图的直接证据。
 
-<Figure src={paperFig7} alt="论文图 7：门控 α 的可视化，深红表示强激活；实体与固定搭配处呈现强激活，如 Alexander the Great、Princess of Wales、四大发明、张仲景" caption="图 15-4：门控在实体与固定搭配处激活（论文图 7）" />
+<Figure
+  src={paperFig7}
+  alt="论文图 7：门控 α 的可视化，深红表示强激活；实体与固定搭配处呈现强激活，如 Alexander the Great、Princess of Wales、四大发明、张仲景"
+  caption="图 15-4：门控在实体与固定搭配处激活（论文图 7）"
+/>
 
 ### 稀疏预算的分配：U 型曲线
 
@@ -156,7 +164,12 @@ $$
 
 $\rho=1$ 是纯 MoE。**固定 $P_{\rm tot}$ 和 $P_{\rm act}$**（也就是固定参数量和 FLOPs）扫描 $\rho$，validation loss 呈 **U 型**（图 15-5，论文图 3 左半）：纯 MoE 端 1.7248（10B 档，$C=6\times10^{20}$），$\rho\approx80\%$ 处最低 1.7109（$\Delta=0.0139$）；降到 $\rho\approx40\%$ 才退回纯 MoE 水平。最优点在 $\rho\approx75\%$–$80\%$ 且跨计算档位稳定——即**约 20%–25% 的稀疏预算给 Engram**。
 
-<Figure src={paperFig3} alt="论文图 3 左：两个计算档位下 loss 对分配比 ρ 都呈 U 型，纯 MoE 都不是最优；右：固定 3B 骨干只扫表槽数，loss 呈 log-linear 下降，且同预算下优于 OverEncoding" caption="图 15-5：稀疏分配的 U 型曲线与 Engram 自身的幂律（论文图 3）" wide />
+<Figure
+  src={paperFig3}
+  alt="论文图 3 左：两个计算档位下 loss 对分配比 ρ 都呈 U 型，纯 MoE 都不是最优；右：固定 3B 骨干只扫表槽数，loss 呈 log-linear 下降，且同预算下优于 OverEncoding"
+  caption="图 15-5：稀疏分配的 U 型曲线与 Engram 自身的幂律（论文图 3）"
+  wide
+/>
 
 两端为什么都差（§3.1）：
 
@@ -176,7 +189,11 @@ Engram-27B 最反直觉的结果是**推理类任务的提升大于知识类任�
 - **LogitLens**：把中间层 hidden state 直接过 LM head，算与最终分布的 KL 散度。Engram 两条曲线在前几层就明显更低——预测收敛得更早。
 - **CKA**：算 Engram 各层与 MoE 各层表示的相似度矩阵。对齐曲线整体上移：**Engram 第 5 层的表示最像 MoE 的第 12 层**。表 3 那个「6 层拼出黛安娜」的过程，被查表一步替掉了。
 
-<Figure src={paperFig4} alt="论文图 4：左，逐层 LogitLens KL 散度，Engram 在前几层就明显更低；右，CKA 相似度热图与对齐曲线，Engram 的浅层对齐 MoE 的深层" caption="图 15-6：Engram 加速预测收敛、等效加深（论文图 4）" />
+<Figure
+  src={paperFig4}
+  alt="论文图 4：左，逐层 LogitLens KL 散度，Engram 在前几层就明显更低；右，CKA 相似度热图与对齐曲线，Engram 的浅层对齐 MoE 的深层"
+  caption="图 15-6：Engram 加速预测收敛、等效加深（论文图 4）"
+/>
 
 ### 层位置：浅层与中层的折中
 
@@ -184,29 +201,33 @@ Engram-27B 最反直觉的结果是**推理类任务的提升大于知识类任�
 
 组件消融（同图右侧）显示贡献最大的是**多分支融合、上下文门控、tokenizer 压缩**；去掉卷积只轻微变差，把预算分给 4-gram 反而略差（稀释了更高频的 2/3-gram 容量）。
 
-<Figure src={paperFig5} alt="论文图 5：左，单模块插入层从 1 扫到 12，第 2 层最优、越深越差；右侧标记为各组件消融，多分支融合、门控与 tokenizer 压缩的损失最大" caption="图 15-7：层敏感性与组件消融（论文图 5）" />
+<Figure
+  src={paperFig5}
+  alt="论文图 5：左，单模块插入层从 1 扫到 12，第 2 层最优、越深越差；右侧标记为各组件消融，多分支融合、门控与 tokenizer 压缩的损失最大"
+  caption="图 15-7：层敏感性与组件消融（论文图 5）"
+/>
 
 ### 27B 的对照实验
 
 论文的主实验（§4.1–4.2，表 1）设计得很干净：30 层、hidden 2560、MLA + mHC 骨干，Muon 优化器，262B token，全部模型同数据同课程、激活参数严格一致。
 
-| 模型 | 总参数 | 激活参数 | 构成 |
-| --- | --- | --- | --- |
-| MoE-27B | 26.7B | 3.8B | DeepSeekMoE，2 shared + 72 routed，top-6 |
+| 模型           | 总参数    | 激活参数 | 构成                                                    |
+| -------------- | --------- | -------- | ------------------------------------------------------- |
+| MoE-27B        | 26.7B     | 3.8B     | DeepSeekMoE，2 shared + 72 routed，top-6                |
 | **Engram-27B** | **26.7B** | **3.8B** | routed 从 72 减到 55，换成 5.7B Engram（$\rho=74.3\%$） |
-| Engram-40B | 39.5B | 3.8B | 同骨干，表扩到 18.5B |
+| Engram-40B     | 39.5B     | 3.8B     | 同骨干，表扩到 18.5B                                    |
 
 **Engram-27B 和 MoE-27B 是 iso-parameter 且 iso-FLOPs 的**——总参数相同、激活参数相同，只是把一部分专家换成了查表。结果（表 1）：
 
-| | MoE-27B | Engram-27B | 差 |
-| --- | --- | --- | --- |
-| Pile loss | 1.960 | 1.950 | −0.010 |
-| MMLU | 57.4 | 60.4 | **+3.0** |
-| CMMLU | 57.9 | 61.9 | **+4.0** |
-| BBH | 50.9 | 55.9 | **+5.0** |
-| ARC-Challenge | 70.1 | 73.8 | +3.7 |
-| HumanEval | 37.8 | 40.8 | +3.0 |
-| GSM8K | 58.4 | 60.6 | +2.2 |
+|               | MoE-27B | Engram-27B | 差       |
+| ------------- | ------- | ---------- | -------- |
+| Pile loss     | 1.960   | 1.950      | −0.010   |
+| MMLU          | 57.4    | 60.4       | **+3.0** |
+| CMMLU         | 57.9    | 61.9       | **+4.0** |
+| BBH           | 50.9    | 55.9       | **+5.0** |
+| ARC-Challenge | 70.1    | 73.8       | +3.7     |
+| HumanEval     | 37.8    | 40.8       | +3.0     |
+| GSM8K         | 58.4    | 60.6       | +2.2     |
 
 Engram 模块部署在第 2 与第 15 层，$N\in\{2,3\}$、$K=8$、$d_{\rm mem}=1280$（恰好 16 列 × 80 维）；embedding 用 Adam，学习率是普通参数的 5 倍且不加 weight decay（§4.1）。
 
@@ -227,7 +248,11 @@ Engram 模块部署在第 2 与第 15 层，$N\in\{2,3\}$、$K=8$、$d_{\rm mem}
 - **训练**（论文图 2a）：表按 GPU 切片，All-to-All 收集本步激活的行、反向再分发梯度，表的容量随卡数线性扩展。
 - **推理**（图 2b）：表整个放在主机内存，host 侧异步预取、PCIe 传输与前面各层的计算重叠；再配合 Zipf 局部性把高频行缓存进 HBM。
 
-<Figure src={paperFig2} alt="论文图 2：训练时表按 GPU 切片、All-to-All 收集行；推理时表 offload 至主机内存，利用确定性地址异步预取，与前面层的计算重叠" caption="图 15-8：训练的 All-to-All 与推理的预取重叠（论文图 2）" />
+<Figure
+  src={paperFig2}
+  alt="论文图 2：训练时表按 GPU 切片、All-to-All 收集行；推理时表 offload 至主机内存，利用确定性地址异步预取，与前面层的计算重叠"
+  caption="图 15-8：训练的 All-to-All 与推理的预取重叠（论文图 2）"
+/>
 
 论文的实测（§6.4，表 4，nano-vLLM 骨架、H800、512 条序列）：在 4B 稠密骨干的第 2 块处引入一个 **100B 参数**的 Engram 层、整表驻留主机 DRAM，吞吐 9031.6→8858.3 tok/s（−1.9%）；8B 骨干 6315.5→6140.0（−2.8%）。且这是**全部读取都经由 PCIe** 的保守设定——未利用 Zipf 缓存。论文据此主张「每步通信量正比于激活行数而非表大小」。
 
@@ -257,20 +282,20 @@ post_mix, res_mix, x, attn_pre = mhc_pre(residual, ...)            # 586
 
 注释给的理由有二：mHC 的混合系数要能**看到注入后的流**；注入也避免让 post 进 pre-norm GEMM 的融合 prologue。哈希则在整个 batch 展平后**算一次**，早于任何序列并行分片（model.py:1000-1003）——两个 Engram 层共用这份 `[T, 2, 16]` 的行号。
 
-![一个 V4.1 解码层内部：上一层 MoE 输出经 mhc_post 合成 previous_post，Engram 在此将门控值加进残差流，之后才是本层 mhc_pre、Attention、FFN 段混合与 MoE；左侧虚线是入口处一次计算完成的 engram_hashes](./diagrams/15-engram-layer.drawio "图 15-9：Engram 在一个解码层里的注入点")
+![一个 V4.1 解码层内部：上一层 MoE 输出经 mhc_post 合成 previous_post，Engram 在此将门控值加进残差流，之后才是本层 mhc_pre、Attention、FFN 段混合与 MoE；左侧虚线是入口处一次计算完成的 engram_hashes](./diagrams/15-engram-layer.drawio '图 15-9：Engram 在一个解码层里的注入点')
 
 ### 模块结构
 
 `engram.py` 的类分工如下，关系见图 15-10：
 
-| 类 | 行号 | 职责 |
-| --- | --- | --- |
-| `EngramLayout` | 211 | 从 config 确定性分配每层 16 个 $(n,\text{head})$ 质数桶与偏移 |
-| `NgramHashState` | 426 | 压缩表 `token_map`、哈希乘数、V1 的 slot 缓存；`forward` 启动哈希 kernel |
-| `ParallelEngramEmbedding` | 1021 | 表的 TP×DP 分片、权重加载、`lookup`（UVA 读主机表） |
-| `EngramBatch` | 1539 | 两个 Engram 层的 WKV 输入**一次** DP 交换，打成 MXFP8 |
-| `Engram` | 1664 | 模块本体：`embed_tokens`、`wkv`、逐分支 `q/k_weight`、门控 |
-| `DPSharedEngramStorage` | 839 | DP 副本共享主机表（cuMem FABRIC 或 /dev/shm） |
+| 类                        | 行号 | 职责                                                                     |
+| ------------------------- | ---- | ------------------------------------------------------------------------ |
+| `EngramLayout`            | 211  | 从 config 确定性分配每层 16 个 $(n,\text{head})$ 质数桶与偏移            |
+| `NgramHashState`          | 426  | 压缩表 `token_map`、哈希乘数、V1 的 slot 缓存；`forward` 启动哈希 kernel |
+| `ParallelEngramEmbedding` | 1021 | 表的 TP×DP 分片、权重加载、`lookup`（UVA 读主机表）                      |
+| `EngramBatch`             | 1539 | 两个 Engram 层的 WKV 输入**一次** DP 交换，打成 MXFP8                    |
+| `Engram`                  | 1664 | 模块本体：`embed_tokens`、`wkv`、逐分支 `q/k_weight`、门控               |
+| `DPSharedEngramStorage`   | 839  | DP 副本共享主机表（cuMem FABRIC 或 /dev/shm）                            |
 
 字段、方法与持有关系的 UML 视角（实心菱形为组合，空心为聚合，虚线为运行时依赖）：
 
@@ -330,13 +355,13 @@ classDiagram
     ParallelEngramEmbedding ..> DPSharedEngramStorage : DP 共享
 ```
 
-![engram.py 的类图：DeepseekV41Model 持有 NgramHashState、EngramBatch 与两层的 Engram；Engram 持有 ParallelEngramEmbedding（表与查表），后者可关联 DPSharedEngramStorage；EngramBatch 持有 peer 交换，EngramPrefetch 在 specialized decode 中封装整条链](./diagrams/15-engram-classes.drawio "图 15-10：engram.py 的类结构与协作者")
+![engram.py 的类图：DeepseekV41Model 持有 NgramHashState、EngramBatch 与两层的 Engram；Engram 持有 ParallelEngramEmbedding（表与查表），后者可关联 DPSharedEngramStorage；EngramBatch 持有 peer 交换，EngramPrefetch 在 specialized decode 中封装整条链](./diagrams/15-engram-classes.drawio '图 15-10：engram.py 的类结构与协作者')
 
 ### 哈希：质数桶与逐 token rolling
 
 桶的分配（`EngramLayout.__init__`，engram.py:230-246）：每个 $(n,\text{head})$ 从 `engram_vocab_size−1` 起找一个**没用过的质数**作为桶大小，桶与桶用累加偏移隔开。论文的 226 万/桶（27B）与 724 万/桶（40B）就是这个数的两档。构建过程见图 15-11：
 
-![桶构建流程：从 engram_vocab_size−1 起点出发，按（层，n，头）逐个取不重复质数——层 1 的 n=2 分配到 100003 到 100109、n=3 分配到 100129 到 100207，层 14 从第 17 个继续；偏移取前桶行数的前缀和使桶互不重叠，行号等于偏移加 h 模质数](./diagrams/15-engram-buckets.drawio "图 15-11：桶构建——质数表的分配、偏移与行号落桶")
+![桶构建流程：从 engram_vocab_size−1 起点出发，按（层，n，头）逐个取不重复质数——层 1 的 n=2 分配到 100003 到 100109、n=3 分配到 100129 到 100207，层 14 从第 17 个继续；偏移取前桶行数的前缀和使桶互不重叠，行号等于偏移加 h 模质数](./diagrams/15-engram-buckets.drawio '图 15-11：桶构建——质数表的分配、偏移与行号落桶')
 
 乘数（`compute_hash_multipliers`，engram.py:189-208）**按 (layer, lookback) 取随机奇数**，种子 `10007 × layer_id`——确定到所有 rank 一致，不用广播。注意一个实现细节：同阶的 8 个头**共用乘数、靠不同的质数桶区分**，与论文「K 个独立哈希头」的表述略有出入。
 
@@ -356,7 +381,7 @@ hashed = rolling % prime[None, :] + offset[None, :]  # 419
 
 decode 一步的全链路：
 
-![decode 数据流：runner 输入经哈希 kernel 得到行号，EngramBatch 按 slot 大小选 peer SHM 互读或 all_to_all；查表经 UVA 直读主机共享表（行数多时先排序），行拼成 1280 维后过 MXFP8 GEMM 得每分支 Key 与共享 Value，融合门控 kernel 输出 h+α·v](./diagrams/15-engram-decode.drawio "图 15-12：vLLM decode 中 Engram 的数据流")
+![decode 数据流：runner 输入经哈希 kernel 得到行号，EngramBatch 按 slot 大小选 peer SHM 互读或 all_to_all；查表经 UVA 直读主机共享表（行数多时先排序），行拼成 1280 维后过 MXFP8 GEMM 得每分支 Key 与共享 Value，融合门控 kernel 输出 h+α·v](./diagrams/15-engram-decode.drawio '图 15-12：vLLM decode 中 Engram 的数据流')
 
 同一过程按**组件交互的时序**再看一遍——注意查表被挪到预取流上，与主流的层计算并行：
 
@@ -429,17 +454,17 @@ vllm-ascend 没有复用上游的实现，而是自建了一个包 `vllm_ascend/
 
 复用的是**算法骨架**：`EngramLayout.from_config`、`NgramHashState` 基类（只重写了 kernel 启动）、`_write_hash_cache_kernel`、`DEAD_ID` 与 EDP 分片排布——质数桶、乘数、rolling 哈希与上游完全一致，两层各查 16 行的语义不变。重写的是**执行层**：
 
-| 项 | 上游 vLLM（GPU） | vllm-ascend（NPU） |
-| --- | --- | --- |
-| 哈希 kernel | 单 kernel，二分内嵌 | 拆成 2 个 Triton kernel（组合 kernel 触发 bishengir 编译器 abort，engram_hash.py:19-23） |
-| 查表输出 | packed FP8 / BF16，持久 grid、可排序 | 每行一个 program 的 gather+dequant，**恒为 BF16** |
-| 表精度 | 仅 FP8E4M3+E8M0 | 按表头 BF16 / INT8+FP32 / MXFP8；非 A5 硬件把 MXFP8 checkpoint 重量化成 INT8（组 32） |
-| offload | `cpu_offload` 默认开 | **opt-in**；开时用 `aclrtHostRegisterV2` 注册主机内存、发布设备指针表 |
-| DP 交换 | peer SHM / all_to_all / EngramBatch | all_gather + `all_to_all_single`，无 peer；MRV2 且 DP/PCP>1 时**强制** `dp_shared_memory`（ascend_config.py:690-698） |
-| 并行组 | EDP（DP-only） | EDP = **DP×PCP**（prefill context parallel 也进组，worker.py:1456-1469） |
-| 重叠 | 共享 cuda 预取流 + 逐层 event + eager break | 共享 npu 生产者流，消费者在**第一个 Engram 层**才 `wait_lookup`；FULL 图经 `torch.npu.ExternalEvent` 等待，V2 可把生产者捕获进图 |
+| 项          | 上游 vLLM（GPU）                            | vllm-ascend（NPU）                                                                                                               |
+| ----------- | ------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| 哈希 kernel | 单 kernel，二分内嵌                         | 拆成 2 个 Triton kernel（组合 kernel 触发 bishengir 编译器 abort，engram_hash.py:19-23）                                         |
+| 查表输出    | packed FP8 / BF16，持久 grid、可排序        | 每行一个 program 的 gather+dequant，**恒为 BF16**                                                                                |
+| 表精度      | 仅 FP8E4M3+E8M0                             | 按表头 BF16 / INT8+FP32 / MXFP8；非 A5 硬件把 MXFP8 checkpoint 重量化成 INT8（组 32）                                            |
+| offload     | `cpu_offload` 默认开                        | **opt-in**；开时用 `aclrtHostRegisterV2` 注册主机内存、发布设备指针表                                                            |
+| DP 交换     | peer SHM / all_to_all / EngramBatch         | all_gather + `all_to_all_single`，无 peer；MRV2 且 DP/PCP>1 时**强制** `dp_shared_memory`（ascend_config.py:690-698）            |
+| 并行组      | EDP（DP-only）                              | EDP = **DP×PCP**（prefill context parallel 也进组，worker.py:1456-1469）                                                         |
+| 重叠        | 共享 cuda 预取流 + 逐层 event + eager break | 共享 npu 生产者流，消费者在**第一个 Engram 层**才 `wait_lookup`；FULL 图经 `torch.npu.ExternalEvent` 等待，V2 可把生产者捕获进图 |
 
-![预取与重叠的时间线对比：上游在共享预取流上提前查表、Engram 层等待 event；Ascend 将哈希、查表、DP/TP 交换整段调度到生产者流，第一个 Engram 层 wait_lookup，ExternalEvent 支撑 FULL 图回放](./diagrams/15-engram-decode.drawio#page=预取与多流重叠 "图 15-13：查表重叠——GPU 的预取流 vs NPU 的生产者流")
+![预取与重叠的时间线对比：上游在共享预取流上提前查表、Engram 层等待 event；Ascend 将哈希、查表、DP/TP 交换整段调度到生产者流，第一个 Engram 层 wait_lookup，ExternalEvent 支撑 FULL 图回放](./diagrams/15-engram-decode.drawio#page=预取与多流重叠 '图 15-13：查表重叠——GPU 的预取流 vs NPU 的生产者流')
 
 两个只属于 Ascend 的设计：
 

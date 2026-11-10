@@ -10,7 +10,13 @@ const final = (hits: boolean[], k = 2) => {
 
 describe('specDecode 正确性', () => {
   it('无论草稿好坏，输出都等于目标序列', () => {
-    for (const hits of [[true], [false], [true, false], [false, true, true], [true, true, false, true]]) {
+    for (const hits of [
+      [true],
+      [false],
+      [true, false],
+      [false, true, true],
+      [true, true, false, true],
+    ]) {
       expect(final(hits).committed).toEqual(truth);
     }
   });

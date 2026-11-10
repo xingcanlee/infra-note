@@ -59,7 +59,8 @@ export function absorbFlow(opts: AbsorbOptions): Timeline<AbsorbState> {
   const dK = wUk.length;
   const dC = wUk[0].length;
   if (q.length !== dK) throw new Error(`Query 维度（${q.length}）必须等于 W^UK 的行数（${dK}）`);
-  if (c[0].length !== dC) throw new Error(`latent 维度（${c[0].length}）必须等于 W^UK 的列数（${dC}）`);
+  if (c[0].length !== dC)
+    throw new Error(`latent 维度（${c[0].length}）必须等于 W^UK 的列数（${dC}）`);
 
   const k: (number | null)[][] = Array.from({ length: l }, () => Array(dK).fill(null));
   const scores: (number | null)[] = Array(l).fill(null);
@@ -115,7 +116,10 @@ export function absorbFlow(opts: AbsorbOptions): Timeline<AbsorbState> {
       tl.push({
         state: snap('expand', s),
         caption: `展开：k${s} = W^UK · c${s} = [${ks.map((x) => f(x)).join(', ')}]。这一步要为每个历史位置各做 ${dK * dC} 次乘法，而且结果得占显存。`,
-        focus: [...Array.from({ length: dC }, (_, i) => cellId('c', s, i)), ...Array.from({ length: dK }, (_, i) => cellId('k', s, i))],
+        focus: [
+          ...Array.from({ length: dC }, (_, i) => cellId('c', s, i)),
+          ...Array.from({ length: dK }, (_, i) => cellId('k', s, i)),
+        ],
       });
 
       const e = dot(q, ks);

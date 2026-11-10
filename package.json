@@ -22,7 +22,7 @@
     "mdx",
     "mermaid"
   ],
-  "packageManager": "pnpm@10.33.2",
+  "packageManager": "pnpm@12.18.0",
   "engines": {
     "node": ">=22.23.4"
   },
@@ -32,7 +32,11 @@
     "preview": "astro preview",
     "astro": "astro",
     "diagram": "wisp diagram",
-    "check": "astro check && tsc --noEmit -p . && vitest run && wisp diagram check",
+    "lint": "eslint .",
+    "format": "prettier . --write",
+    "format:check": "prettier . --check",
+    "prepare": "simple-git-hooks",
+    "check": "astro check && tsc --noEmit -p . && eslint . && prettier . --check && vitest run && wisp diagram check",
     "test": "vitest run"
   },
   "dependencies": {
@@ -47,27 +51,36 @@
   },
   "devDependencies": {
     "@astrojs/check": "^0.9.12",
+    "@eslint/js": "^10.0.1",
     "@types/culori": "^4.0.1",
     "@types/hast": "^3.0.5",
     "@types/mdast": "^4.0.4",
     "@types/node": "^26.6.6",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
+    "eslint": "^10.14.0",
+    "eslint-config-prettier": "^10.1.8",
+    "eslint-plugin-astro": "^3.2.1",
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "globals": "^17.14.0",
+    "lint-staged": "^17.6.0",
+    "prettier": "^3.9.10",
+    "prettier-plugin-astro": "^1.1.2",
+    "simple-git-hooks": "^2.14.0",
     "typescript": "^6.0.3",
+    "typescript-eslint": "^8.72.2",
     "unified": "^11.0.5",
     "vfile": "^6.0.3",
     "vitest": "^5.1.0"
   },
-  "pnpm": {
-    "onlyBuiltDependencies": [
-      "esbuild",
-      "sharp"
+  "simple-git-hooks": {
+    "pre-commit": "pnpm exec lint-staged"
+  },
+  "lint-staged": {
+    "*.{js,mjs,cjs,ts,tsx,astro}": [
+      "eslint --fix",
+      "prettier --write"
     ],
-    "overrides": {
-      "@astrojs/react>@vitejs/plugin-react": "6.1.1",
-      "@napi-rs/wasm-runtime@1.2.4>@emnapi/runtime": "1.11.3",
-      "@napi-rs/wasm-runtime@1.2.4>@emnapi/core": "1.11.3",
-      "rehype-katex>katex": "0.19.1"
-    }
+    "*.{css,json,md,mdx,yaml,yml}": "prettier --write"
   }
 }

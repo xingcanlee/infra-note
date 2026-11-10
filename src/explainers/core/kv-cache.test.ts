@@ -1,6 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import { cacheBarsTimeline } from './cache-bars';
-import { cacheBytes, cacheTimeline, humanBytes, schemeComparison, schemeInfo, type CacheConfig } from './kv-cache';
+import {
+  cacheBytes,
+  cacheTimeline,
+  humanBytes,
+  schemeComparison,
+  schemeInfo,
+  type CacheConfig,
+} from './kv-cache';
 import { TOKENS } from './toy';
 
 const base = { nH: 8, dK: 128, dV: 128, nGroups: 2, dC: 512, dR: 64 };
@@ -62,7 +69,11 @@ describe('schemeComparison', () => {
 });
 
 describe('cacheTimeline', () => {
-  const tl = cacheTimeline({ tokens: [...TOKENS], prefill: 2, cfg: { nH: 2, dK: 4, dV: 4, scheme: 'mha' } });
+  const tl = cacheTimeline({
+    tokens: [...TOKENS],
+    prefill: 2,
+    cfg: { nH: 2, dK: 4, dV: 4, scheme: 'mha' },
+  });
 
   it('第一步完成 prefill', () => {
     expect(tl[0].state.phase).toBe('prefill');
@@ -96,7 +107,13 @@ describe('cacheTimeline', () => {
   });
 
   it('prefill 超出序列长度时报错', () => {
-    expect(() => cacheTimeline({ tokens: [...TOKENS], prefill: 9, cfg: { nH: 2, dK: 4, dV: 4, scheme: 'mha' } })).toThrow(/prefill/);
+    expect(() =>
+      cacheTimeline({
+        tokens: [...TOKENS],
+        prefill: 9,
+        cfg: { nH: 2, dK: 4, dV: 4, scheme: 'mha' },
+      }),
+    ).toThrow(/prefill/);
   });
 });
 

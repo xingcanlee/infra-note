@@ -9,7 +9,14 @@
  * 用在：DS 06（总览）、DS 12（机制对照）。
  */
 import { formatNumber as f, itemId, type Timeline } from 'astro-wisp/explainers/core';
-import { maskCatalog, maskDensity, maskMatrix, receptiveField, rowCounts, type MaskSpec } from './masks';
+import {
+  maskCatalog,
+  maskDensity,
+  maskMatrix,
+  receptiveField,
+  rowCounts,
+  type MaskSpec,
+} from './masks';
 
 export interface MaskEntry {
   id: string;
@@ -38,7 +45,11 @@ export interface MaskAtlasState {
   layers: number;
 }
 
-export function maskEntries(l: number, layers = 4, specs: MaskSpec[] = maskCatalog(l)): MaskEntry[] {
+export function maskEntries(
+  l: number,
+  layers = 4,
+  specs: MaskSpec[] = maskCatalog(l),
+): MaskEntry[] {
   return specs.map((m) => ({
     id: m.id,
     name: m.name,
@@ -53,7 +64,13 @@ export function maskEntries(l: number, layers = 4, specs: MaskSpec[] = maskCatal
 
 export function maskAtlas(l = 8, layers = 4): Timeline<MaskAtlasState> {
   const all = maskEntries(l, layers);
-  const snap = (shown: number, cur: number | null): MaskAtlasState => ({ all, shown, cur, l, layers });
+  const snap = (shown: number, cur: number | null): MaskAtlasState => ({
+    all,
+    shown,
+    cur,
+    l,
+    layers,
+  });
 
   const tl: Timeline<MaskAtlasState> = [
     {
@@ -64,7 +81,10 @@ export function maskAtlas(l = 8, layers = 4): Timeline<MaskAtlasState> {
 
   for (let i = 0; i < all.length; i++) {
     const e = all[i];
-    const capped = e.maxRow < l ? `单步最多读 ${e.maxRow} 个——与序列长度无关` : `单步最多读 ${e.maxRow} 个——随序列长度增长`;
+    const capped =
+      e.maxRow < l
+        ? `单步最多读 ${e.maxRow} 个——与序列长度无关`
+        : `单步最多读 ${e.maxRow} 个——随序列长度增长`;
     const far =
       e.reach === 0
         ? '单层就能直接看到序列开头'

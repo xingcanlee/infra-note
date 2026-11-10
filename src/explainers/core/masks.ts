@@ -138,10 +138,30 @@ export function receptiveField(l: number, fn: MaskFn, t: number, nLayers: number
  */
 export function maskCatalog(_l?: number): MaskSpec[] {
   return [
-    { id: 'causal', name: '因果（全读）', describe: '读完左边所有位置，每步代价随 L 线性增长', fn: causal },
-    { id: 'swa', name: '滑动窗口 w=2', describe: '只读最近 2 个位置，每步代价与 L 无关', fn: slidingWindow(2) },
-    { id: 'sink', name: '窗口 + 锚点', describe: '窗口之外保留开头 1 个位置', fn: windowWithSink(2, 1) },
-    { id: 'block', name: '选块 2×1', describe: '按块粒度选择，缓存与计算都按块对齐', fn: blockSelect(2, 1) },
+    {
+      id: 'causal',
+      name: '因果（全读）',
+      describe: '读完左边所有位置，每步代价随 L 线性增长',
+      fn: causal,
+    },
+    {
+      id: 'swa',
+      name: '滑动窗口 w=2',
+      describe: '只读最近 2 个位置，每步代价与 L 无关',
+      fn: slidingWindow(2),
+    },
+    {
+      id: 'sink',
+      name: '窗口 + 锚点',
+      describe: '窗口之外保留开头 1 个位置',
+      fn: windowWithSink(2, 1),
+    },
+    {
+      id: 'block',
+      name: '选块 2×1',
+      describe: '按块粒度选择，缓存与计算都按块对齐',
+      fn: blockSelect(2, 1),
+    },
     { id: 'strided', name: '跨步 2', describe: '均匀抽样，不看内容', fn: strided(2) },
     {
       id: 'topk',
@@ -149,6 +169,11 @@ export function maskCatalog(_l?: number): MaskSpec[] {
       describe: '按打分选最相关的 1 个历史位置，形状随输入变化',
       fn: topKByScore((t, s) => ((t * 3 + s * 5) % 7) / 7, 1),
     },
-    { id: 'nsa', name: '多分支并集', describe: '窗口分支 + 选块分支并起来，兼顾近处与远处', fn: union(slidingWindow(2), blockSelect(2, 2)) },
+    {
+      id: 'nsa',
+      name: '多分支并集',
+      describe: '窗口分支 + 选块分支并起来，兼顾近处与远处',
+      fn: union(slidingWindow(2), blockSelect(2, 2)),
+    },
   ];
 }

@@ -4,12 +4,14 @@
 
 ## 开发
 
-环境要求：Node.js ≥ 22.23.4、pnpm。
+环境要求：Node.js ≥ 22.23.4、pnpm 12.18.0（版本由 `package.json#packageManager` 固定）。
 
 ```bash
 pnpm install
 pnpm dev
 pnpm build
+pnpm check       # 类型、ESLint、Prettier、单元测试和图表清单
+pnpm format      # 自动格式化
 ```
 
 ## 内容

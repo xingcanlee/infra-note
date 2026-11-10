@@ -33,7 +33,11 @@ function Scene({ s, focus }: { s: OSState; focus?: string[] }) {
   const curStart = s.block * s.blockSize;
 
   return (
-    <Stage width={w} height={h} label={`在线 softmax：${n} 个分数分成 ${Math.ceil(n / s.blockSize)} 块`}>
+    <Stage
+      width={w}
+      height={h}
+      label={`在线 softmax：${n} 个分数分成 ${Math.ceil(n / s.blockSize)} 块`}
+    >
       <Caption x={0} y={14} text="分数（从不整行物化）" tone="k" />
 
       {/* 分块边界 */}
@@ -47,7 +51,8 @@ function Scene({ s, focus }: { s: OSState; focus?: string[] }) {
           rx={4}
           style={{
             fill: 'none',
-            stroke: b === s.block && s.phase !== 'intro' ? toneStroke('highlight') : 'var(--wisp-border)',
+            stroke:
+              b === s.block && s.phase !== 'intro' ? toneStroke('highlight') : 'var(--wisp-border)',
             strokeWidth: b === s.block && s.phase !== 'intro' ? 2 : 1,
             strokeDasharray: '4 3',
           }}
@@ -87,12 +92,46 @@ function Scene({ s, focus }: { s: OSState; focus?: string[] }) {
 
       {/* 三个标量状态 */}
       <Caption x={0} y={TOP + CH + 30} text="全程只保留这三个标量：" tone="done" />
-      <Box x={LEFT} y={TOP + CH + 44} w={150} h={34} label={`m = ${s.m === -Infinity ? '−∞' : f(s.m)}`} sub="running max" tone="q" active={s.phase === 'rescale'} />
-      <Box x={LEFT + 162} y={TOP + CH + 44} w={150} h={34} label={`ℓ = ${f(s.l)}`} sub="running sum" tone="v" />
-      <Box x={LEFT + 324} y={TOP + CH + 44} w={150} h={34} label={`O = ${f(s.o)}`} sub="未归一化输出" tone="activation" />
+      <Box
+        x={LEFT}
+        y={TOP + CH + 44}
+        w={150}
+        h={34}
+        label={`m = ${s.m === -Infinity ? '−∞' : f(s.m)}`}
+        sub="running max"
+        tone="q"
+        active={s.phase === 'rescale'}
+      />
+      <Box
+        x={LEFT + 162}
+        y={TOP + CH + 44}
+        w={150}
+        h={34}
+        label={`ℓ = ${f(s.l)}`}
+        sub="running sum"
+        tone="v"
+      />
+      <Box
+        x={LEFT + 324}
+        y={TOP + CH + 44}
+        w={150}
+        h={34}
+        label={`O = ${f(s.o)}`}
+        sub="未归一化输出"
+        tone="activation"
+      />
 
       {s.result !== null && (
-        <Box x={LEFT + 486} y={TOP + CH + 44} w={168} h={34} label={`O/ℓ = ${f(s.result)}`} sub="最后归一化一次" tone="done" active />
+        <Box
+          x={LEFT + 486}
+          y={TOP + CH + 44}
+          w={168}
+          h={34}
+          label={`O/ℓ = ${f(s.result)}`}
+          sub="最后归一化一次"
+          tone="done"
+          active
+        />
       )}
 
       <Caption

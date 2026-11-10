@@ -158,7 +158,12 @@ export function submitFlow(opts: SubmitOptions): Timeline<SubmitState> {
     cur,
   });
 
-  const modeName = mode === 'eager' ? 'eager（逐算子提交）' : mode === 'full' ? 'full graph（整轮一次 replay）' : 'piecewise（分段图）';
+  const modeName =
+    mode === 'eager'
+      ? 'eager（逐算子提交）'
+      : mode === 'full'
+        ? 'full graph（整轮一次 replay）'
+        : 'piecewise（分段图）';
 
   const tl: Timeline<SubmitState> = [
     {
@@ -170,14 +175,19 @@ export function submitFlow(opts: SubmitOptions): Timeline<SubmitState> {
   launches.forEach((l, i) => {
     const names = l.ops.map((o) => ops[o].name).join('、');
     const wait = l.devStart - (i === 0 ? 0 : launches[i - 1].devEnd);
-    const waitMsg = wait > 0.001 ? `设备空等了 ${f(wait)}——它在等 CPU 把活交下来。` : '设备接着上一段继续跑，没有空档。';
+    const waitMsg =
+      wait > 0.001
+        ? `设备空等了 ${f(wait)}——它在等 CPU 把活交下来。`
+        : '设备接着上一段继续跑，没有空档。';
     tl.push({
       state: snap(i + 1, i),
       caption:
         (l.kind === 'graph'
           ? `第 ${i + 1} 次提交：一次 replay 覆盖 ${l.ops.length} 个算子（${names}）。${waitMsg}`
           : `第 ${i + 1} 次提交：单个算子 ${names}。${waitMsg}`) +
-        (l.sync ? ` 这里有一个同步点：CPU 必须停下来等设备算完（到 ${f(l.devEnd)}）才能继续提交。` : ''),
+        (l.sync
+          ? ` 这里有一个同步点：CPU 必须停下来等设备算完（到 ${f(l.devEnd)}）才能继续提交。`
+          : ''),
       focus: [itemId('launch', i)],
     });
   });

@@ -35,7 +35,14 @@ export function Box({
   const reduce = useReducedMotion();
   return (
     <g opacity={dim ? 0.38 : 1}>
-      <rect x={x} y={y} width={w} height={h} rx={6} style={{ fill: toneFill(tone), stroke: toneStroke(tone), strokeWidth: 1.25 }} />
+      <rect
+        x={x}
+        y={y}
+        width={w}
+        height={h}
+        rx={6}
+        style={{ fill: toneFill(tone), stroke: toneStroke(tone), strokeWidth: 1.25 }}
+      />
       <motion.rect
         x={x}
         y={y}
@@ -96,7 +103,15 @@ export function Arrow({
   return (
     <g opacity={active ? 1 : 0.55}>
       <defs>
-        <marker id={id} viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+        <marker
+          id={id}
+          viewBox="0 0 10 10"
+          refX="9"
+          refY="5"
+          markerWidth="6"
+          markerHeight="6"
+          orient="auto-start-reverse"
+        >
           <path d="M 0 0 L 10 5 L 0 10 z" style={{ fill: toneStroke(tone) }} />
         </marker>
       </defs>
@@ -113,7 +128,13 @@ export function Arrow({
         }}
       />
       {label && (
-        <text x={mid[0]} y={mid[1] - 6} textAnchor="middle" className="wisp-explainer__label" style={{ fill: 'var(--wisp-muted)' }}>
+        <text
+          x={mid[0]}
+          y={mid[1] - 6}
+          textAnchor="middle"
+          className="wisp-explainer__label"
+          style={{ fill: 'var(--wisp-muted)' }}
+        >
           {label}
         </text>
       )}
@@ -146,7 +167,14 @@ export function Bar({
   const reduce = useReducedMotion();
   return (
     <g>
-      <text x={x - 8} y={y + h / 2} textAnchor="end" dominantBaseline="central" className="wisp-explainer__label" style={{ fill: 'var(--wisp-fg)' }}>
+      <text
+        x={x - 8}
+        y={y + h / 2}
+        textAnchor="end"
+        dominantBaseline="central"
+        className="wisp-explainer__label"
+        style={{ fill: 'var(--wisp-fg)' }}
+      >
         {label}
       </text>
       <motion.rect
@@ -176,13 +204,36 @@ export function Bar({
 }
 
 /** 图例：把颜色语义写在画面里，避免读者回头翻约定。 */
-export function Legend({ x, y, items, gap = 108 }: { x: number; y: number; items: Array<{ tone: Tone; text: string }>; gap?: number }) {
+export function Legend({
+  x,
+  y,
+  items,
+  gap = 108,
+}: {
+  x: number;
+  y: number;
+  items: Array<{ tone: Tone; text: string }>;
+  gap?: number;
+}) {
   return (
     <g>
       {items.map((it, i) => (
         <g key={it.text} transform={`translate(${x + i * gap} ${y})`}>
-          <rect x={0} y={-5} width={10} height={10} rx={2} style={{ fill: toneFill(it.tone), stroke: toneStroke(it.tone), strokeWidth: 1 }} />
-          <text x={15} y={0} dominantBaseline="central" className="wisp-explainer__label" style={{ fill: 'var(--wisp-muted)' }}>
+          <rect
+            x={0}
+            y={-5}
+            width={10}
+            height={10}
+            rx={2}
+            style={{ fill: toneFill(it.tone), stroke: toneStroke(it.tone), strokeWidth: 1 }}
+          />
+          <text
+            x={15}
+            y={0}
+            dominantBaseline="central"
+            className="wisp-explainer__label"
+            style={{ fill: 'var(--wisp-muted)' }}
+          >
             {it.text}
           </text>
         </g>
@@ -194,14 +245,30 @@ export function Legend({ x, y, items, gap = 108 }: { x: number; y: number; items
 /** 一行小标题，用于给画面分区。 */
 export function Caption({ x, y, text, tone }: { x: number; y: number; text: string; tone?: Tone }) {
   return (
-    <text x={x} y={y} dominantBaseline="central" className="wisp-explainer__label" style={{ fill: tone ? toneStroke(tone) : 'var(--wisp-muted)' }}>
+    <text
+      x={x}
+      y={y}
+      dominantBaseline="central"
+      className="wisp-explainer__label"
+      style={{ fill: tone ? toneStroke(tone) : 'var(--wisp-muted)' }}
+    >
       {text}
     </text>
   );
 }
 
 /** 把若干元素整体平移，减少坐标算术。 */
-export function Group({ x, y, children, dim = false }: { x: number; y: number; children: ReactNode; dim?: boolean }) {
+export function Group({
+  x,
+  y,
+  children,
+  dim = false,
+}: {
+  x: number;
+  y: number;
+  children: ReactNode;
+  dim?: boolean;
+}) {
   return (
     <g transform={`translate(${x} ${y})`} opacity={dim ? 0.38 : 1}>
       {children}

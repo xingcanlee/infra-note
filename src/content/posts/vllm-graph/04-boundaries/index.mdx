@@ -1,6 +1,6 @@
 ---
-title: "04 四条边界：什么会把图打断"
-description: "动态 shape、同步与控制流、内存池、多流与通信——每条边界对应约束清单里的哪一项，又该怎么绕。"
+title: '04 四条边界：什么会把图打断'
+description: '动态 shape、同步与控制流、内存池、多流与通信——每条边界对应约束清单里的哪一项，又该怎么绕。'
 series:
   id: vllm-graph
   order: 6
@@ -40,12 +40,12 @@ flowchart TB
 
 四条边界各自对应上一篇约束清单里的哪一条：
 
-| 边界 | 对应约束 | 违反时 |
-| --- | --- | --- |
-| 动态 shape | 约束 9（size/layout 必须相同） | **静默**按旧形状读内存 |
-| 同步与数据依赖控制流 | 约束 2、4 | 报错 |
-| 内存地址与内存池 | 约束 8（相同虚拟地址） | **静默**读到旧数据 |
-| 多流与通信 | 约束 6、10（fork/join 规则） | 未定义行为 |
+| 边界                 | 对应约束                       | 违反时                 |
+| -------------------- | ------------------------------ | ---------------------- |
+| 动态 shape           | 约束 9（size/layout 必须相同） | **静默**按旧形状读内存 |
+| 同步与数据依赖控制流 | 约束 2、4                      | 报错                   |
+| 内存地址与内存池     | 约束 8（相同虚拟地址）         | **静默**读到旧数据     |
+| 多流与通信           | 约束 6、10（fork/join 规则）   | 未定义行为             |
 
 ## 边界一：动态 shape
 
@@ -53,10 +53,10 @@ flowchart TB
 
 第 02 篇的 `toy.py` 已经量化过代价。桶的疏密是一个直接的取舍：
 
-| 桶 | 命中率 | padding 浪费 | 捕获成本 |
-| --- | --- | --- | --- |
-| 密（1,2,3,…,64） | 高 | 低 | 高（图多、显存多、启动慢） |
-| 疏（1,2,4,8,…） | 低（要回退） | 高 | 低 |
+| 桶               | 命中率       | padding 浪费 | 捕获成本                   |
+| ---------------- | ------------ | ------------ | -------------------------- |
+| 密（1,2,3,…,64） | 高           | 低           | 高（图多、显存多、启动慢） |
+| 疏（1,2,4,8,…）  | 低（要回退） | 高           | 低                         |
 
 所以桶不是越多越好。实际做法是：**小 batch 密、大 batch 疏**——因为 padding 浪费的是相对比例，batch 3 补到 4 浪费 25%，batch 100 补到 128 也是 28%，但小 batch 的绝对数量多、出现频率高。
 
@@ -104,15 +104,20 @@ KV cache 在这里有个值得注意的性质：它本来就是**预分配的大
 
 把四条边界合起来看，整图捕获的条件相当苛刻。于是实际做法是**分段**：能捕获的片段各打包成图，过不去的算子留在图外逐个提交。
 
-<SubmitTimeline client:visible mode="piecewise" launchCost={1} title="图 04-1：分段捕获——attention 留在图外，其余片段各自打包" />
+<SubmitTimeline
+  client:visible
+  mode="piecewise"
+  launchCost={1}
+  title="图 04-1：分段捕获——attention 留在图外，其余片段各自打包"
+/>
 
 对照一下三种模式在同一组算子上的结果（上一篇那张整图只有在**没有任何 graphBreak** 时才可能）：
 
-| 模式 | 提交次数 | 墙钟 | 设备空闲 | 前提 |
-| --- | --- | --- | --- | --- |
-| eager | 10 | 11.2 | 30.4% | 无 |
-| **piecewise** | 5 | 9.1 | 14.3% | **只要能切开就行** |
-| full | 1 | 9.0 | 13.3% | 整段都过得去四条边界 |
+| 模式          | 提交次数 | 墙钟 | 设备空闲 | 前提                 |
+| ------------- | -------- | ---- | -------- | -------------------- |
+| eager         | 10       | 11.2 | 30.4%    | 无                   |
+| **piecewise** | 5        | 9.1  | 14.3%    | **只要能切开就行**   |
+| full          | 1        | 9.0  | 13.3%    | 整段都过得去四条边界 |
 
 **分段拿到了整图 90% 以上的收益，却几乎没有前提条件。** 这就是 vLLM 默认选 `PIECEWISE` 的原因——它是一个工程上非常划算的折中。
 
@@ -174,23 +179,23 @@ def split_into_segments(ops):
 
 ## 真实实现在哪
 
-| 概念                   | 位置                                              | 说明                                                       |
-| ---------------------- | ------------------------------------------------- | ---------------------------------------------------------- |
-| 切分点                 | `vllm/config/compilation.py:583-600`、`1317-1326` | `splitting_ops` / `_attention_ops`：默认把 attention 列为切分点 |
-| 为什么排除 attention   | `docs/design/cuda_graphs.md:25-40`                | attention 常带动态/后端特定的 metadata，许多后端不能整图捕获 |
-| **后端的支持级别**     | `vllm/v1/attention/backend.py:551-563`            | `AttentionCGSupport`：`ALWAYS` / `UNIFORM_BATCH` / `UNIFORM_SINGLE_TOKEN_DECODE` / `NEVER` |
-| 支持级别的判定         | `vllm/v1/attention/backend.py:587-627`            | `AttentionMetadataBuilder.get_cudagraph_support`            |
-| 一个实例               | `vllm/v1/attention/backends/triton_attn.py:96-99` | Triton 后端声明为 `ALWAYS`                                  |
-| 桶的生成               | `vllm/config/compilation.py:78-126`、`1278-1302`  | `_walk_grid`、`post_init_cudagraph_sizes` 等                |
+| 概念                 | 位置                                              | 说明                                                                                       |
+| -------------------- | ------------------------------------------------- | ------------------------------------------------------------------------------------------ |
+| 切分点               | `vllm/config/compilation.py:583-600`、`1317-1326` | `splitting_ops` / `_attention_ops`：默认把 attention 列为切分点                            |
+| 为什么排除 attention | `docs/design/cuda_graphs.md:25-40`                | attention 常带动态/后端特定的 metadata，许多后端不能整图捕获                               |
+| **后端的支持级别**   | `vllm/v1/attention/backend.py:551-563`            | `AttentionCGSupport`：`ALWAYS` / `UNIFORM_BATCH` / `UNIFORM_SINGLE_TOKEN_DECODE` / `NEVER` |
+| 支持级别的判定       | `vllm/v1/attention/backend.py:587-627`            | `AttentionMetadataBuilder.get_cudagraph_support`                                           |
+| 一个实例             | `vllm/v1/attention/backends/triton_attn.py:96-99` | Triton 后端声明为 `ALWAYS`                                                                 |
+| 桶的生成             | `vllm/config/compilation.py:78-126`、`1278-1302`  | `_walk_grid`、`post_init_cudagraph_sizes` 等                                               |
 
 `AttentionCGSupport` 这个枚举是本篇四条边界在代码里的直接体现：
 
-| 级别 | 含义 | 对应边界 |
-| --- | --- | --- |
-| `ALWAYS` | 混合批次也能整图 | 都过得去 |
-| `UNIFORM_BATCH` | 只接受 query 长度一致的批次 | 边界一 |
+| 级别                          | 含义                            | 对应边界     |
+| ----------------------------- | ------------------------------- | ------------ |
+| `ALWAYS`                      | 混合批次也能整图                | 都过得去     |
+| `UNIFORM_BATCH`               | 只接受 query 长度一致的批次     | 边界一       |
 | `UNIFORM_SINGLE_TOKEN_DECODE` | 只接受 query_len=1（纯 decode） | 边界一，更严 |
-| `NEVER` | 不支持 | — |
+| `NEVER`                       | 不支持                          | —            |
 
 **能不能开整图，不是一个全局开关，而是由 attention 后端声明、再和本轮 batch 的形状共同决定的。** 下一篇就讲这个判定过程。
 

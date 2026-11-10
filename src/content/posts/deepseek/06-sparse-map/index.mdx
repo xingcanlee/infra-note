@@ -1,6 +1,6 @@
 ---
-title: "06 稀疏注意力地图"
-description: "三个指标把十几种稀疏注意力放进同一张坐标系——密度、单步代价上限、可达范围。"
+title: '06 稀疏注意力地图'
+description: '三个指标把十几种稀疏注意力放进同一张坐标系——密度、单步代价上限、可达范围。'
 series:
   id: deepseek
   order: 8
@@ -27,9 +27,19 @@ $$
 
 把第 01 篇的因果掩码换成「滑动窗口 w=2」和「跨步 2」，都省掉了一部分读取：
 
-<AttentionGrid client:visible mask="swa" showOutput={false} title="图 06-1a：滑动窗口 w=2——只读最近 2 个位置" />
+<AttentionGrid
+  client:visible
+  mask="swa"
+  showOutput={false}
+  title="图 06-1a：滑动窗口 w=2——只读最近 2 个位置"
+/>
 
-<AttentionGrid client:visible mask="strided" showOutput={false} title="图 06-1b：跨步 2——每隔一个位置读一个，外加当前位置" />
+<AttentionGrid
+  client:visible
+  mask="strided"
+  showOutput={false}
+  title="图 06-1b：跨步 2——每隔一个位置读一个，外加当前位置"
+/>
 
 两者在 $L=8$ 时的密度分别是 41.7% 和 66.7%，看起来窗口「更省」。但这是个陷阱：
 
@@ -42,29 +52,34 @@ $$
 
 这是本篇要交付的思维工具。任何稀疏注意力机制都可以用这三项描述：
 
-| 指标             | 定义                                   | 它决定什么                                   |
-| ---------------- | -------------------------------------- | -------------------------------------------- |
-| **密度**         | 可读格子数 / 因果可读格子数            | prefill 的总计算量省多少                     |
-| **单步代价上限** | 单个 $t$ 最多读几个位置                | decode 每个 token 的代价是否随 $L$ 增长      |
-| **可达范围**     | 一层（或若干层）后能看到的最早位置     | 远处的信息还拿不拿得到——质量的上限在这里     |
+| 指标             | 定义                               | 它决定什么                               |
+| ---------------- | ---------------------------------- | ---------------------------------------- |
+| **密度**         | 可读格子数 / 因果可读格子数        | prefill 的总计算量省多少                 |
+| **单步代价上限** | 单个 $t$ 最多读几个位置            | decode 每个 token 的代价是否随 $L$ 增长  |
+| **可达范围**     | 一层（或若干层）后能看到的最早位置 | 远处的信息还拿不拿得到——质量的上限在这里 |
 
 三者互相制约：**压低单步代价必然压缩可达范围**，除非额外加一条分支去补。后面几篇的全部花样都是在这个三角里取舍。
 
 动画把七种读取集合放在同一组输入上，逐个给出三项指标：
 
-<MaskAtlas client:visible l={8} layers={4} title="图 06-2：七种读取集合的形状与指标（序列长 8，可达范围按 4 层计算）" />
+<MaskAtlas
+  client:visible
+  l={8}
+  layers={4}
+  title="图 06-2：七种读取集合的形状与指标（序列长 8，可达范围按 4 层计算）"
+/>
 
 同一份数据的表格形式（$L=8$，可达范围按最后一个位置算）：
 
-| 机制          | 密度   | 单步代价上限  | 单层可达 | 4 层后可达 | 性质                                     |
-| ------------- | ------ | ------------- | -------- | ---------- | ---------------------------------------- |
-| 因果（全读）  | 100%   | 8（随 $L$ 长）| 0        | 0          | 基线：什么都不省，什么都能看到           |
-| 滑动窗口 w=2  | 41.7%  | **2**（封顶） | 6        | 3          | 单步代价有上限，但远处要靠叠层传递       |
-| 窗口 + 锚点   | 58.3%  | **3**（封顶） | **0**    | 0          | 加一个前缀锚点，单层就能看到开头         |
-| 选块 2×1      | 33.3%  | **2**（封顶） | 6        | **6**      | 块内对齐，但叠层也传不出去（见下文）     |
-| 跨步 2        | 66.7%  | 5（随 $L$ 长）| 0        | 0          | 密度不低，却没有封顶——对 decode 帮助有限 |
-| top-k 打分    | 41.7%  | **2**（封顶） | 4        | 0          | 形状随输入变化，按内容挑                 |
-| 多分支并集    | 66.7%  | **4**（封顶） | 4        | 0          | 窗口 + 选块，兼顾近处与远处              |
+| 机制         | 密度  | 单步代价上限   | 单层可达 | 4 层后可达 | 性质                                     |
+| ------------ | ----- | -------------- | -------- | ---------- | ---------------------------------------- |
+| 因果（全读） | 100%  | 8（随 $L$ 长） | 0        | 0          | 基线：什么都不省，什么都能看到           |
+| 滑动窗口 w=2 | 41.7% | **2**（封顶）  | 6        | 3          | 单步代价有上限，但远处要靠叠层传递       |
+| 窗口 + 锚点  | 58.3% | **3**（封顶）  | **0**    | 0          | 加一个前缀锚点，单层就能看到开头         |
+| 选块 2×1     | 33.3% | **2**（封顶）  | 6        | **6**      | 块内对齐，但叠层也传不出去（见下文）     |
+| 跨步 2       | 66.7% | 5（随 $L$ 长） | 0        | 0          | 密度不低，却没有封顶——对 decode 帮助有限 |
+| top-k 打分   | 41.7% | **2**（封顶）  | 4        | 0          | 形状随输入变化，按内容挑                 |
+| 多分支并集   | 66.7% | **4**（封顶）  | 4        | 0          | 窗口 + 选块，兼顾近处与远处              |
 
 三个值得停下来看的地方：
 
@@ -111,18 +126,28 @@ export type MaskFn = (t: number, s: number, l: number) => boolean;
 
 export const causal: MaskFn = (t, s) => s <= t;
 
-export const slidingWindow = (w: number): MaskFn => (t, s) => s <= t && t - s < w;
+export const slidingWindow =
+  (w: number): MaskFn =>
+  (t, s) =>
+    s <= t && t - s < w;
 
-export const windowWithSink = (w: number, nSink = 1): MaskFn =>
-  (t, s) => s <= t && (t - s < w || s < nSink);
+export const windowWithSink =
+  (w: number, nSink = 1): MaskFn =>
+  (t, s) =>
+    s <= t && (t - s < w || s < nSink);
 
-export const blockSelect = (blockSize: number, keep: number): MaskFn => (t, s) => {
-  if (s > t) return false;
-  return Math.floor(t / blockSize) - Math.floor(s / blockSize) < keep;
-};
+export const blockSelect =
+  (blockSize: number, keep: number): MaskFn =>
+  (t, s) => {
+    if (s > t) return false;
+    return Math.floor(t / blockSize) - Math.floor(s / blockSize) < keep;
+  };
 
 /** 多分支机制 = 若干读取集合的并集 */
-export const union = (...fns: MaskFn[]): MaskFn => (t, s, l) => fns.some((f) => f(t, s, l));
+export const union =
+  (...fns: MaskFn[]): MaskFn =>
+  (t, s, l) =>
+    fns.some((f) => f(t, s, l));
 ```
 
 三个指标同样是几行：
@@ -137,7 +162,9 @@ export function maskDensity(l: number, fn: MaskFn): number {
 }
 
 /** 每一行实际读取的位置数——取 max 就是单步代价上限 */
-export function rowCounts(l: number, fn: MaskFn): number[] { /* … */ }
+export function rowCounts(l: number, fn: MaskFn): number[] {
+  /* … */
+}
 
 /** 可达范围：用可达性（BFS）算 nLayers 层后能看到的最早位置，而不是用 w × 层数估算 */
 export function receptiveField(l: number, fn: MaskFn, t: number, nLayers: number): number {
@@ -157,13 +184,13 @@ export function receptiveField(l: number, fn: MaskFn, t: number, nLayers: number
 
 ## 后面各篇在地图上的位置
 
-| 篇                                   | 改法                           | 静态/动态 | 单步封顶 | 补远处的手段      |
-| ------------------------------------ | ------------------------------ | --------- | -------- | ----------------- |
-| [07 · SWA](../07-swa/)               | 固定窗口                       | 静态      | 是       | 靠叠层（有限）    |
-| [08 · NSA](../08-nsa/)               | 压缩 + 选块 + 窗口，三分支     | 动态      | 是       | 选块分支          |
-| [09 · DSA](../09-dsa/)               | 轻量 indexer 打分后取 top-k    | 动态      | 是       | indexer 挑出来的  |
-| [10 · CSA](../10-csa/)               | 先压缩，再在压缩条目上稀疏     | 动态      | 是       | 压缩分支 + 窗口分支 |
-| [11 · HCA](../11-hca/)               | 重压缩后密集读                 | 静态      | 是       | 粗粒度覆盖全部历史  |
+| 篇                     | 改法                        | 静态/动态 | 单步封顶 | 补远处的手段        |
+| ---------------------- | --------------------------- | --------- | -------- | ------------------- |
+| [07 · SWA](../07-swa/) | 固定窗口                    | 静态      | 是       | 靠叠层（有限）      |
+| [08 · NSA](../08-nsa/) | 压缩 + 选块 + 窗口，三分支  | 动态      | 是       | 选块分支            |
+| [09 · DSA](../09-dsa/) | 轻量 indexer 打分后取 top-k | 动态      | 是       | indexer 挑出来的    |
+| [10 · CSA](../10-csa/) | 先压缩，再在压缩条目上稀疏  | 动态      | 是       | 压缩分支 + 窗口分支 |
+| [11 · HCA](../11-hca/) | 重压缩后密集读              | 静态      | 是       | 粗粒度覆盖全部历史  |
 
 注意最后一行：HCA/CED 动的不是「一层里读哪些位置」，而是「层与层之间能不能共用」。它们在另一个维度上，所以这张表里的三个指标不完全适用——这也是把它们单独放一篇的原因。
 

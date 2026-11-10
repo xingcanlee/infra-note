@@ -46,7 +46,14 @@ describe('windowWithSink', () => {
 
 describe('blockSelect', () => {
   it('按块对齐，只保留最近 keep 个块', () => {
-    expect(rows(6, blockSelect(2, 1))).toEqual(['100000', '110000', '001000', '001100', '000010', '000011']);
+    expect(rows(6, blockSelect(2, 1))).toEqual([
+      '100000',
+      '110000',
+      '001000',
+      '001100',
+      '000010',
+      '000011',
+    ]);
   });
   it('keep 足够大时退化成因果', () => {
     expect(rows(6, blockSelect(2, 99))).toEqual(rows(6, causal));

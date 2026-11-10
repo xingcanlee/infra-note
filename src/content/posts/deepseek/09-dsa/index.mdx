@@ -1,6 +1,6 @@
 ---
-title: "09 DSA：让打分本身足够便宜"
-description: "要挑出 top-k 就得先给所有历史打分，而打分本身是 O(L²)——Lightning Indexer 怎么把这一步做到可接受。"
+title: '09 DSA：让打分本身足够便宜'
+description: '要挑出 top-k 就得先给所有历史打分，而打分本身是 O(L²)——Lightning Indexer 怎么把这一步做到可接受。'
 series:
   id: deepseek
   order: 11
@@ -24,13 +24,18 @@ DSA（DeepSeek Sparse Attention）的回答不是消除这个 $O(L^2)$，而是*
 
 静态稀疏（窗口、选块）的形状只取决于位置。按内容打分的稀疏，形状**随输入变化**——同一个位置，换一句话就可能读完全不同的历史：
 
-<AttentionGrid client:visible mask="topk" showOutput={false} title="图 09-1：按打分取 top-k——每行挑中的位置不再是规则的几何形状" />
+<AttentionGrid
+  client:visible
+  mask="topk"
+  showOutput={false}
+  title="图 09-1：按打分取 top-k——每行挑中的位置不再是规则的几何形状"
+/>
 
 这就是动态稀疏的价值：它能挑到**真正相关**的远处位置，而不只是「最近的」或「开头的」。代价就是那个打分。
 
 DSA 把这件事拆成了上下两条路——一条便宜的只管打分，一条昂贵的只算被选中的那些：
 
-![DSA 的两条路：上路是 Lightning Indexer（head 少、用 ReLU、可用 FP8），只负责给全部历史打分并取 top-k；下路是 MLA 的 latent KV cache，只有被选中的少数条目进入主注意力](./diagrams/09-dsa-indexer.drawio "图 09-2：Lightning Indexer 在 MLA 之上做 top-k 选择")
+![DSA 的两条路：上路是 Lightning Indexer（head 少、用 ReLU、可用 FP8），只负责给全部历史打分并取 top-k；下路是 MLA 的 latent KV cache，只有被选中的少数条目进入主注意力](./diagrams/09-dsa-indexer.drawio '图 09-2：Lightning Indexer 在 MLA 之上做 top-k 选择')
 
 注意连接两条路的那条虚线标着「只选，不改变 latent 本身」——**indexer 的输出是一组下标，不是数值**。这一点下面会反复用到。
 
@@ -48,11 +53,11 @@ $H^I$ 是 indexer 的 head 数，$\mathbf q^I_{t,j}$、$w^I_{t,j}$ 由当前 tok
 
 形式上它就是一个小型注意力打分。便宜在三处：
 
-| 便宜点          | 做法                                   | 为什么                                           |
-| --------------- | -------------------------------------- | ------------------------------------------------ |
-| **head 少**     | $H^I$ 远小于主注意力的 head 数         | 打分只需判断「相不相关」，不需要表达力            |
+| 便宜点            | 做法                                  | 为什么                                           |
+| ----------------- | ------------------------------------- | ------------------------------------------------ |
+| **head 少**       | $H^I$ 远小于主注意力的 head 数        | 打分只需判断「相不相关」，不需要表达力           |
 | **ReLU 代替 exp** | 用 $\mathrm{ReLU}$ 而不是指数/softmax | 论文明确说是**为了吞吐量**：ReLU 比 exp 便宜得多 |
-| **FP8**         | indexer 可以用 FP8 实现                | 打分只用来排序，精度要求远低于主注意力           |
+| **FP8**           | indexer 可以用 FP8 实现               | 打分只用来排序，精度要求远低于主注意力           |
 
 注意第三点背后的道理：**打分的结果只参与「选谁」这个离散决策，不进入最终输出**。排序对数值误差的容忍度比加权求和高得多，所以可以放心降精度。这和第 13 篇 MoE 里「bias 只影响选择、不进入权重」是同一种思路——**把不影响输出的部分做便宜**。
 
@@ -64,10 +69,10 @@ $$
 
 ### 复杂度：降的是哪一项
 
-| | 复杂度 | 常数 |
-| --- | --- | --- |
-| Indexer | $O(L^2)$（**没降**） | 很小：head 少、ReLU、FP8 |
-| 主注意力 | $O(L^2)\rightarrow O(Lk)$ | 大：完整的 MLA |
+|          | 复杂度                    | 常数                     |
+| -------- | ------------------------- | ------------------------ |
+| Indexer  | $O(L^2)$（**没降**）      | 很小：head 少、ReLU、FP8 |
+| 主注意力 | $O(L^2)\rightarrow O(Lk)$ | 大：完整的 MLA           |
 
 论文的说法是：indexer 仍是 $O(L^2)$，但因为 head 数小且用 FP8，其计算量远小于 V3.1-Terminus 的 MLA（§2.3）。
 

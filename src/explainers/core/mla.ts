@@ -42,7 +42,8 @@ export interface MlaOptions {
   wUv: number[][][];
 }
 
-const matvec = (m: number[][], x: number[]): number[] => m.map((row) => row.reduce((a, w, i) => a + w * x[i], 0));
+const matvec = (m: number[][], x: number[]): number[] =>
+  m.map((row) => row.reduce((a, w, i) => a + w * x[i], 0));
 
 export function mlaFlow(opts: MlaOptions): Timeline<MlaState> {
   const { tokens, x, wDkv, wKr, wUk, wUv } = opts;
@@ -100,7 +101,10 @@ export function mlaFlow(opts: MlaOptions): Timeline<MlaState> {
     tl.push({
       state: snap('cache', s, null),
       caption: `入缓存：latent ${dC} 个数 + 位置分支 ${dR} 个数 = ${widthMla} 个数。同样一个 token，MHA 要存 ${widthMha} 个——省了 ${f(widthMha / widthMla, 1)} 倍。`,
-      focus: [...Array.from({ length: dC }, (_, i) => cellId('c', s, i)), ...Array.from({ length: dR }, (_, i) => cellId('pe', s, i))],
+      focus: [
+        ...Array.from({ length: dC }, (_, i) => cellId('c', s, i)),
+        ...Array.from({ length: dR }, (_, i) => cellId('pe', s, i)),
+      ],
     });
   }
 
@@ -115,7 +119,10 @@ export function mlaFlow(opts: MlaOptions): Timeline<MlaState> {
     tl.push({
       state: snap('up-k', last, h),
       caption: `上投影：head ${h} 的 Key = W^UK_${h} · c${last} = [${kh.map((z) => f(z)).join(', ')}]。同一个 latent，不同的 W^UK_h，得到不同的 Key——这是 MLA 与 MQA 的根本差别。`,
-      focus: [...Array.from({ length: dC }, (_, i) => cellId('c', last, i)), ...Array.from({ length: dK }, (_, i) => cellId('k', h, i))],
+      focus: [
+        ...Array.from({ length: dC }, (_, i) => cellId('c', last, i)),
+        ...Array.from({ length: dK }, (_, i) => cellId('k', h, i)),
+      ],
     });
 
     const vh = matvec(wUv[h], cLast);
@@ -123,7 +130,10 @@ export function mlaFlow(opts: MlaOptions): Timeline<MlaState> {
     tl.push({
       state: snap('up-v', last, h),
       caption: `上投影：head ${h} 的 Value = W^UV_${h} · c${last} = [${vh.map((z) => f(z)).join(', ')}]。每个 head 仍能从同一份历史里取出自己那一侧面。`,
-      focus: [...Array.from({ length: dC }, (_, i) => cellId('c', last, i)), ...Array.from({ length: dV }, (_, i) => cellId('v', h, i))],
+      focus: [
+        ...Array.from({ length: dC }, (_, i) => cellId('c', last, i)),
+        ...Array.from({ length: dV }, (_, i) => cellId('v', h, i)),
+      ],
     });
   }
 

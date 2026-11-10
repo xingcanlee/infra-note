@@ -5,7 +5,13 @@
  * 用在：DS 02（账本）、DS 03（MQA/GQA）、DS 04（MLA）。
  */
 import { formatNumber as f, itemId, type Timeline } from 'astro-wisp/explainers/core';
-import { cacheBytes, humanBytes, schemeComparison, type CacheConfig, type SchemeInfo } from './kv-cache';
+import {
+  cacheBytes,
+  humanBytes,
+  schemeComparison,
+  type CacheConfig,
+  type SchemeInfo,
+} from './kv-cache';
 
 export interface CacheBarsState {
   /** 已揭示的方案（按顺序） */
@@ -54,7 +60,12 @@ export function cacheBarsTimeline(opts: CacheBarsOptions): Timeline<CacheBarsSta
 
   for (let i = 0; i < all.length; i++) {
     const s = all[i];
-    const total = cacheBytes({ ...base, scheme: s.id, nGroups: base.nGroups, dC: base.dC, dR: base.dR }, tokens, layers, bytes);
+    const total = cacheBytes(
+      { ...base, scheme: s.id, nGroups: base.nGroups, dC: base.dC, dR: base.dR },
+      tokens,
+      layers,
+      bytes,
+    );
     const ratio = s.perToken / mha.perToken;
     const rel =
       i === 0

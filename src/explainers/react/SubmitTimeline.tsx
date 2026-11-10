@@ -6,7 +6,13 @@
 import { useMemo } from 'react';
 import { Explainer, Stage, focusOf, formatNumber as f } from 'astro-wisp/explainers';
 import { toneFill, toneStroke } from 'astro-wisp/explainers/core';
-import { decodeLayerOps, submitFlow, type OpSpec, type SubmitMode, type SubmitState } from '../core/submit';
+import {
+  decodeLayerOps,
+  submitFlow,
+  type OpSpec,
+  type SubmitMode,
+  type SubmitState,
+} from '../core/submit';
 import { Caption, Legend } from './primitives';
 
 export interface SubmitTimelineProps {
@@ -34,7 +40,12 @@ function Scene({ s, focus }: { s: SubmitState; focus?: string[] }) {
   const devY = TOP + LANE_H + LANE_GAP;
 
   return (
-    <Stage width={w} height={h} maxScale={1} label={`提交时间线：${s.mode} 模式，${s.nLaunch} 次提交`}>
+    <Stage
+      width={w}
+      height={h}
+      maxScale={1}
+      label={`提交时间线：${s.mode} 模式，${s.nLaunch} 次提交`}
+    >
       <Caption x={0} y={cpuY + LANE_H / 2} text="CPU 提交" tone="q" />
       <Caption x={0} y={devY + LANE_H / 2} text="设备执行" tone="v" />
 
@@ -65,7 +76,12 @@ function Scene({ s, focus }: { s: SubmitState; focus?: string[] }) {
               width={Math.max((b - a) * SCALE, 2)}
               height={LANE_H - 6}
               rx={3}
-              style={{ fill: 'none', stroke: 'var(--wisp-muted)', strokeWidth: 1, strokeDasharray: '3 3' }}
+              style={{
+                fill: 'none',
+                stroke: 'var(--wisp-muted)',
+                strokeWidth: 1,
+                strokeDasharray: '3 3',
+              }}
             />
           ))}
         </g>
@@ -114,7 +130,11 @@ function Scene({ s, focus }: { s: SubmitState; focus?: string[] }) {
               y1={cpuY + LANE_H}
               x2={LEFT + l.devStart * SCALE}
               y2={devY}
-              style={{ stroke: toneStroke(isGraph ? 'done' : 'q'), strokeWidth: active ? 1.6 : 0.8, strokeDasharray: '3 2' }}
+              style={{
+                stroke: toneStroke(isGraph ? 'done' : 'q'),
+                strokeWidth: active ? 1.6 : 0.8,
+                strokeDasharray: '3 2',
+              }}
             />
             {/* 同步点：CPU 在这里被钉住，等设备算完 */}
             {l.sync && (
@@ -187,7 +207,12 @@ function Scene({ s, focus }: { s: SubmitState; focus?: string[] }) {
             width={gap * SCALE}
             height={LANE_H - 6}
             rx={2}
-            style={{ fill: toneFill('error'), stroke: toneStroke('error'), strokeWidth: 0.8, strokeDasharray: '2 2' }}
+            style={{
+              fill: toneFill('error'),
+              stroke: toneStroke('error'),
+              strokeWidth: 0.8,
+              strokeDasharray: '2 2',
+            }}
           />
         );
       })}
@@ -217,14 +242,24 @@ function Scene({ s, focus }: { s: SubmitState; focus?: string[] }) {
   );
 }
 
-export default function SubmitTimeline({ mode = 'eager', ops, launchCost, graphLaunchCost, title }: SubmitTimelineProps) {
+export default function SubmitTimeline({
+  mode = 'eager',
+  ops,
+  launchCost,
+  graphLaunchCost,
+  title,
+}: SubmitTimelineProps) {
   const list = ops ?? decodeLayerOps(2);
   const steps = useMemo(
     () => submitFlow({ mode, ops: list, launchCost, graphLaunchCost }),
     [mode, list, launchCost, graphLaunchCost],
   );
   const defaultTitle =
-    mode === 'eager' ? 'eager：每个算子提交一次' : mode === 'full' ? 'full graph：整轮只提交一次' : 'piecewise：能捕获的片段打包，其余单独提交';
+    mode === 'eager'
+      ? 'eager：每个算子提交一次'
+      : mode === 'full'
+        ? 'full graph：整轮只提交一次'
+        : 'piecewise：能捕获的片段打包，其余单独提交';
   return (
     <Explainer steps={steps} title={title ?? defaultTitle}>
       {(step) => <Scene s={step.state} focus={step.focus} />}

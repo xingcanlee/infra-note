@@ -73,14 +73,20 @@ export function schemeInfo(cfg: CacheConfig): SchemeInfo {
         name: 'MLA',
         perToken: dc + dr,
         formula: `d_c + d_r = ${dc} + ${dr}`,
-        describe: '缓存一份所有 head 共享的低维 latent，加一条位置分支；每个 head 仍能算出不同的 K/V。',
+        describe:
+          '缓存一份所有 head 共享的低维 latent，加一条位置分支；每个 head 仍能算出不同的 K/V。',
       };
     }
   }
 }
 
 /** 缓存字节数 = 层数 × token 数 × 每 token 标量数 × 每标量字节数 × 2（K 与 V 已含在 perToken 中）。 */
-export function cacheBytes(cfg: CacheConfig, tokens: number, layers: number, bytesPerScalar = 2): number {
+export function cacheBytes(
+  cfg: CacheConfig,
+  tokens: number,
+  layers: number,
+  bytesPerScalar = 2,
+): number {
   return schemeInfo(cfg).perToken * tokens * layers * bytesPerScalar;
 }
 
@@ -150,7 +156,12 @@ export function cacheTimeline(opts: CacheTimelineOptions): Timeline<CacheState> 
   const rows: (number | null)[][] = Array.from({ length: l }, () => Array(cols).fill(null));
   let cached = 0;
 
-  const snap = (phase: CachePhase, cur: number | null, reading: number[], recompute: number): CacheState => ({
+  const snap = (
+    phase: CachePhase,
+    cur: number | null,
+    reading: number[],
+    recompute: number,
+  ): CacheState => ({
     tokens,
     cached,
     cur,

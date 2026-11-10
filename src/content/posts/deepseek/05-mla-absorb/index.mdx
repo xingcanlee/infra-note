@@ -1,6 +1,6 @@
 ---
-title: "05 MLA 的两个技巧：解耦 RoPE 与矩阵吸收"
-description: "为什么位置编码必须单独走一条分支，以及上投影的计算为什么可以不花——两件事其实是同一件事。"
+title: '05 MLA 的两个技巧：解耦 RoPE 与矩阵吸收'
+description: '为什么位置编码必须单独走一条分支，以及上投影的计算为什么可以不花——两件事其实是同一件事。'
 series:
   id: deepseek
   order: 7
@@ -88,7 +88,7 @@ $$
 
 第一项用吸收，第二项维度很小（$d_r=64$）且 $k_s^R$ 所有 head 共用一份。缓存因此是 $d_c + d_r$：latent 加位置分支，两者都省不掉，但都很窄。
 
-![MLA 把 Query 和 Key 各自拆成内容分支与位置分支：只有位置分支承担 RoPE，内容分支的上投影矩阵与位置无关，因此可以被吸收进 Query](./diagrams/05-decoupled-rope.drawio "图 05-1：解耦 RoPE——内容分支走共享 latent，位置分支单独带旋转")
+![MLA 把 Query 和 Key 各自拆成内容分支与位置分支：只有位置分支承担 RoPE，内容分支的上投影矩阵与位置无关，因此可以被吸收进 Query](./diagrams/05-decoupled-rope.drawio '图 05-1：解耦 RoPE——内容分支走共享 latent，位置分支单独带旋转')
 
 ## 吸收前后的计算顺序
 
@@ -96,14 +96,18 @@ $$
 
 <AbsorbView client:visible mode="naive" title="图 05-2a：朴素顺序——每个历史位置都要先展开成 K" />
 
-<AbsorbView client:visible mode="absorb" title="图 05-2b：吸收顺序——先折进 Query，然后直接用 latent 打分" />
+<AbsorbView
+  client:visible
+  mode="absorb"
+  title="图 05-2b：吸收顺序——先折进 Query，然后直接用 latent 打分"
+/>
 
 两条路径的打分结果**完全相同**（动画里最后一列的数字一致）。差别在于：
 
-| | 每个历史位置的乘法 | 固定成本        | 要物化 K 吗 |
-| --- | --- | --- | --- |
-| 朴素 | $d_k d_c + d_k$ | 0               | 要，$L\times d_k$ 个元素 |
-| 吸收 | $d_c$           | $d_k d_c$（一次） | 不要        |
+|      | 每个历史位置的乘法 | 固定成本          | 要物化 K 吗              |
+| ---- | ------------------ | ----------------- | ------------------------ |
+| 朴素 | $d_k d_c + d_k$    | 0                 | 要，$L\times d_k$ 个元素 |
+| 吸收 | $d_c$              | $d_k d_c$（一次） | 不要                     |
 
 代入 V3 的 $d_k = 128$（内容分支 `qk_nope_head_dim`）、$d_c = 512$：
 
@@ -187,16 +191,16 @@ print('两条路径逐位相同 ✓')
 
 DeepSeek-V3 参考实现（commit `9b4e9788`）把两条路径都写了出来，由 `attn_impl` 选择：
 
-| 内容                | 位置                 | 代码                                                        |
-| ------------------- | -------------------- | ----------------------------------------------------------- |
-| RoPE 频率预计算     | `model.py:297-375`   | 含 YaRN 的长上下文修正，返回 $(seqlen, d_r/2)$ 的复数因子     |
-| 应用旋转            | `model.py:378-393`   | `view_as_complex` 两两配对后乘频率，再还原实数               |
-| Q/K 的解耦切分      | `model.py:465-470`   | `q_nope, q_pe = split(q, [qk_nope_head_dim, qk_rope_head_dim])`；`kv, k_pe = split(wkv_a(x), [kv_lora_rank, qk_rope_head_dim])` |
-| **朴素路径**        | `model.py:476-479`   | `k = cat([k_nope, k_pe.expand(...)])` → 物化完整 K → `einsum("bshd,bthd->bsht")` |
-| **吸收路径（Key）** | `model.py:483`       | `q_nope = einsum("bshd,hdc->bshc", q_nope, wkv_b[:, :qk_nope_head_dim])` ← 把 $W^{UK}$ 折进 Query |
-| 吸收路径的打分      | `model.py:486-487`   | `einsum("bshc,btc->bsht", q_nope, kv_cache) + einsum("bshr,btr->bsht", q_pe, pe_cache)` ← 两项相加 |
-| softmax             | `model.py:490`       | 在两项相加之后，升到 FP32                                   |
-| **吸收路径（Value）** | `model.py:494-495` | `einsum("bsht,btc->bshc", scores, kv_cache)` 先在 latent 空间聚合，再 `einsum("bshc,hdc->bshd", x, wkv_b[:, -v_head_dim:])` |
+| 内容                  | 位置               | 代码                                                                                                                            |
+| --------------------- | ------------------ | ------------------------------------------------------------------------------------------------------------------------------- |
+| RoPE 频率预计算       | `model.py:297-375` | 含 YaRN 的长上下文修正，返回 $(seqlen, d_r/2)$ 的复数因子                                                                       |
+| 应用旋转              | `model.py:378-393` | `view_as_complex` 两两配对后乘频率，再还原实数                                                                                  |
+| Q/K 的解耦切分        | `model.py:465-470` | `q_nope, q_pe = split(q, [qk_nope_head_dim, qk_rope_head_dim])`；`kv, k_pe = split(wkv_a(x), [kv_lora_rank, qk_rope_head_dim])` |
+| **朴素路径**          | `model.py:476-479` | `k = cat([k_nope, k_pe.expand(...)])` → 物化完整 K → `einsum("bshd,bthd->bsht")`                                                |
+| **吸收路径（Key）**   | `model.py:483`     | `q_nope = einsum("bshd,hdc->bshc", q_nope, wkv_b[:, :qk_nope_head_dim])` ← 把 $W^{UK}$ 折进 Query                               |
+| 吸收路径的打分        | `model.py:486-487` | `einsum("bshc,btc->bsht", q_nope, kv_cache) + einsum("bshr,btr->bsht", q_pe, pe_cache)` ← 两项相加                              |
+| softmax               | `model.py:490`     | 在两项相加之后，升到 FP32                                                                                                       |
+| **吸收路径（Value）** | `model.py:494-495` | `einsum("bsht,btc->bshc", scores, kv_cache)` 先在 latent 空间聚合，再 `einsum("bshc,hdc->bshd", x, wkv_b[:, -v_head_dim:])`     |
 
 几点对照：
 

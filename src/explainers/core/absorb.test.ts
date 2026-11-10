@@ -92,7 +92,9 @@ describe('absorbFlow 时间线', () => {
   });
 
   it('朴素模式每个历史位置都有一次展开步骤', () => {
-    const expands = absorbFlow({ ...base, mode: 'naive' }).filter((s) => s.state.phase === 'expand');
+    const expands = absorbFlow({ ...base, mode: 'naive' }).filter(
+      (s) => s.state.phase === 'expand',
+    );
     expect(expands).toHaveLength(base.c.length);
   });
 
