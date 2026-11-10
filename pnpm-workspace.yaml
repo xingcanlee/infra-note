@@ -3,8 +3,16 @@ allowBuilds:
   sharp: true
   simple-git-hooks: true
 
+# astro-wisp 是本组织维护的包，发布后立即用于站点验证；其余依赖继续遵守 pnpm 的 24 小时发布年龄策略。
+minimumReleaseAgeExclude:
+  - astro-wisp
+
 overrides:
   '@astrojs/react>@vitejs/plugin-react': 6.1.1
   '@napi-rs/wasm-runtime@1.2.4>@emnapi/runtime': 1.11.3
   '@napi-rs/wasm-runtime@1.2.4>@emnapi/core': 1.11.3
+  '@typescript-eslint/scope-manager': 8.72.1
+  '@typescript-eslint/types': 8.72.1
+  '@typescript-eslint/visitor-keys': 8.72.1
+  electron-to-chromium: 1.5.478
   rehype-katex>katex: 0.19.1
