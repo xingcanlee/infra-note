@@ -1,0 +1,58 @@
+<mxfile host="wisp-diagram">
+  <diagram id="engram-buckets" name="桶构建：质数表的分配">
+    <mxGraphModel dx="800" dy="800" grid="1" gridSize="8" guides="1" page="0" math="1" shadow="0">
+      <root>
+        <mxCell id="0"/>
+        <mxCell id="1" parent="0"/>
+        <mxCell id="start" value="起点：engram_vocab_size − 1&lt;br&gt;示例 100002；论文尺度 226 万（Engram-27B）→ 724 万（40B）" style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e2e8f0;strokeColor=#475569;strokeWidth=1.5;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="0" y="0" width="608" height="64" as="geometry"/>
+        </mxCell>
+        <mxCell id="alloc" value="分配：按 (层, \(n\), 头) 逐个取「下一个没用过的质数」&lt;br&gt;已用集合全局去重：Engram 层 1（0 起）分配前 16 个，层 14 从第 17 个继续&lt;br&gt;（EngramLayout.__init__，engram.py:230-246）" style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#ccfbf1;strokeColor=#0f766e;strokeWidth=1.5;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="0" y="112" width="608" height="80" as="geometry"/>
+        </mxCell>
+        <mxCell id="g1" value="层 1 · \(n=2\)&lt;br&gt;100003 · 100019 · … · 100109&lt;br&gt;8 张质数表" style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#fef3c7;strokeColor=#b45309;strokeWidth=1.5;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="0" y="224" width="192" height="80" as="geometry"/>
+        </mxCell>
+        <mxCell id="g2" value="层 1 · \(n=3\)&lt;br&gt;100129 · 100151 · … · 100207&lt;br&gt;8 张质数表" style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#fef3c7;strokeColor=#b45309;strokeWidth=1.5;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="224" y="224" width="192" height="80" as="geometry"/>
+        </mxCell>
+        <mxCell id="g3" value="层 14（0 起）&lt;br&gt;后续 16 个质数&lt;br&gt;乘数种子另取" style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#fef3c7;strokeColor=#b45309;strokeWidth=1.5;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="448" y="224" width="184" height="80" as="geometry"/>
+        </mxCell>
+        <mxCell id="offset" value="偏移 = 前桶行数的前缀和，桶与桶互不重叠&lt;br&gt;例：\(n=2\) 头1 的桶 \([100003, 200022)\)，\(n=3\) 头0 的桶 \([800452, 900581)\)" style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#ede9fe;strokeColor=#7c3aed;strokeWidth=1.5;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="0" y="352" width="608" height="72" as="geometry"/>
+        </mxCell>
+        <mxCell id="rowex" value="行号 = 偏移 + \(h \bmod M\)：落在对应桶内&lt;br&gt;\(h_2 \bmod 100019 = 99339\) → 行 \(99339 + 100003 = 199342\)（头1 的桶）" style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#dcfce7;strokeColor=#15803d;strokeWidth=2.5;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="0" y="456" width="608" height="64" as="geometry"/>
+        </mxCell>
+        <mxCell id="note" value="注：论文只指定每张表为质数大小（式 (1)），未解释原因——质数取模让哈希分布更均匀，是哈希表的经典技巧；每 (n, 头) 独立桶，单头哈希冲突不影响其他头。&lt;br&gt;扩容 = 用更大的起点重新分配（每桶行数变大）：哈希流程与每 token 16 行的取数完全不变。桶的全貌与「张仲景」命中示例见图 15-2 下部。" style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;fontFamily=Inter;fontSize=12;fontColor=#5c6067;" vertex="1" parent="1">
+          <mxGeometry x="0" y="552" width="632" height="72" as="geometry"/>
+        </mxCell>
+        <mxCell id="e1" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;endArrow=classic;html=1;strokeColor=#0f766e;strokeWidth=1.5;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="start" target="alloc">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e2" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;endArrow=classic;html=1;strokeColor=#b45309;strokeWidth=1.5;exitX=0.2;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="alloc" target="g1">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e3" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;endArrow=classic;html=1;strokeColor=#b45309;strokeWidth=1.5;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="alloc" target="g2">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e4" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;endArrow=classic;html=1;strokeColor=#b45309;strokeWidth=1.5;exitX=0.8;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="alloc" target="g3">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e5" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;endArrow=classic;html=1;strokeColor=#7c3aed;strokeWidth=1.5;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.2;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="g1" target="offset">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e6" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;endArrow=classic;html=1;strokeColor=#7c3aed;strokeWidth=1.5;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="g2" target="offset">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e7" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;endArrow=classic;html=1;strokeColor=#7c3aed;strokeWidth=1.5;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.8;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="g3" target="offset">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e8" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;endArrow=classic;html=1;strokeColor=#15803d;strokeWidth=1.5;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="offset" target="rowex">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

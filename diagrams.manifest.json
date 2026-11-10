@@ -49,6 +49,70 @@
       "pages": [
         "CSA：先按 m 压缩，再在压缩条目上做稀疏选择"
       ]
+    },
+    "src/content/posts/deepseek/15-engram/diagrams/15-engram-buckets.drawio": {
+      "source": "sha256-425b2179a973fa5c4a1473a5e73173a8466e8563090db450c93d75eab1990737",
+      "style": "clean",
+      "exporter": "drawio-cli",
+      "embedFonts": false,
+      "outputs": {
+        "src/content/posts/deepseek/15-engram/diagrams/15-engram-buckets.wisp.svg": "sha256-be5b89888dd08e5ea5dc5ff243d8811ebf772dfd5e61244063f59143c280de54"
+      },
+      "pages": [
+        "桶构建：质数表的分配"
+      ]
+    },
+    "src/content/posts/deepseek/15-engram/diagrams/15-engram-classes.drawio": {
+      "source": "sha256-e10226977c247cfc7342fda40aae405dbe49ef470c084e85bb8cf7d29675cbd2",
+      "style": "clean",
+      "exporter": "drawio-cli",
+      "embedFonts": false,
+      "outputs": {
+        "src/content/posts/deepseek/15-engram/diagrams/15-engram-classes.wisp.svg": "sha256-511be33c749908d90fe30a58174daf9c07bface4e7d2bee33beb5530699e13ae"
+      },
+      "pages": [
+        "Engram 类图"
+      ]
+    },
+    "src/content/posts/deepseek/15-engram/diagrams/15-engram-decode.drawio": {
+      "source": "sha256-7434e7b5aa26d0b9d4254c28beecbd7b0e5b319374d881bc9e7ae9d3edf05f03",
+      "style": "clean",
+      "exporter": "drawio-cli",
+      "embedFonts": false,
+      "outputs": {
+        "src/content/posts/deepseek/15-engram/diagrams/15-engram-decode.page-2.wisp.svg": "sha256-e7b54c58ab4abd27567c6b99fb416853687e49bbe644055926fd5c74c861738e",
+        "src/content/posts/deepseek/15-engram/diagrams/15-engram-decode.wisp.svg": "sha256-b222e3448f546941150a3b87a3719d83b00329b3551f42eee10ff210d536892c"
+      },
+      "pages": [
+        "decode 数据流",
+        "预取与多流重叠"
+      ]
+    },
+    "src/content/posts/deepseek/15-engram/diagrams/15-engram-layer.drawio": {
+      "source": "sha256-0fc3f10d84c3074a9a5771f9fa9162037993f0122a3f83dd0cba8d6d4cd5d2f1",
+      "style": "clean",
+      "exporter": "drawio-cli",
+      "embedFonts": false,
+      "outputs": {
+        "src/content/posts/deepseek/15-engram/diagrams/15-engram-layer.wisp.svg": "sha256-291ff610e4fc30dcd37ee5243afa980197d9f21cebb42ed310648c60b21ff396"
+      },
+      "pages": [
+        "Engram 在一层里的位置"
+      ]
+    },
+    "src/content/posts/deepseek/15-engram/diagrams/15-engram-lookup.drawio": {
+      "source": "sha256-2578b8efd653a6633b5fcb85ff46dadc2ce0b078ed8f0aa4d310842983769c15",
+      "style": "clean",
+      "exporter": "drawio-cli",
+      "embedFonts": false,
+      "outputs": {
+        "src/content/posts/deepseek/15-engram/diagrams/15-engram-lookup.page-2.wisp.svg": "sha256-9dadb1b02ccf03b7a2fe28db0e6c5596e8fabd1550900ef53fcd78ee837d6bab",
+        "src/content/posts/deepseek/15-engram/diagrams/15-engram-lookup.wisp.svg": "sha256-13e91cba576975cffd76be941cf572368f56489295a3b5542aac59af9b853e7d"
+      },
+      "pages": [
+        "哈希执行：初始化与逐 token 流程",
+        "查表与门控：shape 变换"
+      ]
     }
   }
 }

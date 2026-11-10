@@ -1,0 +1,73 @@
+<mxfile host="wisp-diagram">
+  <diagram id="engram-classes" name="Engram 类图">
+    <mxGraphModel dx="800" dy="900" grid="1" gridSize="8" guides="1" page="0" math="0" shadow="0">
+      <root>
+        <mxCell id="0"/>
+        <mxCell id="1" parent="0"/>
+        <mxCell id="model" value="DeepseekV41Model&lt;br&gt;（nvidia/model.py）&lt;br&gt;engram_hash：NgramHashState&lt;br&gt;engram_batch：EngramBatch&lt;br&gt;layers[1/14].engram：Engram" style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e2e8f0;strokeColor=#475569;strokeWidth=1.5;fontFamily=Inter;fontSize=14;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="176" y="0" width="288" height="96" as="geometry"/>
+        </mxCell>
+        <mxCell id="hashstate" value="NgramHashState&lt;br&gt;（engram.py:426）&lt;br&gt;token_map · multipliers&lt;br&gt;hash_cache（V1 槽缓存）" style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#ccfbf1;strokeColor=#0f766e;strokeWidth=1.5;fontFamily=Inter;fontSize=14;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="0" y="136" width="280" height="96" as="geometry"/>
+        </mxCell>
+        <mxCell id="engram" value="Engram（第 1/14 层各一）&lt;br&gt;（engram.py:1664）&lt;br&gt;embed_tokens · wkv&lt;br&gt;q_weight · k_weight" style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#ede9fe;strokeColor=#7c3aed;strokeWidth=1.5;fontFamily=Inter;fontSize=14;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="352" y="136" width="280" height="96" as="geometry"/>
+        </mxCell>
+        <mxCell id="layout" value="EngramLayout&lt;br&gt;（engram.py:211）&lt;br&gt;primes[层][n][头] · offsets" style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#fef3c7;strokeColor=#b45309;strokeWidth=1.5;fontFamily=Inter;fontSize=14;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="0" y="280" width="280" height="80" as="geometry"/>
+        </mxCell>
+        <mxCell id="embed" value="ParallelEngramEmbedding&lt;br&gt;（engram.py:1021）&lt;br&gt;16 桶质数表 · TP×DP 分片&lt;br&gt;lookup：UVA 读主机表" style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#ede9fe;strokeColor=#7c3aed;strokeWidth=1.5;fontFamily=Inter;fontSize=14;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="352" y="280" width="280" height="96" as="geometry"/>
+        </mxCell>
+        <mxCell id="batch" value="EngramBatch&lt;br&gt;（engram.py:1539）&lt;br&gt;两层 WKV 输入一次交换&lt;br&gt;peer SHM / all_to_all → MXFP8" style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#ccfbf1;strokeColor=#0f766e;strokeWidth=1.5;fontFamily=Inter;fontSize=14;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="0" y="424" width="280" height="96" as="geometry"/>
+        </mxCell>
+        <mxCell id="shared" value="DPSharedEngramStorage&lt;br&gt;（engram.py:839）&lt;br&gt;FABRIC / /dev/shm 共享主机表" style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e2e8f0;strokeColor=#475569;strokeWidth=1.5;fontFamily=Inter;fontSize=14;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="352" y="424" width="280" height="80" as="geometry"/>
+        </mxCell>
+        <mxCell id="peer" value="EngramPeerExchange&lt;br&gt;（nvidia/ops/engram_peer.py）&lt;br&gt;对称内存互读（slot&lt;128）" style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e2e8f0;strokeColor=#475569;strokeWidth=1.5;fontFamily=Inter;fontSize=14;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="0" y="568" width="280" height="80" as="geometry"/>
+        </mxCell>
+        <mxCell id="prefetch" value="EngramPrefetch&lt;br&gt;（specialized_decode/engram/）&lt;br&gt;解码时提前整条 WKV 链" style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e2e8f0;strokeColor=#475569;strokeWidth=1.5;fontFamily=Inter;fontSize=14;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="352" y="568" width="280" height="80" as="geometry"/>
+        </mxCell>
+        <mxCell id="note" value="注：实线为持有/组合。Engram 与 NgramHashState 共享同一个 EngramLayout（质数与偏移按层确定性构造，各 rank 一致）；EngramPrefetch 在 specialized decode 中封装查表与 WKV 链；&lt;br&gt;权重键为 layers.{1,14}.engram.embed.weight（模块名 embed_tokens 专为该映射保留，engram.py:1699-1702）。" style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;fontFamily=Inter;fontSize=12;fontColor=#5c6067;" vertex="1" parent="1">
+          <mxGeometry x="0" y="680" width="632" height="64" as="geometry"/>
+        </mxCell>
+        <mxCell id="e1" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;endArrow=classic;html=1;strokeColor=#475569;strokeWidth=1.5;exitX=0.25;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="model" target="hashstate">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e2" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;endArrow=classic;html=1;strokeColor=#7c3aed;strokeWidth=1.5;exitX=0.75;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="model" target="engram">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e3" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;endArrow=classic;html=1;strokeColor=#b45309;strokeWidth=1.5;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="hashstate" target="layout">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e4" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;endArrow=classic;html=1;strokeColor=#7c3aed;strokeWidth=1.5;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="engram" target="embed">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e5" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;endArrow=classic;html=1;strokeColor=#475569;strokeWidth=1.5;dashed=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="embed" target="shared">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e6" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;endArrow=classic;html=1;strokeColor=#475569;strokeWidth=1.5;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=1;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="model" target="batch">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="320" y="472"/>
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e7" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;endArrow=classic;html=1;strokeColor=#0f766e;strokeWidth=1.5;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="batch" target="peer">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e8" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;endArrow=classic;html=1;strokeColor=#475569;strokeWidth=1.5;dashed=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=1;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="prefetch" target="engram">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="648" y="608"/>
+              <mxPoint x="648" y="184"/>
+            </Array>
+          </mxGeometry>
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

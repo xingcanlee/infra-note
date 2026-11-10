@@ -1,0 +1,64 @@
+<mxfile host="wisp-diagram">
+  <diagram id="engram-layer" name="Engram 在一层里的位置">
+    <mxGraphModel dx="800" dy="900" grid="1" gridSize="8" guides="1" page="0" math="1" shadow="0">
+      <root>
+        <mxCell id="0"/>
+        <mxCell id="1" parent="0"/>
+        <mxCell id="in" value="上一层 ℓ−1 的 MoE 输出 x [T, d]&lt;br&gt;+ mHC 状态（residual [T, 4, d] / post_mix / res_mix）" style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e2e8f0;strokeColor=#475569;strokeWidth=1.5;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="176" y="0" width="288" height="64" as="geometry"/>
+        </mxCell>
+        <mxCell id="mhcpost" value="mhc_post_tilelang&lt;br&gt;合成 previous_post [T, 4, d]" style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#ede9fe;strokeColor=#7c3aed;strokeWidth=1.5;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="176" y="112" width="288" height="56" as="geometry"/>
+        </mxCell>
+        <mxCell id="hashbox" value="engram_hashes&lt;br&gt;[T, 2 层, 16 列]&lt;br&gt;整 batch 一次" style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#fef3c7;strokeColor=#b45309;strokeWidth=1.5;fontFamily=Inter;fontSize=14;fontColor=#1d1d1f;dashed=1;" vertex="1" parent="1">
+          <mxGeometry x="0" y="200" width="160" height="80" as="geometry"/>
+        </mxCell>
+        <mxCell id="engram" value="Engram（model.py:580-584）&lt;br&gt;residual ← previous_post + \(\alpha\cdot\mathbf v\)&lt;br&gt;shape [T, 4, d] → [T, 4, d]" style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#ede9fe;strokeColor=#7c3aed;strokeWidth=2.5;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="176" y="208" width="288" height="80" as="geometry"/>
+        </mxCell>
+        <mxCell id="mhcpre" value="mhc_pre：本层 pre-norm 混合" style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#ede9fe;strokeColor=#7c3aed;strokeWidth=1.5;fontFamily=Inter;fontSize=14;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="176" y="328" width="288" height="48" as="geometry"/>
+        </mxCell>
+        <mxCell id="attn" value="Attention（MLA / 稀疏）&lt;br&gt;[T, d]" style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#dbeafe;strokeColor=#1d4ed8;strokeWidth=1.5;fontFamily=Inter;fontSize=14;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="176" y="416" width="288" height="48" as="geometry"/>
+        </mxCell>
+        <mxCell id="mhc2" value="mhc post + pre（FFN 段）" style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#ede9fe;strokeColor=#7c3aed;strokeWidth=1.5;fontFamily=Inter;fontSize=14;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="176" y="496" width="288" height="48" as="geometry"/>
+        </mxCell>
+        <mxCell id="moe" value="MoE（DeepSeekMoE）" style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#dcfce7;strokeColor=#15803d;strokeWidth=1.5;fontFamily=Inter;fontSize=14;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="176" y="576" width="288" height="48" as="geometry"/>
+        </mxCell>
+        <mxCell id="out" value="进入下一层 ℓ+1" style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e2e8f0;strokeColor=#475569;strokeWidth=1.5;fontFamily=Inter;fontSize=14;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="176" y="656" width="288" height="48" as="geometry"/>
+        </mxCell>
+        <mxCell id="note" value="注：Engram 位于第 1、14 层（0 起，model.py:1002 注释），注入在「上一层 MoE 的 post 混合之后、本层 attention 的 pre 之前」——让 mHC 混合系数看到注入后的残差流（model.py:569-573）。&lt;br&gt;残差流是 mHC 的 4 份拷贝 [T, 4, d]，Engram 作用于完整 hc 流；哈希在 decode 入口对整个 batch 计算一次，早于序列并行分片（model.py:1000-1003）。" style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;fontFamily=Inter;fontSize=12;fontColor=#5c6067;" vertex="1" parent="1">
+          <mxGeometry x="0" y="736" width="640" height="64" as="geometry"/>
+        </mxCell>
+        <mxCell id="e1" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;endArrow=classic;html=1;strokeColor=#475569;strokeWidth=1.5;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="in" target="mhcpost">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e2" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;endArrow=classic;html=1;strokeColor=#7c3aed;strokeWidth=1.5;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="mhcpost" target="engram">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e3" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;endArrow=classic;html=1;strokeColor=#b45309;strokeWidth=1.5;dashed=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="hashbox" target="engram">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e4" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;endArrow=classic;html=1;strokeColor=#7c3aed;strokeWidth=1.5;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="engram" target="mhcpre">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e5" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;endArrow=classic;html=1;strokeColor=#1d4ed8;strokeWidth=1.5;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="mhcpre" target="attn">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e6" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;endArrow=classic;html=1;strokeColor=#7c3aed;strokeWidth=1.5;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="attn" target="mhc2">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e7" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;endArrow=classic;html=1;strokeColor=#15803d;strokeWidth=1.5;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="mhc2" target="moe">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e8" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;endArrow=classic;html=1;strokeColor=#475569;strokeWidth=1.5;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="moe" target="out">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>
