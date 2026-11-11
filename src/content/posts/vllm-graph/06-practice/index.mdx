@@ -48,7 +48,7 @@ def is_compatible(desc, req):
     raise NotImplementedError
 ```
 
-**陷阱**：第 2 条不是简单的 `>=`。源码注释写着「a caller that does not track max_query_len must not match one that does」——图有约束而调用方传 `None` 时，**不能匹配**。
+**陷阱**：第 2 条不是简单的 `>=`。源码注释写着「a caller that does not track max_query_len must not match one that does」——图有约束而调用方传 `None` 时，** 不能匹配**[^vllm-dispatch-code]。
 
 ## 练习二：实现 dispatch
 
@@ -58,7 +58,7 @@ def dispatch(graphs, req):
     raise NotImplementedError
 ```
 
-**陷阱**：是「第一个够大的」，不是「最接近的」，也不是「最大的」。所以候选的顺序会影响 padding——这正是源码把 decode 图插到队首的原因。
+**陷阱**：是「第一个够大的」，不是「最接近的」，也不是「最大的」[^vllm-dispatch-code]。所以候选的顺序会影响 padding——这正是源码把 decode 图插到队首的原因。
 
 ## 练习三：算 padding 浪费
 
@@ -183,7 +183,4 @@ iter 1044  reqs=9  tokens=9    uniform=True   loras=0  → NONE
 - [Ascend 图模式](../07-ascend/)：同一套抽象换到 ACLGraph / TorchAir 上长什么样。
 - [排错](../08-debugging/)：真实服务里日志显示回退、捕获失败或变慢时，按什么顺序查。
 
-## 来源
-
-- 匹配逻辑对照本地快照 `reference/vllm`（commit `cf5cea2d`）的 `vllm/v1/worker/gpu/cudagraph_utils.py:115-142`
-- 上一篇：[05 · vLLM 选路](../05-dispatch/)
+[^vllm-dispatch-code]: 匹配逻辑对照本地快照 `reference/vllm`（commit `cf5cea2d`）的 `vllm/v1/worker/gpu/cudagraph_utils.py:115-142`。

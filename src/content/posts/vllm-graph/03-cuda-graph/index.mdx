@@ -14,7 +14,7 @@ import SubmitTimeline from '../../../../explainers/react/SubmitTimeline';
 
 上一篇让算子**变少**了，但每个算子仍然要单独提交一次。这一篇把提交次数也降下来。
 
-思路很直接：decode 每一轮提交的是**同一串**设备工作——同样的 kernel、同样的顺序、同样的形状，只有缓冲区里的数值变了。既然如此，为什么每轮都要重新提交一遍？**录一次，之后重放。**
+思路很直接：decode 每一轮提交的是**同一串**设备工作——同样的 kernel、同样的顺序、同样的形状，只有缓冲区里的数值变了。既然如此，为什么每轮都要重新提交一遍？** 录一次，之后重放。**
 
 读完你能回答：capture / instantiate / replay 各做什么、为什么「固定地址」是整件事的核心约束、以及官方列出的那些约束背后是同一个原因。
 
@@ -49,11 +49,11 @@ flowchart LR
   C --> E["replay（每轮重复）<br/>cudaGraphLaunch<br/>一次提交，整段执行"]
 ```
 
-| 阶段            | 做什么                                                                         |
-| --------------- | ------------------------------------------------------------------------------ |
-| **capture**     | 把 stream 置于捕获模式；此后提交到该 stream 的工作**不执行**，而是追加进图     |
-| **instantiate** | 验证并把图实例化成可执行形式，一次性的准备成本集中在这里                       |
-| **replay**      | `cudaGraphLaunch` 一次提交整段工作；PyTorch 的 `CUDAGraph.replay()` 底层就是它 |
+| 阶段            | 做什么                                                                                              |
+| --------------- | --------------------------------------------------------------------------------------------------- |
+| **capture**     | 把 stream 置于捕获模式；此后提交到该 stream 的工作**不执行**，而是追加进图[^cuda-programming-guide] |
+| **instantiate** | 验证并把图实例化成可执行形式，一次性的准备成本集中在这里                                            |
+| **replay**      | `cudaGraphLaunch` 一次提交整段工作；PyTorch 的 `CUDAGraph.replay()` 底层就是它                      |
 
 收益回到第 00 篇那张图：提交从 N 次变成 1 次。
 
@@ -80,7 +80,7 @@ flowchart LR
 
 图记录的是「对**这些地址**执行**这些 kernel**」。它不记录数据，只记录操作和操作的对象。
 
-于是每次 replay 必须读写**相同的（虚拟）内存地址**——这是官方明确列出的约束。实际后果：
+于是每次 replay 必须读写**相同的（虚拟）内存地址**[^pytorch-cuda-graphs-doc]——这是官方明确列出的约束。实际后果：
 
 - 输入输出都要用预先分配好的**静态缓冲区**；
 - 每轮把新数据 `copy_` 进去，而不是换一个张量；
@@ -90,7 +90,7 @@ flowchart LR
 
 ### 官方列出的约束
 
-PyTorch 文档把约束分成两类，这个分法比约束本身更重要：
+PyTorch 文档把约束分成两类[^pytorch-cuda-graphs-doc]，这个分法比约束本身更重要：
 
 **第一类：违反会报错**
 
@@ -146,7 +146,7 @@ PyTorch 文档把约束分成两类，这个分法比约束本身更重要：
 | `torch.cuda.make_graphed_callables()`   | 把 callable 的 forward/backward 都图化，训练用 |
 | `torch.compile(mode="reduce-overhead")` | 编译图 + CUDA Graph 一起上（上一篇）           |
 
-`capture_error_mode` 控制捕获期间对「潜在不安全 API」的检查严格度：`global`（默认，阻止其他线程的不安全调用）、`thread_local`、`relaxed`。
+`capture_error_mode` 控制捕获期间对「潜在不安全 API」的检查严格度[^torch-cuda-graph-api]：`global`（默认，阻止其他线程的不安全调用）、`thread_local`、`relaxed`。
 
 ## 代码实现
 
@@ -235,8 +235,10 @@ vLLM 的封装（本地快照 commit `cf5cea2d`）：
 
 ## 来源
 
-- [PyTorch CUDA semantics — CUDA Graphs](https://docs.pytorch.org/docs/stable/notes/cuda.html)（约束与非约束清单、图内存管理、跨捕获共享内存池）
-- [torch.cuda.graph API](https://docs.pytorch.org/docs/stable/generated/torch.cuda.graph.html)（`capture_error_mode`）
-- [CUDA Programming Guide — CUDA Graphs](https://docs.nvidia.com/cuda/cuda-programming-guide/04-special-topics/cuda-graphs.html)（stream capture、instantiation、execution）
-- 上一篇：[02 · torch.compile](../02-compile-graphs/)
 - 下一篇：[边界](../04-boundaries/)（尚未按本系列约定重写）——动态 shape、通信、内存池、多流各自卡在哪一条约束上。
+
+[^cuda-programming-guide]: [CUDA Programming Guide — CUDA Graphs](https://docs.nvidia.com/cuda/cuda-programming-guide/04-special-topics/cuda-graphs.html)（stream capture、instantiation、execution）。
+
+[^pytorch-cuda-graphs-doc]: [PyTorch CUDA semantics — CUDA Graphs](https://docs.pytorch.org/docs/stable/notes/cuda.html)（约束与非约束清单、图内存管理、跨捕获共享内存池）。
+
+[^torch-cuda-graph-api]: [torch.cuda.graph API](https://docs.pytorch.org/docs/stable/generated/torch.cuda.graph.html)（capture_error_mode）。

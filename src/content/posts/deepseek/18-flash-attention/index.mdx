@@ -22,7 +22,7 @@ import OnlineSoftmaxView from '../../../../explainers/react/OnlineSoftmaxView';
 
 softmax 看起来必须先看完整行：要减去最大值，就得先知道最大值；要归一化，就得先知道总和。
 
-**在线 softmax 的技巧是：先用「目前为止的最大值」算，之后发现更大的，再把已有结果补偿回来。**
+**在线 softmax 的技巧是：先用「目前为止的最大值」算，之后发现更大的，再把已有结果补偿回来[^flashattention-paper]。**
 
 <OnlineSoftmaxView
   client:visible
@@ -72,11 +72,11 @@ $$
 | 显存读写 | 多次往返                       | 一次遍历                   |
 | 算术量   | 基本相同                       | 基本相同（多了补偿乘法）   |
 
-**注意最后一行：在线 softmax 的乘法次数其实略多**（多了补偿因子）。它赢在访存——而注意力本来就是访存受限的。这是贯穿本站两个系列的同一个道理：**决定速度的常常不是算术量，而是数据搬运**（vLLM 系列第 00 篇讲的是另一种搬运：kernel 提交）。
+**注意最后一行：在线 softmax 的乘法次数其实略多**（多了补偿因子）。它赢在访存——而注意力本来就是访存受限的。这是贯穿本站两个系列的同一个道理：** 决定速度的常常不是算术量，而是数据搬运**（vLLM 系列第 00 篇讲的是另一种搬运：kernel 提交）。
 
 ## FlashAttention-4：当硬件失衡时
 
-FA-2 主要沿序列维并行提高占用率，FA-3 针对 Hopper 做 warp specialization。**FA-4 面对的是一个新问题：Blackwell 上各个单元的能力严重失衡。**
+FA-2 主要沿序列维并行提高占用率，FA-3 针对 Hopper 做 warp specialization。**FA-4 面对的是一个新问题：Blackwell 上各个单元的能力严重失衡[^flashattention4-paper]。**
 
 | 单元                    | B200               | H100 | 倍数   |
 | ----------------------- | ------------------ | ---- | ------ |
@@ -86,7 +86,7 @@ FA-2 主要沿序列维并行提高占用率，FA-3 针对 Hopper 做 warp speci
 
 矩阵乘快了一倍，**而算指数的单元一点没变**。于是瓶颈从矩阵乘转移到了 softmax 本身——注意力 kernel 里最不起眼的那个 $e^x$。
 
-论文的 roofline（表 1）把这件事量化了：$M=N=d=128$ 的前向，MMA 要 1024 cycles，而 **exp 也要 1024 cycles**——指数运算和矩阵乘一样贵。
+论文的 roofline（表 1）把这件事量化了[^flashattention4-paper]：$M=N=d=128$ 的前向，MMA 要 1024 cycles，而 **exp 也要 1024 cycles**——指数运算和矩阵乘一样贵。
 
 ### 用加法模拟指数
 
@@ -99,7 +99,7 @@ $$
 
 整数部分直接写进 IEEE754 的指数位（白送），小数部分用 Horner 形式的多项式——**全是 FMA**。于是指数的工作被分摊到 FMA 和 MUFU 两种单元上，绕开了瓶颈。
 
-代价是精度：论文报告 **3 阶多项式在 99% 的输入上误差不超过 1 个 BF16 ULP**（表 2）。
+代价是精度：论文报告[^flashattention4-paper] **3 阶多项式在 99% 的输入上误差不超过 1 个 BF16 ULP**（表 2）。
 
 这是一个很能说明问题的设计：**当某个单元成为瓶颈时，可以用另一个单元「换算」过去，哪怕理论上后者并不擅长这件事。**
 
@@ -107,7 +107,7 @@ $$
 
 第二个优化直接作用在上面那三个递推式上。注意补偿因子 $e^{m_{j-1}-m_j}$：如果新块的最大值只比原来大一点点，这个因子接近 1，**那次对整个 $O$ 向量的乘法几乎白做**。
 
-FA-4 的做法（§3.1.4 式 (6)）是加一个阈值 $\tau$：
+FA-4 的做法（§3.1.4 式 (6)）是加一个阈值 $\tau$[^flashattention4-paper]：
 
 $$
 O_j=\begin{cases}
@@ -116,7 +116,7 @@ O_{j-1}+e^{S_j-m_{j-1}}V_j, & m_j-m_{j-1}\le\tau
 \end{cases}
 $$
 
-最大值涨得不多时**跳过重缩放**，沿用旧的 $m_{j-1}$ 做指数直接累加。论文取 $\tau=\log_2(256)=8$（以 2 为底）。
+最大值涨得不多时**跳过重缩放**，沿用旧的 $m_{j-1}$ 做指数直接累加。论文取 $\tau=\log_2(256)=8$[^flashattention4-paper]（以 2 为底）。
 
 为什么安全？因为跳过只是让指数的基准暂时偏低一点，$e^{S_j-m_{j-1}}$ 比 $e^{S_j-m_j}$ 大，但只要差距在 $\tau$ 以内就不会溢出——**用一点数值余量换掉一次向量乘法**。
 
@@ -138,7 +138,7 @@ $$
 
 ## 代码实现
 
-> 完整可运行脚本见文章目录下的 `toy.py`。本站的 TypeScript 版（动画用的同一份）在 `src/explainers/core/online-softmax.ts`，带单测。
+> 完整可运行脚本见文章目录下的 `toy.py`。本站的 TypeScript 版（动画用的同一份）在 `src/explainers/core/online-softmax.ts`，带单测[^online-softmax-code]。
 
 ```python
 def online_softmax_dot(scores, values, block_size, tau=None):
@@ -200,10 +200,8 @@ def online_softmax_dot(scores, values, block_size, tau=None):
 5. 条件重缩放跳过了什么？它用什么换什么？$\tau$ 取太大会怎样？
 6. 动手：在 `toy.py` 里把 $\tau$ 从 8 调到 100，看跳过次数和结果误差怎么变。什么时候结果开始不对？
 
-## 来源
+[^flashattention-paper]: [FlashAttention](https://arxiv.org/abs/2205.14135)（分块与在线 softmax 的原始工作）。
 
-- [FlashAttention](https://arxiv.org/abs/2205.14135)（分块与在线 softmax 的原始工作）
-- [FlashAttention-4](https://arxiv.org/abs/2603.05451) §2.2（Blackwell 的单元失衡数字、TMEM、2-CTA）、§3.1.2（ping-pong pipeline）、§3.1.3 式 (4)–(5)（模拟指数，表 2 的误差）、§3.1.4 式 (6)（条件重缩放）、§3.2.3（2-CTA backward）、§5（benchmark 条件与结果）
-- 本站实现：`src/explainers/core/online-softmax.ts`（含单测，动画与文章共用）
-- 上一篇：[17 · DSpark](../17-dspark/)
-- 下一篇：[19 · 一次 decode 的全链路](../19-full-path/)——把 00–18 串成一条路径。
+[^flashattention4-paper]: [FlashAttention-4](https://arxiv.org/abs/2603.05451) §2.2（Blackwell 的单元失衡数字、TMEM、2-CTA）、§3.1.2（ping-pong pipeline）、§3.1.3 式 (4)–(5)（模拟指数，表 2 的误差）、§3.1.4 式 (6)（条件重缩放）、§3.2.3（2-CTA backward）、§5（benchmark 条件与结果）。
+
+[^online-softmax-code]: 本站实现：`src/explainers/core/online-softmax.ts`（含单测，动画与文章共用）。

@@ -95,7 +95,7 @@ $$
 
 权重作用在 Value 上，不是 Key 上。位置 $t$ 的输出是它读过的所有历史 Value 的加权平均。
 
-四步合起来写成矩阵形式，就是你在论文里看到的那一行：
+四步合起来写成矩阵形式，就是你在论文里看到的那一行[^attention-paper]：
 
 $$
 \mathrm{Attention}(Q,K,V) = \mathrm{softmax}\!\left(\frac{QK^\top}{\sqrt{d_k}} + M\right)V
@@ -165,7 +165,7 @@ def block_select(size, keep):   return lambda t, s, L: s <= t and t // size - s 
 
 ### 真实实现在哪
 
-DeepSeek-V3 参考实现（commit `9b4e9788`）里没有「朴素注意力」这个类——它直接是 MLA。可以对照的是同样四步的位置：
+DeepSeek-V3 参考实现（commit `9b4e9788`）里没有「朴素注意力」这个类[^deepseek-v3-code]——它直接是 MLA。可以对照的是同样四步的位置：
 
 | 步骤        | 源码位置                     | 说明                                                           |
 | ----------- | ---------------------------- | -------------------------------------------------------------- |
@@ -190,8 +190,6 @@ DeepSeek-V3 参考实现（commit `9b4e9788`）里没有「朴素注意力」这
 3. 位置 0 的输出必然等于 $v_0$。如果你的实现里不是，可能错在哪一步？
 4. 动手：把上面代码的 `mask` 换成 `sliding_window(2)` 的矩阵形式，打印位置 3 的权重。哪些位置的权重变成了 0？位置 3 还能（间接）用到位置 0 的信息吗？——这个问题第 07 篇会正式回答。
 
-## 来源
+[^attention-paper]: [Attention Is All You Need](https://arxiv.org/abs/1706.03762) §3.2.1（缩放点积注意力）、§3.2.2（多头）。
 
-- [Attention Is All You Need](https://arxiv.org/abs/1706.03762) §3.2.1（缩放点积注意力）、§3.2.2（多头）
-- [DeepSeek-V3 参考实现 `model.py`](https://github.com/deepseek-ai/DeepSeek-V3/blob/9b4e9788e4a3a731f7567338ed15d3ec549ce03b/inference/model.py#L479-L492)
-- 下一篇：[02 · KV Cache：缓存什么、要多大](../02-kv-cache/)——消掉重复计算，然后算一笔显存账。
+[^deepseek-v3-code]: [DeepSeek-V3 参考实现 `model.py`](https://github.com/deepseek-ai/DeepSeek-V3/blob/9b4e9788e4a3a731f7567338ed15d3ec549ce03b/inference/model.py#L479-L492).

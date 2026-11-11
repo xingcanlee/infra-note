@@ -15,7 +15,7 @@ import CacheBars from '../../../../explainers/react/CacheBars';
 
 上一篇走到了尽头：MQA 把 $n_h$ 压成 1，**只要还按「存 K 和 V」的方式缓存，就不可能比它更省**。而代价是所有 head 被迫共用同一份历史内容。
 
-MLA（Multi-head Latent Attention）的做法是换掉被缓存的对象。一句话：**缓存一份所有 head 共享的低维向量，读取时再用每个 head 自己的矩阵把它展开成那个 head 的 K 和 V。**
+MLA（Multi-head Latent Attention）的做法是换掉被缓存的对象。一句话：**缓存一份所有 head 共享的低维向量，读取时再用每个 head 自己的矩阵把它展开成那个 head 的 K 和 V[^deepseek-v2-paper]。**
 
 读完你能回答：MLA 和 MQA 共享的东西有什么本质不同、为什么「压缩」在这里不等于「有损」、以及 V3 真实配置下 71 倍的差距是怎么算出来的。
 
@@ -102,7 +102,7 @@ $$
 
 ### 真实配置下的账
 
-DeepSeek-V3 671B 的配置（`inference/configs/config_671B.json`）：
+DeepSeek-V3 671B 的配置（`inference/configs/config_671B.json`）[^deepseek-v3-config]：
 
 | 字段               | 值   |
 | ------------------ | ---- |
@@ -210,7 +210,7 @@ n_h=128：MLA 5 个数，按 MHA 存 1024 个数
 
 ### 真实实现在哪
 
-DeepSeek-V3 参考实现（commit `9b4e9788`，`inference/model.py`）：
+DeepSeek-V3 参考实现（commit `9b4e9788`，`inference/model.py`）[^deepseek-v3-code]：
 
 | 概念                    | 位置               | 代码                                                                                      |
 | ----------------------- | ------------------ | ----------------------------------------------------------------------------------------- |
@@ -246,8 +246,10 @@ DeepSeek-V3 参考实现（commit `9b4e9788`，`inference/model.py`）：
 
 ## 来源
 
-- [DeepSeek-V2 技术报告 §2.1.1–§2.1.4、Table 1](https://arxiv.org/html/2405.04434v5#S2.SS1)（MLA 的提出与缓存对照）
 - [DeepSeek-V3 技术报告](https://arxiv.org/abs/2412.19437)
-- [DeepSeek-V3 参考实现 `model.py`](https://github.com/deepseek-ai/DeepSeek-V3/blob/9b4e9788e4a3a731f7567338ed15d3ec549ce03b/inference/model.py#L424-L497)
-- 配置数字来自本地快照 `reference/DeepSeek-V3/inference/configs/config_671B.json`
-- 下一篇：[05 · MLA 的两个技巧](../05-mla-absorb/)——解耦 RoPE 为什么必需，以及上投影的计算怎么被吸收掉。
+
+[^deepseek-v2-paper]: [DeepSeek-V2 技术报告 §2.1.1–§2.1.4、Table 1](https://arxiv.org/html/2405.04434v5#S2.SS1)（MLA 的提出与缓存对照）。
+
+[^deepseek-v3-config]: 配置数字来自本地快照 `reference/DeepSeek-V3/inference/configs/config_671B.json`。
+
+[^deepseek-v3-code]: [DeepSeek-V3 参考实现 `model.py`](https://github.com/deepseek-ai/DeepSeek-V3/blob/9b4e9788e4a3a731f7567338ed15d3ec549ce03b/inference/model.py#L424-L497)。

@@ -56,7 +56,7 @@ $$
 
 ### 共享专家
 
-V3 里除了 256 个路由专家，还有 1 个**共享专家**：每个 token 都要过它，不参与路由。
+V3 里除了 256 个路由专家，还有 1 个**共享专家**[^moe-paper]：每个 token 都要过它，不参与路由。
 
 为什么需要它？考虑语法、常识这类所有 token 都要用的能力。如果没有共享专家，每个路由专家都得各自学一份——**冗余**，而且挤占了它们专精的容量。把通用部分抽出来固定执行，路由专家就可以真正分工。
 
@@ -66,9 +66,9 @@ V3 里除了 256 个路由专家，还有 1 个**共享专家**：每个 token �
 
 路由是逐 token 的，于是会出现一个系统问题：**token 可能挤在少数几个专家上**。热门专家所在的 GPU 累死，其余的闲着——整批的速度由最慢的那张卡决定。更糟的是马太效应：被选中多的专家训练得更好，于是被选中得更多。
 
-传统做法是加一个**辅助损失**（auxiliary loss）惩罚不均衡。问题在于这个损失和语言建模目标是冲突的：为了均衡，模型会被迫把 token 送给并不擅长它的专家，**损害质量**。
+传统做法是加一个**辅助损失**（auxiliary loss）惩罚不均衡。问题在于这个损失和语言建模目标是冲突的：为了均衡，模型会被迫把 token 送给并不擅长它的专家，** 损害质量**。
 
-DeepSeek 的做法是给每个专家一个可调的 bias $b_i$：专家过载就调低它的 bias，空闲就调高。因为 $b_i$ 只参与**选择**、不参与**权重**，所以：
+DeepSeek 的做法是给每个专家一个可调的 bias $b_i$[^deepseek-v3-paper]：专家过载就调低它的 bias，空闲就调高。因为 $b_i$ 只参与**选择**、不参与**权重**，所以：
 
 - 它能改变负载分布（改变了选谁）；
 - 它不污染输出（权重仍由原始分数 $s_i$ 决定）；
@@ -135,7 +135,7 @@ FLOPs 比：相对同参数量的稠密 FFN ≈ 3.5%
 
 ### 真实实现在哪
 
-DeepSeek-V3 参考实现（commit `9b4e9788`，`inference/model.py`）：
+DeepSeek-V3 参考实现（commit `9b4e9788`，`inference/model.py`）[^deepseek-v3-code]：
 
 | 概念           | 位置               | 说明                                                                                      |
 | -------------- | ------------------ | ----------------------------------------------------------------------------------------- |
@@ -152,7 +152,7 @@ DeepSeek-V3 参考实现（commit `9b4e9788`，`inference/model.py`）：
 1. **共享专家与路由专家是并行算的**，最后相加（`y + z`）。共享专家不经过 gate，所以它的计算与路由结果无关，可以和路由重叠。
 2. `dist.all_reduce(y)` 在加上共享专家输出**之前**执行（`model.py:684-693`）。因为每个 rank 只持有一部分专家，路由结果必须先跨 rank 求和；而共享专家在每个 rank 上都有，不需要通信。顺序搞反会重复累加。
 
-671B 的配置（`configs/config_671B.json`）：
+671B 的配置（`configs/config_671B.json`）[^deepseek-v3-config]：
 
 | 字段                  | 值   |
 | --------------------- | ---- |
@@ -180,8 +180,12 @@ DeepSeek-V3 参考实现（commit `9b4e9788`，`inference/model.py`）：
 
 ## 来源
 
-- [DeepSeekMoE: Towards Ultimate Expert Specialization](https://arxiv.org/abs/2401.06066)（细粒度专家 + 共享专家）
-- [DeepSeek-V3 技术报告](https://arxiv.org/abs/2412.19437)（无辅助损失负载均衡）
-- [DeepSeek-V3 参考实现 `model.py`](https://github.com/deepseek-ai/DeepSeek-V3/blob/9b4e9788e4a3a731f7567338ed15d3ec549ce03b/inference/model.py#L535-L693)
-- 配置来自本地快照 `reference/DeepSeek-V3/inference/configs/config_671B.json`
 - 下一篇：[MTP 与推测解码](../11-mtp/)（尚未按本系列约定重写）——参数的问题解决了，但一次只出一个 token 还是太慢。
+
+[^moe-paper]: [DeepSeekMoE: Towards Ultimate Expert Specialization](https://arxiv.org/abs/2401.06066)（细粒度专家 + 共享专家）。
+
+[^deepseek-v3-paper]: [DeepSeek-V3 技术报告](https://arxiv.org/abs/2412.19437)（无辅助损失负载均衡）。
+
+[^deepseek-v3-code]: [DeepSeek-V3 参考实现 `model.py`](https://github.com/deepseek-ai/DeepSeek-V3/blob/9b4e9788e4a3a731f7567338ed15d3ec549ce03b/inference/model.py#L535-L693)。
+
+[^deepseek-v3-config]: 配置来自本地快照 `reference/DeepSeek-V3/inference/configs/config_671B.json`。

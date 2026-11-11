@@ -79,7 +79,7 @@ DeepSeek 系列把「模型算什么」讲完了：MLA 压缩表示，稀疏注�
 
 三点结论：
 
-1. **设备干活的总量完全没变**（都是 7.8）。图模式不改变计算，只改变提交。
+1. **设备干活的总量完全没变**（都是 7.8）。图模式不改变计算，只改变提交[^pytorch-cuda-graphs-doc]。
 2. 墙钟从 11.2 降到 9.0，降的全部是空闲。
 3. **存在一个下界**：9.0 ≈ 7.8 + 1.2，即「设备工作量 + 第一次提交」。第一次提交永远无法被掩盖。再怎么优化提交，也不可能突破设备本身的工作量。
 
@@ -136,14 +136,14 @@ def plan(ops, mode, launch_cost=1.0, graph_launch=1.2):
 
 ## 真实实现在哪
 
-vLLM 里对应的概念（本地快照 commit `cf5cea2d`）：
+vLLM 里对应的概念（本地快照 commit `cf5cea2d`）[^vllm-code]：
 
-| 概念         | 位置                                 | 说明                                                                                       |
-| ------------ | ------------------------------------ | ------------------------------------------------------------------------------------------ |
-| 编译模式     | `vllm/config/compilation.py:38-51`   | `CompilationMode`：`NONE` / `STOCK_TORCH_COMPILE` / `DYNAMO_TRACE_ONCE` / `VLLM_COMPILE`   |
-| 设备图模式   | `vllm/config/compilation.py:129-164` | `CUDAGraphMode`：`NONE` / `PIECEWISE` / `FULL` / `FULL_DECODE_ONLY` / `FULL_AND_PIECEWISE` |
-| 为什么要分段 | `vllm/config/compilation.py:583-600` | `splitting_ops` 默认把 attention 列为切分点                                                |
-| 官方说明     | `docs/design/cuda_graphs.md`         | 各模式的语义与取舍                                                                         |
+| 概念         | 位置                                 | 说明                                                                                                              |
+| ------------ | ------------------------------------ | ----------------------------------------------------------------------------------------------------------------- |
+| 编译模式     | `vllm/config/compilation.py:38-51`   | `CompilationMode`：`NONE` / `STOCK_TORCH_COMPILE` / `DYNAMO_TRACE_ONCE` / `VLLM_COMPILE`[^vllm-torch-compile-doc] |
+| 设备图模式   | `vllm/config/compilation.py:129-164` | `CUDAGraphMode`：`NONE` / `PIECEWISE` / `FULL` / `FULL_DECODE_ONLY` / `FULL_AND_PIECEWISE`                        |
+| 为什么要分段 | `vllm/config/compilation.py:583-600` | `splitting_ops` 默认把 attention 列为切分点                                                                       |
+| 官方说明     | `docs/design/cuda_graphs.md`         | 各模式的语义与取舍[^vllm-cuda-design-doc]                                                                         |
 
 注意 `CUDAGraphMode` 里有 `FULL_DECODE_ONLY` 和 `FULL_AND_PIECEWISE` 两个组合值——这正好印证上面那条结论：**decode 用整图、prefill/mixed 用分段**，因为两个阶段的提交开销占比完全不同。设计里已经把这件事区分开了。
 
@@ -165,8 +165,12 @@ vLLM 里对应的概念（本地快照 commit `cf5cea2d`）：
 
 ## 来源
 
-- [vLLM CUDA Graphs 设计文档](https://github.com/vllm-project/vllm/blob/main/docs/design/cuda_graphs.md)
-- [vLLM torch.compile 设计文档](https://github.com/vllm-project/vllm/blob/main/docs/design/torch_compile.md)
-- [PyTorch CUDA Graph 文档](https://docs.pytorch.org/docs/stable/notes/cuda.html#cuda-graphs)
-- 源码行号按本地快照 `reference/vllm`（commit `cf5cea2d`）
 - 下一篇：[编译图](../02-compile-graphs/)（尚未按本系列约定重写）——「一个算子被提交」之前，torch.compile 先决定了有哪些算子。
+
+[^pytorch-cuda-graphs-doc]: [PyTorch CUDA Graph 文档](https://docs.pytorch.org/docs/stable/notes/cuda.html#cuda-graphs)。
+
+[^vllm-code]: 源码行号按本地快照 `reference/vllm`（commit `cf5cea2d`）。
+
+[^vllm-torch-compile-doc]: [vLLM torch.compile 设计文档](https://github.com/vllm-project/vllm/blob/main/docs/design/torch_compile.md)。
+
+[^vllm-cuda-design-doc]: [vLLM CUDA Graphs 设计文档](https://github.com/vllm-project/vllm/blob/main/docs/design/cuda_graphs.md)。

@@ -28,7 +28,7 @@ b = torch.randn(1000, 1000, device='cuda')
 c = a + b          # 这一行返回时，加法算完了吗？
 ```
 
-**没有。** 这行代码做的是「把一个加法 kernel 排进 GPU 的队列」，然后立刻返回。真正的计算在 GPU 上异步进行。
+**没有。** 这行代码做的是「把一个加法 kernel 排进 GPU 的队列」，然后立刻返回。真正的计算在 GPU 上异步进行[^pytorch-cuda-semantics]。
 
 这个设计是整个性能故事的前提：正因为 CPU 不等 GPU，CPU 才能**跑在 GPU 前面**，提前把后续的活排好队。只要 CPU 排队的速度快过 GPU 消化的速度，GPU 就不会饿着——提交开销就被完全掩盖了。
 
@@ -47,7 +47,7 @@ flowchart TB
   C -. "key = Autograd" .-> H["先记录反向图<br/>再往下分发"]
 ```
 
-中间那层 **dispatcher** 是 PyTorch 的核心机制：同一个 `add` 有很多实现（CPU、CUDA、autograd、量化、稀疏……），dispatcher 根据张量的 **dispatch key**（设备、是否需要梯度、布局等）决定调用哪一个，并且可以层层转发——例如先经过 autograd 层记录反向图，再转发给真正的 CUDA kernel。
+中间那层 **dispatcher** 是 PyTorch 的核心机制[^pytorch-dispatcher]：同一个 `add` 有很多实现（CPU、CUDA、autograd、量化、稀疏……），dispatcher 根据张量的 **dispatch key**（设备、是否需要梯度、布局等）决定调用哪一个，并且可以层层转发——例如先经过 autograd 层记录反向图，再转发给真正的 CUDA kernel。
 
 这层间接调用很灵活，但**每个算子都要走一遍**。算子越碎，这部分固定开销占比越高。这就是「提交开销」的 CPU 侧来源：Python 解释、dispatcher 查表、参数检查、shape 推导，最后才是 `cudaLaunchKernel`。
 
@@ -194,7 +194,8 @@ class FakeDevice:
 
 ## 来源
 
-- [PyTorch CUDA semantics（异步执行与 stream）](https://docs.pytorch.org/docs/stable/notes/cuda.html)
-- [PyTorch dispatcher 介绍](https://blog.ezyang.com/2020/09/lets-talk-about-the-pytorch-dispatcher/)
-- 上一篇：[00 · 一次 decode 提交了什么](../00-inference-overhead/)
 - 下一篇：[编译图](../02-compile-graphs/)（尚未按本系列约定重写）——torch.compile 怎么把一串算子变成一张图。
+
+[^pytorch-cuda-semantics]: [PyTorch CUDA semantics（异步执行与 stream）](https://docs.pytorch.org/docs/stable/notes/cuda.html)。
+
+[^pytorch-dispatcher]: [PyTorch dispatcher 介绍](https://blog.ezyang.com/2020/09/lets-talk-about-the-pytorch-dispatcher/)。

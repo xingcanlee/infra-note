@@ -54,11 +54,11 @@ flowchart LR
   D -. "下次调用先查 guards" .-> G
 ```
 
-Dynamo 一次跟踪产出三样东西：**FX graph**、**残余字节码**（抓不到的那部分照常用 Python 跑）、以及 **guards**。
+Dynamo 一次跟踪产出三样东西[^dynamo-docs]：**FX graph**、**残余字节码**（抓不到的那部分照常用 Python 跑）、以及 **guards**。
 
 ### guards：这张图什么时候还能用
 
-guards 是「这张编译结果可以复用」所必须满足的条件。默认情况下 Dynamo 会**对输入张量的 shape 做特化**——也就是说，编译结果默认只对那个 shape 有效。
+guards 是「这张编译结果可以复用」所必须满足的条件[^dynamic-shapes-doc]。默认情况下 Dynamo 会**对输入张量的 shape 做特化**——也就是说，编译结果默认只对那个 shape 有效。
 
 每次调用先检查 guards：通过就直接用编译好的；不通过就**重新编译**一份。
 
@@ -66,7 +66,7 @@ guards 是「这张编译结果可以复用」所必须满足的条件。默认�
 
 所以**不能指望「编译一次，什么输入都快」**。这正是后面第 05 篇「图桶」要解决的问题：与其让运行时见一个 shape 编一次，不如预先规定好有限的几种 shape。
 
-动态 shape 有三种策略（`torch.compile(dynamic=...)`）：
+动态 shape 有三种策略（`torch.compile(dynamic=...)`）[^torch-compile-api]：
 
 | 取值           | 行为                                                     |
 | -------------- | -------------------------------------------------------- |
@@ -80,7 +80,7 @@ guards 是「这张编译结果可以复用」所必须满足的条件。默认�
 
 Dynamo 遇到追踪不了的代码时，默认（`fullgraph=False`）不会报错，而是：**把已抓到的部分编译 → 用普通 Python 执行这段不支持的代码 → 从后面继续抓新的图**。这个断点就是 **graph break**。
 
-官方列出的常见原因：
+官方列出的常见原因[^graph-breaks-doc]：
 
 | 原因                 | 典型写法                                         | 为什么                                       |
 | -------------------- | ------------------------------------------------ | -------------------------------------------- |
@@ -89,7 +89,7 @@ Dynamo 遇到追踪不了的代码时，默认（`fullgraph=False`）不会报�
 | 调用 C 扩展          | PyTorch 之外的 C extension                       | Dynamo 看不见里面，无法插入保证安全的 guards |
 | 代码本身有问题       | 不用 compile 也跑不通                            | 先用 eager 验证                              |
 
-**注意前两行和上一篇的「同步点」是同一批写法。** 这不是巧合：数据依赖的控制流既要 CPU 读取设备数据（同步点），又让「这段代码等价于一串固定算子」不再成立（graph break）。**一个写法同时破坏两件事**——这是本系列最值得记住的关联之一。
+**注意前两行和上一篇的「同步点」是同一批写法。**这不是巧合：数据依赖的控制流既要 CPU 读取设备数据（同步点），又让「这段代码等价于一串固定算子」不再成立（graph break）。** 一个写法同时破坏两件事**——这是本系列最值得记住的关联之一。
 
 graph break 过多会引入开销并减少后端的融合机会。观察办法是环境变量：
 
@@ -113,7 +113,7 @@ TORCH_LOGS="dynamic"       python run.py   # 动态 shape 的符号与判定
 | `max-autotune`               | 更激进的 autotune（Triton GEMM/卷积模板）                                         |
 | `max-autotune-no-cudagraphs` | 同上但禁用 CUDA Graphs                                                            |
 
-**`reduce-overhead` 就是「编译图 + 设备图一起上」。** 注意官方的限定：目前只保证 CUDA-only、且不修改输入的图。有两个 mode 名字里直接带 `cudagraphs`，正说明这两件事在实现上是可分开开关的。
+**`reduce-overhead` 就是「编译图 + 设备图一起上」[^torch-compile-api]。** 注意官方的限定：目前只保证 CUDA-only、且不修改输入的图。有两个 mode 名字里直接带 `cudagraphs`，正说明这两件事在实现上是可分开开关的。
 
 ## 两种图省的不是同一笔钱
 
@@ -128,7 +128,7 @@ TORCH_LOGS="dynamic"       python run.py   # 动态 shape 的符号与判定
   title="图 02-1：eager——10 个算子，10 次提交"
 />
 
-**编译之后**：Inductor 把算子融合了，比如 10 个变成 4 个（每个稍大一点）。**仍然是逐个提交**，但提交次数从 10 降到 4：
+**编译之后**：Inductor 把算子融合了，比如 10 个变成 4 个（每个稍大一点）。** 仍然是逐个提交**，但提交次数从 10 降到 4：
 
 <SubmitTimeline
   client:visible
@@ -249,9 +249,12 @@ vLLM 的编译配置（本地快照 commit `cf5cea2d`）：
 
 ## 来源
 
-- [Dynamo Overview](https://docs.pytorch.org/docs/stable/user_guide/torch_compiler/torch.compiler_dynamo_overview.html)、[Dynamo Core Concepts](https://docs.pytorch.org/docs/stable/user_guide/torch_compiler/compile/programming_model.dynamo_core_concepts.html)（FX graph、guards、graph break 的定义）
-- [Common Graph Breaks](https://docs.pytorch.org/docs/main/user_guide/torch_compiler/compile/programming_model.common_graph_breaks.html)（官方的常见原因清单）
-- [torch.compile API](https://docs.pytorch.org/docs/stable/generated/torch.compile.html)（`dynamic`、`mode`、`recompile_limit`）
-- [Dynamic Shapes Core Concepts](https://docs.pytorch.org/docs/main/user_guide/torch_compiler/compile/dynamic_shapes_core_concepts.html)、[Dealing with Recompilations](https://docs.pytorch.org/docs/stable/user_guide/torch_compiler/compile/programming_model.recompilation.html)
-- 上一篇：[01 · PyTorch 是怎么执行的](../01-pytorch-execution/)
 - 下一篇：[03 · CUDA Graph](../03-cuda-graph/)（尚未按本系列约定重写）——把提交次数也降下来。
+
+[^dynamo-docs]: [Dynamo Overview](https://docs.pytorch.org/docs/stable/user_guide/torch_compiler/torch.compiler_dynamo_overview.html)、[Dynamo Core Concepts](https://docs.pytorch.org/docs/stable/user_guide/torch_compiler/compile/programming_model.dynamo_core_concepts.html)（FX graph、guards、graph break 的定义）。
+
+[^dynamic-shapes-doc]: [Dynamic Shapes Core Concepts](https://docs.pytorch.org/docs/main/user_guide/torch_compiler/compile/dynamic_shapes_core_concepts.html)、[Dealing with Recompilations](https://docs.pytorch.org/docs/stable/user_guide/torch_compiler/compile/programming_model.recompilation.html)。
+
+[^torch-compile-api]: [torch.compile API](https://docs.pytorch.org/docs/stable/generated/torch.compile.html)（dynamic、mode、recompile_limit）。
+
+[^graph-breaks-doc]: [Common Graph Breaks](https://docs.pytorch.org/docs/main/user_guide/torch_compiler/compile/programming_model.common_graph_breaks.html)（官方的常见原因清单）。

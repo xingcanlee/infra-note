@@ -97,7 +97,7 @@ $$
 
 ## mHC：把 $\mathcal{H}^{res}$ 关进一个集合
 
-mHC 的做法是：**不让 $\mathcal{H}^{res}$ 乱取值，而是把它投影到「双随机矩阵」构成的集合上**（Birkhoff polytope，§4.1 式 (6)）：
+mHC 的做法是：**不让 $\mathcal{H}^{res}$ 乱取值，而是把它投影到「双随机矩阵」构成的集合上**[^mhc-paper]（Birkhoff polytope，§4.1 式 (6)）：
 
 $$
 \begin{aligned}
@@ -106,7 +106,7 @@ $$
 \end{aligned}
 $$
 
-用人话说：**非负、每行和为 1、每列和为 1**。
+用人话说：**非负、每行和为 1、每列和为 1**[^mhc-paper]。
 
 为什么这个集合刚好合适？三条性质，层层递进：
 
@@ -120,7 +120,7 @@ $$
 
 ### 怎么投影过去：Sinkhorn-Knopp
 
-给定一个任意矩阵，怎么把它变成双随机？先指数化保证非负，然后**交替做列归一化和行归一化**（§4.2 式 (9)）：
+给定一个任意矩阵，怎么把它变成双随机[^mhc-paper]？先指数化保证非负，然后**交替做列归一化和行归一化**（§4.2 式 (9)）：
 
 $$
 \begin{aligned}
@@ -130,9 +130,9 @@ $$
 \end{aligned}
 $$
 
-归一化行会破坏列的和，归一化列又会破坏行的和——但反复交替会收敛。理论上要 $t_{\max}\to\infty$，**实践中 V4 取 $t_{\max}=20$**（§4.2、§4.2.1）。
+归一化行会破坏列的和，归一化列又会破坏行的和——但反复交替会收敛。理论上要 $t_{\max}\to\infty$，**实践中 V4 取 $t_{\max}=20$**[^deepseek-v4-paper]（§4.2、§4.2.1）。
 
-三个映射的最终参数化（§4.2 式 (8)）：
+三个映射的最终参数化（§4.2 式 (8)）[^mhc-paper]：
 
 $$
 \begin{aligned}
@@ -146,7 +146,7 @@ $\sigma$ 是 sigmoid：$\mathcal{H}^{pre}$ 被限制在 $(0,1)$，$\mathcal{H}^{
 
 ## 代价
 
-加宽残差流不是免费的（§3.2 表 2）：
+加宽残差流不是免费的（§3.2 表 2）[^mhc-paper]：
 
 | 代价             | 量级                              |
 | ---------------- | --------------------------------- |
@@ -154,7 +154,7 @@ $\sigma$ 是 sigmoid：$\mathcal{H}^{pre}$ 被限制在 $(0,1)$，$\mathcal{H}^{
 | 中间激活要保存   | 常常被迫开 gradient checkpointing |
 | 流水线并行的通信 | 约 $n$ 倍                         |
 
-论文用一组 kernel 融合把这件事压下来（§4.3.1）：把除以 RMSNorm 范数的操作重排到矩阵乘之后、把两次扫描与反向矩阵乘融合、把 Sinkhorn 迭代放进单个 kernel（反向时在片上重算迭代而不是保存）。
+论文用一组 kernel 融合把这件事压下来（§4.3.1）[^mhc-paper]：把除以 RMSNorm 范数的操作重排到矩阵乘之后、把两次扫描与反向矩阵乘融合、把 Sinkhorn 迭代放进单个 kernel（反向时在片上重算迭代而不是保存）。
 
 效果（$C=7168$、$n=4$）：
 
@@ -164,7 +164,7 @@ n=4 条流：每 token 28,672 个数（4×）
 融合把读取从 (3n+1)C=93,184 降到 (n+1)C=35,840，写入从 3nC=86,016 降到 nC=28,672
 ```
 
-最终论文报告 mHC 的 wall-time 开销约为 overlapped 1F1B pipeline stage 的 **6.7%**（V4 §3.4.2）。
+最终论文报告 mHC 的 wall-time 开销约为 overlapped 1F1B pipeline stage 的 **6.7%**[^deepseek-v4-paper]（V4 §3.4.2）。
 
 **注意这个 6.7% 的口径**：它是相对流水线 stage 的比例，不是相对整个训练步，也不是相对单层前向。引用时要带上条件。
 
@@ -206,9 +206,6 @@ def sinkhorn_knopp(M, t_max=20):
 4. Sinkhorn 为什么要**交替**归一化行和列？做一次行归一化不够吗？
 5. 动手：在 `toy.py` 里把 `t_max` 从 20 改成 1 和 3，看输出离双随机有多远（行和/列和的偏差），以及 61 层复合后的谱范数还是不是 1。
 
-## 来源
+[^mhc-paper]: [mHC: Manifold-Constrained Hyper-Connections](https://arxiv.org/abs/2512.24880) §1（式 (1)–(4)）、§3（式 (5)）、§4.1（式 (6)）、§4.2（式 (7)–(9)）、§4.3.1（kernel 融合与 I/O）、§3.2 表 2（I/O 与通信代价）。
 
-- [mHC: Manifold-Constrained Hyper-Connections](https://arxiv.org/abs/2512.24880) §1（式 (1)–(4)：标准残差、HC、展开式）、§3（式 (5)：HC 的系数参数化）、§4.1（式 (6)：Birkhoff polytope 与非扩张）、§4.2（式 (7)–(9)：参数化与 Sinkhorn-Knopp）、§4.3.1（kernel 融合与 I/O）、§3.2 表 2（I/O 与通信代价）
-- [DeepSeek-V4](https://arxiv.org/abs/2606.19348) §2.2（V4 中 $n_{\rm hc}=4$、$t_{\max}=20$）、§3.4.2（6.7% wall-time 开销）
-- 上一篇：[15 · Engram](../15-engram/)
-- 下一篇：[17 · DSpark](../17-dspark/)——草稿模块本身也可以重新设计。
+[^deepseek-v4-paper]: [DeepSeek-V4](https://arxiv.org/abs/2606.19348) §2.2（V4 中 n_hc=4、t_max=20）、§3.4.2（6.7% wall-time 开销）。

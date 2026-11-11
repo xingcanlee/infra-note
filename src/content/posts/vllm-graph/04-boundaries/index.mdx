@@ -38,7 +38,7 @@ flowchart TB
   E1 --> G
 ```
 
-四条边界各自对应上一篇约束清单里的哪一条：
+四条边界各自对应上一篇约束清单里的哪一条[^pytorch-constraints-doc]：
 
 | 边界                 | 对应约束                       | 违反时                 |
 | -------------------- | ------------------------------ | ---------------------- |
@@ -60,7 +60,7 @@ flowchart TB
 
 所以桶不是越多越好。实际做法是：**小 batch 密、大 batch 疏**——因为 padding 浪费的是相对比例，batch 3 补到 4 浪费 25%，batch 100 补到 128 也是 28%，但小 batch 的绝对数量多、出现频率高。
 
-序列长度这一维通常不进桶：attention 的 KV 长度每一步都在变，这也正是 attention 常被排除在图外的原因之一。
+序列长度这一维通常不进桶：attention 的 KV 长度每一步都在变，这也正是 attention 常被排除在图外的原因之一[^vllm-cuda-design-doc]。
 
 ## 边界二：同步与数据依赖的控制流
 
@@ -78,7 +78,7 @@ seq_len = int(positions[-1])     # ✗ 把设备数据取回 CPU
 
 1. **移出图外**：把需要判断的部分留在 eager 执行，只捕获中间那段确定的计算。这就是**分段捕获**。
 2. **改写成设备上的无分支计算**：用 `torch.where`、mask 乘法代替 `if`。两条路都算，但两条路都在图里。
-3. **`torch.cond()`**：官方唯一允许在图内做 GPU 数据控制流的高阶算子。
+3. **`torch.cond()`**：官方唯一允许在图内做 GPU 数据控制流的高阶算子[^pytorch-constraints-doc]。
 
 采样是个典型例子：`top_p` 这类操作天然带数据依赖的判断，所以推理栈通常把**采样留在图外**，图只覆盖到 logits 为止。
 
@@ -217,8 +217,9 @@ def split_into_segments(ops):
 
 ## 来源
 
-- [PyTorch CUDA semantics — Constraints](https://docs.pytorch.org/docs/stable/notes/cuda.html)（四条边界对应的官方约束）
-- [vLLM CUDA Graphs 设计文档](https://github.com/vllm-project/vllm/blob/main/docs/design/cuda_graphs.md)（为什么排除 attention）
 - 源码行号按本地快照 `reference/vllm`（commit `cf5cea2d`）
-- 上一篇：[03 · CUDA Graph](../03-cuda-graph/)
 - 下一篇：[vLLM 选路](../05-dispatch/)（尚未按本系列约定重写）——运行时怎么在这些约束里选出本轮该走哪条路。
+
+[^pytorch-constraints-doc]: [PyTorch CUDA semantics — Constraints](https://docs.pytorch.org/docs/stable/notes/cuda.html)（四条边界对应的官方约束）。
+
+[^vllm-cuda-design-doc]: [vLLM CUDA Graphs 设计文档](https://github.com/vllm-project/vllm/blob/main/docs/design/cuda_graphs.md)（为什么排除 attention）。

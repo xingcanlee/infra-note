@@ -43,7 +43,7 @@ DSA 把这件事拆成了上下两条路——一条便宜的只管打分，一�
 
 ### Lightning Indexer
 
-对 query token $\mathbf h_t$ 和此前的 $\mathbf h_s$，index score 是（§2.1 式 (1)）：
+对 query token $\mathbf h_t$ 和此前的 $\mathbf h_s$，index score 是（§2.1 式 (1)）[^dsa-paper]：
 
 $$
 I_{t,s}=\sum_{j=1}^{H^{I}} w_{t,j}^{I}\cdot \mathrm{ReLU}\big(\mathbf{q}^{I}_{t,j}\cdot \mathbf{k}^{I}_{s}\big)
@@ -51,7 +51,7 @@ $$
 
 $H^I$ 是 indexer 的 head 数，$\mathbf q^I_{t,j}$、$w^I_{t,j}$ 由当前 token 导出，$\mathbf k^I_s$ 由历史 token 导出。
 
-形式上它就是一个小型注意力打分。便宜在三处：
+形式上它就是一个小型注意力打分[^dsa-paper]。便宜在三处：
 
 | 便宜点            | 做法                                  | 为什么                                           |
 | ----------------- | ------------------------------------- | ------------------------------------------------ |
@@ -61,7 +61,7 @@ $H^I$ 是 indexer 的 head 数，$\mathbf q^I_{t,j}$、$w^I_{t,j}$ 由当前 tok
 
 注意第三点背后的道理：**打分的结果只参与「选谁」这个离散决策，不进入最终输出**。排序对数值误差的容忍度比加权求和高得多，所以可以放心降精度。这和第 13 篇 MoE 里「bias 只影响选择、不进入权重」是同一种思路——**把不影响输出的部分做便宜**。
 
-然后取 top-$k$，主注意力只在选中的条目上计算（§2.1 式 (2)）：
+然后取 top-$k$，主注意力只在选中的条目上计算（§2.1 式 (2)）[^dsa-paper]：
 
 $$
 \mathbf{u}_{t}=\mathrm{Attn}\Big(\mathbf{h}_t,\ \big\{\mathbf{c}_s \mid I_{t,s}\in\mathrm{Top\text{-}k}(I_{t,:})\big\}\Big)
@@ -74,46 +74,46 @@ $$
 | Indexer  | $O(L^2)$（**没降**）      | 很小：head 少、ReLU、FP8 |
 | 主注意力 | $O(L^2)\rightarrow O(Lk)$ | 大：完整的 MLA           |
 
-论文的说法是：indexer 仍是 $O(L^2)$，但因为 head 数小且用 FP8，其计算量远小于 V3.1-Terminus 的 MLA（§2.3）。
+论文的说法是：indexer 仍是 $O(L^2)$[^dsa-paper]，但因为 head 数小且用 FP8，其计算量远小于 V3.1-Terminus 的 MLA（§2.3）。
 
 **这是一笔明确的交易：用一个常数很小的 $O(L^2)$，换掉一个常数很大的 $O(L^2)$。** 不是渐近复杂度的胜利，是常数的胜利。理解这一点很重要——它意味着 DSA 的收益在序列足够长、且 indexer 实现足够优化时才成立。
 
-$k$ 的取值是固定的 **2048**（§2.1.1 稀疏训练阶段），不随上下文长度变化。在 128K 上下文下这意味着每个 query 只读约 1.6% 的历史（这个比例是由论文配置推算的，不是论文直接报告的指标）。
+$k$ 的取值是固定的 **2048**[^dsa-paper]（§2.1.1 稀疏训练阶段），不随上下文长度变化。在 128K 上下文下这意味着每个 query 只读约 1.6% 的历史（这个比例是由论文配置推算的，不是论文直接报告的指标）。
 
 ### 为什么稀疏作用在 latent 上
 
-DSA 是**在 MLA 之上**实例化的（§2.1，图 2）。回忆第 04–05 篇：MLA 缓存的是 latent $\mathbf c_s$，不是每个 head 的 K/V。DSA 选的正是这些 latent 条目。
+DSA 是**在 MLA 之上**实例化的（§2.1，图 2）[^dsa-paper]。回忆第 04–05 篇：MLA 缓存的是 latent $\mathbf c_s$，不是每个 head 的 K/V。DSA 选的正是这些 latent 条目。
 
-而且论文在 kernel 层采用 MLA 的 **MQA mode**：每个 latent 在一个 query token 的**所有 query head 之间共享**（§2.1）。于是 top-$k$ 选择也是所有 head 共用一套。
+而且论文在 kernel 层采用 MLA 的 **MQA mode**：每个 latent 在一个 query token 的**所有 query head 之间共享**[^dsa-paper]（§2.1）。于是 top-$k$ 选择也是所有 head 共用一套。
 
 这和第 08 篇 NSA 让 GQA 组内共享块索引是**同一个道理**：如果每个 head 各选各的，实际访存是所有 head 选择的并集，计算稀疏了而访存没有。稀疏注意力的收益主要是访存收益，所以「选择的粒度必须和 KV 共享的粒度对齐」。这条规律到这里已经出现第三次了（GQA → NSA → DSA），值得记住。
 
 ### indexer 是怎么训练出来的
 
-indexer 要学会「预测主注意力会关注哪里」。论文分两阶段（§2.1.1）：
+indexer 要学会「预测主注意力会关注哪里」。论文分两阶段[^dsa-paper]（§2.1.1）：
 
-**阶段一：dense warm-up。** 保持密集注意力，**冻结模型其余参数，只训练 indexer**。目标分布 $p_{t,:}$ 由主注意力分数在所有 head 上求和、再沿序列做 L1 归一化得到；indexer 用 KL 散度去对齐它（式 (3)）：
+**阶段一：dense warm-up。**保持密集注意力，** 冻结模型其余参数，只训练 indexer**。目标分布 $p_{t,:}$ 由主注意力分数在所有 head 上求和、再沿序列做 L1 归一化得到；indexer 用 KL 散度去对齐它[^dsa-paper]（式 (3)）：
 
 $$
 \mathcal{L}^{I}=\sum_{t}\mathbb{D}_{\mathrm{KL}}\big(p_{t,:}\,\|\,\mathrm{Softmax}(I_{t,:})\big)
 $$
 
-配置：learning rate $10^{-3}$，1000 步，每步 16 条 128K 序列，共 2.1B tokens。
+配置：learning rate $10^{-3}$，1000 步，每步 16 条 128K 序列，共 2.1B tokens[^dsa-paper]。
 
-**阶段二：sparse training。** 引入 top-$k$ 选择，优化全部参数。KL 只在被选中的集合 $\mathcal{S}_t$ 上计算（式 (4)）：
+**阶段二：sparse training。** 引入 top-$k$ 选择，优化全部参数。KL 只在被选中的集合 $\mathcal{S}_t$ 上计算[^dsa-paper]（式 (4)）：
 
 $$
 \mathcal{L}^{I}=\sum_{t}\mathbb{D}_{\mathrm{KL}}\big(p_{t,\mathcal{S}_t}\,\|\,\mathrm{Softmax}(I_{t,\mathcal{S}_t})\big)
 $$
 
-配置：learning rate $7.3\times10^{-6}$，$k=2048$，15000 步，每步 480 条 128K 序列，共 943.7B tokens。
+配置：learning rate $7.3\times10^{-6}$，$k=2048$，15000 步，每步 480 条 128K 序列，共 943.7B tokens[^dsa-paper]。
 
 两个关键设计：
 
 1. **indexer 的输入从计算图 detach**。indexer 只从 $\mathcal{L}^I$ 拿梯度，主模型只按语言建模损失优化。两个目标不互相干扰——否则主模型可能会为了「让 indexer 好学」而扭曲自己的注意力分布。
-2. 整个流程从一个**已经扩展到 128K 的 V3.1-Terminus checkpoint** 继续训练，不是从头训。这和 NSA 的「原生可训练」是两条不同的路线：NSA 从预训练第一步就带着稀疏结构，DSA 是在稠密模型上改造。
+2. 整个流程从一个**已经扩展到 128K 的 V3.1-Terminus checkpoint** 继续训练，不是从头训。这和 NSA 的「原生可训练」是两条不同的路线：NSA 从预训练第一步就带着稀疏结构，DSA 是在稠密模型上改造[^dsa-paper]。
 
-严格说这不是标准的 teacher-student 蒸馏，论文也没这么称呼它；准确的描述是「把稠密主注意力的聚合分布作为 KL 目标」。
+严格说这不是标准的 teacher-student 蒸馏，论文也没这么称呼它；准确的描述是「把稠密主注意力的聚合分布作为 KL 目标」[^dsa-paper]。
 
 ## 代码实现
 
@@ -173,7 +173,7 @@ L= 131072：读   1.6% 的历史
 - indexer 打分的质量决定一切：挑错了，主注意力再准也没用。而它的训练信号来自稠密注意力——这意味着它学到的是「稠密模型会关注哪里」，而稀疏训练阶段模型本身也在变。
 - DSA 从稠密 checkpoint 改造而来，不是原生稀疏预训练。它与 NSA 不是同类方案的两个版本，而是两条不同的路线。
 - **论文中未找到**：$H^I$ 和 $d^I$ 的具体数值、FP8 的格式与累加精度、indexer 相对主注意力的 FLOPs 或 latency 百分比。
-- 论文 §2.3 图 3 给出 H800 集群上 prefill/decode 的 token 成本曲线（按 2 USD/GPU-hour 估算），但**正文没有给出一个明确的加速倍数或成本下降百分比**。从图上自己读数属于估读，本文不把它写成论文事实。上面 ② ③ 的数字是按公式算的乘法次数与比例，不是实测。
+- 论文 §2.3 图 3 给出 H800 集群上[^dsa-paper] prefill/decode 的 token 成本曲线（按 2 USD/GPU-hour 估算），但**正文没有给出一个明确的加速倍数或成本下降百分比**。从图上自己读数属于估读，本文不把它写成论文事实。上面 ② ③ 的数字是按公式算的乘法次数与比例，不是实测。
 
 ## 自测
 
@@ -185,6 +185,6 @@ L= 131072：读   1.6% 的历史
 
 ## 来源
 
-- [DeepSeek-V3.2](https://arxiv.org/abs/2512.02556) §2.1（DSA 与 Lightning Indexer，式 (1)–(2)）、§2.1.1（两阶段训练，式 (3)–(4)）、§2.3（复杂度与推理成本）、图 2（在 MLA 下实例化）、附录 A 图 7（MLA 的 MHA/MQA 模式）
 - [NSA](https://arxiv.org/abs/2502.11089)（上一篇；两种打分策略的对照）
-- 下一篇：[10 · CSA](../10-csa/)——V4 把「先压缩，再在压缩条目上做 DSA」合成了一个机制。
+
+[^dsa-paper]: [DeepSeek-V3.2](https://arxiv.org/abs/2512.02556) §2.1（DSA 与 Lightning Indexer，式 (1)–(2)）、§2.1.1（两阶段训练，式 (3)–(4)）、§2.3（复杂度与推理成本）、图 2、附录 A 图 7（MLA 模式）。

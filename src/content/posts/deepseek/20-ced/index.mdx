@@ -16,7 +16,7 @@ toc: true
 
 读完你能回答：CED 为什么能把 prefill 砍掉近一半、它对 KV cache 的影响是什么、以及为什么它必须配一个叫「SWA Bounded Replay」的补丁。
 
-> 本篇按 [DeepSeek-V4.1-Flash](https://arxiv.org/abs/2609.19969) 写。上一个阶段讲的 CSA/HCA 是 V4 的设计，**V4.1-Flash 用的是纯 CSA2**（下一篇），两者不要混。
+> 本篇按 [DeepSeek-V4.1-Flash](https://arxiv.org/abs/2609.19969) 写[^ced-paper]。上一个阶段讲的 CSA/HCA 是 V4 的设计，**V4.1-Flash 用的是纯 CSA2**（下一篇），两者不要混。
 
 ## 先看一个例子
 
@@ -38,7 +38,7 @@ flowchart TB
   style E3 fill:#dcfce7,stroke:#15803d
 ```
 
-CED 的回答是「不必」。对 $l>L/2$ 的 decoder 层，global KV 不从本层隐藏状态 $H_l$ 生成，而是**从 encoder 最后一层的输出 $H_{L/2}$ 生成**（§2.2 式 (1)）：
+CED 的回答是「不必」[^ced-paper]。对 $l>L/2$ 的 decoder 层，global KV 不从本层隐藏状态 $H_l$ 生成，而是**从 encoder 最后一层的输出 $H_{L/2}$ 生成**（§2.2 式 (1)）：
 
 $$
 C_l = H_{L/2}\,W_l^{KV},\qquad Z_l = H_{L/2}\,W_l^{Z},\qquad l>\frac{L}{2}
@@ -50,7 +50,7 @@ $$
 
 因为 prefill 的目的就是把各层的 KV 算出来备用。如果上半层的 global KV 都能从 $H_{L/2}$ 投影得到，那么 **prefill 只需要把 prompt 完整跑过前 $L/2$ 层**，剩下的 KV 用矩阵乘投影出来就行。
 
-论文给出的复杂度（$N\gg n_{\rm win}$）：
+论文给出的复杂度（$N\gg n_{\rm win}$）[^ced-paper]：
 
 $$
 \mathcal{O}(NL)\quad\longrightarrow\quad \mathcal{O}\!\left(\frac{NL}{2}+n_{\rm win}\cdot\frac{L}{2}\right)\approx\mathcal{O}\!\left(\frac{NL}{2}\right)
@@ -78,7 +78,7 @@ $$
 
 和标准窗口 $[i-W+1,\ i]$ 相比，多了一个 $\max(s,\cdot)$ ——**窗口被 replay 起点截断了**。这是一个承认的近似：replay segment 开头那几个位置看到的历史比正常情况少。
 
-论文说这个近似重建对回答质量只有 negligible impact（§3.2.2），但**没有给出量化的质量对照**。
+论文说这个近似重建对回答质量只有 negligible impact（§3.2.2）[^ced-paper]，但**没有给出量化的质量对照**。
 
 两种 replay 的分工：
 
@@ -97,9 +97,9 @@ $$
 | 生命周期      | 至少 **72 小时**    | 短 TTL                                             |
 | miss 了怎么办 | 必须有              | **bounded replay 回填**                            |
 
-**「能重算的就不长期存」**——这是一个很干净的取舍：用少量重算换掉大量持久存储。结果是 persistent KV footprint 降到约 V4-Flash 的 **1/8**（§3.2.2、§2.1）。
+**「能重算的就不长期存」**——这是一个很干净的取舍：用少量重算换掉大量持久存储。结果是 persistent KV footprint 降到约 V4-Flash 的 **1/8**[^ced-paper]（§3.2.2、§2.1）。
 
-注意这 1/8 是**持久占用**的比例，不是单 token 的缓存宽度。宽度那一项是下一篇 CSA2 + FP4 的功劳（约 890 bytes/token，V4-Flash 的 1/4）。两个数字口径不同，**不能相乘也不能混用**。
+注意这 1/8 是**持久占用**的比例，不是单 token 的缓存宽度。宽度那一项是下一篇 CSA2 + FP4 的功劳（约 890 bytes/token，V4-Flash 的 1/4）。两个数字口径不同，** 不能相乘也不能混用**。
 
 ## 代码实现
 
@@ -139,7 +139,7 @@ SWA Bounded Replay 的窗口截断（W=8、replay 起点 s=100）：
   无论上下文多长，受影响的都是 7 个位置（常数）
 ```
 
-最后那段量化了这个近似的范围：**只有 replay 段开头的 $W-1$ 个位置看得比正常少**，再往后窗口就完整了。受影响的位置数是常数，不随上下文增长——这解释了为什么论文敢说影响 negligible。
+最后那段量化了这个近似的范围：**只有 replay 段开头的 $W-1$ 个位置看得比正常少**[^ced-paper]，再往后窗口就完整了。受影响的位置数是常数，不随上下文增长——这解释了为什么论文敢说影响 negligible。
 
 另外注意第一组数字里 512 那行只省 38.5%，而长 prompt 到 50.8%：**CED 对短 prompt 的收益明显更小**，因为固定的 replay 成本摊不开。agent workflow 恰好是长上下文、反复 prefill 的场景，这正是 CED 的目标负载。
 
@@ -160,8 +160,4 @@ SWA Bounded Replay 的窗口截断（W=8、replay 起点 s=100）：
 4. 为什么 SWA KV 可以放短 TTL 池而 global KV 不行？
 5. 「persistent footprint 1/8」和「890 bytes/token 是 1/4」为什么不能相乘？
 
-## 来源
-
-- [DeepSeek-V4.1-Flash](https://arxiv.org/abs/2609.19969) §2.2（CED 与式 (1)、prefill 复杂度）、§3.2.1（两层存储与 TTL）、§3.2.2（SWA Bounded Replay 与窗口截断）、§2.1 与图 1(b)（整体容量数字）
-- 上一篇：[19 · 一次 decode 的全链路](../19-full-path/)
-- 下一篇：[21 · CSA2](../21-csa2/)——沿第三个维度压缩：层。
+[^ced-paper]: [DeepSeek-V4.1-Flash](https://arxiv.org/abs/2609.19969) §2.2（CED 与式 (1)、prefill 复杂度）、§3.2.1（两层存储与 TTL）、§3.2.2（SWA Bounded Replay 与窗口截断）、§2.1 与图 1(b)（整体容量数字）。

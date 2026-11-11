@@ -59,20 +59,20 @@ $$
 
 ### ① 压缩：两套权重、重叠的块
 
-论文先从 hidden state $H\in\mathbb{R}^{n\times d}$ 产出两套 KV 和两套压缩权重（§2.3.1 式 (9)–(10)）：
+论文先从 hidden state $H\in\mathbb{R}^{n\times d}$ 产出两套 KV 和两套压缩权重[^deepseek-v4-paper]（§2.3.1 式 (9)–(10)）：
 
 $$
 C^{a}=H W^{aKV},\quad C^{b}=H W^{bKV};\qquad
 Z^{a}=H W^{aZ},\quad Z^{b}=H W^{bZ}
 $$
 
-对第 $i$ 个压缩位置，取 $C^a$ 的 $[mi,\,m(i+1)-1]$ 区间与 $C^b$ 的 $[m(i-1),\,mi-1]$ 区间——**也就是当前块和前一块**——加上可学习的位置偏置后在这 $2m$ 个元素上做 softmax（式 (11)）：
+对第 $i$ 个压缩位置，取 $C^a$ 的 $[mi,\,m(i+1)-1]$ 区间与 $C^b$ 的 $[m(i-1),\,mi-1]$ 区间——**也就是当前块和前一块**——加上可学习的位置偏置后在这 $2m$ 个元素上做 softmax[^deepseek-v4-paper]（式 (11)）：
 
 $$
 [S^{a};S^{b}]=\mathrm{Softmax}_{\text{row}}\big([Z^{a}_{mi:m(i+1)-1}+B^{a};\ Z^{b}_{m(i-1):mi-1}+B^{b}]\big)
 $$
 
-再按这个权重加权求和（式 (12)）：
+再按这个权重加权求和[^deepseek-v4-paper]（式 (12)）：
 
 $$
 C^{\mathrm{Comp}}_{i}=\sum_{j=mi}^{m(i+1)-1}S^{a}_{j}\odot C^{a}_{j}+\sum_{j=m(i-1)}^{mi-1}S^{b}_{j}\odot C^{b}_{j}
@@ -80,15 +80,15 @@ $$
 
 三个要点：
 
-1. **压缩是「学出来的加权求和」，不是池化。** 权重 $S$ 由 $Z$ 过 softmax 得到，$Z$ 和 $C$ 都是从 hidden state 投影来的。哪个 token 在块里更重要，由模型自己决定。
-2. **每个条目看 $2m$ 个 token，但序列只缩到 $1/m$。** 因为相邻条目的取值区间重叠（第 $i$ 个条目用了第 $i$ 块和第 $i-1$ 块）。这和第 08 篇 NSA 取 $d<l$ 是同一个考虑：**减轻块边界把信息切碎**。
+1. **压缩是「学出来的加权求和」，不是池化。** 权重 $S$ 由 $Z$ 过 softmax 得到，$Z$ 和 $C$ 都是从 hidden state 投影来的。哪个 token 在块里更重要，由模型自己决定[^deepseek-v4-paper]。
+2. **每个条目看 $2m$ 个 token，但序列只缩到 $1/m$。**因为相邻条目的取值区间重叠（第 $i$ 个条目用了第 $i$ 块和第 $i-1$ 块）。这和第 08 篇 NSA 取 $d<l$ 是同一个考虑：** 减轻块边界把信息切碎**。
 3. $\odot$ 是逐元素乘，所以 $S$ 和 $C$ 同形——每个维度各自加权，不是整个向量共用一个标量权重。
 
 $i=0$ 时没有前一块，$Z^b$ 区间填 $-\infty$、$C^b$ 区间填 0。
 
 ### ② 在压缩条目上做稀疏选择
 
-对压缩后的 KV 再压一次，得到 indexer 用的 key $K^{\mathrm{IComp}}\in\mathbb{R}^{(n/m)\times c^I}$。然后是上一篇那套 Lightning Indexer（式 (13)–(16)）：
+对压缩后的 KV 再压一次，得到 indexer 用的 key $K^{\mathrm{IComp}}\in\mathbb{R}^{(n/m)\times c^I}$。然后是上一篇那套 Lightning Indexer[^deepseek-v4-paper]（式 (13)–(16)）：
 
 $$
 \mathbf{c}_{t}^{Q}=\mathbf{h}_{t}W^{DQ},\qquad
@@ -100,17 +100,17 @@ $$
 I_{t,s}=\sum_{h=1}^{n_{h}^{I}} w_{t,h}^{I}\cdot\mathrm{ReLU}\big(\mathbf{q}^{I}_{t,h}\cdot K^{\mathrm{IComp}}_{s}\big)
 $$
 
-形式和第 09 篇式 (1) 完全一样——**同一个 indexer，只是喂给它的序列短了 $m$ 倍**。只对 $s<\lfloor t/m\rfloor$ 的压缩块打分以保证因果性，然后取 top-$k$（式 (17)）：
+形式和第 09 篇式 (1) 完全一样——**同一个 indexer，只是喂给它的序列短了 $m$ 倍**。只对 $s<\lfloor t/m\rfloor$ 的压缩块打分以保证因果性，然后取 top-$k$[^deepseek-v4-paper]（式 (17)）：
 
 $$
 \mathcal{C}^{\mathrm{SprsComp}}_{t}=\{C^{\mathrm{Comp}}_{s}\mid I_{t,s}\in\mathrm{Top\text{-}k}(I_{t,:})\}
 $$
 
-注意 indexer 的 query 来自 $\mathbf{c}_t^Q$——这个 query latent 同时也用来生成主注意力的 query（式 (18)），**两者共用一次低秩投影**。
+注意 indexer 的 query 来自 $\mathbf{c}_t^Q$——这个 query latent 同时也用来生成主注意力的 query（式 (18)）[^deepseek-v4-paper]，**两者共用一次低秩投影**。
 
 ### ③ 共享 KV 的 MQA 与分组输出投影
 
-每个压缩条目**同时当 key 和 value**（式 (19)）：
+每个压缩条目**同时当 key 和 value**（式 (19)）[^deepseek-v4-paper]：
 
 $$
 \mathbf{o}_{t,i}=\mathrm{CoreAttn}(\text{query}=\mathbf{q}_{t,i},\ \text{key}=\mathcal{C}^{\mathrm{SprsComp}}_t,\ \text{value}=\mathcal{C}^{\mathrm{SprsComp}}_t)
@@ -118,21 +118,21 @@ $$
 
 这是 MQA：所有 query head 共享同一份压缩 KV。第 09 篇那条规律在这里第四次出现——**选择的粒度必须和 KV 共享的粒度对齐**，否则稀疏省不到访存。
 
-因为 $c\,n_h$ 很大（$c=512$、$n_h$ 到 128），直接投影回 $d$ 维的输出矩阵会非常大。论文把 $n_h$ 个 head 分成 $g$ 组，每组从 $c(n_h/g)$ 维投到 $d_g$ 维，再把 $g\,d_g$ 维拼起来投回 $d$ 维（§2.3.1「Grouped Output Projection」）。这是纯粹的参数量控制。
+因为 $c\,n_h$ 很大（$c=512$、$n_h$ 到 128），直接投影回 $d$ 维的输出矩阵会非常大。论文把 $n_h$ 个 head 分成 $g$ 组[^deepseek-v4-paper]，每组从 $c(n_h/g)$ 维投到 $d_g$ 维，再把 $g\,d_g$ 维拼起来投回 $d$ 维（§2.3.1「Grouped Output Projection」）。这是纯粹的参数量控制。
 
 ### ④ 为什么必须额外挂一条滑动窗口
 
 这是 CSA 最容易被忽略、但逻辑上最必然的一点。
 
-严格因果的压缩只允许 query 读**它之前的**压缩块。而当前 token 自己所在的那个块还没压完——**query 读不到和自己同块的其他 token**（§2.3.3）。可偏偏近处的 token 往往是最相关的。
+严格因果的压缩只允许 query 读**它之前的**压缩块。而当前 token 自己所在的那个块还没压完——**query 读不到和自己同块的其他 token**[^deepseek-v4-paper]（§2.3.3）。可偏偏近处的 token 往往是最相关的。
 
-所以 CSA 必须额外生成最近 $n_{\text{win}}$ 个 token 的**未压缩** KV，和压缩 KV 一起进入 core attention。论文取 $n_{\text{win}}=128$。
+所以 CSA 必须额外生成最近 $n_{\text{win}}$ 个 token 的**未压缩** KV[^deepseek-v4-paper]，和压缩 KV 一起进入 core attention。论文取 $n_{\text{win}}=128$。
 
 动画里那条窗口分支就是干这个的：它不是锦上添花，是压缩机制留下的洞必须被补上。
 
 ### ⑤ 三个稳定性设计
 
-论文在 §2.3.3 还列了三件事，都值得注意：
+论文在 §2.3.3 还列了三件事，都值得注意[^deepseek-v4-paper]：
 
 - **Query/KV RMSNorm**：core attention 之前对每个 query head 和那唯一一份压缩 KV head 做 RMSNorm，避免 attention logits 爆炸。
 - **部分 RoPE**：query、KV 条目和 core-attention 输出的**最后 64 维**用 RoPE；输出用位置 $-i$ 的 RoPE，使输出带上相对位置信息。注意这和第 05 篇 MLA 的「解耦 RoPE」思路一致——只让一小段维度承担位置。
@@ -142,11 +142,11 @@ $$
 s_{h,i,j}=\frac{\exp(z_{h,i,j})}{\sum_k \exp(z_{h,i,k})+\exp(z'_h)}
 $$
 
-这一步很妙：分母多了一项，**每个 head 的注意力权重之和可以小于 1，甚至接近 0**。回想第 07 篇说的——attention sink 现象的一种解释是「softmax 强制权重和为 1，用不掉的权重得有地方去」。V4 的做法是直接给它一个官方的泄洪口，而不是让它去挤占真实 token。
+这一步很妙：分母多了一项，**每个 head 的注意力权重之和可以小于 1，甚至接近 0**[^deepseek-v4-paper]。回想第 07 篇说的——attention sink 现象的一种解释是「softmax 强制权重和为 1，用不掉的权重得有地方去」。V4 的做法是直接给它一个官方的泄洪口，而不是让它去挤占真实 token。
 
 ## 超参数
 
-论文 §4.2.1 给出的配置：
+论文 §4.2.1 给出的配置[^deepseek-v4-paper]：
 
 | 参数                      | V4-Flash | V4-Pro |
 | ------------------------- | -------- | ------ |
@@ -161,9 +161,9 @@ $$
 | 输出投影组数 $g$          | 8        | 16     |
 | 组内中间维 $d_g$          | 1024     | 1024   |
 
-KV 存储用混合精度：**RoPE 的那 64 维用 BF16，其余维度用 FP8**，论文称相对纯 BF16 让 KV cache 几乎减半（§2.3.4）。
+KV 存储用混合精度[^deepseek-v4-paper]：**RoPE 的那 64 维用 BF16，其余维度用 FP8**，论文称相对纯 BF16 让 KV cache 几乎减半（§2.3.4）。
 
-整体效率（§1、图 1，条件是 **1M token 上下文、单 token 推理**，相对 DeepSeek-V3.2）：
+整体效率（§1、图 1，条件是 **1M token 上下文、单 token 推理**，相对 DeepSeek-V3.2）[^deepseek-v4-paper]：
 
 | 模型     | 推理 FLOPs | KV cache |
 | -------- | ---------- | -------- |
@@ -239,7 +239,6 @@ def csa_compress(H, W_aKV, W_bKV, W_aZ, W_bZ, B_a, B_b, m):
 
 ## 来源
 
-- [DeepSeek-V4](https://arxiv.org/abs/2606.19348) §2.3（CSA 与 HCA 总览）、§2.3.1（压缩与稀疏选择，式 (9)–(19)）、§2.3.3（窗口分支、RMSNorm、部分 RoPE、attention sink 式 (27)）、§2.3.4（混合精度 KV）、§4.2.1（超参数）、§1 与图 1（整体效率）
 - 图 3「Core architectures of CSA」是论文中对应本篇机制的结构图
-- 上一篇：[09 · DSA](../09-dsa/)（CSA 的稀疏部分就是 DSA）
-- 下一篇：[11 · HCA](../11-hca/)——同一篇论文里的另一种选择：压得更狠，但不做稀疏。
+
+[^deepseek-v4-paper]: [DeepSeek-V4](https://arxiv.org/abs/2606.19348) §2.3（CSA 与 HCA 总览）、§2.3.1（压缩与稀疏选择）、§2.3.3（窗口分支与稳定性）、§2.3.4（混合精度 KV）、§4.2.1（超参数）、§1 与图 1（整体效率）。

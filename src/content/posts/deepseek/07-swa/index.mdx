@@ -81,11 +81,11 @@ $W=4$、$t=8$ 时就是 $\{5,6,7,8\}$。注意这是**逻辑位置**的集合，
 
 为什么偏偏是开头几个位置？这就是 attention sink 现象：模型会把大量注意力权重堆在序列最开始的若干 token 上，即使它们语义上无关紧要。一种解释是 softmax 强制每行权重和为 1——当当前位置其实「不需要关注任何历史」时，这些权重总得有地方去，于是流向了最早出现、对所有位置都可见的那几个 token，它们成了一个「泄洪口」。
 
-直接后果：**把开头几个 token 从缓存里丢掉，困惑度会显著变差**，哪怕它们看起来毫无信息量。StreamingLLM 的做法正是保留少量 sink token 加一个滑动窗口，从而在不重训的情况下支持长流式输入。
+直接后果：**把开头几个 token 从缓存里丢掉，困惑度会显著变差**，哪怕它们看起来毫无信息量。StreamingLLM 的做法正是保留少量 sink token 加一个滑动窗口[^streaming-sinks-paper]，从而在不重训的情况下支持长流式输入。
 
 ## 工程细节：逻辑位置 vs 物理槽位
 
-窗口注意力的缓存只需 $W$ 行，所以实现上通常用**环形缓存**：第 $t$ 个 token 写进槽位 $t \bmod W$，写满就覆盖最旧的。
+窗口注意力的缓存只需 $W$ 行，所以实现上通常用**环形缓存**[^mistral-paper]：第 $t$ 个 token 写进槽位 $t \bmod W$，写满就覆盖最旧的。
 
 这里有个经典 bug。$W=4$、$t=8$ 时逻辑窗口是 $[5,6,7,8]$，但它们在环形缓存里的槽位是 $[1,2,3,0]$——**槽位顺序和逻辑顺序不一致**。于是：
 
@@ -164,7 +164,8 @@ print('物理槽位：', [int(t) % 4 for t in pos])  # [1, 2, 3, 0]  ← 顺序�
 ## 来源
 
 - [Longformer](https://arxiv.org/abs/2004.05150)（滑动窗口 + 全局注意力的早期系统化）
-- [Mistral 7B](https://arxiv.org/abs/2310.06825)（窗口注意力与环形缓存的工程实现）
-- [Efficient Streaming Language Models with Attention Sinks](https://arxiv.org/abs/2309.17453)（StreamingLLM：sink token 现象与保留策略）
 - 本站实现：`src/explainers/core/masks.ts` 的 `slidingWindow` / `windowWithSink` / `receptiveField`
-- 下一篇：[08 · NSA](../08-nsa/)——窗口负责近处，另外两条分支负责把远处拉回来。
+
+[^streaming-sinks-paper]: [Efficient Streaming Language Models with Attention Sinks](https://arxiv.org/abs/2309.17453)（StreamingLLM：sink token 现象与保留策略）。
+
+[^mistral-paper]: [Mistral 7B](https://arxiv.org/abs/2310.06825)（窗口注意力与环形缓存的工程实现）。

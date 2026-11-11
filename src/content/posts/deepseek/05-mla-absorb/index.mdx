@@ -23,7 +23,7 @@ import AbsorbView from '../../../../explainers/react/AbsorbView';
 
 先补上位置编码。注意力的打分 $q_t^\top k_s$ 本身不含任何位置信息——把序列打乱，分数完全不变。所以位置必须另外注入。
 
-RoPE（旋转位置编码）的做法是：**把向量按位置旋转一个角度**。取最简单的 2 维情形，位置 $t$ 对应旋转矩阵
+RoPE（旋转位置编码）的做法是：**把向量按位置旋转一个角度[^rope-paper]**。取最简单的 2 维情形，位置 $t$ 对应旋转矩阵
 
 $$
 R_t = \begin{bmatrix}\cos t\theta & -\sin t\theta\\ \sin t\theta & \cos t\theta\end{bmatrix}
@@ -69,7 +69,7 @@ $$
 
 现在夹在中间的是 $R_{s-t}W^{UK}_h$，**它依赖 $s-t$，也就是依赖当前算的是哪一对位置**。$\tilde q_t$ 不再是一个固定向量：每个历史位置 $s$ 都需要一个不同的折叠结果。吸收失效，只能老老实实把每个 $c_s$ 展开成 $k_s$。
 
-于是 MLA 的设计就被逼出来了——**把需要 RoPE 的部分和需要吸收的部分分开**：
+于是 MLA 的设计就被逼出来了——**把需要 RoPE 的部分和需要吸收的部分分开[^deepseek-v2-paper]**：
 
 $$
 \begin{aligned}
@@ -189,11 +189,11 @@ print('两条路径逐位相同 ✓')
 
 ### 真实实现在哪
 
-DeepSeek-V3 参考实现（commit `9b4e9788`）把两条路径都写了出来，由 `attn_impl` 选择：
+DeepSeek-V3 参考实现（commit `9b4e9788`）把两条路径都写了出来[^deepseek-v3-code]，由 `attn_impl` 选择：
 
 | 内容                  | 位置               | 代码                                                                                                                            |
 | --------------------- | ------------------ | ------------------------------------------------------------------------------------------------------------------------------- |
-| RoPE 频率预计算       | `model.py:297-375` | 含 YaRN 的长上下文修正，返回 $(seqlen, d_r/2)$ 的复数因子                                                                       |
+| RoPE 频率预计算       | `model.py:297-375` | 含 YaRN 的长上下文修正[^yarn-paper]，返回 $(seqlen, d_r/2)$ 的复数因子                                                          |
 | 应用旋转              | `model.py:378-393` | `view_as_complex` 两两配对后乘频率，再还原实数                                                                                  |
 | Q/K 的解耦切分        | `model.py:465-470` | `q_nope, q_pe = split(q, [qk_nope_head_dim, qk_rope_head_dim])`；`kv, k_pe = split(wkv_a(x), [kv_lora_rank, qk_rope_head_dim])` |
 | **朴素路径**          | `model.py:476-479` | `k = cat([k_nope, k_pe.expand(...)])` → 物化完整 K → `einsum("bshd,bthd->bsht")`                                                |
@@ -224,10 +224,10 @@ DeepSeek-V3 参考实现（commit `9b4e9788`）把两条路径都写了出来，
 4. V3 的 $d_k=128$、$d_c=512$。$L=128\text{K}$ 时两条路径的乘法次数各是多少？比值是多少，为什么正好接近 $d_k$？
 5. 动手：在 `toy.py` 里把 `absorb` 的 `q_tilde` 改成对每个历史位置单独折叠（模拟 RoPE 污染内容分支的情形），看乘法次数怎么变。
 
-## 来源
+[^rope-paper]: [RoFormer: Enhanced Transformer with Rotary Position Embedding](https://arxiv.org/abs/2104.09864)（RoPE 原文）。
 
-- [DeepSeek-V2 技术报告 §2.1.3（解耦 RoPE）、附录 C](https://arxiv.org/html/2405.04434v5#S2.SS1)
-- [RoFormer: Enhanced Transformer with Rotary Position Embedding](https://arxiv.org/abs/2104.09864)（RoPE 原文）
-- [YaRN: Efficient Context Window Extension](https://arxiv.org/abs/2309.00071)（V3 的频率修正所用方法）
-- [DeepSeek-V3 参考实现 `model.py`](https://github.com/deepseek-ai/DeepSeek-V3/blob/9b4e9788e4a3a731f7567338ed15d3ec549ce03b/inference/model.py#L476-L495)（两条路径的对照）
-- 下一篇：[06 · 稀疏注意力地图](../06-sparse-map/)——表示已经压到底了，下一刀砍在「要读哪些位置」上。
+[^deepseek-v2-paper]: [DeepSeek-V2 技术报告 §2.1.3（解耦 RoPE）、附录 C](https://arxiv.org/html/2405.04434v5#S2.SS1)。
+
+[^deepseek-v3-code]: [DeepSeek-V3 参考实现 `model.py`](https://github.com/deepseek-ai/DeepSeek-V3/blob/9b4e9788e4a3a731f7567338ed15d3ec549ce03b/inference/model.py#L476-L495)（两条路径的对照）。
+
+[^yarn-paper]: [YaRN: Efficient Context Window Extension](https://arxiv.org/abs/2309.00071)（V3 的频率修正所用方法）。

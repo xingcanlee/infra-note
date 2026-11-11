@@ -16,7 +16,7 @@ import BucketDispatch from '../../../../explainers/react/BucketDispatch';
 
 读完你能照着源码说出完整的匹配条件、解释为什么有的条件是「容量 ≥」而有的必须「严格相等」、以及回退为什么是性能问题里最难发现的一类。
 
-> 本篇按本地快照 commit `cf5cea2d` 的代码写。**这块 API 变动频繁**——早期版本里叫 `CudagraphDispatcher`，现在是 `CudaGraphManager`，描述符也从 `BatchDescriptor` 变成了 `BatchExecutionDescriptor`。读的时候请以自己那份源码为准。
+> 本篇按本地快照 commit `cf5cea2d` 的代码写[^vllm-dispatch-code]。**这块 API 变动频繁**——早期版本里叫 `CudagraphDispatcher`，现在是 `CudaGraphManager`，描述符也从 `BatchDescriptor` 变成了 `BatchExecutionDescriptor`。读的时候请以自己那份源码为准。
 
 ## 先看一个例子
 
@@ -88,7 +88,7 @@ return (
 
 **padding 能补的是「量」，补不了「形状」。** 这是整个图桶机制的边界所在。
 
-第 2 条还有一个细节值得注意：源码注释写着「a caller that does not track max_query_len must not match one that does」。也就是说，如果图声明了 query 长度上界，而调用方传的是 `None`（没跟踪），**不能匹配**——宁可保守回退，也不赌。
+第 2 条还有一个细节值得注意：源码注释写着「a caller that does not track max_query_len must not match one that does」[^vllm-dispatch-code]。也就是说，如果图声明了 query 长度上界，而调用方传的是 `None`（没跟踪），**不能匹配**——宁可保守回退，也不赌。
 
 ### 候选是怎么来的
 
@@ -139,7 +139,7 @@ return BatchExecutionDescriptor(
 
 ## 官方那张图怎么读
 
-vLLM 文档里有一张图把这套设计画全了：
+vLLM 文档里有一张图把这套设计画全了[^vllm-cuda-design-doc]：
 
 ![vLLM 当前的 CUDA Graph 设计：dispatch 由 runtime_mode 加 BatchDescriptor 显式决定，FULL wrapper 包在整个模型外，PIECEWISE wrapper 包在每个编译片段上](./images/vllm-current-design.webp '图 05-3：vLLM 官方的 CUDA Graph 设计图（来自 vLLM docs/design/cuda_graphs.md）')
 
@@ -153,7 +153,7 @@ vLLM 文档里有一张图把这套设计画全了：
 
 这张图解释了一个我一开始没想明白的问题：**FULL 和 PIECEWISE 两种图怎么在同一个模型里共存？**
 
-官方文档给的答案是**嵌套**：在整个模型外面包一个 `FULL` 模式的 wrapper，同时在编译出的每个片段里各包一个 `PIECEWISE` 模式的 wrapper。然后：
+官方文档给的答案是**嵌套**[^vllm-cuda-design-doc]：在整个模型外面包一个 `FULL` 模式的 wrapper，同时在编译出的每个片段里各包一个 `PIECEWISE` 模式的 wrapper。然后：
 
 | 本轮 runtime_mode | FULL wrapper        | PIECEWISE wrapper        | 结果            |
 | ----------------- | ------------------- | ------------------------ | --------------- |
@@ -163,7 +163,7 @@ vLLM 文档里有一张图把这套设计画全了：
 
 每个 wrapper 只认自己的模式，不匹配就直接透传。**于是两套图天然互斥，不需要额外的协调逻辑**——这正是第 07 篇 Ascend wrapper docstring 里那句「blindly trust」的来由：判断集中在 manager 一处，wrapper 只管执行。
 
-官方文档还给了一张 wrapper 内部的流程图：
+官方文档还给了一张 wrapper 内部的流程图[^vllm-cuda-design-doc]：
 
 ![CUDAGraphWrapper 的嵌套位置与 __call__ 内部流程：先看 runtime mode 是否匹配，不匹配就直接透传；匹配则按 key 查 cuda_graphs 表，命中就 Replay，没有就 Capture](./images/vllm-wrapper-flow.png '图 05-4：wrapper 的嵌套位置（左）与单个 wrapper 的判定流程（右）——来自 vLLM docs/design/cuda_graphs.md')
 
@@ -260,8 +260,9 @@ flowchart LR
 
 ## 来源
 
-- 源码行号按本地快照 `reference/vllm`（commit `cf5cea2d`）
-- [vLLM CUDA Graphs 设计文档](https://github.com/vllm-project/vllm/blob/main/docs/design/cuda_graphs.md)（最小可容纳桶的匹配、eager 回退、嵌套 wrapper 设计）
 - **图 05-3、05-4 来自 vLLM 官方文档**：`docs/assets/design/cuda_graphs/current_design.png` 与 `wrapper_flow.png`，原样引用未作修改；vLLM 以 Apache License 2.0 发布
-- 上一篇：[04 · 四条边界](../04-boundaries/)
 - 下一篇：[无设备练习](../06-practice/)（尚未按本系列约定重写）——把这套匹配逻辑自己写一遍。
+
+[^vllm-dispatch-code]: 源码行号按本地快照 `reference/vllm`（commit `cf5cea2d`）。
+
+[^vllm-cuda-design-doc]: [vLLM CUDA Graphs 设计文档](https://github.com/vllm-project/vllm/blob/main/docs/design/cuda_graphs.md)（最小可容纳桶的匹配、eager 回退、嵌套 wrapper 设计）。

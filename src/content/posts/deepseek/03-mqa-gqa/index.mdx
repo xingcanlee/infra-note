@@ -70,7 +70,7 @@ flowchart TB
 | GQA  | $g$      | $g(d_k+d_v)$      | $g/n_h$  | 同组 head 被迫共用同一套索引和内容 |
 | MQA  | 1        | $d_k+d_v$         | $1/n_h$  | 所有 head 共用，损失最大           |
 
-把这三条和 MLA 放在同一配置下对照（$n_h=8$，$d_k=d_v=128$，GQA 取 $g=2$）：
+把这三条和 MLA 放在同一配置下对照（$n_h=8$，$d_k=d_v=128$，GQA 取 $g=2$）[^deepseek-v2-paper]：
 
 <CacheBars
   client:visible
@@ -108,13 +108,13 @@ $$
 q_t^h = W^{Q,h}x_t,\quad k_s^h = W^{K,h}x_s,\quad v_s^h = W^{V,h}x_s,\qquad h=1,\dots,n_h
 $$
 
-GQA 把 head 分成 $g$ 组，令 $\gamma(h)$ 为 head $h$ 所属的组：
+GQA 把 head 分成 $g$ 组，令 $\gamma(h)$ 为 head $h$ 所属的组[^gqa-paper]：
 
 $$
 q_t^h = W^{Q,h}x_t,\quad k_s^h = W^{K,\gamma(h)}x_s,\quad v_s^h = W^{V,\gamma(h)}x_s
 $$
 
-**只有 K/V 的投影按组共享，Q 的投影仍然每个 head 独立。** MQA 是 $g=1$ 的特例，MHA 是 $g=n_h$ 的特例。所以这三者是同一个参数的三个取值，不是三种不同算法。
+**只有 K/V 的投影按组共享，Q 的投影仍然每个 head 独立。** MQA 是 $g=1$ 的特例，MHA 是 $g=n_h$ 的特例[^mqa-paper]。所以这三者是同一个参数的三个取值，不是三种不同算法。
 
 ### 损失在哪里
 
@@ -206,9 +206,8 @@ DeepSeek-V3 的参考实现里**没有 GQA/MQA 分支**——它直接用 MLA。
 3. $n_h=128$、$d_k=d_v=128$、61 层、4096 token、BF16。GQA 取 $g=8$ 时缓存是多少？相比 MHA 省了几倍？
 4. 动手：在 `toy.py` 里把 `n_kv_heads` 从 8 改到 1，观察输出向量的变化程度。再把 `n_heads` 调大，重复一次——共享的损失随 head 数怎么变？
 
-## 来源
+[^deepseek-v2-paper]: [DeepSeek-V2 §2.1](https://arxiv.org/html/2405.04434v5#S2.SS1)（把 MHA/GQA/MQA 与 MLA 放在同一张表里对照）。
 
-- [GQA: Training Generalized Multi-Query Transformer Models](https://arxiv.org/abs/2305.13245)（GQA 的提出与 uptraining 方法）
-- [Fast Transformer Decoding: One Write-Head is All You Need](https://arxiv.org/abs/1911.02150)（MQA）
-- [DeepSeek-V2 §2.1](https://arxiv.org/html/2405.04434v5#S2.SS1)（把 MHA/GQA/MQA 与 MLA 放在同一张表里对照）
-- 下一篇：[04 · MLA：共享 latent](../04-mla/)——不再存 K 和 V，改存一个所有 head 共享的低维向量。
+[^gqa-paper]: [GQA: Training Generalized Multi-Query Transformer Models](https://arxiv.org/abs/2305.13245)（GQA 的提出与 uptraining 方法）。
+
+[^mqa-paper]: [Fast Transformer Decoding: One Write-Head is All You Need](https://arxiv.org/abs/1911.02150)（MQA）。

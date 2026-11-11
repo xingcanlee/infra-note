@@ -169,7 +169,7 @@ K/V 投影次数：无缓存 4160，有缓存 128
 
 ### 真实实现在哪
 
-DeepSeek-V3 参考实现（commit `9b4e9788`）把缓存声明为固定大小的 buffer，按位置切片写入——不是 Python list：
+DeepSeek-V3 参考实现（commit `9b4e9788`）把缓存声明为固定大小的 buffer，按位置切片写入——不是 Python list[^deepseek-v3-code]：
 
 | 内容            | 源码位置           | 形状                                                                                  |
 | --------------- | ------------------ | ------------------------------------------------------------------------------------- |
@@ -197,6 +197,6 @@ DeepSeek-V3 参考实现（commit `9b4e9788`）把缓存声明为固定大小的
 
 ## 来源
 
-- [DeepSeek-V3 参考实现 `model.py`](https://github.com/deepseek-ai/DeepSeek-V3/blob/9b4e9788e4a3a731f7567338ed15d3ec549ce03b/inference/model.py#L439-L444)（缓存 buffer 的声明与写入）
 - [vLLM PagedAttention 论文](https://arxiv.org/abs/2309.06180)（缓存的空间管理，本系列不展开）
-- 下一篇：[03 · MQA 与 GQA：第一次妥协](../03-mqa-gqa/)——公式里的 $n_h$ 是第一个被动的因子。
+
+[^deepseek-v3-code]: [DeepSeek-V3 参考实现 `model.py`](https://github.com/deepseek-ai/DeepSeek-V3/blob/9b4e9788e4a3a731f7567338ed15d3ec549ce03b/inference/model.py#L439-L444)（缓存 buffer 的声明与写入）。

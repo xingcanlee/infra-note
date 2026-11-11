@@ -55,7 +55,7 @@ flowchart TB
 | 设备图对象 | `torch.cuda.CUDAGraph`                                     | `torch.npu.NPUGraph`           | `acl_graph.py:55-63`（`ACLGraphEntry`）                 |
 | 编译后端   | Inductor                                                   | `npugraph_ex`，回退 `torchair` | `vllm_ascend/compilation/compiler_interface.py:199-263` |
 
-**通用层是真的共用的**，不是「各写一份长得像」。Ascend 通过平台 hook 把自己的 wrapper 注册进去（`vllm_ascend/platform.py:242-246`）：
+**通用层是真的共用的**，不是「各写一份长得像」。Ascend 通过平台 hook 把自己的 wrapper 注册进去[^ascend-platform-code]（`vllm_ascend/platform.py:242-246`）：
 
 ```python
 @classmethod
@@ -69,7 +69,7 @@ def get_static_graph_wrapper_cls(cls) -> str:
 
 ## wrapper 的四步工作流
 
-`ACLGraphWrapper` 的 docstring 把流程写得很清楚（`acl_graph.py:66-92`）：
+`ACLGraphWrapper` 的 docstring 把流程写得很清楚[^ascend-acl-code]（`acl_graph.py:66-92`）：
 
 1. 初始化时给 wrapper 指定一个运行时模式（`FULL` 或 `PIECEWISE`）。
 2. 运行时从 forward context 拿到 `runtime_mode` 和 `batch_descriptor`，**无条件信任它们**。
@@ -98,7 +98,7 @@ def get_static_graph_wrapper_cls(cls) -> str:
 
 ## 编译后端：npugraph_ex 与 TorchAir
 
-这是最容易混淆的一层。`compiler_interface.py:199-263` 的逻辑是：
+这是最容易混淆的一层。`compiler_interface.py:199-263` 的逻辑是[^ascend-compiler-code]：
 
 ```python
 # Try npugraph_ex first, fall back to torchair for backward compatibility.
@@ -168,10 +168,12 @@ Capturing a cudagraph on (...)
 
 ## 来源
 
-- `vllm_ascend/compilation/acl_graph.py:55-92`（`ACLGraphEntry` 在 55-63，`ACLGraphWrapper` 在 66 起；工作流与缓冲区说明见其 docstring）
-- `vllm_ascend/platform.py:242-246`（`get_static_graph_wrapper_cls`）
-- `vllm_ascend/compilation/compiler_interface.py:199-263`（npugraph_ex → torchair 回退、编译缓存）
 - 行号按本地快照 `reference/vllm-ascend`（commit `28e9e97b`）、`reference/vllm`（commit `cf5cea2d`）
 - [vLLM-Ascend 仓库](https://github.com/vllm-project/vllm-ascend) · [Ascend CANN 文档](https://www.hiascend.com/document)
-- 上一篇：[06 · 无设备练习](../06-practice/)
 - 下一篇：[08 · 排错](../08-debugging/)——把前面七篇的判断串成一条排查路径。
+
+[^ascend-platform-code]: `vllm_ascend/platform.py:242-246`（get_static_graph_wrapper_cls）。
+
+[^ascend-acl-code]: `vllm_ascend/compilation/acl_graph.py:55-92`（ACLGraphEntry 与 ACLGraphWrapper；工作流与缓冲区说明见 docstring）。
+
+[^ascend-compiler-code]: `vllm_ascend/compilation/compiler_interface.py:199-263`（npugraph_ex → torchair 回退、编译缓存）。

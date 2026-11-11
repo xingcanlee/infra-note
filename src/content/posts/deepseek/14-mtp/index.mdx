@@ -14,7 +14,7 @@ import SpecDecodeView from '../../../../explainers/react/SpecDecodeView';
 
 上一篇把参数问题解决了：671B 参数，每个 token 只激活 37B。但还有一个结构性的限制没动——**一次前向只出一个 token**。
 
-生成 1000 个 token 就要跑 1000 次完整的模型前向。而第 02 篇说过，decode 是**带宽受限**的：每次前向都要把全部权重和 KV cache 读一遍，算术量却很小。既然每次都要把权重搬一遍，**能不能一次多产出几个 token，把这笔搬运摊薄？**
+生成 1000 个 token 就要跑 1000 次完整的模型前向。而第 02 篇说过，decode 是**带宽受限**的：每次前向都要把全部权重和 KV cache 读一遍，算术量却很小。既然每次都要把权重搬一遍，** 能不能一次多产出几个 token，把这笔搬运摊薄？**
 
 读完你能回答：MTP 模块长什么样、它在训练和推理时扮演的两个完全不同的角色、以及为什么推测解码**不会改变输出**。
 
@@ -43,7 +43,7 @@ import SpecDecodeView from '../../../../explainers/react/SpecDecodeView';
 
 ### MTP 模块的结构
 
-DeepSeek-V3 用 $D$ 个**顺序连接**的 MTP 模块预测 $D$ 个额外 token。第 $k$ 个模块由四部分组成（§2.2）：
+DeepSeek-V3 用 $D$ 个**顺序连接**的 MTP 模块预测 $D$ 个额外 token[^deepseek-v3-paper]。第 $k$ 个模块由四部分组成（§2.2）：
 
 | 部分                                      | 是否共享         |
 | ----------------------------------------- | ---------------- |
@@ -52,11 +52,11 @@ DeepSeek-V3 用 $D$ 个**顺序连接**的 MTP 模块预测 $D$ 个额外 token�
 | Transformer block $\mathrm{TRM}_k(\cdot)$ | 本模块独有       |
 | 投影矩阵 $M_k\in\mathbb{R}^{d\times 2d}$  | 本模块独有       |
 
-共享 embedding 和输出头意味着**额外参数很少**——只有一个 Transformer block 和一个投影矩阵。V3 实际取 $D=1$（§4.2），即只多预测一个 token。
+共享 embedding 和输出头意味着**额外参数很少**——只有一个 Transformer block 和一个投影矩阵。V3 实际取 $D=1$（§4.2）[^deepseek-v3-paper]，即只多预测一个 token。
 
 ### 公式
 
-第 $k$ 个深度把上一深度的表示和未来 token 的 embedding 拼起来投影（式 (21)）：
+第 $k$ 个深度把上一深度的表示和未来 token 的 embedding 拼起来投影（式 (21)）[^deepseek-v3-paper]：
 
 $$
 \mathbf{h}_{i}^{\prime k}=M_{k}\big[\mathrm{RMSNorm}(\mathbf{h}_{i}^{k-1});\ \mathrm{RMSNorm}(\mathrm{Emb}(t_{i+k}))\big]
@@ -73,7 +73,7 @@ $$
 
 ### 为什么要串联
 
-论文明确对比了另一种做法（Gloeckle et al.）：用 $D$ 个**独立的输出头并行**预测 $D$ 个未来 token。DeepSeek-V3 选择顺序预测，理由是**在每个预测深度保留完整的因果链**（§2.2、图 3）。
+论文明确对比了另一种做法（Gloeckle et al.）[^mtp-paper]：用 $D$ 个**独立的输出头并行**预测 $D$ 个未来 token。DeepSeek-V3 选择顺序预测，理由是**在每个预测深度保留完整的因果链**（§2.2、图 3）。
 
 差别在于：并行预测时，「第 2 个未来 token」的预测看不到「第 1 个未来 token」是什么；而串联时，第 2 个模块的输入里包含了 $t_{i+1}$ 的 embedding——它知道前一个猜的是什么。
 
@@ -81,13 +81,13 @@ $$
 
 ### 训练目标
 
-每个深度算一个交叉熵（式 (24)），跨深度平均后乘权重 $\lambda$（式 (25)）：
+每个深度算一个交叉熵（式 (24)），跨深度平均后乘权重 $\lambda$（式 (25)）[^deepseek-v3-paper]：
 
 $$
 \mathcal{L}_{\mathrm{MTP}}=\frac{\lambda}{D}\sum_{k=1}^{D}\mathcal{L}_{\mathrm{MTP}}^{k}
 $$
 
-$\lambda$ 是分阶段的：前 10T 个训练 token 用 $\lambda=0.3$，之后 4.8T 个用 $\lambda=0.1$（§4.2）。前期权重大、后期调小——让模型先获得这个额外监督信号的好处，后期再把重心交还给主目标。
+$\lambda$ 是分阶段的：前 10T 个训练 token 用 $\lambda=0.3$，之后 4.8T 个用 $\lambda=0.1$（§4.2）[^deepseek-v3-paper]。前期权重大、后期调小——让模型先获得这个额外监督信号的好处，后期再把重心交还给主目标。
 
 ### 两个完全不同的角色
 
@@ -99,15 +99,15 @@ $\lambda$ 是分阶段的：前 10T 个训练 token 用 $\lambda=0.3$，之后 4
 | 作用             | 额外的监督信号，**改善主模型本身** | 当草稿模块，加速生成           |
 | 可否丢弃         | —                                  | **可以**，丢掉后主模型照常工作 |
 
-论文在 §2.2「MTP in Inference」明确说：推理时可以**直接丢弃** MTP 模块，主模型独立正常运行；也可以留着做推测解码。
+论文在 §2.2「MTP in Inference」明确说[^deepseek-v3-paper]：推理时可以**直接丢弃** MTP 模块，主模型独立正常运行；也可以留着做推测解码。
 
-§4.5.1 的消融（表 4）正是利用了这一点：对照组和实验组**推理成本完全相同**（因为都把 MTP 丢掉了），差别只在训练时有没有这个额外目标。结论是 MTP 在大多数 benchmark 上提升了性能。
+§4.5.1 的消融（表 4）正是利用了这一点[^deepseek-v3-paper]：对照组和实验组**推理成本完全相同**（因为都把 MTP 丢掉了），差别只在训练时有没有这个额外目标。结论是 MTP 在大多数 benchmark 上提升了性能。
 
 **所以 MTP 首先是一个训练技巧，其次才是一个推理加速手段。** 把它只当成「推测解码的草稿模型」会漏掉一半。
 
 ### 论文给的数字
 
-§5.4.3：V3 用 MTP 预测接下来的 2 个 token，第二个 token 的接受率在不同生成主题上是 **85%–90%**，由此达到 **1.8× TPS**。
+§5.4.3：V3 用 MTP 预测接下来的 2 个 token[^deepseek-v3-paper]，第二个 token 的接受率在不同生成主题上是 **85%–90%**，由此达到 **1.8× TPS**。
 
 用本篇的期望公式核对一下（$k=1$，即多猜 1 个）：
 
@@ -115,9 +115,9 @@ $$
 \mathbb{E}[\text{每轮产出}] = (1-p)\cdot 1 + p\cdot 2 = 1+p
 $$
 
-$p=0.85$ 时是 1.85，$p=0.90$ 时是 1.90。**和论文的 1.8× 对得上**——这说明那个 1.8× 基本就是「接受率直接转化成的前向效率」，没有额外的隐藏开销，也没有被低估。
+$p=0.85$ 时是 1.85，$p=0.90$ 时是 1.90。**和论文的 1.8× 对得上**[^deepseek-v3-paper]——这说明那个 1.8× 基本就是「接受率直接转化成的前向效率」，没有额外的隐藏开销，也没有被低估。
 
-注意论文只说了「various generation topics」，没有给出主题列表、采样参数或硬件条件。接受率依赖具体内容：代码和格式化文本通常好猜，开放式创作难猜。
+注意论文只说了「various generation topics」[^deepseek-v3-paper]，没有给出主题列表、采样参数或硬件条件。接受率依赖具体内容：代码和格式化文本通常好猜，开放式创作难猜。
 
 ## 代码实现
 
@@ -183,7 +183,7 @@ V3 的配置（k=1）：
 
 ### 真实实现在哪
 
-MTP 模块在权重里是独立的一层。`README_WEIGHTS.md` 给出的组织方式：
+MTP 模块在权重里是独立的一层。`README_WEIGHTS.md` 给出的组织方式[^mtp-weights]：
 
 | 事实                                                                                | 位置                      |
 | ----------------------------------------------------------------------------------- | ------------------------- |
@@ -213,8 +213,10 @@ MTP 模块在权重里是独立的一层。`README_WEIGHTS.md` 给出的组织�
 
 ## 来源
 
-- [DeepSeek-V3 技术报告](https://arxiv.org/abs/2412.19437) §2.2（MTP 模块与训练目标，式 (21)–(25)）、§4.2（$D=1$、$\lambda$ 的分阶段取值）、§4.5.1 表 4（消融）、§5.4.3（接受率与 1.8× TPS）
-- [Better & Faster Large Language Models via Multi-token Prediction](https://arxiv.org/abs/2404.19737)（论文对比的并行预测做法）
-- `reference/DeepSeek-V3/README_WEIGHTS.md:6,13,55-56`（MTP 模块在权重里的组织）
-- 上一篇：[13 · DeepSeekMoE](../13-moe/)
 - 下一篇：[Engram](../12-engram/)（尚未按本系列约定重写）——在 MoE 之外再开一条稀疏的轴。
+
+[^deepseek-v3-paper]: [DeepSeek-V3 技术报告](https://arxiv.org/abs/2412.19437) §2.2（MTP 模块与训练目标，式 (21)–(25)）、§4.2（D=1、lambda 的分阶段取值）、§4.5.1 表 4（消融）、§5.4.3（接受率与 1.8× TPS）。
+
+[^mtp-paper]: [Better & Faster Large Language Models via Multi-token Prediction](https://arxiv.org/abs/2404.19737)（论文对比的并行预测做法）。
+
+[^mtp-weights]: `reference/DeepSeek-V3/README_WEIGHTS.md:6,13,55-56`（MTP 模块在权重里的组织）。

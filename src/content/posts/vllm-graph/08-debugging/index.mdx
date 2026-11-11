@@ -36,7 +36,7 @@ VLLM_LOGGING_LEVEL=DEBUG vllm serve ... 2>&1 | grep -i "capturing a cudagraph"
 VLLM_LOGGING_LEVEL=DEBUG python -m vllm.entrypoints... 2>&1 | grep -i "capturing acl graph"
 ```
 
-对应的源码位置：
+对应的源码位置[^vllm-debug-entries]：
 
 | 日志                                  | 位置                                       | 含义                      |
 | ------------------------------------- | ------------------------------------------ | ------------------------- |
@@ -49,11 +49,11 @@ VLLM_LOGGING_LEVEL=DEBUG python -m vllm.entrypoints... 2>&1 | grep -i "capturing
 - 看到「Capturing」只能说明**启动时建过这张图**，不等于**请求时用上了**。
 - 没看到任何 Capturing，说明 mode 是 `NONE` 或 manager 判定不需要捕获——这时去查配置，不是查性能。
 
-要确认「请求时是否真的在 replay」，得看 profiler 或者 `cg_mode` 相关的运行时统计（`make_cudagraph_stats`，`cudagraph_utils.py:93-102`，里面有 `num_paddings` 和 `runtime_mode`）。
+要确认「请求时是否真的在 replay」，得看 profiler 或者 `cg_mode` 相关的运行时统计[^vllm-debug-stats]（`make_cudagraph_stats`，`cudagraph_utils.py:93-102`，里面有 `num_paddings` 和 `runtime_mode`）。
 
 ## §2 没走图：对照六项条件
 
-确认了「建了图但没用上」，就是回退。按第 05 篇那六项条件逐条对：
+确认了「建了图但没用上」，就是回退。按第 05 篇那六项条件逐条对[^vllm-debug-compat]：
 
 | #   | 条件                | 常见触发                 | 怎么确认                               |
 | --- | ------------------- | ------------------------ | -------------------------------------- |
@@ -187,9 +187,10 @@ flowchart TB
 
 ## 来源
 
-- 日志与入口：`vllm/compilation/cuda_graph.py:272`、`vllm/v1/worker/gpu/model_runner.py:1132-1175`、`vllm_ascend/compilation/acl_graph.py:190`
-- 运行时统计：`vllm/v1/worker/gpu/cudagraph_utils.py:93-102`（`make_cudagraph_stats`）
-- 兼容条件：`vllm/v1/worker/gpu/cudagraph_utils.py:115-142`
 - 行号按本地快照 `reference/vllm`（`cf5cea2d`）与 `reference/vllm-ascend`（`28e9e97b`）
-- 上一篇：[07 · Ascend 图模式](../07-ascend/)
-- 回到 [系列首页](../)
+
+[^vllm-debug-entries]: 日志与入口：`vllm/compilation/cuda_graph.py:272`、`vllm/v1/worker/gpu/model_runner.py:1132-1175`、`vllm_ascend/compilation/acl_graph.py:190`。
+
+[^vllm-debug-stats]: 运行时统计：`vllm/v1/worker/gpu/cudagraph_utils.py:93-102`（make_cudagraph_stats）。
+
+[^vllm-debug-compat]: 兼容条件：`vllm/v1/worker/gpu/cudagraph_utils.py:115-142`。
