@@ -15,7 +15,7 @@ import {
 } from 'astro-wisp/explainers';
 import { attention, type AttnState } from '../core/attention';
 import { causal, maskCatalog, type MaskFn } from '../core/masks';
-import { Caption, Legend } from './primitives';
+import { Caption, Legend, legendRight } from './primitives';
 import { DIMS, TOKENS, toyQKV } from '../core/toy';
 
 export interface AttentionGridProps {
@@ -45,7 +45,16 @@ function Scene({ s, focus, showOutput }: { s: AttnState; focus?: string[]; showO
   const dv = s.v[0].length;
   const gridW = l * CELL;
   const outX = GUT + gridW + GAP;
-  const w = GUT + gridW + (showOutput ? GAP + dv * CELL : 0) + 40;
+  const legendItems = [
+    { tone: 'k' as const, text: '打分（越浓越强）' },
+    { tone: 'v' as const, text: '权重（越浓越大）' },
+    { tone: 'mask' as const, text: '不读（×）' },
+  ];
+  const legendGap = 146;
+  const w = Math.max(
+    GUT + gridW + (showOutput ? GAP + dv * CELL : 0) + 40,
+    legendRight(GUT, legendItems, legendGap),
+  );
   const h = TOP + l * CELL + 34;
 
   const hotScores = focusOf(focus, 'scores');
@@ -137,16 +146,7 @@ function Scene({ s, focus, showOutput }: { s: AttnState; focus?: string[]; showO
         </>
       )}
 
-      <Legend
-        x={GUT}
-        y={h - 12}
-        items={[
-          { tone: 'k', text: '打分（越浓越强）' },
-          { tone: 'v', text: '权重（越浓越大）' },
-          { tone: 'mask', text: '不读（×）' },
-        ]}
-        gap={146}
-      />
+      <Legend x={GUT} y={h - 12} items={legendItems} gap={legendGap} />
     </Stage>
   );
 }

@@ -13,7 +13,7 @@ import {
   type SubmitMode,
   type SubmitState,
 } from '../core/submit';
-import { Caption, Legend } from './primitives';
+import { Caption, Legend, labelWidth, legendRight } from './primitives';
 
 export interface SubmitTimelineProps {
   mode?: SubmitMode;
@@ -34,7 +34,18 @@ function Scene({ s, focus }: { s: SubmitState; focus?: string[] }) {
   // 顶部只在会出现「同步点」标签时留空；nSync 是整轮统计，不随帧变化，画面高度不会跳
   const TOP = s.nSync > 0 ? 34 : 6;
   const SCALE = Math.min(MAX_SCALE, (FIT_W - LEFT - 70) / s.wall);
-  const w = LEFT + s.wall * SCALE + 70;
+  const legendItems = [
+    { tone: 'q' as const, text: '逐算子提交' },
+    { tone: 'done' as const, text: '图 replay' },
+    { tone: 'error' as const, text: '设备空等 / 同步点' },
+  ];
+  const legendGap = 110;
+  const summary = `提交 ${s.planned.length} 次 · CPU ${f(s.cpuTotal)} · 设备干活 ${f(s.devTotal)} · 墙钟 ${f(s.wall)}${s.nSync ? ` · 同步点 ${s.nSync} 个` : ''}`;
+  const w = Math.max(
+    LEFT + s.wall * SCALE + 70,
+    LEFT + labelWidth(summary) + 8,
+    legendRight(LEFT, legendItems, legendGap),
+  );
   const h = TOP + 2 * LANE_H + LANE_GAP + 92;
   const cpuY = TOP;
   const devY = TOP + LANE_H + LANE_GAP;
@@ -228,16 +239,7 @@ function Scene({ s, focus }: { s: SubmitState; focus?: string[] }) {
         text={`设备空闲 ${f(s.bubble)}（占 ${f((s.bubble / s.wall) * 100, 1)}%）`}
         tone={s.bubble > 0.001 ? 'error' : 'done'}
       />
-      <Legend
-        x={LEFT}
-        y={devY + LANE_H + 70}
-        items={[
-          { tone: 'q', text: '逐算子提交' },
-          { tone: 'done', text: '图 replay' },
-          { tone: 'error', text: '设备空等 / 同步点' },
-        ]}
-        gap={110}
-      />
+      <Legend x={LEFT} y={devY + LANE_H + 70} items={legendItems} gap={legendGap} />
     </Stage>
   );
 }

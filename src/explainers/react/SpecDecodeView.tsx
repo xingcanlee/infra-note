@@ -7,7 +7,7 @@ import { useMemo } from 'react';
 import { Explainer, Stage, focusOf, formatNumber as f } from 'astro-wisp/explainers';
 import { toneFill, toneStroke } from 'astro-wisp/explainers/core';
 import { specDecode, type SpecState } from '../core/specdec';
-import { Caption, Legend } from './primitives';
+import { Caption, Legend, legendRight } from './primitives';
 
 export interface SpecDecodeViewProps {
   truth?: string[];
@@ -73,8 +73,17 @@ function Scene({ s, focus }: { s: SpecState; focus?: string[] }) {
     0,
     s.phase === 'draft' || s.phase === 'verify' ? s.committed.length : base,
   );
-  // 图例整行右缘 = LEFT + 3×160 + 57 = 623，比格子行（LEFT+8×62=582）更右，w 余量取 56 保证图例不贴边。
-  const w = LEFT + Math.max(s.truth.length, 8) * CELL + 56;
+  const legendItems = [
+    { tone: 'mask' as const, text: '主模型真正会生成的' },
+    { tone: 'weight' as const, text: '草稿候选' },
+    { tone: 'error' as const, text: '被拒' },
+    { tone: 'done' as const, text: '已确定' },
+  ];
+  const legendGap = 160;
+  const w = Math.max(
+    LEFT + Math.max(s.truth.length, 8) * CELL + 56,
+    legendRight(LEFT, legendItems, legendGap),
+  );
   const h = TOP + 3 * (H + 22) + 76;
 
   const rows = [
@@ -87,6 +96,7 @@ function Scene({ s, focus }: { s: SpecState; focus?: string[] }) {
     <Stage
       width={w}
       height={h}
+      pad={10}
       label={`推测解码：第 ${s.round} 轮，已产出 ${s.committed.length}/${s.truth.length}`}
     >
       {rows.map((r) => (
@@ -138,17 +148,7 @@ function Scene({ s, focus }: { s: SpecState; focus?: string[] }) {
         }
         tone="done"
       />
-      <Legend
-        x={LEFT}
-        y={h - 2}
-        items={[
-          { tone: 'mask', text: '主模型真正会生成的' },
-          { tone: 'weight', text: '草稿候选' },
-          { tone: 'error', text: '被拒' },
-          { tone: 'done', text: '已确定' },
-        ]}
-        gap={160}
-      />
+      <Legend x={LEFT} y={h - 2} items={legendItems} gap={legendGap} />
     </Stage>
   );
 }

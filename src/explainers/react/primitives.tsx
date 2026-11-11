@@ -6,7 +6,7 @@
  */
 import { motion, useReducedMotion } from 'motion/react';
 import type { ReactNode } from 'react';
-import { TexLabel } from 'astro-wisp/explainers';
+import { Tex, TexLabel } from 'astro-wisp/explainers';
 import { toneFill, toneStroke, type Tone } from 'astro-wisp/explainers/core';
 
 /** 带标签的圆角盒子：流程图、层结构、模块。 */
@@ -160,54 +160,63 @@ export function Arrow({
   );
 }
 
-/** 中英文与公式混排的舞台标签；公式片段必须给显式宽度，避免 foreignObject 被裁掉。 */
+export type LegendItem = { tone: Tone; text: string };
+
+/** Label 的保守宽度估算，用于在 SVG viewBox 内给动态文字留空间。 */
+export function labelWidth(text: string) {
+  return text.length * 14;
+}
+
+/** 图例所需的右缘，舞台宽度应至少覆盖这个值。 */
+export function legendRight(x: number, items: LegendItem[], gap = 108) {
+  if (items.length === 0) return x;
+  return (
+    x + (items.length - 1) * gap + 15 + Math.max(...items.map((item) => labelWidth(item.text))) + 8
+  );
+}
+
+/** 中英文与公式混排的舞台标签：一个 foreignObject 内的单行 inline run。 */
 export function MixedLabel({
   x,
   y,
   parts,
   tone,
-  gap = 4,
+  anchor = 'start',
 }: {
   x: number;
   y: number;
   parts: Array<{ text: string; width?: number } | { tex: string; width: number }>;
   tone?: Tone;
-  gap?: number;
+  anchor?: 'start' | 'middle' | 'end';
 }) {
-  const partWidth = (part: (typeof parts)[number]) =>
-    'tex' in part ? part.width : (part.width ?? part.text.length * 14);
+  const width = parts.reduce(
+    (sum, part) => sum + ('tex' in part ? part.width : (part.width ?? labelWidth(part.text))),
+    0,
+  );
+  const left = anchor === 'middle' ? x - width / 2 : anchor === 'end' ? x - width : x;
+  const color = tone ? toneStroke(tone) : 'var(--wisp-fg)';
   return (
-    <g>
-      {parts.map((part, i) => {
-        const width = partWidth(part);
-        const cursor = x + parts.slice(0, i).reduce((sum, item) => sum + partWidth(item) + gap, 0);
-        const node =
-          'tex' in part ? (
-            <TexLabel
-              key={i}
-              x={cursor}
-              y={y}
-              width={width}
-              height={22}
-              tex={part.tex}
-              tone={tone}
-              anchor="start"
-            />
-          ) : (
-            <text
-              key={i}
-              x={cursor}
-              y={y}
-              dominantBaseline="central"
-              className="wisp-explainer__label"
-              style={{ fill: tone ? toneStroke(tone) : 'var(--wisp-fg)' }}
-            >
-              {part.text}
-            </text>
-          );
-        return node;
-      })}
-    </g>
+    <foreignObject x={left} y={y - 11} width={width} height={22}>
+      <div
+        style={{
+          color,
+          display: 'block',
+          width: '100%',
+          height: '100%',
+          fontFamily: 'var(--wisp-font-sans)',
+          fontSize: 14,
+          fontWeight: 600,
+          lineHeight: '22px',
+          textAlign: anchor === 'middle' ? 'center' : anchor,
+          whiteSpace: 'nowrap',
+          overflow: 'visible',
+        }}
+      >
+        {parts.map((part, i) =>
+          'tex' in part ? <Tex key={i} tex={part.tex} /> : <span key={i}>{part.text}</span>,
+        )}
+      </div>
+    </foreignObject>
   );
 }
 
@@ -281,7 +290,7 @@ export function Legend({
 }: {
   x: number;
   y: number;
-  items: Array<{ tone: Tone; text: string }>;
+  items: LegendItem[];
   gap?: number;
 }) {
   return (

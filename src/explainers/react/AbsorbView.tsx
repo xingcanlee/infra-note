@@ -6,7 +6,7 @@
 import { useMemo } from 'react';
 import { Cell, Explainer, Label, Stage, focusOf, formatNumber as f } from 'astro-wisp/explainers';
 import { absorbFlow, type AbsorbMode, type AbsorbState } from '../core/absorb';
-import { Caption, Legend, MixedLabel } from './primitives';
+import { Caption, Legend, MixedLabel, legendRight } from './primitives';
 
 export interface AbsorbViewProps {
   mode?: AbsorbMode;
@@ -30,7 +30,14 @@ function Scene({ s, focus }: { s: AbsorbState; focus?: string[] }) {
 
   const xK = X_LAT + dC * S + 44;
   const xScore = s.mode === 'naive' ? xK + dK * S + 40 : xK;
-  const w = xScore + 150;
+  const legendItems = [
+    { tone: 'q' as const, text: 'Query' },
+    { tone: 'v' as const, text: '缓存的 latent' },
+    { tone: 'weight' as const, text: '临时展开的 K' },
+    { tone: 'activation' as const, text: '打分' },
+  ];
+  const legendGap = 118;
+  const w = Math.max(xScore + 150, legendRight(0, legendItems, legendGap));
   const h = TOP + Math.max(l, 2) * ROW + 86;
 
   return (
@@ -145,17 +152,7 @@ function Scene({ s, focus }: { s: AbsorbState; focus?: string[] }) {
         text={`每个历史位置 ${s.perToken} 次乘法 · 累计 ${s.mults} 次 · ${s.materializesK ? `物化 ${l}×${dK} 个 Key 元素` : '不物化 Key'}`}
         tone={s.mode === 'naive' ? 'error' : 'done'}
       />
-      <Legend
-        x={0}
-        y={h - 16}
-        items={[
-          { tone: 'q', text: 'Query' },
-          { tone: 'v', text: '缓存的 latent' },
-          { tone: 'weight', text: '临时展开的 K' },
-          { tone: 'activation', text: '打分' },
-        ]}
-        gap={118}
-      />
+      <Legend x={0} y={h - 16} items={legendItems} gap={legendGap} />
     </Stage>
   );
 }

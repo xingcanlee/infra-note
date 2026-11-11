@@ -19,7 +19,8 @@ import { Caption, Legend } from './primitives';
 export interface BranchViewProps {
   l?: number;
   t?: number;
-  branches?: BranchSpec[];
+  /** Astro serializes island props, so custom mask functions may be absent on the client. */
+  branches?: Array<Omit<BranchSpec, 'fn'> & { fn?: MaskFn }>;
   title?: string;
 }
 
@@ -28,6 +29,19 @@ const ROWH = 54;
 const LEFT = 128;
 const TOP = 40;
 const TONES: Tone[] = ['v', 'weight', 'k', 'activation'];
+
+function resolveBranch(b: Omit<BranchSpec, 'fn'> & { fn?: MaskFn }): BranchSpec {
+  if (typeof b.fn === 'function') return b as BranchSpec;
+  const fn: MaskFn =
+    b.id === 'csa'
+      ? (t, s) => s <= t && s % 4 === 0 && s < t - 2
+      : b.id === 'hca'
+        ? (t, s) => s <= t && s % 8 === 0 && s < Math.floor(t / 8) * 8
+        : b.id === 'win'
+          ? slidingWindow(4)
+          : (t, s) => s <= t;
+  return { ...b, fn };
+}
 
 function Strip({
   y,
@@ -210,7 +224,7 @@ export function nsaBranches(blockL = 4, keepBlocks = 2, win = 4): BranchSpec[] {
 }
 
 export default function BranchView({ l = 16, t, branches, title }: BranchViewProps) {
-  const bs = branches ?? nsaBranches();
+  const bs = useMemo(() => (branches ? branches.map(resolveBranch) : nsaBranches()), [branches]);
   const steps = useMemo(() => branchFlow({ l, t, branches: bs }), [l, t, bs]);
   return (
     <Explainer steps={steps} title={title ?? '多分支注意力：分工读取，再按 gate 合并'}>
