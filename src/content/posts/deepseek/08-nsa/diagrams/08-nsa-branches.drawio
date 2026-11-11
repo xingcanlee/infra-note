@@ -25,7 +25,7 @@
         <mxCell id="blockify" value="每 \(l=32\) 个 K/V&lt;br&gt;聚合成一个块" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f5e9;strokeColor=#2c522d;strokeWidth=1.25;fontFamily=Inter;fontSize=14;fontColor=#1d1d1f;" vertex="1" parent="1">
           <mxGeometry x="0" y="216" width="192" height="48" as="geometry"/>
         </mxCell>
-        <mxCell id="phi" value="\(\varphi\)：可学习 MLP&lt;br&gt;带块内位置编码" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#f5eef9;strokeColor=#4d335c;strokeWidth=1.25;fontFamily=Inter;fontSize=14;fontColor=#1d1d1f;" vertex="1" parent="1">
+        <mxCell id="phi" value="\(\varphi\)：可学习 MLP&lt;br&gt;带块内位置编码" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#f4f4f2;strokeColor=#e2e2dd;strokeWidth=1.25;fontFamily=Inter;fontSize=14;fontColor=#1d1d1f;" vertex="1" parent="1">
           <mxGeometry x="0" y="288" width="192" height="48" as="geometry"/>
         </mxCell>
         <mxCell id="comp" value="压缩 K/V&lt;br&gt;\(d=16\)，相邻块重叠" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f5e9;strokeColor=#2c522d;strokeWidth=1.25;fontFamily=Inter;fontSize=14;fontColor=#1d1d1f;" vertex="1" parent="1">
@@ -58,10 +58,10 @@
         <mxCell id="a3" value="\(\mathrm{Attn}(\mathbf q_t,\tilde K^{win},\tilde V^{win})\)" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e3f5f3;strokeColor=#0f766e;strokeWidth=1.25;fontFamily=Inter;fontSize=14;fontColor=#1d1d1f;" vertex="1" parent="1">
           <mxGeometry x="448" y="680" width="192" height="48" as="geometry"/>
         </mxCell>
-        <mxCell id="gate" value="门控融合 \(\mathbf o_t^*=\sum_c g_t^c\,\mathbf o_t^c\)" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#f5eef9;strokeColor=#4d335c;strokeWidth=2;fontFamily=Inter;fontSize=14;fontColor=#1d1d1f;" vertex="1" parent="1">
+        <mxCell id="gate" value="门控融合 \(\mathbf o_t^*=\sum_c g_t^c\,\mathbf o_t^c\)" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e3f5f3;strokeColor=#0f766e;strokeWidth=2;fontFamily=Inter;fontSize=14;fontColor=#1d1d1f;" vertex="1" parent="1">
           <mxGeometry x="160" y="760" width="320" height="48" as="geometry"/>
         </mxCell>
-        <mxCell id="out" value="输出 \(\mathbf o_t^*\)" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f2fb;strokeColor=#2f5783;strokeWidth=2;fontFamily=Inter;fontSize=14;fontColor=#1d1d1f;" vertex="1" parent="1">
+        <mxCell id="out" value="输出 \(\mathbf o_t^*\)" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#f4f4f2;strokeColor=#e2e2dd;strokeWidth=2;fontFamily=Inter;fontSize=14;fontColor=#1d1d1f;" vertex="1" parent="1">
           <mxGeometry x="240" y="840" width="160" height="40" as="geometry"/>
         </mxCell>
         <mxCell id="note" value="虚线：选块分数直接复用压缩分支的 softmax，边际成本为 0。三条分支使用各自独立的 K/V 投影，避免局部捷径与梯度干扰（§3.3.3）。" style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;fontFamily=Inter;fontSize=12;fontColor=#5c6067;" vertex="1" parent="1">
@@ -79,10 +79,10 @@
         <mxCell id="e4_kvp_cmp_blockify" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;endArrow=classic;html=1;strokeColor=#2c522d;strokeWidth=1.25;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="kvp_cmp" target="blockify">
           <mxGeometry relative="1" as="geometry"/>
         </mxCell>
-        <mxCell id="e5_blockify_phi" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;endArrow=classic;html=1;strokeColor=#4d335c;strokeWidth=1.25;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="blockify" target="phi">
+        <mxCell id="e5_blockify_phi" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;endArrow=classic;html=1;strokeColor=#5c6067;strokeWidth=1.25;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="blockify" target="phi">
           <mxGeometry relative="1" as="geometry"/>
         </mxCell>
-        <mxCell id="e6_phi_comp" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;endArrow=classic;html=1;strokeColor=#2c522d;strokeWidth=1.25;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="phi" target="comp">
+        <mxCell id="e6_phi_comp" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;endArrow=classic;html=1;strokeColor=#5c6067;strokeWidth=1.25;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="phi" target="comp">
           <mxGeometry relative="1" as="geometry"/>
         </mxCell>
         <mxCell id="e7_comp_a1" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;endArrow=classic;html=1;strokeColor=#2c522d;strokeWidth=1.25;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="comp" target="a1">
@@ -118,7 +118,7 @@
         <mxCell id="e17_a3_gate" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;endArrow=classic;html=1;strokeColor=#0f766e;strokeWidth=1.25;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.8;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="a3" target="gate">
           <mxGeometry relative="1" as="geometry"/>
         </mxCell>
-        <mxCell id="e18_gate_out" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;endArrow=classic;html=1;strokeColor=#4d335c;strokeWidth=2;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="gate" target="out">
+        <mxCell id="e18_gate_out" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;endArrow=classic;html=1;strokeColor=#0f766e;strokeWidth=2;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="gate" target="out">
           <mxGeometry relative="1" as="geometry"/>
         </mxCell>
       </root>

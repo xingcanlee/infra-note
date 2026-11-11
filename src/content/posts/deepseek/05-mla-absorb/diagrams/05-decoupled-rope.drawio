@@ -46,16 +46,16 @@
         <mxCell id="kr" value="位置 key \(\mathbf k_s^R\)&lt;br&gt;\(d_r=64\)，共享&lt;br&gt;施加 \(\mathrm{RoPE}(R_s)\)" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f5e9;strokeColor=#2c522d;strokeWidth=1.25;fontFamily=Inter;fontSize=14;fontColor=#1d1d1f;" vertex="1" parent="1">
           <mxGeometry x="496" y="304" width="136" height="88" as="geometry"/>
         </mxCell>
-        <mxCell id="score" value="\(\displaystyle e_{t,s}^{h}=(\mathbf q_t^{C,h})^{\top}\mathbf W_h^{UK}\mathbf c_s+(\mathbf q_t^{R,h})^{\top}\mathbf k_s^R\)&lt;br&gt;内容项 + RoPE 位置项" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e3f5f3;strokeColor=#0f766e;strokeWidth=2;fontFamily=Inter;fontSize=14;fontColor=#1d1d1f;" vertex="1" parent="1">
+        <mxCell id="score" value="\(\displaystyle e_{t,s}^{h}=(\mathbf q_t^{C,h})^{\top}\mathbf W_h^{UK}\mathbf c_s+(\mathbf q_t^{R,h})^{\top}\mathbf k_s^R\)&lt;br&gt;内容项 + RoPE 位置项" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#f4f4f2;strokeColor=#e2e2dd;strokeWidth=2;fontFamily=Inter;fontSize=14;fontColor=#1d1d1f;" vertex="1" parent="1">
           <mxGeometry x="0" y="448" width="640" height="96" as="geometry"/>
         </mxCell>
         <mxCell id="param_note" value="共享投影 \(W_h^{UK}\)、\(W_h^{UV}\) 与 \(t,s\) 无关，可以预先吸收进 Query / Value" style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;fontFamily=Inter;fontSize=12;fontColor=#4d335c;" vertex="1" parent="1">
           <mxGeometry x="168" y="552" width="472" height="32" as="geometry"/>
         </mxCell>
-        <mxCell id="softmax" value="softmax" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e3f5f3;strokeColor=#0f766e;strokeWidth=1.25;fontFamily=Inter;fontSize=14;fontColor=#1d1d1f;" vertex="1" parent="1">
+        <mxCell id="softmax" value="softmax" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#f4f4f2;strokeColor=#e2e2dd;strokeWidth=1.25;fontFamily=Inter;fontSize=14;fontColor=#1d1d1f;" vertex="1" parent="1">
           <mxGeometry x="0" y="592" width="120" height="56" as="geometry"/>
         </mxCell>
-        <mxCell id="aggregate" value="按权重聚合 latent&lt;br&gt;\(z_t^h=\sum_s \alpha_{t,s}^h\mathbf c_s\)" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e3f5f3;strokeColor=#0f766e;strokeWidth=1.25;fontFamily=Inter;fontSize=14;fontColor=#1d1d1f;" vertex="1" parent="1">
+        <mxCell id="aggregate" value="按权重聚合 latent&lt;br&gt;\(z_t^h=\sum_s \alpha_{t,s}^h\mathbf c_s\)" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#f4f4f2;strokeColor=#e2e2dd;strokeWidth=1.25;fontFamily=Inter;fontSize=14;fontColor=#1d1d1f;" vertex="1" parent="1">
           <mxGeometry x="168" y="592" width="232" height="56" as="geometry"/>
         </mxCell>
         <mxCell id="out" value="输出&lt;br&gt;\(\mathbf o_t^h=\mathbf W_h^{UV}\mathbf z_t^h\)" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#f5eef9;strokeColor=#4d335c;strokeWidth=2;fontFamily=Inter;fontSize=14;fontColor=#1d1d1f;" vertex="1" parent="1">
@@ -103,10 +103,10 @@
         <mxCell id="e13_kr_score" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;endArrow=classic;html=1;strokeColor=#2c522d;strokeWidth=1.25;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.8812;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="kr" target="score">
           <mxGeometry relative="1" as="geometry"/>
         </mxCell>
-        <mxCell id="e14_score_softmax" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;endArrow=classic;html=1;strokeColor=#0f766e;strokeWidth=1.25;exitX=0.0938;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="score" target="softmax">
+        <mxCell id="e14_score_softmax" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;endArrow=classic;html=1;strokeColor=#5c6067;strokeWidth=1.25;exitX=0.0938;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="score" target="softmax">
           <mxGeometry relative="1" as="geometry"/>
         </mxCell>
-        <mxCell id="e15_softmax_aggregate" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;endArrow=classic;html=1;strokeColor=#0f766e;strokeWidth=1.25;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="softmax" target="aggregate">
+        <mxCell id="e15_softmax_aggregate" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;endArrow=classic;html=1;strokeColor=#5c6067;strokeWidth=1.25;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="softmax" target="aggregate">
           <mxGeometry relative="1" as="geometry"/>
         </mxCell>
         <mxCell id="e16_aggregate_out" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;endArrow=classic;html=1;strokeColor=#4d335c;strokeWidth=2;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="aggregate" target="out">

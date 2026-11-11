@@ -22,13 +22,13 @@
         <mxCell id="ki" value="\(\mathbf k^I_s\)&lt;br&gt;indexer key" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#fbf2df;strokeColor=#7b5518;strokeWidth=1.25;fontFamily=Inter;fontSize=14;fontColor=#1d1d1f;" vertex="1" parent="1">
           <mxGeometry x="448" y="104" width="192" height="56" as="geometry"/>
         </mxCell>
-        <mxCell id="idx" value="\(\displaystyle I_{t,s}=\sum_{j=1}^{H^I} w^I_{t,j}\,\mathrm{ReLU}\!\left(\mathbf q^I_{t,j}\cdot\mathbf k^I_s\right)\)" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e3f5f3;strokeColor=#0f766e;strokeWidth=2;fontFamily=Inter;fontSize=14;fontColor=#1d1d1f;" vertex="1" parent="1">
+        <mxCell id="idx" value="\(\displaystyle I_{t,s}=\sum_{j=1}^{H^I} w^I_{t,j}\,\mathrm{ReLU}\!\left(\mathbf q^I_{t,j}\cdot\mathbf k^I_s\right)\)" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#f4f4f2;strokeColor=#e2e2dd;strokeWidth=2;fontFamily=Inter;fontSize=14;fontColor=#1d1d1f;" vertex="1" parent="1">
           <mxGeometry x="0" y="192" width="640" height="96" as="geometry"/>
         </mxCell>
         <mxCell id="n1" value="head 数少 · ReLU 代替 exp · 可用 FP8" style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;fontFamily=Inter;fontSize=12;fontColor=#5c6067;" vertex="1" parent="1">
           <mxGeometry x="336" y="304" width="304" height="24" as="geometry"/>
         </mxCell>
-        <mxCell id="topk" value="Top-\(k\)，\(k=2048\)" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#f5eef9;strokeColor=#4d335c;strokeWidth=2;fontFamily=Inter;fontSize=14;fontColor=#1d1d1f;" vertex="1" parent="1">
+        <mxCell id="topk" value="Top-\(k\)，\(k=2048\)" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#fbf2df;strokeColor=#7b5518;strokeWidth=2;fontFamily=Inter;fontSize=14;fontColor=#1d1d1f;" vertex="1" parent="1">
           <mxGeometry x="224" y="344" width="192" height="48" as="geometry"/>
         </mxCell>
         <mxCell id="main" value="昂贵的主注意力路" style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;fontFamily=Inter;fontSize=14;fontColor=#2f5783;fontStyle=1;" vertex="1" parent="1">
@@ -82,7 +82,7 @@
         <mxCell id="e6_ki_idx" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;endArrow=classic;html=1;strokeColor=#7b5518;strokeWidth=1.25;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.85;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="ki" target="idx">
           <mxGeometry relative="1" as="geometry"/>
         </mxCell>
-        <mxCell id="e7_idx_topk" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;endArrow=classic;html=1;strokeColor=#4d335c;strokeWidth=1.25;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="idx" target="topk">
+        <mxCell id="e7_idx_topk" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;endArrow=classic;html=1;strokeColor=#7b5518;strokeWidth=1.25;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="idx" target="topk">
           <mxGeometry relative="1" as="geometry"/>
         </mxCell>
         <mxCell id="e8_topk_cache" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;endArrow=classic;html=1;strokeColor=#5c6067;strokeWidth=1.25;dashed=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="topk" target="cache">

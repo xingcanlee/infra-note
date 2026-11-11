@@ -19,7 +19,7 @@
         <mxCell id="g3" value="层 14（0 起）&lt;br&gt;后续 16 个质数&lt;br&gt;乘数种子另取" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#fbf2df;strokeColor=#7b5518;strokeWidth=1.25;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
           <mxGeometry x="448" y="224" width="184" height="80" as="geometry"/>
         </mxCell>
-        <mxCell id="offset" value="偏移 = 前桶行数的前缀和，桶与桶互不重叠&lt;br&gt;例：\(n=2\) 头1 的桶 \([100003, 200022)\)，\(n=3\) 头0 的桶 \([800452, 900581)\)" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#f5eef9;strokeColor=#4d335c;strokeWidth=1.25;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+        <mxCell id="offset" value="偏移 = 前桶行数的前缀和，桶与桶互不重叠&lt;br&gt;例：\(n=2\) 头1 的桶 \([100003, 200022)\)，\(n=3\) 头0 的桶 \([800452, 900581)\)" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#f4f4f2;strokeColor=#e2e2dd;strokeWidth=1.25;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
           <mxGeometry x="0" y="352" width="608" height="72" as="geometry"/>
         </mxCell>
         <mxCell id="rowex" value="行号 = 偏移 + \(h \bmod M\)：落在对应桶内&lt;br&gt;\(h_2 \bmod 100019 = 99339\) → 行 \(99339 + 100003 = 199342\)（头1 的桶）" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f5e9;strokeColor=#2c522d;strokeWidth=2;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
@@ -40,13 +40,13 @@
         <mxCell id="e4" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;endArrow=classic;html=1;strokeColor=#7b5518;strokeWidth=1.25;exitX=0.8;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="alloc" target="g3">
           <mxGeometry relative="1" as="geometry"/>
         </mxCell>
-        <mxCell id="e5" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;endArrow=classic;html=1;strokeColor=#4d335c;strokeWidth=1.25;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.2;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="g1" target="offset">
+        <mxCell id="e5" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;endArrow=classic;html=1;strokeColor=#5c6067;strokeWidth=1.25;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.2;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="g1" target="offset">
           <mxGeometry relative="1" as="geometry"/>
         </mxCell>
-        <mxCell id="e6" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;endArrow=classic;html=1;strokeColor=#4d335c;strokeWidth=1.25;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="g2" target="offset">
+        <mxCell id="e6" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;endArrow=classic;html=1;strokeColor=#5c6067;strokeWidth=1.25;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="g2" target="offset">
           <mxGeometry relative="1" as="geometry"/>
         </mxCell>
-        <mxCell id="e7" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;endArrow=classic;html=1;strokeColor=#4d335c;strokeWidth=1.25;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.8;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="g3" target="offset">
+        <mxCell id="e7" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;endArrow=classic;html=1;strokeColor=#5c6067;strokeWidth=1.25;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.8;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="g3" target="offset">
           <mxGeometry relative="1" as="geometry"/>
         </mxCell>
         <mxCell id="e8" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;endArrow=classic;html=1;strokeColor=#2c522d;strokeWidth=1.25;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="offset" target="rowex">

@@ -13,7 +13,7 @@
         <mxCell id="init1" value="压缩表 token_map&lt;br&gt;加载时对 tokenizer 全词表&lt;br&gt;做 NFKC / 小写折叠&lt;br&gt;128k → 约 98k（−23%）" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#eaedf2;strokeColor=#464e57;strokeWidth=1.25;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
           <mxGeometry x="0" y="32" width="288" height="88" as="geometry"/>
         </mxCell>
-        <mxCell id="init2" value="奇乘数 \(m_0, m_1, m_2\)&lt;br&gt;每层一个 RNG：种子 \(10007\times\) 层号&lt;br&gt;随机整数 ×2+1（保证为奇数）&lt;br&gt;按 (层, lookback) 各取一个&lt;br&gt;本层实例：\(m_0 = 59860354330255\)&lt;br&gt;\(m_1 = 25354002604791\)&lt;br&gt;\(m_2 = 3850607830581\)" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#f5eef9;strokeColor=#4d335c;strokeWidth=1.25;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+        <mxCell id="init2" value="奇乘数 \(m_0, m_1, m_2\)&lt;br&gt;每层一个 RNG：种子 \(10007\times\) 层号&lt;br&gt;随机整数 ×2+1（保证为奇数）&lt;br&gt;按 (层, lookback) 各取一个&lt;br&gt;本层实例：\(m_0 = 59860354330255\)&lt;br&gt;\(m_1 = 25354002604791\)&lt;br&gt;\(m_2 = 3850607830581\)" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#f4f4f2;strokeColor=#e2e2dd;strokeWidth=1.25;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
           <mxGeometry x="0" y="152" width="288" height="152" as="geometry"/>
         </mxCell>
         <mxCell id="init3" value="质数桶与偏移（EngramLayout）&lt;br&gt;从 engram_vocab_size−1 起&lt;br&gt;逐个取不重复质数，每桶一表&lt;br&gt;偏移 = 前桶行数的前缀和&lt;br&gt;（构建过程详见图 15-11）" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#fbf2df;strokeColor=#7b5518;strokeWidth=1.25;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
@@ -85,7 +85,7 @@
         <mxCell id="b37" value="100207" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#eaedf2;strokeColor=#464e57;strokeWidth=1.25;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
           <mxGeometry x="560" y="672" width="72" height="40" as="geometry"/>
         </mxCell>
-        <mxCell id="shape" value="输出 shape：[T] token → [T, 2 层, 16] 行号（engram_hashes，整 batch 一次计算完成）" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f2fb;strokeColor=#2f5783;strokeWidth=1.25;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+        <mxCell id="shape" value="输出 shape：[T] token → [T, 2 层, 16] 行号（engram_hashes，整 batch 一次计算完成）" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#f4f4f2;strokeColor=#e2e2dd;strokeWidth=1.25;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
           <mxGeometry x="0" y="744" width="632" height="40" as="geometry"/>
         </mxCell>
         <mxCell id="note" value="注：左列为加载时一次性的初始化——token_map、乘数与质数桶均为确定性构造，各 rank 一致、无需广播；桶内各行是 checkpoint 加载的 embedding 权重（FP8）。乘数上界（int64 上限 ÷ 压缩词表 ÷ 2）保证 \(id\times m\) 不溢出 int64。&lt;br&gt;数值均按 vLLM 算法实算（engram.py:138-246、413-423）：示例表每桶约 10 万行（Engram-27B 约 226 万）；同一 N-gram 永远命中同一行——序列已知即可预取。" style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;fontFamily=Inter;fontSize=12;fontColor=#5c6067;" vertex="1" parent="1">
@@ -103,7 +103,7 @@
         <mxCell id="a1" value="token_map" style="edgeStyle=orthogonalEdgeStyle;rounded=1;endArrow=classic;html=1;strokeColor=#464e57;strokeWidth=1.25;dashed=1;fontFamily=Inter;fontSize=12;fontColor=#464e57;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="init1" target="tokwin">
           <mxGeometry relative="1" as="geometry"/>
         </mxCell>
-        <mxCell id="a2" value="乘数" style="edgeStyle=orthogonalEdgeStyle;rounded=1;endArrow=classic;html=1;strokeColor=#4d335c;strokeWidth=1.25;dashed=1;fontFamily=Inter;fontSize=12;fontColor=#4d335c;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="init2" target="hash">
+        <mxCell id="a2" value="乘数" style="edgeStyle=orthogonalEdgeStyle;rounded=1;endArrow=classic;html=1;strokeColor=#5c6067;strokeWidth=1.25;dashed=1;fontFamily=Inter;fontSize=12;fontColor=#5c6067;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="init2" target="hash">
           <mxGeometry relative="1" as="geometry"/>
         </mxCell>
         <mxCell id="a3" value="桶与偏移" style="edgeStyle=orthogonalEdgeStyle;rounded=1;endArrow=classic;html=1;strokeColor=#7b5518;strokeWidth=1.25;dashed=1;fontFamily=Inter;fontSize=12;fontColor=#7b5518;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="init3" target="result">
@@ -129,7 +129,7 @@
         <mxCell id="concat" value="拼接 \(\mathbf e_t\)&lt;br&gt;shape [16, 80] → [1280]" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f5e9;strokeColor=#2c522d;strokeWidth=1.25;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
           <mxGeometry x="0" y="104" width="288" height="56" as="geometry"/>
         </mxCell>
-        <mxCell id="wkv" value="wkv 投影（式 (3)）&lt;br&gt;shape [1280] → [5d]&lt;br&gt;= 4 份 \(\mathbf k^{(m)}\) [4, d] + 1 份共享 \(\mathbf v\) [d]" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#f5eef9;strokeColor=#4d335c;strokeWidth=1.25;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+        <mxCell id="wkv" value="wkv 投影（式 (3)）&lt;br&gt;shape [1280] → [5d]&lt;br&gt;= 4 份 \(\mathbf k^{(m)}\) [4, d] + 1 份共享 \(\mathbf v\) [d]" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#f4f4f2;strokeColor=#e2e2dd;strokeWidth=1.25;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
           <mxGeometry x="0" y="200" width="288" height="80" as="geometry"/>
         </mxCell>
         <mxCell id="gate" value="门控 \(\alpha_t^{(m)}\)（式 (4)/(6)，每分支一个标量）&lt;br&gt;\(\alpha=\sigma\big(\mathrm{RMSNorm}(\mathbf h)\cdot\mathrm{RMSNorm}(\mathbf k)/\sqrt d\big)\)&lt;br&gt;shape [4, d]·[4, d] → [4]" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e3f5f3;strokeColor=#0f766e;strokeWidth=2;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
@@ -138,7 +138,7 @@
         <mxCell id="uv" value="\(\mathbf u_t^{(m)}=\alpha_t^{(m)}\mathbf v_t\)&lt;br&gt;shape [4] × [d] → [4, d]" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f5e9;strokeColor=#2c522d;strokeWidth=1.25;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
           <mxGeometry x="176" y="424" width="288" height="56" as="geometry"/>
         </mxCell>
-        <mxCell id="conv" value="RMSNorm → 因果卷积（k=4，膨胀 3）→ SiLU&lt;br&gt;序列维：[T, 4, d] → \(\mathbf Y\) [T, 4, d]" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#f5eef9;strokeColor=#4d335c;strokeWidth=1.25;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+        <mxCell id="conv" value="RMSNorm → 因果卷积（k=4，膨胀 3）→ SiLU&lt;br&gt;序列维：[T, 4, d] → \(\mathbf Y\) [T, 4, d]" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#f4f4f2;strokeColor=#e2e2dd;strokeWidth=1.25;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
           <mxGeometry x="176" y="512" width="288" height="64" as="geometry"/>
         </mxCell>
         <mxCell id="add" value="\(\mathbf H\leftarrow\mathbf H+\mathbf Y\)&lt;br&gt;shape [4, d] + [4, d]（随后 Attention、MoE）" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f2fb;strokeColor=#2f5783;strokeWidth=1.25;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
@@ -150,7 +150,7 @@
         <mxCell id="e1" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;endArrow=classic;html=1;strokeColor=#2c522d;strokeWidth=1.25;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="lookup" target="concat">
           <mxGeometry relative="1" as="geometry"/>
         </mxCell>
-        <mxCell id="e2" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;endArrow=classic;html=1;strokeColor=#4d335c;strokeWidth=1.25;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="concat" target="wkv">
+        <mxCell id="e2" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;endArrow=classic;html=1;strokeColor=#5c6067;strokeWidth=1.25;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="concat" target="wkv">
           <mxGeometry relative="1" as="geometry"/>
         </mxCell>
         <mxCell id="e3" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;endArrow=classic;html=1;strokeColor=#0f766e;strokeWidth=1.25;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.25;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="wkv" target="gate">
@@ -162,13 +162,13 @@
         <mxCell id="e5" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;endArrow=classic;html=1;strokeColor=#2c522d;strokeWidth=1.25;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="gate" target="uv">
           <mxGeometry relative="1" as="geometry"/>
         </mxCell>
-        <mxCell id="e6" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;endArrow=classic;html=1;strokeColor=#4d335c;strokeWidth=1.25;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="uv" target="conv">
+        <mxCell id="e6" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;endArrow=classic;html=1;strokeColor=#5c6067;strokeWidth=1.25;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="uv" target="conv">
           <mxGeometry relative="1" as="geometry"/>
         </mxCell>
         <mxCell id="e7" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;endArrow=classic;html=1;strokeColor=#2f5783;strokeWidth=1.25;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="conv" target="add">
           <mxGeometry relative="1" as="geometry"/>
         </mxCell>
-        <mxCell id="e8" value="残差" style="edgeStyle=orthogonalEdgeStyle;rounded=1;endArrow=classic;html=1;strokeColor=#984646;strokeWidth=1.25;dashed=1;fontFamily=Inter;fontSize=12;fontColor=#984646;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=1;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="hid" target="add">
+        <mxCell id="e8" value="残差" style="edgeStyle=orthogonalEdgeStyle;rounded=1;endArrow=classic;html=1;strokeColor=#5c6067;strokeWidth=1.25;dashed=1;fontFamily=Inter;fontSize=12;fontColor=#5c6067;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=1;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="hid" target="add">
           <mxGeometry relative="1" as="geometry">
             <Array as="points">
               <mxPoint x="664" y="36"/>
