@@ -39,7 +39,8 @@ function resolveBranch(b: Omit<BranchSpec, 'fn'> & { fn?: MaskFn }): BranchSpec 
         ? (t, s) => s <= t && s % 8 === 0 && s < Math.floor(t / 8) * 8
         : b.id === 'win'
           ? slidingWindow(4)
-          : (t, s) => s <= t;
+          : // shortcut: new serialized branch ids use causal reads, add an ID-specific resolver when introducing one
+            (t, s) => s <= t;
   return { ...b, fn };
 }
 
