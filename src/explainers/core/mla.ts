@@ -91,7 +91,7 @@ export function mlaFlow(opts: MlaOptions): Timeline<MlaState> {
     for (let i = 0; i < dC; i++) c[s][i] = cs[i];
     tl.push({
       state: snap('compress', s, null),
-      caption: `压缩：c${s} = W^DKV · x${s} = [${cs.map((z) => f(z)).join(', ')}]。${x[0].length} 维压到 ${dC} 维，这一份被所有 ${nH} 个 head 共用。`,
+      caption: `压缩：$c_${s} = W^{DKV} \\cdot x_${s}$ = [${cs.map((z) => f(z)).join(', ')}]。${x[0].length} 维压到 ${dC} 维，这一份被所有 ${nH} 个 head 共用。`,
       focus: [itemId('x', s), ...Array.from({ length: dC }, (_, i) => cellId('c', s, i))],
     });
 
@@ -118,7 +118,7 @@ export function mlaFlow(opts: MlaOptions): Timeline<MlaState> {
     k[h] = kh;
     tl.push({
       state: snap('up-k', last, h),
-      caption: `上投影：head ${h} 的 Key = W^UK_${h} · c${last} = [${kh.map((z) => f(z)).join(', ')}]。同一个 latent，不同的 W^UK_h，得到不同的 Key——这是 MLA 与 MQA 的根本差别。`,
+      caption: `上投影：head ${h} 的 Key = $W^{UK}_{${h}} \\cdot c_${last}$ = [${kh.map((z) => f(z)).join(', ')}]。同一个 latent，不同的 $W^{UK}_h$，得到不同的 Key——这是 MLA 与 MQA 的根本差别。`,
       focus: [
         ...Array.from({ length: dC }, (_, i) => cellId('c', last, i)),
         ...Array.from({ length: dK }, (_, i) => cellId('k', h, i)),
@@ -129,7 +129,7 @@ export function mlaFlow(opts: MlaOptions): Timeline<MlaState> {
     v[h] = vh;
     tl.push({
       state: snap('up-v', last, h),
-      caption: `上投影：head ${h} 的 Value = W^UV_${h} · c${last} = [${vh.map((z) => f(z)).join(', ')}]。每个 head 仍能从同一份历史里取出自己那一侧面。`,
+      caption: `上投影：head ${h} 的 Value = $W^{UV}_{${h}} \\cdot c_${last}$ = [${vh.map((z) => f(z)).join(', ')}]。每个 head 仍能从同一份历史里取出自己那一侧面。`,
       focus: [
         ...Array.from({ length: dC }, (_, i) => cellId('c', last, i)),
         ...Array.from({ length: dV }, (_, i) => cellId('v', h, i)),

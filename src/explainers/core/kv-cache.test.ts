@@ -126,7 +126,7 @@ describe('cacheBarsTimeline', () => {
   });
 
   it('说明文字里给出了宽度公式', () => {
-    expect(tl[1].caption).toContain('n_h × (d_k + d_v)');
+    expect(tl[1].caption).toContain('$n_h \\times (d_k + d_v)');
   });
 
   it('除基线外都给出相对 MHA 的比例', () => {

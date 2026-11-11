@@ -54,7 +54,7 @@ export function cacheBarsTimeline(opts: CacheBarsOptions): Timeline<CacheBarsSta
   const tl: Timeline<CacheBarsState> = [
     {
       state: snap(0, null),
-      caption: `同一个模型配置（${base.nH} 个 head，d_k = d_v = ${base.dK}），按 ${tokens} 个 token、${layers} 层、每个数 ${bytes} 字节算账。`,
+      caption: `同一个模型配置（${base.nH} 个 head，$d_k = d_v = ${base.dK}$），按 ${tokens} 个 token、${layers} 层、每个数 ${bytes} 字节算账。`,
     },
   ];
 
@@ -80,7 +80,7 @@ export function cacheBarsTimeline(opts: CacheBarsOptions): Timeline<CacheBarsSta
 
   tl.push({
     state: snap(all.length, null),
-    caption: `注意纵向对比的前提：同一个 n_h 和 d_k。MQA 省得最多但所有 head 共用一份历史；MLA 省得接近 MQA，却让每个 head 仍能算出自己的 K/V——这是第 04 篇要解释的关键。`,
+    caption: `注意纵向对比的前提：同一个 $n_h$ 和 $d_k$。MQA 省得最多但所有 head 共用一份历史；MLA 省得接近 MQA，却让每个 head 仍能算出自己的 K/V——这是第 04 篇要解释的关键。`,
   });
   return tl;
 }

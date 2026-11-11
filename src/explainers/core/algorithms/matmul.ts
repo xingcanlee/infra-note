@@ -56,7 +56,7 @@ export function matmul(a: number[][], b: number[][]): Timeline<MatMulState> {
   const tl: Timeline<MatMulState> = [
     {
       state: snap('start', null, null, null, null),
-      caption: `计算 C = A × B：A 为 ${m}×${K}，B 为 ${K}×${n}，C 为 ${m}×${n}`,
+      caption: `计算 $C = A \\times B$：$A$ 为 $${m}\\times${K}$，$B$ 为 $${K}\\times${n}$，$C$ 为 $${m}\\times${n}$`,
     },
   ];
 
@@ -68,18 +68,21 @@ export function matmul(a: number[][], b: number[][]): Timeline<MatMulState> {
         acc += p;
         tl.push({
           state: snap('multiply', i, j, k, acc),
-          caption: `C[${i}][${j}] += ${f(a[i][k])} × ${f(b[k][j])} → ${f(acc)}`,
+          caption: `$C[${i}][${j}] \\mathrel{+}= ${f(a[i][k])} \\times ${f(b[k][j])} \\to ${f(acc)}$`,
           focus: [cellId('a', i, k), cellId('b', k, j), cellId('c', i, j)],
         });
       }
       c[i][j] = acc;
       tl.push({
         state: snap('write', i, j, null, acc),
-        caption: `写入 C[${i}][${j}] = ${f(acc)}`,
+        caption: `写入 $C[${i}][${j}] = ${f(acc)}$`,
         focus: [cellId('c', i, j)],
       });
     }
   }
-  tl.push({ state: snap('done', null, null, null, null), caption: `完成：C 为 ${m}×${n} 矩阵` });
+  tl.push({
+    state: snap('done', null, null, null, null),
+    caption: `完成：$C$ 为 $${m}\\times${n}$ 矩阵`,
+  });
   return tl;
 }

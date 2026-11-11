@@ -91,8 +91,8 @@ export function absorbFlow(opts: AbsorbOptions): Timeline<AbsorbState> {
       state: snap('intro', null),
       caption:
         mode === 'naive'
-          ? `朴素顺序：对每个历史位置，先用 W^UK 把 ${dC} 维 latent 展开成 ${dK} 维 Key，再与 Query 做内积。每个位置 ${perToken} 次乘法。`
-          : `吸收顺序：先把 W^UK 折进 Query（一次性），得到 ${dC} 维的 q̃，然后直接与 latent 做内积。每个位置只要 ${perToken} 次乘法。`,
+          ? `朴素顺序：对每个历史位置，先用 $W^{UK}$ 把 ${dC} 维 latent 展开成 ${dK} 维 Key，再与 Query 做内积。每个位置 ${perToken} 次乘法。`
+          : `吸收顺序：先把 $W^{UK}$ 折进 Query（一次性），得到 ${dC} 维的 $\\tilde q$，然后直接与 latent 做内积。每个位置只要 ${perToken} 次乘法。`,
     },
   ];
 
@@ -103,7 +103,7 @@ export function absorbFlow(opts: AbsorbOptions): Timeline<AbsorbState> {
     mults += dK * dC;
     tl.push({
       state: snap('fold', null),
-      caption: `折叠：q̃ = (W^UK)ᵀ q = [${qt.map((x) => f(x)).join(', ')}]。这 ${dK * dC} 次乘法与历史有多长无关——只做一次，不随 L 增长。`,
+      caption: `折叠：$\\tilde q = (W^{UK})^\\top q$ = [${qt.map((x) => f(x)).join(', ')}]。这 ${dK * dC} 次乘法与历史有多长无关——只做一次，不随 L 增长。`,
       focus: Array.from({ length: dC }, (_, i) => cellId('qt', 0, i)),
     });
   }
@@ -115,7 +115,7 @@ export function absorbFlow(opts: AbsorbOptions): Timeline<AbsorbState> {
       mults += dK * dC;
       tl.push({
         state: snap('expand', s),
-        caption: `展开：k${s} = W^UK · c${s} = [${ks.map((x) => f(x)).join(', ')}]。这一步要为每个历史位置各做 ${dK * dC} 次乘法，而且结果得占显存。`,
+        caption: `展开：$k_${s} = W^{UK} \\cdot c_${s}$ = [${ks.map((x) => f(x)).join(', ')}]。这一步要为每个历史位置各做 ${dK * dC} 次乘法，而且结果得占显存。`,
         focus: [
           ...Array.from({ length: dC }, (_, i) => cellId('c', s, i)),
           ...Array.from({ length: dK }, (_, i) => cellId('k', s, i)),
@@ -127,7 +127,7 @@ export function absorbFlow(opts: AbsorbOptions): Timeline<AbsorbState> {
       mults += dK;
       tl.push({
         state: snap('dot', s),
-        caption: `打分：qᵀk${s} = ${f(e)}（${dK} 次乘法）。累计 ${mults} 次乘法。`,
+        caption: `打分：$q^\\top k_${s} = ${f(e)}$（${dK} 次乘法）。累计 ${mults} 次乘法。`,
         focus: [cellId('scores', 0, s)],
       });
     } else {
@@ -139,7 +139,7 @@ export function absorbFlow(opts: AbsorbOptions): Timeline<AbsorbState> {
       mults += dC;
       tl.push({
         state: snap('dot', s),
-        caption: `打分：q̃ᵀc${s} = ${f(e)}（只要 ${dC} 次乘法，而且读的是窄的 latent）。累计 ${mults} 次乘法。缓存里的 K 从未被展开。`,
+        caption: `打分：$\\tilde q^\\top c_${s} = ${f(e)}$（只要 ${dC} 次乘法，而且读的是窄的 latent）。累计 ${mults} 次乘法。缓存里的 K 从未被展开。`,
         focus: [...Array.from({ length: dC }, (_, i) => cellId('c', s, i)), cellId('scores', 0, s)],
       });
     }

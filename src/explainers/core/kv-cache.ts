@@ -42,7 +42,7 @@ export function schemeInfo(cfg: CacheConfig): SchemeInfo {
         id: 'mha',
         name: 'MHA',
         perToken: nH * (dK + dV),
-        formula: `n_h × (d_k + d_v) = ${nH} × (${dK} + ${dV})`,
+        formula: `$n_h \\times (d_k + d_v) = ${nH} \\times (${dK} + ${dV})$`,
         describe: '每个 head 存自己的 K 和 V，缓存最宽，表达力最强。',
       };
     case 'mqa':
@@ -50,7 +50,7 @@ export function schemeInfo(cfg: CacheConfig): SchemeInfo {
         id: 'mqa',
         name: 'MQA',
         perToken: dK + dV,
-        formula: `d_k + d_v = ${dK} + ${dV}`,
+        formula: `$d_k + d_v = ${dK} + ${dV}$`,
         describe: '所有 Query head 共享同一份 K/V，缓存最小，但历史表示被迫统一。',
       };
     case 'gqa': {
@@ -60,7 +60,7 @@ export function schemeInfo(cfg: CacheConfig): SchemeInfo {
         id: 'gqa',
         name: `GQA g=${g}`,
         perToken: g * (dK + dV),
-        formula: `g × (d_k + d_v) = ${g} × (${dK} + ${dV})`,
+        formula: `$g \\times (d_k + d_v) = ${g} \\times (${dK} + ${dV})$`,
         describe: '每组 head 共享一份 K/V，在 MHA 与 MQA 之间取折中。',
       };
     }
@@ -72,7 +72,7 @@ export function schemeInfo(cfg: CacheConfig): SchemeInfo {
         id: 'mla',
         name: 'MLA',
         perToken: dc + dr,
-        formula: `d_c + d_r = ${dc} + ${dr}`,
+        formula: `$d_c + d_r = ${dc} + ${dr}$`,
         describe:
           '缓存一份所有 head 共享的低维 latent，加一条位置分支；每个 head 仍能算出不同的 K/V。',
       };

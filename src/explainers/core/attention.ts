@@ -111,7 +111,7 @@ export function attention(opts: AttnOptions): Timeline<AttnState> {
       scores[t][s] = raw * scale;
       tl.push({
         state: snap('score', t, s),
-        caption: `打分：q${t}·k${s} = ${f(raw)}，乘 1/√${dk} 得 ${f(scores[t][s]!)}。内积越大，说明「${tokens[t]}」越关注「${tokens[s]}」。`,
+        caption: `打分：$q_${t}\\cdot k_${s} = ${f(raw)}$，乘 $1/\\sqrt{${dk}}$ 得 ${f(scores[t][s]!)}。内积越大，说明「${tokens[t]}」越关注「${tokens[s]}」。`,
         focus: [cellId('q', t, 0), cellId('k', s, 0), cellId('scores', t, s)],
       });
     }
@@ -133,7 +133,7 @@ export function attention(opts: AttnOptions): Timeline<AttnState> {
       partial = partial.map((x, i) => (x ?? 0) + w * v[s][i]);
       tl.push({
         state: snap('aggregate', t, s),
-        caption: `累加：权重 ${f(w)} × v${s} → 当前结果 [${partial.map((x) => f(x!)).join(', ')}]。`,
+        caption: `累加：$${f(w)} \\times v_${s}$ → 当前结果 [${partial.map((x) => f(x!)).join(', ')}]。`,
         focus: [cellId('weights', t, s), cellId('v', s, 0), cellId('out', t, 0)],
       });
     }

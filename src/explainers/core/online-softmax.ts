@@ -90,7 +90,7 @@ export function onlineSoftmax(opts: OSOptions): Timeline<OSState> {
   const tl: Timeline<OSState> = [
     {
       state: snap({ phase: 'intro' }),
-      caption: `${scores.length} 个分数，按 ${blockSize} 个一块分成 ${nBlocks} 块。全程只保留 3 个标量（m、ℓ、O）——**不物化整行分数**，这就是 FlashAttention 省显存的根源。`,
+      caption: `${scores.length} 个分数，按 ${blockSize} 个一块分成 ${nBlocks} 块。全程只保留 3 个标量（$m$、$\\ell$、$O$）——**不物化整行分数**，这就是 FlashAttention 省显存的根源。`,
     },
   ];
 
@@ -136,7 +136,7 @@ export function onlineSoftmax(opts: OSOptions): Timeline<OSState> {
   const result = o / l;
   tl.push({
     state: snap({ phase: 'normalize', seen: scores.length, result }),
-    caption: `最后一次性归一化：Output = O / ℓ = ${f(o)} / ${f(l)} = ${f(result)}。注意除法只做一次，不是每块都做。`,
+    caption: `最后一次性归一化：$O / \\ell = ${f(o)} / ${f(l)} = ${f(result)}$。注意除法只做一次，不是每块都做。`,
   });
 
   tl.push({
