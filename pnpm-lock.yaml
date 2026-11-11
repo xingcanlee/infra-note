@@ -224,8 +224,8 @@ importers:
         specifier: ^7.4.6
         version: 7.4.6(@astrojs/markdown-remark@7.3.6)(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1)
       astro-wisp:
-        specifier: ^0.5.0
-        version: 0.5.0(@astrojs/markdown-satteri@0.4.6)(@types/mdast@4.0.4)(astro@7.4.6(@astrojs/markdown-remark@7.3.6)(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1))(micromark-util-types@2.0.3)(micromark@4.0.3)(motion@14.9.1(react-dom@19.3.1(react@19.3.1))(react@19.3.1))(react-dom@19.3.1(react@19.3.1))(react@19.3.1)(unified@11.0.5)(vite@8.3.6(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1))
+        specifier: ^0.5.1
+        version: 0.5.1(@astrojs/markdown-satteri@0.4.6)(@types/mdast@4.0.4)(astro@7.4.6(@astrojs/markdown-remark@7.3.6)(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1))(micromark-util-types@2.0.3)(micromark@4.0.3)(motion@14.9.1(react-dom@19.3.1(react@19.3.1))(react@19.3.1))(react-dom@19.3.1(react@19.3.1))(react@19.3.1)(unified@11.0.5)(vite@8.3.6(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1))
       motion:
         specifier: ^14.9.1
         version: 14.9.1(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
@@ -2720,10 +2720,10 @@ packages:
       }
     engines: { node: ^22.22.3 || ^24.16.0 || >=26.3.0 }
 
-  astro-wisp@0.5.0:
+  astro-wisp@0.5.1:
     resolution:
       {
-        integrity: sha512-YhhaCZ6wDxgR0dKOyX6K2OtrBnIBw/8JCQNOA1enc6O/zD5Y48ITkEs/X+jerWz/MTi51otO3u2jY5qiDT+4sA==,
+        integrity: sha512-bmRStd6JWMh4NokQcHsKJVqgJoTwptFINRldB0GsiuJ64dU437Bx8u9A3muZLbrHj3rgQaRMqoIOreyn7HD2iQ==,
       }
     engines: { node: '>=22.23.4' }
     hasBin: true
@@ -4162,10 +4162,34 @@ packages:
         integrity: sha512-cctsq2wp5vTsLIcaymblUriiTcZd0CwWtCbLvrOzYCDZoWyMNV8sZ7krj09FSnsiJi3WVsHLM4k6Dq/yaPyCXA==,
       }
 
+  mdast-util-to-markdown-cjk-friendly-gfm-strikethrough@1.0.1:
+    resolution:
+      {
+        integrity: sha512-8ovOXqA50rIESs94V3VSdfcAd7irw1Ro+RvfI8FAcSoRya44IMPdaJ2Xx0rWVNIS1im780/oVRIJC/oHEyzXRw==,
+      }
+    engines: { node: '>=18' }
+    peerDependencies:
+      '@types/mdast': '*'
+    peerDependenciesMeta:
+      '@types/mdast':
+        optional: true
+
   mdast-util-to-markdown-cjk-friendly@1.0.0:
     resolution:
       {
         integrity: sha512-BoaAm8mlJ+LAYz0Qs532Y3ciTuQYgBUPZcSFbvC/ZKmEMAKgulw84YvQK1gI34t/vL2euSfuaWlqczkTBgamkw==,
+      }
+    engines: { node: '>=18' }
+    peerDependencies:
+      '@types/mdast': '*'
+    peerDependenciesMeta:
+      '@types/mdast':
+        optional: true
+
+  mdast-util-to-markdown-cjk-friendly@1.0.1:
+    resolution:
+      {
+        integrity: sha512-J3njpXAKUXGOa4k5pUwxHV0yuO4k5DgCrHGPady8xCFutjDr31UmuSaLuuxPLJNBO3336dX+CtB4GnNhgl0KKw==,
       }
     engines: { node: '>=18' }
     peerDependencies:
@@ -4203,6 +4227,19 @@ packages:
       {
         integrity: sha512-wxEeE8v8XVvOrxn1TZj74qYhAtTQsSqufHVS3uNVyT1MupXxhyaHk8/9xDNPh9BmL77QNDgWTkZ3RsYHB2ry7w==,
       }
+
+  micromark-extension-cjk-friendly-gfm-strikethrough@2.0.1:
+    resolution:
+      {
+        integrity: sha512-wVC0zwjJNqQeX+bb07YTPu/CvSAyCTafyYb7sMhX1r62/Lw5M/df3JyYaANyp8g15c1ypJRFSsookTqA1IDsUg==,
+      }
+    engines: { node: '>=18' }
+    peerDependencies:
+      micromark: ^4.0.0
+      micromark-util-types: ^2.0.0
+    peerDependenciesMeta:
+      micromark-util-types:
+        optional: true
 
   micromark-extension-cjk-friendly-util@3.0.1:
     resolution:
@@ -4884,6 +4921,19 @@ packages:
       {
         integrity: sha512-k9ecfXHmIPuFVI61B9DeLPN0qFHfawM6RsuX48hoqlaKSF61RskNjSm1lI8PhBEM0MRdLxVVm4WmTqJQccH9mA==,
       }
+
+  remark-cjk-friendly-gfm-strikethrough@2.3.2:
+    resolution:
+      {
+        integrity: sha512-47ucoUO5Idkm5tmAtcusMNQMVh+lYbv9Pfexss1XX13i4qL30c4iM8WYRJ/WUnE1zchtL228xwQW6z06vjtpfg==,
+      }
+    engines: { node: '>=18' }
+    peerDependencies:
+      '@types/mdast': ^4.0.0
+      unified: ^11.0.0
+    peerDependenciesMeta:
+      '@types/mdast':
+        optional: true
 
   remark-cjk-friendly@2.3.2:
     resolution:
@@ -7338,7 +7388,7 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
-  astro-wisp@0.5.0(@astrojs/markdown-satteri@0.4.6)(@types/mdast@4.0.4)(astro@7.4.6(@astrojs/markdown-remark@7.3.6)(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1))(micromark-util-types@2.0.3)(micromark@4.0.3)(motion@14.9.1(react-dom@19.3.1(react@19.3.1))(react@19.3.1))(react-dom@19.3.1(react@19.3.1))(react@19.3.1)(unified@11.0.5)(vite@8.3.6(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1)):
+  astro-wisp@0.5.1(@astrojs/markdown-satteri@0.4.6)(@types/mdast@4.0.4)(astro@7.4.6(@astrojs/markdown-remark@7.3.6)(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1))(micromark-util-types@2.0.3)(micromark@4.0.3)(motion@14.9.1(react-dom@19.3.1(react@19.3.1))(react@19.3.1))(react-dom@19.3.1(react@19.3.1))(react@19.3.1)(unified@11.0.5)(vite@8.3.6(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1)):
     dependencies:
       '@astrojs/markdown-remark': 7.3.6
       '@astrojs/mdx': 8.1.3(@astrojs/markdown-remark@7.3.6)(@astrojs/markdown-satteri@0.4.6)(astro@7.4.6(@astrojs/markdown-remark@7.3.6)(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1))
@@ -7358,6 +7408,7 @@ snapshots:
       pele: 1.13.0
       rehype-katex: 7.0.1
       remark-cjk-friendly: 2.3.2(@types/mdast@4.0.4)(micromark-util-types@2.0.3)(micromark@4.0.3)(unified@11.0.5)
+      remark-cjk-friendly-gfm-strikethrough: 2.3.2(@types/mdast@4.0.4)(micromark-util-types@2.0.3)(micromark@4.0.3)(unified@11.0.5)
       remark-math: 6.0.0
       tailwindcss: 4.3.5
       tsx: 4.23.15
@@ -8423,11 +8474,34 @@ snapshots:
       unist-util-visit: 5.2.0
       vfile: 6.0.3
 
+  mdast-util-to-markdown-cjk-friendly-gfm-strikethrough@1.0.1(@types/mdast@4.0.4)(micromark-util-types@2.0.3):
+    dependencies:
+      mdast-util-gfm-strikethrough: 2.0.1
+      mdast-util-to-markdown: 2.2.3
+      mdast-util-to-markdown-cjk-friendly: 1.0.1(@types/mdast@4.0.4)(micromark-util-types@2.0.3)
+    optionalDependencies:
+      '@types/mdast': 4.0.4
+    transitivePeerDependencies:
+      - micromark-util-types
+      - supports-color
+
   mdast-util-to-markdown-cjk-friendly@1.0.0(@types/mdast@4.0.4)(micromark-util-types@2.0.3):
     dependencies:
       mdast-util-to-markdown: 2.2.3
       micromark-extension-cjk-friendly-util: 3.0.1(micromark-util-types@2.0.3)
       micromark-util-symbol: 2.0.1
+    optionalDependencies:
+      '@types/mdast': 4.0.4
+    transitivePeerDependencies:
+      - micromark-util-types
+
+  mdast-util-to-markdown-cjk-friendly@1.0.1(@types/mdast@4.0.4)(micromark-util-types@2.0.3):
+    dependencies:
+      mdast-util-to-markdown: 2.2.3
+      micromark-extension-cjk-friendly-util: 3.0.1(micromark-util-types@2.0.3)
+      micromark-util-character: 2.1.1
+      micromark-util-classify-character: 2.0.1
+      micromark-util-html-tag-name: 2.0.1
     optionalDependencies:
       '@types/mdast': 4.0.4
     transitivePeerDependencies:
@@ -8473,6 +8547,19 @@ snapshots:
       micromark-util-resolve-all: 2.0.1
       micromark-util-subtokenize: 2.1.0
       micromark-util-symbol: 2.0.1
+      micromark-util-types: 2.0.3
+
+  micromark-extension-cjk-friendly-gfm-strikethrough@2.0.1(micromark-util-types@2.0.3)(micromark@4.0.3):
+    dependencies:
+      devlop: 1.1.0
+      get-east-asian-width: 1.7.0
+      micromark: 4.0.3
+      micromark-extension-cjk-friendly-util: 3.0.1(micromark-util-types@2.0.3)
+      micromark-util-character: 2.1.1
+      micromark-util-chunked: 2.0.1
+      micromark-util-resolve-all: 2.0.1
+      micromark-util-symbol: 2.0.1
+    optionalDependencies:
       micromark-util-types: 2.0.3
 
   micromark-extension-cjk-friendly-util@3.0.1(micromark-util-types@2.0.3):
@@ -9021,6 +9108,18 @@ snapshots:
       '@types/hast': 3.0.5
       hast-util-to-html: 9.0.6
       unified: 11.0.5
+
+  remark-cjk-friendly-gfm-strikethrough@2.3.2(@types/mdast@4.0.4)(micromark-util-types@2.0.3)(micromark@4.0.3)(unified@11.0.5):
+    dependencies:
+      mdast-util-to-markdown-cjk-friendly-gfm-strikethrough: 1.0.1(@types/mdast@4.0.4)(micromark-util-types@2.0.3)
+      micromark-extension-cjk-friendly-gfm-strikethrough: 2.0.1(micromark-util-types@2.0.3)(micromark@4.0.3)
+      unified: 11.0.5
+    optionalDependencies:
+      '@types/mdast': 4.0.4
+    transitivePeerDependencies:
+      - micromark
+      - micromark-util-types
+      - supports-color
 
   remark-cjk-friendly@2.3.2(@types/mdast@4.0.4)(micromark-util-types@2.0.3)(micromark@4.0.3)(unified@11.0.5):
     dependencies:
