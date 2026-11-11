@@ -10,6 +10,7 @@ import {
   Explainer,
   Label,
   Stage,
+  TexLabel,
   focusOf,
   formatNumber as f,
 } from 'astro-wisp/explainers';
@@ -91,7 +92,15 @@ function Scene({
         <Caption x={panelX} y={TOP + 6} text={`方案：${s.scheme.name}`} tone="q" />
         {/* 名称与公式分两行：MHA/GQA 公式加前缀约 250px，超过面板预算 230px 会被右缘裁切 */}
         <Caption x={panelX} y={TOP + 28} text="宽度（每 token 每层）" />
-        <Caption x={panelX} y={TOP + 50} text={s.scheme.formula} />
+        <TexLabel
+          x={panelX}
+          y={TOP + 50}
+          width={220}
+          height={24}
+          tex={s.scheme.formula.slice(1, -1)}
+          muted
+          anchor="start"
+        />
         <Caption x={panelX} y={TOP + 72} text={`已缓存 ${s.cached} 行 × ${layers} 层`} />
         <Caption
           x={panelX}

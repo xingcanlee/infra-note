@@ -6,6 +6,7 @@
  */
 import { motion, useReducedMotion } from 'motion/react';
 import type { ReactNode } from 'react';
+import { TexLabel } from 'astro-wisp/explainers';
 import { toneFill, toneStroke, type Tone } from 'astro-wisp/explainers/core';
 
 /** 带标签的圆角盒子：流程图、层结构、模块。 */
@@ -15,6 +16,7 @@ export function Box({
   w,
   h,
   label,
+  labelTex,
   sub,
   tone,
   active = false,
@@ -24,7 +26,9 @@ export function Box({
   y: number;
   w: number;
   h: number;
-  label: string;
+  label?: string;
+  /** 用 KaTeX 渲染的盒内公式标签。 */
+  labelTex?: string;
   sub?: string;
   tone: Tone;
   /** 当前步骤正在发生的盒子 */
@@ -54,16 +58,26 @@ export function Box({
         transition={{ duration: reduce ? 0 : 0.18, ease: 'easeOut' }}
         style={{ fill: 'none', stroke: toneStroke('highlight'), strokeWidth: 2.5 }}
       />
-      <text
-        x={x + w / 2}
-        y={sub ? y + h / 2 - 7 : y + h / 2}
-        textAnchor="middle"
-        dominantBaseline="central"
-        className="wisp-explainer__cell-text"
-        style={{ fill: 'var(--wisp-fg)' }}
-      >
-        {label}
-      </text>
+      {labelTex ? (
+        <TexLabel
+          x={x + w / 2}
+          y={sub ? y + h / 2 - 7 : y + h / 2}
+          width={w - 12}
+          height={22}
+          tex={labelTex}
+        />
+      ) : (
+        <text
+          x={x + w / 2}
+          y={sub ? y + h / 2 - 7 : y + h / 2}
+          textAnchor="middle"
+          dominantBaseline="central"
+          className="wisp-explainer__cell-text"
+          style={{ fill: 'var(--wisp-fg)' }}
+        >
+          {label}
+        </text>
+      )}
       {sub && (
         <text
           x={x + w / 2}
@@ -88,6 +102,7 @@ export function Arrow({
   dashed = false,
   active = false,
   label,
+  labelTex,
 }: {
   from: [number, number];
   to: [number, number];
@@ -95,6 +110,7 @@ export function Arrow({
   dashed?: boolean;
   active?: boolean;
   label?: string;
+  labelTex?: string;
 }) {
   const [x1, y1] = from;
   const [x2, y2] = to;
@@ -127,7 +143,9 @@ export function Arrow({
           strokeDasharray: dashed ? '4 3' : undefined,
         }}
       />
-      {label && (
+      {labelTex ? (
+        <TexLabel x={mid[0]} y={mid[1] - 6} width={72} height={22} tex={labelTex} muted />
+      ) : label ? (
         <text
           x={mid[0]}
           y={mid[1] - 6}
@@ -137,7 +155,58 @@ export function Arrow({
         >
           {label}
         </text>
-      )}
+      ) : null}
+    </g>
+  );
+}
+
+/** 中英文与公式混排的舞台标签；公式片段必须给显式宽度，避免 foreignObject 被裁掉。 */
+export function MixedLabel({
+  x,
+  y,
+  parts,
+  tone,
+  gap = 4,
+}: {
+  x: number;
+  y: number;
+  parts: Array<{ text: string; width?: number } | { tex: string; width: number }>;
+  tone?: Tone;
+  gap?: number;
+}) {
+  const partWidth = (part: (typeof parts)[number]) =>
+    'tex' in part ? part.width : (part.width ?? part.text.length * 14);
+  return (
+    <g>
+      {parts.map((part, i) => {
+        const width = partWidth(part);
+        const cursor = x + parts.slice(0, i).reduce((sum, item) => sum + partWidth(item) + gap, 0);
+        const node =
+          'tex' in part ? (
+            <TexLabel
+              key={i}
+              x={cursor}
+              y={y}
+              width={width}
+              height={22}
+              tex={part.tex}
+              tone={tone}
+              anchor="start"
+            />
+          ) : (
+            <text
+              key={i}
+              x={cursor}
+              y={y}
+              dominantBaseline="central"
+              className="wisp-explainer__label"
+              style={{ fill: tone ? toneStroke(tone) : 'var(--wisp-fg)' }}
+            >
+              {part.text}
+            </text>
+          );
+        return node;
+      })}
     </g>
   );
 }

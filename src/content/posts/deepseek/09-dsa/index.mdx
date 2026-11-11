@@ -92,7 +92,7 @@ DSA 是**在 MLA 之上**实例化的（§2.1，图 2）[^dsa-paper]。回忆第
 
 indexer 要学会「预测主注意力会关注哪里」。论文分两阶段[^dsa-paper]（§2.1.1）：
 
-**阶段一：dense warm-up。**保持密集注意力，**冻结模型其余参数，只训练 indexer**。目标分布 $p_{t,:}$ 由主注意力分数在所有 head 上求和、再沿序列做 L1 归一化得到；indexer 用 KL 散度去对齐它[^dsa-paper]（式 (3)）：
+**阶段一：dense warm-up。**保持密集注意力，**冻结模型其余参数，只训练 indexer**。目标分布 $p_{t,:}$ 由主注意力分数在所有 head 上求和、再沿序列做 L1 归一化得到；indexer 用 KL 散度去对齐它（式 (3)）：
 
 $$
 \mathcal{L}^{I}=\sum_{t}\mathbb{D}_{\mathrm{KL}}\big(p_{t,:}\,\|\,\mathrm{Softmax}(I_{t,:})\big)

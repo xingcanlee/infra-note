@@ -124,7 +124,7 @@ function Scene({ s, focus }: { s: MlaState; focus?: string[] }) {
                 to={[X_C - 12, y + S / 2]}
                 tone="v"
                 active
-                label="W^DKV"
+                labelTex="W^{DKV}"
               />
             )}
           </g>

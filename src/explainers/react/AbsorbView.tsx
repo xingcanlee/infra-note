@@ -6,7 +6,7 @@
 import { useMemo } from 'react';
 import { Cell, Explainer, Label, Stage, focusOf, formatNumber as f } from 'astro-wisp/explainers';
 import { absorbFlow, type AbsorbMode, type AbsorbState } from '../core/absorb';
-import { Caption, Legend } from './primitives';
+import { Caption, Legend, MixedLabel } from './primitives';
 
 export interface AbsorbViewProps {
   mode?: AbsorbMode;
@@ -15,7 +15,7 @@ export interface AbsorbViewProps {
 
 const S = 34;
 const ROW = 40;
-// 顶部留一整行给 'q̃（已吸收 Wᵁᴷ）' / 'q（内容分支）' 标题（≈135px 宽），格行从 TOP-30=28 开始，不再压字。
+// 顶部留一整行给 Query 标题，格行从 TOP-30=28 开始，不再压字。
 const TOP = 58;
 const X_LAT = 92;
 
@@ -40,11 +40,20 @@ function Scene({ s, focus }: { s: AbsorbState; focus?: string[] }) {
       label={`${s.mode === 'naive' ? '朴素' : '吸收'}顺序：${l} 个历史位置的打分`}
     >
       {/* 当前 Query */}
-      <Caption
+      <MixedLabel
         x={0}
-        y={10}
-        text={s.mode === 'absorb' ? 'q̃（已吸收 Wᵁᴷ）' : 'q（内容分支）'}
+        y={11}
         tone="q"
+        parts={
+          s.mode === 'absorb'
+            ? [
+                { tex: '\\tilde{q}', width: 34 },
+                { text: '（已吸收' },
+                { tex: 'W^{UK}', width: 44 },
+                { text: '）' },
+              ]
+            : [{ tex: 'q', width: 18 }, { text: '（内容分支）' }]
+        }
       />
       {s.mode === 'absorb'
         ? s.qTilde.map((val, i) => (

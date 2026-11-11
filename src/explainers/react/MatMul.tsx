@@ -1,12 +1,12 @@
 import { useMemo, type ReactNode } from 'react';
 import {
-  Label,
   Matrix,
   Player,
   CELL,
   LABEL_H,
   matrixHeight,
   matrixWidth,
+  TexLabel,
 } from 'astro-wisp/explainers';
 import { matmul, type MatMulState } from '../core/algorithms/matmul';
 import { formatNumber as f } from 'astro-wisp/explainers/core';
@@ -120,7 +120,14 @@ function Scene({ s, focus }: { s: MatMulState; focus?: string[] }) {
             tone="v"
             highlight={pick(focus, 'c')}
           />
-          <Label x={wA / 2} y={LABEL_H + hB / 2} text="C = A × B" muted />
+          <TexLabel
+            x={wA / 2}
+            y={LABEL_H + hB / 2}
+            width={Math.max(wA - 8, 80)}
+            height={24}
+            tex="C = A \\times B"
+            muted
+          />
         </g>
       </svg>
     </div>

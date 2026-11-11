@@ -97,7 +97,7 @@ function Scene({ s, focus }: { s: OSState; focus?: string[] }) {
         y={TOP + CH + 44}
         w={150}
         h={34}
-        label={`m = ${s.m === -Infinity ? '−∞' : f(s.m)}`}
+        labelTex={`m = ${s.m === -Infinity ? '-\\infty' : f(s.m)}`}
         sub="running max"
         tone="q"
         active={s.phase === 'rescale'}
@@ -107,7 +107,7 @@ function Scene({ s, focus }: { s: OSState; focus?: string[] }) {
         y={TOP + CH + 44}
         w={150}
         h={34}
-        label={`ℓ = ${f(s.l)}`}
+        labelTex={`\\ell = ${f(s.l)}`}
         sub="running sum"
         tone="v"
       />
@@ -116,7 +116,7 @@ function Scene({ s, focus }: { s: OSState; focus?: string[] }) {
         y={TOP + CH + 44}
         w={150}
         h={34}
-        label={`O = ${f(s.o)}`}
+        labelTex={`O = ${f(s.o)}`}
         sub="未归一化输出"
         tone="activation"
       />
@@ -127,7 +127,7 @@ function Scene({ s, focus }: { s: OSState; focus?: string[] }) {
           y={TOP + CH + 44}
           w={168}
           h={34}
-          label={`O/ℓ = ${f(s.result)}`}
+          labelTex={`O / \\ell = ${f(s.result)}`}
           sub="最后归一化一次"
           tone="done"
           active
