@@ -20,38 +20,38 @@
       "selection": { "light": "#ccf0ea", "dark": "#1d3d39" }
     },
     "hue": {
-      "$comment": "8 色分类色板。stroke 用于线条/文字（≥4.5:1），fill 用于填充底色。顺序即 Pele --pele-series-1..8 的顺序。",
+      "$comment": "8 色分类色板，按「印刷油墨」调：OKLCH 中 light stroke L≈0.37–0.51、C≤0.11，fill 是近纸色的淡洗（L≈0.95、C≈0.02）；dark stroke L≈0.70–0.85、C≤0.10，fill L≈0.26。teal light 与 accent 同色。易混的两两（blue/violet、green/teal、amber/orange、teal/slate）靠明度拉开。stroke 用于线条/文字（对 bg 与自身 fill 都 ≥4.5:1），fill 用于填充底色。顺序即 Pele --pele-series-1..8 的顺序。",
       "blue": {
-        "stroke": { "light": "#1d4ed8", "dark": "#60a5fa" },
-        "fill": { "light": "#dbeafe", "dark": "#1b2740" }
+        "stroke": { "light": "#2f5783", "dark": "#a9cbef" },
+        "fill": { "light": "#e9f2fb", "dark": "#1a2634" }
       },
       "amber": {
-        "stroke": { "light": "#b45309", "dark": "#fbbf24" },
-        "fill": { "light": "#fef3c7", "dark": "#38290c" }
+        "stroke": { "light": "#7b5518", "dark": "#f2c681" },
+        "fill": { "light": "#fbf2df", "dark": "#2e2515" }
       },
       "green": {
-        "stroke": { "light": "#15803d", "dark": "#4ade80" },
-        "fill": { "light": "#dcfce7", "dark": "#122d1c" }
+        "stroke": { "light": "#2c522d", "dark": "#84b585" },
+        "fill": { "light": "#e9f5e9", "dark": "#1a281c" }
       },
       "rose": {
-        "stroke": { "light": "#be123c", "dark": "#fb7185" },
-        "fill": { "light": "#ffe4e6", "dark": "#3a1620" }
+        "stroke": { "light": "#984646", "dark": "#eda9aa" },
+        "fill": { "light": "#fcedec", "dark": "#341f1f" }
       },
       "violet": {
-        "stroke": { "light": "#7c3aed", "dark": "#a78bfa" },
-        "fill": { "light": "#ede9fe", "dark": "#272040" }
+        "stroke": { "light": "#4d335c", "dark": "#bb9ece" },
+        "fill": { "light": "#f5eef9", "dark": "#291e2e" }
       },
       "teal": {
-        "stroke": { "light": "#0f766e", "dark": "#2dd4bf" },
-        "fill": { "light": "#ccfbf1", "dark": "#0f2c29" }
+        "stroke": { "light": "#0f766e", "dark": "#7fd3c5" },
+        "fill": { "light": "#e3f5f3", "dark": "#112926" }
       },
       "orange": {
-        "stroke": { "light": "#c2410c", "dark": "#fb923c" },
-        "fill": { "light": "#ffedd5", "dark": "#3a2010" }
+        "stroke": { "light": "#762f06", "dark": "#ce8d66" },
+        "fill": { "light": "#fceee4", "dark": "#311f15" }
       },
       "slate": {
-        "stroke": { "light": "#475569", "dark": "#94a3b8" },
-        "fill": { "light": "#e2e8f0", "dark": "#222831" }
+        "stroke": { "light": "#464e57", "dark": "#9da7b3" },
+        "fill": { "light": "#eaedf2", "dark": "#23272b" }
       }
     },
     "semantic": {
@@ -117,11 +117,12 @@
   "space": { "unit-px": 4, "scale": [0, 4, 8, 12, 16, 24, 32, 48, 64, 96] },
   "radius": { "sm": 4, "md": 8, "lg": 12 },
   "diagram": {
-    "stroke-width": { "thin": 1, "normal": 1.5, "bold": 2.5 },
+    "stroke-width": { "thin": 1, "normal": 1.25, "bold": 2 },
     "font-size-px": { "label": 14, "title": 18, "note": 12 },
     "grid-px": 8,
-    "corner-radius": 8,
+    "corner-radius": 4,
     "excalidraw": { "roughness": 1, "fillStyle": "solid", "strokeStyle": "solid" },
-    "drawio": { "rounded": 1, "arcSize": 8, "shadow": 0, "sketch": 0 }
+    "drawio": { "rounded": 1, "absoluteArcSize": 1, "arcSize": 8, "shadow": 0, "sketch": 0 },
+    "$comment": "corner-radius 是渲染出的圆角（px），与页面 box 圆角一致。draw.io 的 absoluteArcSize=1 时 arcSize 是圆角直径，所以 arcSize = 2 × corner-radius；Excalidraw 用 roundness {type: 3, value: corner-radius}。"
   }
 }

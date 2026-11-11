@@ -3,85 +3,85 @@
   "generator": "wisp-diagram@1",
   "entries": {
     "src/content/posts/deepseek/05-mla-absorb/diagrams/05-decoupled-rope.drawio": {
-      "source": "sha256-19abd1be50d6105403ef5f73fa2b63e7c3903a057652f4782388d61d3192ab9b",
+      "source": "sha256-bca0c9056c23d76fc1c9c8c47486e98d83105983740cd6838b523797f938ecca",
       "style": "clean",
       "exporter": "drawio-browser",
       "embedFonts": false,
       "outputs": {
-        "src/content/posts/deepseek/05-mla-absorb/diagrams/05-decoupled-rope.wisp.svg": "sha256-3430ed9a13c91bb863f0ebd65111a5048efc8694418d6cf0dcee8f171a21fcf7"
+        "src/content/posts/deepseek/05-mla-absorb/diagrams/05-decoupled-rope.wisp.svg": "sha256-156502be52aa1ce2186b735c9f308ff31eb526c1fca09533aee60dbd0cf1d20a"
       },
       "pages": [
         "MLA：解耦 RoPE 与矩阵吸收"
       ]
     },
     "src/content/posts/deepseek/08-nsa/diagrams/08-nsa-branches.drawio": {
-      "source": "sha256-2ae60efca5331415f59bbac0151d0081544d2b6fd0d508ff519ce98b6d63ef77",
+      "source": "sha256-f690a7de0e574d195771318ff0ef2d0ca4165aa7a35fd11812444992e74d6496",
       "style": "clean",
       "exporter": "drawio-browser",
       "embedFonts": false,
       "outputs": {
-        "src/content/posts/deepseek/08-nsa/diagrams/08-nsa-branches.wisp.svg": "sha256-ccc71181af5b9fddd36f88393b5b6482fff9097574e8f5cc7896cdfd21ef2190"
+        "src/content/posts/deepseek/08-nsa/diagrams/08-nsa-branches.wisp.svg": "sha256-13dc422b986a1efc87fdadaba854937ab3fb4bb00a0ea68eaa73c49d66865a2d"
       },
       "pages": [
         "NSA：压缩、选块、窗口三分支与门控融合"
       ]
     },
     "src/content/posts/deepseek/09-dsa/diagrams/09-dsa-indexer.drawio": {
-      "source": "sha256-0e19962430541799536b7e9a500fe54c37e4a3b65108a6d2f7fa42a426cc4b01",
+      "source": "sha256-3309ba7bb2ad62328b503c96d4d37536a523c79132f98c4134fe05cf5900ede0",
       "style": "clean",
       "exporter": "drawio-browser",
       "embedFonts": false,
       "outputs": {
-        "src/content/posts/deepseek/09-dsa/diagrams/09-dsa-indexer.wisp.svg": "sha256-a2e81f7763961de0fe9a9320fde18e933fb9d93e5d490287473e2177d5cadef9"
+        "src/content/posts/deepseek/09-dsa/diagrams/09-dsa-indexer.wisp.svg": "sha256-dcb4196dc72641e54102d2aa32c039e67fae1aa650edea7ba5a3b0c84624948d"
       },
       "pages": [
         "DSA：Lightning Indexer 在 MLA 之上做 top-k 选择"
       ]
     },
     "src/content/posts/deepseek/10-csa/diagrams/10-csa-pipeline.drawio": {
-      "source": "sha256-551919bd8aa090095a59aea9b8844a0d4ac78035c43deba512051d420ca81df4",
+      "source": "sha256-3cc275922a2ac37d112119c656b277c06c4ea2d3ef0cd9eda2dd921bfdbd2389",
       "style": "clean",
       "exporter": "drawio-browser",
       "embedFonts": false,
       "outputs": {
-        "src/content/posts/deepseek/10-csa/diagrams/10-csa-pipeline.wisp.svg": "sha256-caca9492adf1a752650ff6f0c97d4d026415305bc468d6408d5f642b68673d20"
+        "src/content/posts/deepseek/10-csa/diagrams/10-csa-pipeline.wisp.svg": "sha256-ff1f54630c23777ac0953688062a353eae69036e0bed4a26a803c114096fd732"
       },
       "pages": [
         "CSA：先按 m 压缩，再在压缩条目上做稀疏选择"
       ]
     },
     "src/content/posts/deepseek/15-engram/diagrams/15-engram-buckets.drawio": {
-      "source": "sha256-425b2179a973fa5c4a1473a5e73173a8466e8563090db450c93d75eab1990737",
+      "source": "sha256-cf3d41b6c2e605dab952b79d8907f79fda58ca2c096b1cb5b807981ae7490b1b",
       "style": "clean",
-      "exporter": "drawio-cli",
+      "exporter": "drawio-browser",
       "embedFonts": false,
       "outputs": {
-        "src/content/posts/deepseek/15-engram/diagrams/15-engram-buckets.wisp.svg": "sha256-be5b89888dd08e5ea5dc5ff243d8811ebf772dfd5e61244063f59143c280de54"
+        "src/content/posts/deepseek/15-engram/diagrams/15-engram-buckets.wisp.svg": "sha256-9cd12b917744b392df27dd8f23913539ee0ccbcef48397c274fa0678bbaefb8a"
       },
       "pages": [
         "桶构建：质数表的分配"
       ]
     },
     "src/content/posts/deepseek/15-engram/diagrams/15-engram-classes.drawio": {
-      "source": "sha256-e10226977c247cfc7342fda40aae405dbe49ef470c084e85bb8cf7d29675cbd2",
+      "source": "sha256-de258f05a6d8b9bb3fd7cbe8a421fc3b9e035803c36b9e79c7bf8d8ec90d4c3a",
       "style": "clean",
-      "exporter": "drawio-cli",
+      "exporter": "drawio-browser",
       "embedFonts": false,
       "outputs": {
-        "src/content/posts/deepseek/15-engram/diagrams/15-engram-classes.wisp.svg": "sha256-511be33c749908d90fe30a58174daf9c07bface4e7d2bee33beb5530699e13ae"
+        "src/content/posts/deepseek/15-engram/diagrams/15-engram-classes.wisp.svg": "sha256-6d1f767a5b4f61f95d1b81d25f72162cd17a9f31e22aafca7065c91ce64c7478"
       },
       "pages": [
         "Engram 类图"
       ]
     },
     "src/content/posts/deepseek/15-engram/diagrams/15-engram-decode.drawio": {
-      "source": "sha256-7434e7b5aa26d0b9d4254c28beecbd7b0e5b319374d881bc9e7ae9d3edf05f03",
+      "source": "sha256-275968fb241d3220c7132a1da064880197c3f07ace3ba1ca5b003fd5aecc3d18",
       "style": "clean",
-      "exporter": "drawio-cli",
+      "exporter": "drawio-browser",
       "embedFonts": false,
       "outputs": {
-        "src/content/posts/deepseek/15-engram/diagrams/15-engram-decode.page-2.wisp.svg": "sha256-e7b54c58ab4abd27567c6b99fb416853687e49bbe644055926fd5c74c861738e",
-        "src/content/posts/deepseek/15-engram/diagrams/15-engram-decode.wisp.svg": "sha256-b222e3448f546941150a3b87a3719d83b00329b3551f42eee10ff210d536892c"
+        "src/content/posts/deepseek/15-engram/diagrams/15-engram-decode.page-2.wisp.svg": "sha256-00fe49821725562d7f2936c24704f1ad9a5059718736c3d864d458f1dabfb8b3",
+        "src/content/posts/deepseek/15-engram/diagrams/15-engram-decode.wisp.svg": "sha256-1528f4ca8a48dcf6561826378c397813bbebc07cfa31eb8e7e5d834311ff3cb5"
       },
       "pages": [
         "decode 数据流",
@@ -89,25 +89,25 @@
       ]
     },
     "src/content/posts/deepseek/15-engram/diagrams/15-engram-layer.drawio": {
-      "source": "sha256-0fc3f10d84c3074a9a5771f9fa9162037993f0122a3f83dd0cba8d6d4cd5d2f1",
+      "source": "sha256-59028c15568d141dcd6966815521203fa6e6873818d9e471d4f2118afd67bd33",
       "style": "clean",
-      "exporter": "drawio-cli",
+      "exporter": "drawio-browser",
       "embedFonts": false,
       "outputs": {
-        "src/content/posts/deepseek/15-engram/diagrams/15-engram-layer.wisp.svg": "sha256-291ff610e4fc30dcd37ee5243afa980197d9f21cebb42ed310648c60b21ff396"
+        "src/content/posts/deepseek/15-engram/diagrams/15-engram-layer.wisp.svg": "sha256-94a5e55254182c37ad0f3e11c47f4393d460850131a06cbf43e35d7307458c28"
       },
       "pages": [
         "Engram 在一层里的位置"
       ]
     },
     "src/content/posts/deepseek/15-engram/diagrams/15-engram-lookup.drawio": {
-      "source": "sha256-2578b8efd653a6633b5fcb85ff46dadc2ce0b078ed8f0aa4d310842983769c15",
+      "source": "sha256-a92e3383b95059ad5b57911a4caccb448b1fa519e9bbbc56c386f1a300a389ea",
       "style": "clean",
-      "exporter": "drawio-cli",
+      "exporter": "drawio-browser",
       "embedFonts": false,
       "outputs": {
-        "src/content/posts/deepseek/15-engram/diagrams/15-engram-lookup.page-2.wisp.svg": "sha256-9dadb1b02ccf03b7a2fe28db0e6c5596e8fabd1550900ef53fcd78ee837d6bab",
-        "src/content/posts/deepseek/15-engram/diagrams/15-engram-lookup.wisp.svg": "sha256-13e91cba576975cffd76be941cf572368f56489295a3b5542aac59af9b853e7d"
+        "src/content/posts/deepseek/15-engram/diagrams/15-engram-lookup.page-2.wisp.svg": "sha256-58e7f864b2252c0cbaf900703f9f10aecb61eec8add3270e4ea05aaa7ee82280",
+        "src/content/posts/deepseek/15-engram/diagrams/15-engram-lookup.wisp.svg": "sha256-ea06a1d76f3300057e6a443ccaf3c33cdc0ddf5f02f960c3b9785f3c5796a887"
       },
       "pages": [
         "哈希执行：初始化与逐 token 流程",
