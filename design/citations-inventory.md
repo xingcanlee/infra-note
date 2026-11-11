@@ -64,7 +64,7 @@
 | [DeepSeek-V2 技术报告 §2.1.1–§2.1.4、Table 1](https://arxiv.org/html/2405.04434v5#S2.SS1)（MLA 的提出与缓存对照）                                        | paper                        | “开头：MLA（Multi-head Latent Attention）的做法是换掉被缓存的对象。一句话：**缓存一份所有 head 共享的低维向量，读取时再用每个 head 自己的矩阵把它展开成那个 head 的 K 和 V。**” | cite at the claim; definition at end                        |
 | [DeepSeek-V3 技术报告](https://arxiv.org/abs/2412.19437)                                                                                                 | paper                        | no specific claim                                                                                                                                                               | keep as general reading                                     |
 | [DeepSeek-V3 参考实现 `model.py`](https://github.com/deepseek-ai/DeepSeek-V3/blob/9b4e9788e4a3a731f7567338ed15d3ec549ce03b/inference/model.py#L424-L497) | other remark                 | “真实配置下的账：DeepSeek-V3 671B 的配置（`inference/configs/config_671B.json`）：”                                                                                             | cite at the claim; definition at end                        |
-| 配置数字来自本地快照 `reference/DeepSeek-V3/inference/configs/config_671B.json`                                                                          | source code at pinned commit | “开头：读完你能回答：MLA 和 MQA 共享的东西有什么本质不同、为什么「压缩」在这里不等于「有损」、以及 V3 真实配置下 71 倍的差距是怎么算出来的。”                                   | cite at the claim; definition at end                        |
+| 配置数字来自本地快照 `reference/DeepSeek-V3/inference/configs/config_671B.json`（commit `9b4e978`）                                                      | source code at pinned commit | “开头：读完你能回答：MLA 和 MQA 共享的东西有什么本质不同、为什么「压缩」在这里不等于「有损」、以及 V3 真实配置下 71 倍的差距是怎么算出来的。”                                   | cite at the claim; definition at end                        |
 | 下一篇：[05 · MLA 的两个技巧](../05-mla-absorb/)——解耦 RoPE 为什么必需，以及上投影的计算怎么被吸收掉。                                                   | navigation link              | no specific claim                                                                                                                                                               | drop because it is navigation already provided by the theme |
 
 ### 正文候选（本篇）
@@ -216,7 +216,7 @@
 | [DeepSeekMoE: Towards Ultimate Expert Specialization](https://arxiv.org/abs/2401.06066)（细粒度专家 + 共享专家）                                         | paper                        | “开头：读完你能回答：MoE 为什么能「参数多、计算少」、共享专家解决什么问题、以及 DeepSeek 为什么要用 bias 而不是辅助损失做负载均衡。”                                                   | cite at the claim; definition at end       |
 | [DeepSeek-V3 技术报告](https://arxiv.org/abs/2412.19437)（无辅助损失负载均衡）                                                                           | paper                        | no specific claim                                                                                                                                                                      | cite at the claim; definition at end       |
 | [DeepSeek-V3 参考实现 `model.py`](https://github.com/deepseek-ai/DeepSeek-V3/blob/9b4e9788e4a3a731f7567338ed15d3ec549ce03b/inference/model.py#L535-L693) | other remark                 | “真实实现在哪：DeepSeek-V3 参考实现（commit `9b4e9788`，`inference/model.py`）：”                                                                                                      | cite at the claim; definition at end       |
-| 配置来自本地快照 `reference/DeepSeek-V3/inference/configs/config_671B.json`                                                                              | source code at pinned commit | “分组：为什么还要限制组数：V3 的配置里有 `n_expert_groups` 和 `n_limited_groups`。专家分布在多台机器上，一个 token 如果打到很多个组，就要和很多台机器通信——**跨机通信比计算贵得多**。” | cite at the claim; definition at end       |
+| 配置来自本地快照 `reference/DeepSeek-V3/inference/configs/config_671B.json`（commit `9b4e978`）                                                          | source code at pinned commit | “分组：为什么还要限制组数：V3 的配置里有 `n_expert_groups` 和 `n_limited_groups`。专家分布在多台机器上，一个 token 如果打到很多个组，就要和很多台机器通信——**跨机通信比计算贵得多**。” | cite at the claim; definition at end       |
 | 下一篇：[MTP 与推测解码](../11-mtp/)（尚未按本系列约定重写）——参数的问题解决了，但一次只出一个 token 还是太慢。                                          | navigation link              | no specific claim                                                                                                                                                                      | keep because it carries series explanation |
 
 ### 正文候选（本篇）
@@ -231,7 +231,7 @@
 | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------- | ---------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------- |
 | [DeepSeek-V3 技术报告](https://arxiv.org/abs/2412.19437) §2.2（MTP 模块与训练目标，式 (21)–(25)）、§4.2（$D=1$、$\lambda$ 的分阶段取值）、§4.5.1 表 4（消融）、§5.4.3（接受率与 1.8× TPS） | paper                        | “开头：读完你能回答：MTP 模块长什么样、它在训练和推理时扮演的两个完全不同的角色、以及为什么推测解码**不会改变输出**。” | cite at the claim; definition at end                        |
 | [Better & Faster Large Language Models via Multi-token Prediction](https://arxiv.org/abs/2404.19737)（论文对比的并行预测做法）                                                             | paper                        | no specific claim                                                                                                      | cite at the claim; definition at end                        |
-| `reference/DeepSeek-V3/README_WEIGHTS.md:6,13,55-56`（MTP 模块在权重里的组织）                                                                                                             | source code at pinned commit | “代码实现：## 代码实现”                                                                                                | cite at the claim; definition at end                        |
+| `reference/DeepSeek-V3/README_WEIGHTS.md:6,13,55-56`（MTP 模块在权重里的组织，commit `9b4e978`）                                                                                           | source code at pinned commit | “代码实现：## 代码实现”                                                                                                | cite at the claim; definition at end                        |
 | 上一篇：[13 · DeepSeekMoE](../13-moe/)                                                                                                                                                     | navigation link              | no specific claim                                                                                                      | drop because it is navigation already provided by the theme |
 | 下一篇：[Engram](../12-engram/)（尚未按本系列约定重写）——在 MoE 之外再开一条稀疏的轴。                                                                                                     | navigation link              | no specific claim                                                                                                      | keep because it carries series explanation                  |
 
@@ -494,15 +494,15 @@
 
 ## src/content/posts/vllm-graph/07-ascend/index.mdx
 
-| 原来源条目（逐字）                                                                                                                     | 类型                         | 正文依赖位置                                                                                                                                    | 计划动作                                                    |
-| -------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------- |
-| `vllm_ascend/compilation/acl_graph.py:55-92`（`ACLGraphEntry` 在 55-63，`ACLGraphWrapper` 在 66 起；工作流与缓冲区说明见其 docstring） | source code at pinned commit | “开头：> 本篇按本地快照 commit `28e9e97b` 的 vLLM-Ascend 代码写。**本机没有 NPU，也没有安装 CANN**，所有结论都来自静态源码阅读，没有运行验证。” | cite at the claim; definition at end                        |
-| `vllm_ascend/platform.py:242-246`（`get_static_graph_wrapper_cls`）                                                                    | source code at pinned commit | “开头：> 本篇按本地快照 commit `28e9e97b` 的 vLLM-Ascend 代码写。**本机没有 NPU，也没有安装 CANN**，所有结论都来自静态源码阅读，没有运行验证。” | cite at the claim; definition at end                        |
-| `vllm_ascend/compilation/compiler_interface.py:199-263`（npugraph_ex → torchair 回退、编译缓存）                                       | source code at pinned commit | “开头：> 本篇按本地快照 commit `28e9e97b` 的 vLLM-Ascend 代码写。**本机没有 NPU，也没有安装 CANN**，所有结论都来自静态源码阅读，没有运行验证。” | cite at the claim; definition at end                        |
-| 行号按本地快照 `reference/vllm-ascend`（commit `28e9e97b`）、`reference/vllm`（commit `cf5cea2d`）                                     | source code at pinned commit | “开头：> 本篇按本地快照 commit `28e9e97b` 的 vLLM-Ascend 代码写。**本机没有 NPU，也没有安装 CANN**，所有结论都来自静态源码阅读，没有运行验证。” | keep as snapshot note                                       |
-| [vLLM-Ascend 仓库](https://github.com/vllm-project/vllm-ascend) · [Ascend CANN 文档](https://www.hiascend.com/document)                | official docs                | “开头：> 本篇按本地快照 commit `28e9e97b` 的 vLLM-Ascend 代码写。**本机没有 NPU，也没有安装 CANN**，所有结论都来自静态源码阅读，没有运行验证。” | keep as general reading                                     |
-| 上一篇：[06 · 无设备练习](../06-practice/)                                                                                             | navigation link              | no specific claim                                                                                                                               | drop because it is navigation already provided by the theme |
-| 下一篇：[08 · 排错](../08-debugging/)——把前面七篇的判断串成一条排查路径。                                                              | navigation link              | no specific claim                                                                                                                               | keep because it carries series explanation                  |
+| 原来源条目（逐字）                                                                                                                                        | 类型                         | 正文依赖位置                                                                                                                                    | 计划动作                                                    |
+| --------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------- |
+| `vllm_ascend/compilation/acl_graph.py:55-92`（`ACLGraphEntry` 在 55-63，`ACLGraphWrapper` 在 66 起；工作流与缓冲区说明见其 docstring；commit `28e9e97b`） | source code at pinned commit | “开头：> 本篇按本地快照 commit `28e9e97b` 的 vLLM-Ascend 代码写。**本机没有 NPU，也没有安装 CANN**，所有结论都来自静态源码阅读，没有运行验证。” | cite at the claim; definition at end                        |
+| `vllm_ascend/platform.py:242-246`（`get_static_graph_wrapper_cls`；commit `28e9e97b`）                                                                    | source code at pinned commit | “开头：> 本篇按本地快照 commit `28e9e97b` 的 vLLM-Ascend 代码写。**本机没有 NPU，也没有安装 CANN**，所有结论都来自静态源码阅读，没有运行验证。” | cite at the claim; definition at end                        |
+| `vllm_ascend/compilation/compiler_interface.py:199-263`（npugraph_ex → torchair 回退、编译缓存；commit `28e9e97b`）                                       | source code at pinned commit | “开头：> 本篇按本地快照 commit `28e9e97b` 的 vLLM-Ascend 代码写。**本机没有 NPU，也没有安装 CANN**，所有结论都来自静态源码阅读，没有运行验证。” | cite at the claim; definition at end                        |
+| 行号按本地快照 `reference/vllm-ascend`（commit `28e9e97b`）、`reference/vllm`（commit `cf5cea2d`）                                                        | source code at pinned commit | “开头：> 本篇按本地快照 commit `28e9e97b` 的 vLLM-Ascend 代码写。**本机没有 NPU，也没有安装 CANN**，所有结论都来自静态源码阅读，没有运行验证。” | keep as snapshot note                                       |
+| [vLLM-Ascend 仓库](https://github.com/vllm-project/vllm-ascend) · [Ascend CANN 文档](https://www.hiascend.com/document)                                   | official docs                | “开头：> 本篇按本地快照 commit `28e9e97b` 的 vLLM-Ascend 代码写。**本机没有 NPU，也没有安装 CANN**，所有结论都来自静态源码阅读，没有运行验证。” | keep as general reading                                     |
+| 上一篇：[06 · 无设备练习](../06-practice/)                                                                                                                | navigation link              | no specific claim                                                                                                                               | drop because it is navigation already provided by the theme |
+| 下一篇：[08 · 排错](../08-debugging/)——把前面七篇的判断串成一条排查路径。                                                                                 | navigation link              | no specific claim                                                                                                                               | keep because it carries series explanation                  |
 
 ### 正文候选（本篇）
 
@@ -525,15 +525,18 @@
 
 ## 缺失元数据
 
-以下条目原始「来源」只给了本地路径或文件说明，没有可沿用的版本号、commit 或外部链接；本轮脚注因此保留原有信息，没有补造元数据。
+以下条目已经从本地快照核实，并在上面的来源表补上 commit；路径与行号用 `git show <commit>:<path>` 检查过：
 
-- `deepseek/04-mla`、`deepseek/13-moe`、`deepseek/19-full-path`：`reference/DeepSeek-V3/inference/configs/config_671B.json` 的本地快照条目未给 commit。
-- `deepseek/06-sparse-map`、`deepseek/07-swa`、`deepseek/12-comparison`：`src/explainers/core/masks.ts` 的本地实现条目未给 commit。
-- `deepseek/14-mtp`：`reference/DeepSeek-V3/README_WEIGHTS.md` 的本地文件条目未给 commit。
-- `deepseek/18-flash-attention`：`src/explainers/core/online-softmax.ts` 的本地实现条目未给 commit。
-- `vllm-graph/07-ascend`：三个具体源码路径条目未各自给 commit；该篇另有一条本地快照说明，已保留在「来源」列表。
-- `vllm-graph/08-debugging`：日志、统计和兼容条件的具体路径条目未各自给 commit；该篇另有一条本地快照说明，已保留在「来源」列表。
-- `deepseek/15-engram`：图 15-2/15-3/15-11 的离线哈希计算条目没有外部链接或版本信息。
+- `deepseek/04-mla`、`deepseek/13-moe`、`deepseek/19-full-path`：`reference/DeepSeek-V3/inference/configs/config_671B.json`，commit `9b4e978`。
+- `deepseek/14-mtp`：`reference/DeepSeek-V3/README_WEIGHTS.md:6,13,55-56`，commit `9b4e978`。
+- `vllm-graph/07-ascend`：`reference/vllm-ascend` commit `28e9e97b` 的三个路径与行号均存在。
+- `vllm-graph/08-debugging`：`reference/vllm` commit `cf5cea2d` 与 `reference/vllm-ascend` commit `28e9e97b` 的具体路径与行号均存在。
+
+以下条目仍缺少可从本工作区建立的版本信息，因此保留原状：
+
+- `deepseek/06-sparse-map`、`deepseek/07-swa`、`deepseek/12-comparison`：`src/explainers/core/masks.ts` 是本站实现，没有 sibling snapshot。
+- `deepseek/18-flash-attention`：`src/explainers/core/online-softmax.ts` 是本站实现，没有 sibling snapshot。
+- `deepseek/15-engram`：图 15-2/15-3/15-11 的离线哈希计算没有可复核的外部快照；当前 `reference/vllm`（HEAD `7c35455`）也不含该 Engram 实现。
 
 ## 跨篇候选索引
 

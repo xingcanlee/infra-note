@@ -122,7 +122,7 @@ $$
 
 ![哈希的初始化与执行两栏：左栏加载时构造压缩表（NFKC/小写折叠）、奇乘数（每层 RNG 种子 10007×层号，随机整数 ×2+1）与质数桶（从 engram_vocab_size−1 取不重复质数，偏移为前缀和）；右栏 decode 时逐 token：压缩 id 组成 2/3-gram，rolling XOR 累乘得 h₂、h₃，行号 = h mod 质数 + 偏移共 16 行；下部为 n=2 与 n=3 各 8 个质数桶，命中桶标绿](./diagrams/15-engram-lookup.drawio '图 15-2：哈希执行——初始化（压缩表、奇乘数、质数桶）与逐 token 取行（数值实算）')
 
-这条链路里唯一的「计算」是异或乘和取模：表从每桶 10 万行扩到 226 万行（Engram-27B 尺度），每一步都不变[^engram-paper]。③–④ 的 shape 流：
+这条链路里唯一的「计算」是异或乘和取模：表从每桶 10 万行扩到 226 万行（Engram-27B 尺度），每一步都不变。③–④ 的 shape 流：
 
 ![查表与门控的 shape 流：16 个行号取回 [16,80] 的行，拼接成 [1280]，wkv 投影成 [5d]（4 份每分支 Key + 1 份共享 Value）；hidden state [4,d] 作为 Query 与 Key 归一化点积得 [4] 个门控标量，加权共享 Value 得 [4,d]，卷积后与残差相加](./diagrams/15-engram-lookup.drawio#page=2 '图 15-3：查表与门控——每个节点的输入输出 shape')
 

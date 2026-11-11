@@ -72,7 +72,7 @@ $$
 [S^{a};S^{b}]=\mathrm{Softmax}_{\text{row}}\big([Z^{a}_{mi:m(i+1)-1}+B^{a};\ Z^{b}_{m(i-1):mi-1}+B^{b}]\big)
 $$
 
-再按这个权重加权求和[^deepseek-v4-paper]（式 (12)）：
+再按这个权重加权求和（式 (12)）：
 
 $$
 C^{\mathrm{Comp}}_{i}=\sum_{j=mi}^{m(i+1)-1}S^{a}_{j}\odot C^{a}_{j}+\sum_{j=m(i-1)}^{mi-1}S^{b}_{j}\odot C^{b}_{j}

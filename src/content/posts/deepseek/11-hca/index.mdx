@@ -65,7 +65,7 @@ $$
 C=H W^{KV},\qquad Z=H W^{Z}
 $$
 
-每连续 $m'$ 个条目，加可学习位置偏置后 softmax，再加权求和[^deepseek-v4-paper]（式 (22)–(23)）：
+每连续 $m'$ 个条目，加可学习位置偏置后 softmax，再加权求和（式 (22)–(23)）：
 
 $$
 S_{m'i:m'(i+1)-1}=\mathrm{Softmax}_{\text{row}}\big(Z_{m'i:m'(i+1)-1}+B\big)
