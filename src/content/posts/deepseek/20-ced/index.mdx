@@ -56,7 +56,7 @@ $$
 \mathcal{O}(NL)\quad\longrightarrow\quad \mathcal{O}\!\left(\frac{NL}{2}+n_{\rm win}\cdot\frac{L}{2}\right)\approx\mathcal{O}\!\left(\frac{NL}{2}\right)
 $$
 
-**近似减半。** 第二项 $n_{\rm win}\cdot L/2$ 是下面要说的 replay 代价——它只和窗口大小有关，不随 prompt 长度增长，所以在长 prompt 下可以忽略。
+**近似减半。**第二项 $n_{\rm win}\cdot L/2$ 是下面要说的 replay 代价——它只和窗口大小有关，不随 prompt 长度增长，所以在长 prompt 下可以忽略。
 
 decoder 仍然有自己的 query 和完整的注意力计算，**省掉的是「为每个 prompt token 再跑一遍上半层来生成 global KV」这件事**。
 
@@ -99,7 +99,7 @@ $$
 
 **「能重算的就不长期存」**——这是一个很干净的取舍：用少量重算换掉大量持久存储。结果是 persistent KV footprint 降到约 V4-Flash 的 **1/8**[^ced-paper]（§3.2.2、§2.1）。
 
-注意这 1/8 是**持久占用**的比例，不是单 token 的缓存宽度。宽度那一项是下一篇 CSA2 + FP4 的功劳（约 890 bytes/token，V4-Flash 的 1/4）。两个数字口径不同，** 不能相乘也不能混用**。
+注意这 1/8 是**持久占用**的比例，不是单 token 的缓存宽度。宽度那一项是下一篇 CSA2 + FP4 的功劳（约 890 bytes/token，V4-Flash 的 1/4）。两个数字口径不同，**不能相乘也不能混用**。
 
 ## 代码实现
 

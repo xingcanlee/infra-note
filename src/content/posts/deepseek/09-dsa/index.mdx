@@ -76,7 +76,7 @@ $$
 
 论文的说法是：indexer 仍是 $O(L^2)$[^dsa-paper]，但因为 head 数小且用 FP8，其计算量远小于 V3.1-Terminus 的 MLA（§2.3）。
 
-**这是一笔明确的交易：用一个常数很小的 $O(L^2)$，换掉一个常数很大的 $O(L^2)$。** 不是渐近复杂度的胜利，是常数的胜利。理解这一点很重要——它意味着 DSA 的收益在序列足够长、且 indexer 实现足够优化时才成立。
+**这是一笔明确的交易：用一个常数很小的 $O(L^2)$，换掉一个常数很大的 $O(L^2)$。**不是渐近复杂度的胜利，是常数的胜利。理解这一点很重要——它意味着 DSA 的收益在序列足够长、且 indexer 实现足够优化时才成立。
 
 $k$ 的取值是固定的 **2048**[^dsa-paper]（§2.1.1 稀疏训练阶段），不随上下文长度变化。在 128K 上下文下这意味着每个 query 只读约 1.6% 的历史（这个比例是由论文配置推算的，不是论文直接报告的指标）。
 
@@ -92,7 +92,7 @@ DSA 是**在 MLA 之上**实例化的（§2.1，图 2）[^dsa-paper]。回忆第
 
 indexer 要学会「预测主注意力会关注哪里」。论文分两阶段[^dsa-paper]（§2.1.1）：
 
-**阶段一：dense warm-up。**保持密集注意力，** 冻结模型其余参数，只训练 indexer**。目标分布 $p_{t,:}$ 由主注意力分数在所有 head 上求和、再沿序列做 L1 归一化得到；indexer 用 KL 散度去对齐它[^dsa-paper]（式 (3)）：
+**阶段一：dense warm-up。**保持密集注意力，**冻结模型其余参数，只训练 indexer**。目标分布 $p_{t,:}$ 由主注意力分数在所有 head 上求和、再沿序列做 L1 归一化得到；indexer 用 KL 散度去对齐它[^dsa-paper]（式 (3)）：
 
 $$
 \mathcal{L}^{I}=\sum_{t}\mathbb{D}_{\mathrm{KL}}\big(p_{t,:}\,\|\,\mathrm{Softmax}(I_{t,:})\big)
@@ -100,7 +100,7 @@ $$
 
 配置：learning rate $10^{-3}$，1000 步，每步 16 条 128K 序列，共 2.1B tokens[^dsa-paper]。
 
-**阶段二：sparse training。** 引入 top-$k$ 选择，优化全部参数。KL 只在被选中的集合 $\mathcal{S}_t$ 上计算[^dsa-paper]（式 (4)）：
+**阶段二：sparse training。**引入 top-$k$ 选择，优化全部参数。KL 只在被选中的集合 $\mathcal{S}_t$ 上计算[^dsa-paper]（式 (4)）：
 
 $$
 \mathcal{L}^{I}=\sum_{t}\mathbb{D}_{\mathrm{KL}}\big(p_{t,\mathcal{S}_t}\,\|\,\mathrm{Softmax}(I_{t,\mathcal{S}_t})\big)
@@ -136,7 +136,7 @@ def dsa_select(scores, k):
 
 `toy.py` 做了三件事：
 
-**① 衡量 indexer 挑得准不准。** 脚本按论文 §2.1.1 的 KL 目标真的把 indexer 训练了 400 步（梯度手写，因为 $\partial\,\mathbb{D}_{\mathrm{KL}}(p\|\mathrm{Softmax}(I))/\partial I = \mathrm{Softmax}(I) - p$，只有一行）。用「真实注意力权重的 top-k」当参考答案：
+**① 衡量 indexer 挑得准不准。**脚本按论文 §2.1.1 的 KL 目标真的把 indexer 训练了 400 步（梯度手写，因为 $\partial\,\mathbb{D}_{\mathrm{KL}}(p\|\mathrm{Softmax}(I))/\partial I = \mathrm{Softmax}(I) - p$，只有一行）。用「真实注意力权重的 top-k」当参考答案：
 
 ```
 随机初始化的 indexer：  选中集合覆盖了 11.8% 的真实注意力质量
@@ -146,7 +146,7 @@ def dsa_select(scores, k):
 
 训练把覆盖率提高了 3 倍——这解释了为什么 indexer 必须训练，随机的 indexer 挑出来的基本是噪声。同时注意那个上限：即便直接用真实注意力权重挑 top-32（256 个位置里挑 32 个），也只能覆盖 52.9% 的注意力质量。**这正是第 08 篇提到的「top-20% 只覆盖约 70% 分数」那个长尾问题**，也是所有 top-k 稀疏方案共同的天花板。
 
-**② 核对复杂度的交易。** 按乘法次数估算，indexer 与主注意力的对照：
+**② 核对复杂度的交易。**按乘法次数估算，indexer 与主注意力的对照：
 
 ```
 L=   4096, k=2048：indexer 占总量 20.0%，主注意力省了 50.0%

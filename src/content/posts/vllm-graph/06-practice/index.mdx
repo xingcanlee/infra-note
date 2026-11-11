@@ -14,7 +14,7 @@ import BucketDispatch from '../../../../explainers/react/BucketDispatch';
 
 前面五篇都是在读。这一篇动手——把选路逻辑自己写一遍，并且亲手制造几次回退。
 
-**不需要 GPU/NPU，不需要装 PyTorch、CUDA 或 CANN。** 全部用纯 Python。练习文件在文章目录下的 `exercises.py`，参考实现在 `toy.py`。
+**不需要 GPU/NPU，不需要装 PyTorch、CUDA 或 CANN。**全部用纯 Python。练习文件在文章目录下的 `exercises.py`，参考实现在 `toy.py`。
 
 ```bash
 uv run python exercises.py      # 跑练习，未完成的会提示
@@ -48,7 +48,7 @@ def is_compatible(desc, req):
     raise NotImplementedError
 ```
 
-**陷阱**：第 2 条不是简单的 `>=`。源码注释写着「a caller that does not track max_query_len must not match one that does」——图有约束而调用方传 `None` 时，** 不能匹配**[^vllm-dispatch-code]。
+**陷阱**：第 2 条不是简单的 `>=`。源码注释写着「a caller that does not track max_query_len must not match one that does」——图有约束而调用方传 `None` 时，**不能匹配**[^vllm-dispatch-code]。
 
 ## 练习二：实现 dispatch
 

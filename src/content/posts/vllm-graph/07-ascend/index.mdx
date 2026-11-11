@@ -111,7 +111,7 @@ except ImportError:
     ...
 ```
 
-**先试 `npugraph_ex`，导入失败才回退 `torchair`。** 两者都是把 FX graph 接到 NPU 编译器上——对应 NVIDIA 侧的 Inductor，属于**编译图**那一层（第 02 篇），不是设备图。
+**先试 `npugraph_ex`，导入失败才回退 `torchair`。**两者都是把 FX graph 接到 NPU 编译器上——对应 NVIDIA 侧的 Inductor，属于**编译图**那一层（第 02 篇），不是设备图。
 
 所以三个名字各自归位：
 

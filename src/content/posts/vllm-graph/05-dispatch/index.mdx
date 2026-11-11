@@ -86,7 +86,7 @@ return (
 
 因为 3、4 可以用 padding 补齐：多出来的位置填垃圾数据，算了不用就是了，结果不受影响。而 LoRA 数和 microbatch 数改变的是**计算的结构本身**——某些 kernel（比如 `fused_moe_lora`）的 grid 尺寸直接取决于 `num_active_loras`，捕获时定下来就改不了；ubatch 数决定批次被切成几份，更是图结构的一部分。
 
-**padding 能补的是「量」，补不了「形状」。** 这是整个图桶机制的边界所在。
+**padding 能补的是「量」，补不了「形状」。**这是整个图桶机制的边界所在。
 
 第 2 条还有一个细节值得注意：源码注释写着「a caller that does not track max_query_len must not match one that does」[^vllm-dispatch-code]。也就是说，如果图声明了 query 长度上界，而调用方传的是 `None`（没跟踪），**不能匹配**——宁可保守回退，也不赌。
 

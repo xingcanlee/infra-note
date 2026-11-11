@@ -35,7 +35,7 @@ $T_{\mathrm{draft}}$ 是草稿时间，$T_{\mathrm{verify}}$ 是验证时间，$
 三者同时                            0.5       3.0    3.0        1.17  ( 47%)
 ```
 
-**$\tau$ 在分母上，杠杆最大。** 但三个量互相牵制：
+**$\tau$ 在分母上，杠杆最大。**但三个量互相牵制：
 
 - 草稿做得太便宜 → 猜得差 → $\tau$ 下降；
 - 草稿做得太好 → $T_{\mathrm{draft}}$ 上升。
@@ -65,7 +65,7 @@ P(X\mid x_0)=\prod_{k=1}^{\gamma}p_k(x_k\mid x_0,x_{<k}),\qquad
 p_k(v\mid x_0,x_{<k})=\frac{\exp\big(U_k(v)+B_k(x_0,x_{<k},v)\big)}{\sum_{u\in\mathcal{V}}\exp\big(U_k(u)+B_k(x_0,x_{<k},u)\big)}
 $$
 
-**$U_k$ 来自那一次并行前向（贵但只做一次），$B_k$ 来自顺序模块（便宜但要做 $\gamma$ 次）。** 关键约束是
+**$U_k$ 来自那一次并行前向（贵但只做一次），$B_k$ 来自顺序模块（便宜但要做 $\gamma$ 次）。**关键约束是
 
 $$
 T_{\mathrm{sequential}}\ll T_{\mathrm{parallel}}

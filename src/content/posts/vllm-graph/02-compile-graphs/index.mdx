@@ -89,7 +89,7 @@ Dynamo 遇到追踪不了的代码时，默认（`fullgraph=False`）不会报�
 | 调用 C 扩展          | PyTorch 之外的 C extension                       | Dynamo 看不见里面，无法插入保证安全的 guards |
 | 代码本身有问题       | 不用 compile 也跑不通                            | 先用 eager 验证                              |
 
-**注意前两行和上一篇的「同步点」是同一批写法。**这不是巧合：数据依赖的控制流既要 CPU 读取设备数据（同步点），又让「这段代码等价于一串固定算子」不再成立（graph break）。** 一个写法同时破坏两件事**——这是本系列最值得记住的关联之一。
+**注意前两行和上一篇的「同步点」是同一批写法。**这不是巧合：数据依赖的控制流既要 CPU 读取设备数据（同步点），又让「这段代码等价于一串固定算子」不再成立（graph break）。**一个写法同时破坏两件事**——这是本系列最值得记住的关联之一。
 
 graph break 过多会引入开销并减少后端的融合机会。观察办法是环境变量：
 
@@ -113,7 +113,7 @@ TORCH_LOGS="dynamic"       python run.py   # 动态 shape 的符号与判定
 | `max-autotune`               | 更激进的 autotune（Triton GEMM/卷积模板）                                         |
 | `max-autotune-no-cudagraphs` | 同上但禁用 CUDA Graphs                                                            |
 
-**`reduce-overhead` 就是「编译图 + 设备图一起上」[^torch-compile-api]。** 注意官方的限定：目前只保证 CUDA-only、且不修改输入的图。有两个 mode 名字里直接带 `cudagraphs`，正说明这两件事在实现上是可分开开关的。
+**`reduce-overhead` 就是「编译图 + 设备图一起上」[^torch-compile-api]。**注意官方的限定：目前只保证 CUDA-only、且不修改输入的图。有两个 mode 名字里直接带 `cudagraphs`，正说明这两件事在实现上是可分开开关的。
 
 ## 两种图省的不是同一笔钱
 
@@ -128,7 +128,7 @@ TORCH_LOGS="dynamic"       python run.py   # 动态 shape 的符号与判定
   title="图 02-1：eager——10 个算子，10 次提交"
 />
 
-**编译之后**：Inductor 把算子融合了，比如 10 个变成 4 个（每个稍大一点）。** 仍然是逐个提交**，但提交次数从 10 降到 4：
+**编译之后**：Inductor 把算子融合了，比如 10 个变成 4 个（每个稍大一点）。**仍然是逐个提交**，但提交次数从 10 降到 4：
 
 <SubmitTimeline
   client:visible
@@ -154,7 +154,7 @@ TORCH_LOGS="dynamic"       python run.py   # 动态 shape 的符号与判定
 | **设备图** | 不变             | **变少**（打包） | kernel launch 的提交次数                                        |
 | 两者叠加   | 变少             | 最少             | 以上全部                                                        |
 
-**编译图减少的是「有哪些算子」，设备图减少的是「提交几次」。** 这就是为什么 vLLM 的配置里 `CompilationMode` 和 `CUDAGraphMode` 是两个独立的枚举——它们真的是两件事。
+**编译图减少的是「有哪些算子」，设备图减少的是「提交几次」。**这就是为什么 vLLM 的配置里 `CompilationMode` 和 `CUDAGraphMode` 是两个独立的枚举——它们真的是两件事。
 
 ## 代码实现
 

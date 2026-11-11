@@ -108,7 +108,7 @@ $$
 
 这个门控很重要：**查表是确定性的，但是否采用由上下文决定**。「首」后面不总是「都」——在「首席执行官」里就不是。$\alpha_t$ 负责抑制不匹配的记忆。
 
-**④ 融合回残差流**（式 (5)）[^engram-paper]：过 RMSNorm、深度可分离因果卷积（kernel $w=4$，** 膨胀 $\delta$ 取最大 N-gram 阶数**，即 3）和 SiLU，再加回门控值：
+**④ 融合回残差流**（式 (5)）[^engram-paper]：过 RMSNorm、深度可分离因果卷积（kernel $w=4$，**膨胀 $\delta$ 取最大 N-gram 阶数**，即 3）和 SiLU，再加回门控值：
 
 $$
 \mathbf{Y}=\mathrm{SiLU}\big(\mathrm{Conv1D}(\mathrm{RMSNorm}(\tilde{\mathbf{V}}))\big)+\tilde{\mathbf{V}}
@@ -428,7 +428,7 @@ gate = tl.sigmoid(gate_input)                   # 1401
 tl.store(output ..., hidden + gate * value)     # 1420
 ```
 
-与式 (4) 相比有三处不同[^engram-paper]：点积先乘**每分支的逐维 `q_weight/k_weight`**（mHC 式 (6) 的门控强化）；两侧各自乘 RMS（等价于归一化点积）；**signed-sqrt 后才过 sigmoid**——注释说明这是与训练 kernel 对齐的，论文公式没有写这一步。更明显的差别是：** 式 (5) 的卷积支路在 vLLM 中不存在**——在整个 `deepseek_v41` 目录中检索不到 engram 相关的 Conv/SiLU，输出即为 `hidden + gate·value`。发布的 V4.1 checkpoint 只保留了门控值支路（模型权重里也只有 `embed`、`wkv`、`q_weight`、`k_weight`）[^engram-vllm-code]。
+与式 (4) 相比有三处不同[^engram-paper]：点积先乘**每分支的逐维 `q_weight/k_weight`**（mHC 式 (6) 的门控强化）；两侧各自乘 RMS（等价于归一化点积）；**signed-sqrt 后才过 sigmoid**——注释说明这是与训练 kernel 对齐的，论文公式没有写这一步。更明显的差别是：**式 (5) 的卷积支路在 vLLM 中不存在**——在整个 `deepseek_v41` 目录中检索不到 engram 相关的 Conv/SiLU，输出即为 `hidden + gate·value`。发布的 V4.1 checkpoint 只保留了门控值支路（模型权重里也只有 `embed`、`wkv`、`q_weight`、`k_weight`）[^engram-vllm-code]。
 
 **offload 与预取**。`cpu_offload` 默认开：私有表使用 pinned/透明大页；共享表走 FABRIC 或 /dev/shm；host-NUMA 的 cuMem 路径按 2 GiB 分块、预留 5% NUMA 余量。查表在共享预取流上先行执行（1768-1789）[^engram-vllm-code]，到 Engram 层仅需等待事件；GB200 上有两个实测阈值（93-102）：查表行数 ≥36864 时先按表序**排序**（提升 TLB 局部性），token ≥4096 时直接改为在主流内联执行。specialized decode 更进一步：行数 ≤16 时把查表后的整条 TP all-gather + WKV GEMM 都提前到旁路流（prefetch.py）。
 

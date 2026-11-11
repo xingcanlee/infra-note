@@ -28,7 +28,7 @@ b = torch.randn(1000, 1000, device='cuda')
 c = a + b          # 这一行返回时，加法算完了吗？
 ```
 
-**没有。** 这行代码做的是「把一个加法 kernel 排进 GPU 的队列」，然后立刻返回。真正的计算在 GPU 上异步进行[^pytorch-cuda-semantics]。
+**没有。**这行代码做的是「把一个加法 kernel 排进 GPU 的队列」，然后立刻返回。真正的计算在 GPU 上异步进行[^pytorch-cuda-semantics]。
 
 这个设计是整个性能故事的前提：正因为 CPU 不等 GPU，CPU 才能**跑在 GPU 前面**，提前把后续的活排好队。只要 CPU 排队的速度快过 GPU 消化的速度，GPU 就不会饿着——提交开销就被完全掩盖了。
 
