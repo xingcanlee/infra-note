@@ -1,0 +1,97 @@
+<mxfile host="wisp-diagram">
+  <diagram id="engram-conv" name="膨胀因果短卷积 ShortConv：跨词组无重叠拼装与零初始化恒等">
+    <mxGraphModel dx="640" dy="440" grid="1" gridSize="8" guides="1" page="0" math="1" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="hdr_rf" value="① 序列感受野：核宽 \(w = 4\)、膨胀率 \(\delta = 3\)，把 4 段相邻 3-gram 零重叠拼成 12-token 窗口" style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;fontFamily=Inter;fontSize=14;fontColor=#7b5518;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="0" y="0" width="624" height="24" as="geometry" />
+        </mxCell>
+        <mxCell id="sp0" value="词组块 1&lt;br&gt;\((t-11,\,t-10,\,t-9)\)" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f5e9;strokeColor=#2c522d;strokeWidth=1.25;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="0" y="32" width="144" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="sp1" value="词组块 2&lt;br&gt;\((t-8,\,t-7,\,t-6)\)" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f5e9;strokeColor=#2c522d;strokeWidth=1.25;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="160" y="32" width="144" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="sp2" value="词组块 3&lt;br&gt;\((t-5,\,t-4,\,t-3)\)" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f5e9;strokeColor=#2c522d;strokeWidth=1.25;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="320" y="32" width="144" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="sp3" value="当前词组块 4&lt;br&gt;\((t-2,\,t-1,\,t)\)" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f5e9;strokeColor=#2c522d;strokeWidth=1.5;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="480" y="32" width="144" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="pad0" value="左补零&lt;br&gt;\(\mathrm{pad}=9\)" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#eaedf2;strokeColor=#464e57;strokeWidth=1;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;dashed=1;" vertex="1" parent="1">
+          <mxGeometry x="0" y="96" width="56" height="48" as="geometry" />
+        </mxCell>
+        <mxCell id="tap0" value="抽头 0&lt;br&gt;\(\hat{\mathbf{u}}_{t-9}\)" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#fbf2df;strokeColor=#7b5518;strokeWidth=1.5;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="64" y="96" width="80" height="48" as="geometry" />
+        </mxCell>
+        <mxCell id="skp1" value="跳过&lt;br&gt;2 步" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#eaedf2;strokeColor=#464e57;strokeWidth=1;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;dashed=1;" vertex="1" parent="1">
+          <mxGeometry x="160" y="96" width="56" height="48" as="geometry" />
+        </mxCell>
+        <mxCell id="tap1" value="抽头 1&lt;br&gt;\(\hat{\mathbf{u}}_{t-6}\)" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#fbf2df;strokeColor=#7b5518;strokeWidth=1.5;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="224" y="96" width="80" height="48" as="geometry" />
+        </mxCell>
+        <mxCell id="skp2" value="跳过&lt;br&gt;2 步" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#eaedf2;strokeColor=#464e57;strokeWidth=1;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;dashed=1;" vertex="1" parent="1">
+          <mxGeometry x="320" y="96" width="56" height="48" as="geometry" />
+        </mxCell>
+        <mxCell id="tap2" value="抽头 2&lt;br&gt;\(\hat{\mathbf{u}}_{t-3}\)" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#fbf2df;strokeColor=#7b5518;strokeWidth=1.5;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="384" y="96" width="80" height="48" as="geometry" />
+        </mxCell>
+        <mxCell id="skp3" value="跳过&lt;br&gt;2 步" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#eaedf2;strokeColor=#464e57;strokeWidth=1;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;dashed=1;" vertex="1" parent="1">
+          <mxGeometry x="480" y="96" width="56" height="48" as="geometry" />
+        </mxCell>
+        <mxCell id="tap3" value="抽头 3&lt;br&gt;\(\hat{\mathbf{u}}_t\)" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#fbf2df;strokeColor=#7b5518;strokeWidth=1.5;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="544" y="96" width="80" height="48" as="geometry" />
+        </mxCell>
+        <mxCell id="conv_op" value="② 深度可分离因果卷积 Depthwise Conv1D（\(\mathrm{groups} = d\)，每 token 仅 \(4d\) 次乘加）&lt;br&gt;输入先经 RMSNorm 稳住通道尺度；卷积核权重全零初始化（冷启动输出恒为 \(0\)）" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#fbf2df;strokeColor=#7b5518;strokeWidth=1.5;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="64" y="176" width="560" height="56" as="geometry" />
+        </mxCell>
+        <mxCell id="silu_op" value="③ SiLU 逐元素激活：补充跨词组非线性（\(\mathrm{SiLU}(0) = 0\)）" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e3f5f3;strokeColor=#0f766e;strokeWidth=1.25;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="64" y="256" width="328" height="48" as="geometry" />
+        </mxCell>
+        <mxCell id="u_bypass" value="原门控记忆 \(\mathbf{u}_t = \alpha_t \mathbf{v}_t\)&lt;br&gt;（当前位置残差直通支路）" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f5e9;strokeColor=#2c522d;strokeWidth=1.25;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="408" y="256" width="216" height="48" as="geometry" />
+        </mxCell>
+        <mxCell id="conv_out" value="④ 输出 \(\mathbf{y}_t = \mathrm{SiLU}(\mathrm{Conv1D}(\hat{\mathbf{u}})) + \mathbf{u}_t\)（训练第 0 步严格恒等于 \(\mathbf{u}_t\)）" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e3f5f3;strokeColor=#0f766e;strokeWidth=2;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="112" y="328" width="464" height="48" as="geometry" />
+        </mxCell>
+        <mxCell id="conv_note" value="对比紧密卷积（\(\delta = 1\) 仅覆盖 6 个 token 且重叠），\(\delta = 3\) 恰好跨过 3-gram 长度，免去大阶哈希碰撞。" style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;fontFamily=Inter;fontSize=12;fontColor=#5c6067;" vertex="1" parent="1">
+          <mxGeometry x="0" y="392" width="624" height="24" as="geometry" />
+        </mxCell>
+        <mxCell id="ec_s0" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;endArrow=classic;html=1;strokeColor=#2c522d;strokeWidth=1.25;exitX=0.7222222222222222;exitY=1.0;exitDx=0;exitDy=0;entryX=0.5;entryY=0.0;entryDx=0;entryDy=0;fontFamily=Inter;fontSize=12;fontColor=#5c6067;labelBackgroundColor=#fcfcfb;" edge="1" parent="1" source="sp0" target="tap0">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="ec_s1" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;endArrow=classic;html=1;strokeColor=#2c522d;strokeWidth=1.25;exitX=0.7222222222222222;exitY=1.0;exitDx=0;exitDy=0;entryX=0.5;entryY=0.0;entryDx=0;entryDy=0;fontFamily=Inter;fontSize=12;fontColor=#5c6067;labelBackgroundColor=#fcfcfb;" edge="1" parent="1" source="sp1" target="tap1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="ec_s2" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;endArrow=classic;html=1;strokeColor=#2c522d;strokeWidth=1.25;exitX=0.7222222222222222;exitY=1.0;exitDx=0;exitDy=0;entryX=0.5;entryY=0.0;entryDx=0;entryDy=0;fontFamily=Inter;fontSize=12;fontColor=#5c6067;labelBackgroundColor=#fcfcfb;" edge="1" parent="1" source="sp2" target="tap2">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="ec_s3" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;endArrow=classic;html=1;strokeColor=#2c522d;strokeWidth=1.25;exitX=0.7222222222222222;exitY=1.0;exitDx=0;exitDy=0;entryX=0.5;entryY=0.0;entryDx=0;entryDy=0;fontFamily=Inter;fontSize=12;fontColor=#5c6067;labelBackgroundColor=#fcfcfb;" edge="1" parent="1" source="sp3" target="tap3">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="ec_t0" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;endArrow=classic;html=1;strokeColor=#7b5518;strokeWidth=1.25;exitX=0.5;exitY=1.0;exitDx=0;exitDy=0;entryX=0.07142857142857142;entryY=0.0;entryDx=0;entryDy=0;fontFamily=Inter;fontSize=12;fontColor=#5c6067;labelBackgroundColor=#fcfcfb;" edge="1" parent="1" source="tap0" target="conv_op">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="ec_t1" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;endArrow=classic;html=1;strokeColor=#7b5518;strokeWidth=1.25;exitX=0.5;exitY=1.0;exitDx=0;exitDy=0;entryX=0.35714285714285715;entryY=0.0;entryDx=0;entryDy=0;fontFamily=Inter;fontSize=12;fontColor=#5c6067;labelBackgroundColor=#fcfcfb;" edge="1" parent="1" source="tap1" target="conv_op">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="ec_t2" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;endArrow=classic;html=1;strokeColor=#7b5518;strokeWidth=1.25;exitX=0.5;exitY=1.0;exitDx=0;exitDy=0;entryX=0.6428571428571429;entryY=0.0;entryDx=0;entryDy=0;fontFamily=Inter;fontSize=12;fontColor=#5c6067;labelBackgroundColor=#fcfcfb;" edge="1" parent="1" source="tap2" target="conv_op">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="ec_t3" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;endArrow=classic;html=1;strokeColor=#7b5518;strokeWidth=1.25;exitX=0.5;exitY=1.0;exitDx=0;exitDy=0;entryX=0.9285714285714286;entryY=0.0;entryDx=0;entryDy=0;fontFamily=Inter;fontSize=12;fontColor=#5c6067;labelBackgroundColor=#fcfcfb;" edge="1" parent="1" source="tap3" target="conv_op">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="ec_c_silu" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;endArrow=classic;html=1;strokeColor=#0f766e;strokeWidth=1.25;exitX=0.29285714285714287;exitY=1.0;exitDx=0;exitDy=0;entryX=0.5;entryY=0.0;entryDx=0;entryDy=0;fontFamily=Inter;fontSize=12;fontColor=#5c6067;labelBackgroundColor=#fcfcfb;" edge="1" parent="1" source="conv_op" target="silu_op">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="ec_silu_out" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;endArrow=classic;html=1;strokeColor=#0f766e;strokeWidth=1.25;exitX=0.5;exitY=1.0;exitDx=0;exitDy=0;entryX=0.25;entryY=0.0;entryDx=0;entryDy=0;fontFamily=Inter;fontSize=12;fontColor=#5c6067;labelBackgroundColor=#fcfcfb;" edge="1" parent="1" source="silu_op" target="conv_out">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="ec_u_out" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;endArrow=classic;html=1;strokeColor=#2c522d;strokeWidth=1.25;exitX=0.4074074074074074;exitY=1.0;exitDx=0;exitDy=0;entryX=0.8275862068965517;entryY=0.0;entryDx=0;entryDy=0;fontFamily=Inter;fontSize=12;fontColor=#5c6067;labelBackgroundColor=#fcfcfb;" edge="1" parent="1" source="u_bypass" target="conv_out">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

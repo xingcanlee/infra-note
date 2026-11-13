@@ -50,68 +50,78 @@
         "CSA：先按 m 压缩，再在压缩条目上做稀疏选择"
       ]
     },
-    "src/content/posts/deepseek/15-engram/diagrams/15-engram-buckets.drawio": {
-      "source": "sha256-d5b9dff6a6febc19a1a8cc1b1c0a0950b1808270e20de4b852c790bbfe6bbdfd",
+    "src/content/posts/deepseek/15-engram/diagrams/15-engram-arch.drawio": {
+      "source": "sha256-d0533544f2d0dcb535572a51c465954b4d9c194547f6b015cebb58a0e7a91132",
       "style": "clean",
       "exporter": "drawio-browser",
       "embedFonts": false,
       "outputs": {
-        "src/content/posts/deepseek/15-engram/diagrams/15-engram-buckets.wisp.svg": "sha256-0f6267d1f06edad86e4b9a816c4ded027bb6612867224a8c2750f01b83f41da3"
+        "src/content/posts/deepseek/15-engram/diagrams/15-engram-arch.wisp.svg": "sha256-74c6b172fb2228621a018b4c1024fa937658a451fd63ffe49f88e76c1bf1da63"
       },
       "pages": [
-        "桶构建：质数表的分配"
+        "Engram 模块原理：静态查表与上下文门控融合"
       ]
     },
-    "src/content/posts/deepseek/15-engram/diagrams/15-engram-classes.drawio": {
-      "source": "sha256-de258f05a6d8b9bb3fd7cbe8a421fc3b9e035803c36b9e79c7bf8d8ec90d4c3a",
+    "src/content/posts/deepseek/15-engram/diagrams/15-engram-conv.drawio": {
+      "source": "sha256-64369b35a013847181a3e721f5bbe45485ff01dffd4f76b6d3e3ddf477384d43",
       "style": "clean",
       "exporter": "drawio-browser",
       "embedFonts": false,
       "outputs": {
-        "src/content/posts/deepseek/15-engram/diagrams/15-engram-classes.wisp.svg": "sha256-6d1f767a5b4f61f95d1b81d25f72162cd17a9f31e22aafca7065c91ce64c7478"
+        "src/content/posts/deepseek/15-engram/diagrams/15-engram-conv.wisp.svg": "sha256-4ff2d843749a62bac0fee44d8d2548588598c554f9122fb6e1a437f67abe67af"
       },
       "pages": [
-        "Engram 类图"
+        "膨胀因果短卷积 ShortConv：跨词组无重叠拼装与零初始化恒等"
       ]
     },
-    "src/content/posts/deepseek/15-engram/diagrams/15-engram-decode.drawio": {
-      "source": "sha256-8583771304b41fdc90e0c9e67c3f6e82679f86a20910d0b7954630c6b87c53dd",
+    "src/content/posts/deepseek/15-engram/diagrams/15-engram-hash.drawio": {
+      "source": "sha256-b1e1ab196c1d5ec33120f0ec6e345fb50a3605fdb037815eccd86b655e80a766",
       "style": "clean",
       "exporter": "drawio-browser",
       "embedFonts": false,
       "outputs": {
-        "src/content/posts/deepseek/15-engram/diagrams/15-engram-decode.page-2.wisp.svg": "sha256-00fe49821725562d7f2936c24704f1ad9a5059718736c3d864d458f1dabfb8b3",
-        "src/content/posts/deepseek/15-engram/diagrams/15-engram-decode.wisp.svg": "sha256-fbf73dc6a3450e47a59de9d0e8e239f6e8c1f5bf3fb17afaa8d84b3f0eef2591"
+        "src/content/posts/deepseek/15-engram/diagrams/15-engram-hash.wisp.svg": "sha256-0f10a756d4eba18e35738dba366325f071b5aa289bbf819009b7a8c622cbf788"
       },
       "pages": [
-        "decode 数据流",
-        "预取与多流重叠"
+        "多头质数哈希与扁平分桶寻址"
       ]
     },
     "src/content/posts/deepseek/15-engram/diagrams/15-engram-layer.drawio": {
-      "source": "sha256-063322df62258a26025b05714f32ab124d408b05bdf4fd6a5c4b71d58273e9ad",
+      "source": "sha256-cdda6ff38d367eb30a1a459c06f6d042adb5d786920a3e26b3fa07cf7cac0d05",
       "style": "clean",
       "exporter": "drawio-browser",
       "embedFonts": false,
       "outputs": {
-        "src/content/posts/deepseek/15-engram/diagrams/15-engram-layer.wisp.svg": "sha256-efc25727014d820a6b9a6549668e44925fbb57890ea3e405c38d0e91e271ac9f"
+        "src/content/posts/deepseek/15-engram/diagrams/15-engram-layer.wisp.svg": "sha256-bcfa4ad3dd2a70cd0fbb468d78061c76fb87a210da32e84f3e31dd1ad466d857"
       },
       "pages": [
-        "Engram 在一层里的位置"
+        "V4.1 解码层注入位置与 mHC 四分支融合"
       ]
     },
-    "src/content/posts/deepseek/15-engram/diagrams/15-engram-lookup.drawio": {
-      "source": "sha256-68db5b154974c4d7d22444eed6f69443511a5fe687eadee421191d15e4673e17",
+    "src/content/posts/deepseek/15-engram/diagrams/15-engram-runtime.drawio": {
+      "source": "sha256-61ffb73730d05d6c742738f588a380fbbeabac802e0a66649e610d70e4fc8ae6",
       "style": "clean",
       "exporter": "drawio-browser",
       "embedFonts": false,
       "outputs": {
-        "src/content/posts/deepseek/15-engram/diagrams/15-engram-lookup.page-2.wisp.svg": "sha256-3b81cf08da9767e476f298a39b1d69f837f5abc09dcfe3687861c124a0551fc2",
-        "src/content/posts/deepseek/15-engram/diagrams/15-engram-lookup.wisp.svg": "sha256-c3c61e87c1a597bc9123f25dc35c620a7545b9e1866ae0412443cd0d0887cd2e"
+        "src/content/posts/deepseek/15-engram/diagrams/15-engram-runtime.page-2.wisp.svg": "sha256-32606e7fa47d1d893582d61c5d1ee63b193ab9bdc40fc980ce0de63713b4be4b",
+        "src/content/posts/deepseek/15-engram/diagrams/15-engram-runtime.wisp.svg": "sha256-932863915a4bb715abd01eb1fce296f9fc545ce4063641afecc52ca230c2e482"
       },
       "pages": [
-        "哈希执行：初始化与逐 token 流程",
-        "查表与门控：shape 变换"
+        "跨层预取与多流重叠",
+        "单步查表与分布式交换"
+      ]
+    },
+    "src/content/posts/deepseek/15-engram/diagrams/15-engram-walkthrough.drawio": {
+      "source": "sha256-1c77aed8da01e430c729bdb96a2aa3973f6c956dba16de9465bd8b7dc4aded8c",
+      "style": "clean",
+      "exporter": "drawio-browser",
+      "embedFonts": false,
+      "outputs": {
+        "src/content/posts/deepseek/15-engram/diagrams/15-engram-walkthrough.wisp.svg": "sha256-f62f2ea5a955b6afc53c1354a6f515f4491cc5ee9c2ba69e69a0c04caf1787f9"
+      },
+      "pages": [
+        "端到端实例：两句同后缀输入走完 Engram 全流程"
       ]
     }
   }

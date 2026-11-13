@@ -1,0 +1,106 @@
+<mxfile host="wisp-diagram">
+  <diagram id="engram-walkthrough" name="端到端实例：两句同后缀输入走完 Engram 全流程">
+    <mxGraphModel dx="640" dy="460" grid="1" gridSize="8" guides="1" page="0" math="1" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="hdr_a" value="语境 A：「北京 是 中国 的 首」" style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;fontFamily=Inter;fontSize=14;fontColor=#2c522d;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="0" y="0" width="296" height="24" as="geometry" />
+        </mxCell>
+        <mxCell id="hdr_b" value="语境 B：「公司 新任 的 首」" style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;fontFamily=Inter;fontSize=14;fontColor=#984646;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="328" y="0" width="296" height="24" as="geometry" />
+        </mxCell>
+        <mxCell id="a_tok" value="① 词表归一映射规范 ID（\(t = 5\) 落在「首」）&lt;br&gt;[北京(101), 是(205), 中国(308), 的(12), 首(88)]" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#eaedf2;strokeColor=#464e57;strokeWidth=1.25;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="0" y="32" width="296" height="48" as="geometry" />
+        </mxCell>
+        <mxCell id="b_tok" value="① 词表归一映射规范 ID（\(t = 5\) 落在「首」）&lt;br&gt;[公司(614), 新任(729), 的(12), 首(88)]" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#eaedf2;strokeColor=#464e57;strokeWidth=1.25;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="328" y="32" width="296" height="48" as="geometry" />
+        </mxCell>
+        <mxCell id="a_3g" value="3-gram A：\((308,12,88)\)&lt;br&gt;「中国的首」" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#f4f4f2;strokeColor=#5c6067;strokeWidth=1;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="96" y="104" width="136" height="56" as="geometry" />
+        </mxCell>
+        <mxCell id="ab_2g" value="② 共用 2-gram&lt;br&gt;\((12, 88)\)「的首」" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#fbf2df;strokeColor=#7b5518;strokeWidth=1.5;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="240" y="104" width="144" height="56" as="geometry" />
+        </mxCell>
+        <mxCell id="b_3g" value="3-gram B：\((729,12,88)\)&lt;br&gt;「新任的首」" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#f4f4f2;strokeColor=#5c6067;strokeWidth=1;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="392" y="104" width="136" height="56" as="geometry" />
+        </mxCell>
+        <mxCell id="a_ctx" value="第 1 层 \(\mathbf{h}_A\)&lt;br&gt;语境：北京·中国" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#eaedf2;strokeColor=#464e57;strokeWidth=1.25;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="0" y="184" width="112" height="56" as="geometry" />
+        </mxCell>
+        <mxCell id="a_mem" value="③ 查 16 行 → \(\mathbf{k}_A,\,\mathbf{v}_A\)&lt;br&gt;记忆强偏向「首都」" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#fbf2df;strokeColor=#7b5518;strokeWidth=1.25;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="120" y="184" width="176" height="56" as="geometry" />
+        </mxCell>
+        <mxCell id="b_mem" value="③ 查 16 行 → \(\mathbf{k}_B,\,\mathbf{v}_B\)&lt;br&gt;共用 8 头仍带入「首都」" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#fbf2df;strokeColor=#7b5518;strokeWidth=1.25;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="328" y="184" width="176" height="56" as="geometry" />
+        </mxCell>
+        <mxCell id="b_ctx" value="第 1 层 \(\mathbf{h}_B\)&lt;br&gt;语境：公司·新任" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#eaedf2;strokeColor=#464e57;strokeWidth=1.25;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="512" y="184" width="112" height="56" as="geometry" />
+        </mxCell>
+        <mxCell id="a_gate" value="④ 门控点积同向：\(\alpha_A = 0.90\)（开门放行）&lt;br&gt;\(\mathbf{u}_A = 0.90\,\mathbf{v}_A\)，保留「首都」记忆" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f5e9;strokeColor=#2c522d;strokeWidth=1.5;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="0" y="264" width="296" height="56" as="geometry" />
+        </mxCell>
+        <mxCell id="b_gate" value="④ 门控点积冲突：\(\alpha_B = 0.09\)（关门掐断）&lt;br&gt;\(\mathbf{u}_B \approx \mathbf{0}\)，屏蔽「首都」干扰" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#fcedec;strokeColor=#984646;strokeWidth=1.5;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="328" y="264" width="296" height="56" as="geometry" />
+        </mxCell>
+        <mxCell id="a_out" value="⑤ 短卷积 + 残差写回 \(\mathbf{h}_A + \mathbf{y}_A\)&lt;br&gt;浅层直接补全实体 → 下文预测「都」" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f5e9;strokeColor=#2c522d;strokeWidth=2;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="0" y="344" width="296" height="56" as="geometry" />
+        </mxCell>
+        <mxCell id="b_out" value="⑤ 短卷积 + 残差写回 \(\mathbf{h}_B + \mathbf{y}_B\)&lt;br&gt;主干语义免受污染 → 下文推理「席执行官」" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#f4f4f2;strokeColor=#5c6067;strokeWidth=1.5;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="328" y="344" width="296" height="56" as="geometry" />
+        </mxCell>
+        <mxCell id="wt_note" value="两句话在「首」处的 2-gram 哈希行号完全相同（FLOPs \(= 0\)），全靠主干上下文门控 \(\alpha_t\) 在第 ④ 步分道扬镳。" style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;fontFamily=Inter;fontSize=12;fontColor=#5c6067;" vertex="1" parent="1">
+          <mxGeometry x="0" y="416" width="624" height="24" as="geometry" />
+        </mxCell>
+        <mxCell id="ew_a_ctx" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;endArrow=classic;html=1;strokeColor=#464e57;strokeWidth=1.25;exitX=0.16216216216216217;exitY=1.0;exitDx=0;exitDy=0;entryX=0.42857142857142855;entryY=0.0;entryDx=0;entryDy=0;fontFamily=Inter;fontSize=12;fontColor=#5c6067;labelBackgroundColor=#fcfcfb;dashed=1;" edge="1" parent="1" source="a_tok" target="a_ctx">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="ew_a_3g" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;endArrow=classic;html=1;strokeColor=#5c6067;strokeWidth=1.25;exitX=0.5675675675675675;exitY=1.0;exitDx=0;exitDy=0;entryX=0.5294117647058824;entryY=0.0;entryDx=0;entryDy=0;fontFamily=Inter;fontSize=12;fontColor=#5c6067;labelBackgroundColor=#fcfcfb;" edge="1" parent="1" source="a_tok" target="a_3g">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="ew_3g_amem" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;endArrow=classic;html=1;strokeColor=#7b5518;strokeWidth=1.25;exitX=0.5294117647058824;exitY=1.0;exitDx=0;exitDy=0;entryX=0.2727272727272727;entryY=0.0;entryDx=0;entryDy=0;fontFamily=Inter;fontSize=12;fontColor=#5c6067;labelBackgroundColor=#fcfcfb;" edge="1" parent="1" source="a_3g" target="a_mem">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="ew_a_2g" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;endArrow=classic;html=1;strokeColor=#7b5518;strokeWidth=1.25;exitX=0.918918918918919;exitY=1.0;exitDx=0;exitDy=0;entryX=0.2222222222222222;entryY=0.0;entryDx=0;entryDy=0;fontFamily=Inter;fontSize=12;fontColor=#5c6067;labelBackgroundColor=#fcfcfb;" edge="1" parent="1" source="a_tok" target="ab_2g">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="ew_2g_amem" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;endArrow=classic;html=1;strokeColor=#7b5518;strokeWidth=1.25;exitX=0.2222222222222222;exitY=1.0;exitDx=0;exitDy=0;entryX=0.8636363636363636;entryY=0.0;entryDx=0;entryDy=0;fontFamily=Inter;fontSize=12;fontColor=#5c6067;labelBackgroundColor=#fcfcfb;" edge="1" parent="1" source="ab_2g" target="a_mem">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="ew_b_2g" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;endArrow=classic;html=1;strokeColor=#7b5518;strokeWidth=1.25;exitX=0.08108108108108109;exitY=1.0;exitDx=0;exitDy=0;entryX=0.7777777777777778;entryY=0.0;entryDx=0;entryDy=0;fontFamily=Inter;fontSize=12;fontColor=#5c6067;labelBackgroundColor=#fcfcfb;" edge="1" parent="1" source="b_tok" target="ab_2g">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="ew_2g_bmem" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;endArrow=classic;html=1;strokeColor=#7b5518;strokeWidth=1.25;exitX=0.7777777777777778;exitY=1.0;exitDx=0;exitDy=0;entryX=0.13636363636363635;entryY=0.0;entryDx=0;entryDy=0;fontFamily=Inter;fontSize=12;fontColor=#5c6067;labelBackgroundColor=#fcfcfb;" edge="1" parent="1" source="ab_2g" target="b_mem">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="ew_b_3g" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;endArrow=classic;html=1;strokeColor=#5c6067;strokeWidth=1.25;exitX=0.43243243243243246;exitY=1.0;exitDx=0;exitDy=0;entryX=0.47058823529411764;entryY=0.0;entryDx=0;entryDy=0;fontFamily=Inter;fontSize=12;fontColor=#5c6067;labelBackgroundColor=#fcfcfb;" edge="1" parent="1" source="b_tok" target="b_3g">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="ew_3g_bmem" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;endArrow=classic;html=1;strokeColor=#7b5518;strokeWidth=1.25;exitX=0.47058823529411764;exitY=1.0;exitDx=0;exitDy=0;entryX=0.7272727272727273;entryY=0.0;entryDx=0;entryDy=0;fontFamily=Inter;fontSize=12;fontColor=#5c6067;labelBackgroundColor=#fcfcfb;" edge="1" parent="1" source="b_3g" target="b_mem">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="ew_b_ctx" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;endArrow=classic;html=1;strokeColor=#464e57;strokeWidth=1.25;exitX=0.8378378378378378;exitY=1.0;exitDx=0;exitDy=0;entryX=0.5714285714285714;entryY=0.0;entryDx=0;entryDy=0;fontFamily=Inter;fontSize=12;fontColor=#5c6067;labelBackgroundColor=#fcfcfb;dashed=1;" edge="1" parent="1" source="b_tok" target="b_ctx">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="ew_actx_g" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;endArrow=classic;html=1;strokeColor=#2c522d;strokeWidth=1.25;exitX=0.5;exitY=1.0;exitDx=0;exitDy=0;entryX=0.1891891891891892;entryY=0.0;entryDx=0;entryDy=0;fontFamily=Inter;fontSize=12;fontColor=#5c6067;labelBackgroundColor=#fcfcfb;" edge="1" parent="1" source="a_ctx" target="a_gate">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="ew_amem_g" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;endArrow=classic;html=1;strokeColor=#2c522d;strokeWidth=1.25;exitX=0.5;exitY=1.0;exitDx=0;exitDy=0;entryX=0.7027027027027027;entryY=0.0;entryDx=0;entryDy=0;fontFamily=Inter;fontSize=12;fontColor=#5c6067;labelBackgroundColor=#fcfcfb;" edge="1" parent="1" source="a_mem" target="a_gate">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="ew_bmem_g" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;endArrow=classic;html=1;strokeColor=#984646;strokeWidth=1.25;exitX=0.5;exitY=1.0;exitDx=0;exitDy=0;entryX=0.2972972972972973;entryY=0.0;entryDx=0;entryDy=0;fontFamily=Inter;fontSize=12;fontColor=#5c6067;labelBackgroundColor=#fcfcfb;" edge="1" parent="1" source="b_mem" target="b_gate">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="ew_bctx_g" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;endArrow=classic;html=1;strokeColor=#984646;strokeWidth=1.25;exitX=0.5;exitY=1.0;exitDx=0;exitDy=0;entryX=0.8108108108108109;entryY=0.0;entryDx=0;entryDy=0;fontFamily=Inter;fontSize=12;fontColor=#5c6067;labelBackgroundColor=#fcfcfb;" edge="1" parent="1" source="b_ctx" target="b_gate">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="ew_ag_out" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;endArrow=classic;html=1;strokeColor=#2c522d;strokeWidth=1.25;exitX=0.5;exitY=1.0;exitDx=0;exitDy=0;entryX=0.5;entryY=0.0;entryDx=0;entryDy=0;fontFamily=Inter;fontSize=12;fontColor=#5c6067;labelBackgroundColor=#fcfcfb;" edge="1" parent="1" source="a_gate" target="a_out">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="ew_bg_out" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;endArrow=classic;html=1;strokeColor=#984646;strokeWidth=1.25;exitX=0.5;exitY=1.0;exitDx=0;exitDy=0;entryX=0.5;entryY=0.0;entryDx=0;entryDy=0;fontFamily=Inter;fontSize=12;fontColor=#5c6067;labelBackgroundColor=#fcfcfb;" edge="1" parent="1" source="b_gate" target="b_out">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

@@ -1,0 +1,97 @@
+<mxfile host="wisp-diagram">
+  <diagram id="engram-hash" name="多头质数哈希与扁平分桶寻址">
+    <mxGraphModel dx="640" dy="640" grid="1" gridSize="8" guides="1" page="0" math="1" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="top_note" value="以位置 \(t =\)「景」为例：2 个 N-gram 阶 \(\times\) 每阶 8 个质数头 \(= 16\) 个确定性行号" style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;fontFamily=Inter;fontSize=12;fontColor=#5c6067;" vertex="1" parent="1">
+          <mxGeometry x="0" y="0" width="624" height="24" as="geometry" />
+        </mxCell>
+        <mxCell id="seq_ids" value="压缩后规范 ID 序列：…  名(1825)   医(9412)   张(3104)   仲(7721)   景(5509)" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#eaedf2;strokeColor=#464e57;strokeWidth=1.25;fontFamily=Inter;fontSize=14;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="32" y="32" width="560" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="win2" value="2-gram 后缀窗口&lt;br&gt;\(g_{t,2} = (7721,\,5509)\)（「仲景」）" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#f4f4f2;strokeColor=#5c6067;strokeWidth=1;fontFamily=Inter;fontSize=14;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="0" y="104" width="296" height="48" as="geometry" />
+        </mxCell>
+        <mxCell id="win3" value="3-gram 后缀窗口&lt;br&gt;\(g_{t,3} = (3104,\,7721,\,5509)\)（「张仲景」）" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#f4f4f2;strokeColor=#5c6067;strokeWidth=1;fontFamily=Inter;fontSize=14;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="328" y="104" width="296" height="48" as="geometry" />
+        </mxCell>
+        <mxCell id="mix2" value="奇乘数异或混合（层种子隔离）&lt;br&gt;\(h_2 = (7721 \cdot m_1) \oplus (5509 \cdot m_0)\)" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#fbf2df;strokeColor=#7b5518;strokeWidth=1.25;fontFamily=Inter;fontSize=14;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="0" y="176" width="296" height="56" as="geometry" />
+        </mxCell>
+        <mxCell id="mix3" value="增量异或混合（复用 \(h_2\)）&lt;br&gt;\(h_3 = h_2 \oplus (3104 \cdot m_2)\)" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#fbf2df;strokeColor=#7b5518;strokeWidth=1.25;fontFamily=Inter;fontSize=14;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="328" y="176" width="296" height="56" as="geometry" />
+        </mxCell>
+        <mxCell id="mod2" value="8 个互异质数分别取模&lt;br&gt;\(r_{2,k} = h_2 \bmod p_{2,k}\quad (k=0\dots 7)\)" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#fbf2df;strokeColor=#7b5518;strokeWidth=1.25;fontFamily=Inter;fontSize=14;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="0" y="256" width="296" height="56" as="geometry" />
+        </mxCell>
+        <mxCell id="mod3" value="8 个互异质数分别取模&lt;br&gt;\(r_{3,k} = h_3 \bmod p_{3,k}\quad (k=0\dots 7)\)" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#fbf2df;strokeColor=#7b5518;strokeWidth=1.25;fontFamily=Inter;fontSize=14;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="328" y="256" width="296" height="56" as="geometry" />
+        </mxCell>
+        <mxCell id="tbl_panel" value="" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#f4f4f2;strokeColor=#e2e2dd;strokeWidth=1;fontFamily=Inter;fontSize=12;fontColor=#5c6067;dashed=1;" vertex="1" parent="1">
+          <mxGeometry x="0" y="344" width="624" height="112" as="geometry" />
+        </mxCell>
+        <mxCell id="tbl_hdr" value="加上桶前缀偏移 \(\mathrm{idx}_i = \mathrm{offset}_i + r_i\)，落入同一张扁平表 \(\mathbf{E}\)（每行 \(80\) 维）" style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;fontFamily=Inter;fontSize=12;fontColor=#2c522d;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="16" y="352" width="592" height="24" as="geometry" />
+        </mxCell>
+        <mxCell id="b0" value="头 0 (2-gram)&lt;br&gt;桶长 \(p_{2,0}\)" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f5e9;strokeColor=#2c522d;strokeWidth=1.25;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="16" y="384" width="104" height="56" as="geometry" />
+        </mxCell>
+        <mxCell id="b1" value="头 1 (2-gram)&lt;br&gt;桶长 \(p_{2,1}\)" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f5e9;strokeColor=#2c522d;strokeWidth=1.25;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="128" y="384" width="104" height="56" as="geometry" />
+        </mxCell>
+        <mxCell id="dots_a" value="⋯" style="text;html=1;whiteSpace=wrap;align=center;verticalAlign=middle;fontFamily=Inter;fontSize=18;fontColor=#5c6067;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="232" y="392" width="40" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="b8" value="头 8 (3-gram)&lt;br&gt;桶长 \(p_{3,0}\)" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f5e9;strokeColor=#2c522d;strokeWidth=1.25;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="272" y="384" width="104" height="56" as="geometry" />
+        </mxCell>
+        <mxCell id="dots_b" value="⋯" style="text;html=1;whiteSpace=wrap;align=center;verticalAlign=middle;fontFamily=Inter;fontSize=18;fontColor=#5c6067;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="376" y="392" width="40" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="b15" value="头 15 (3-gram)&lt;br&gt;桶长 \(p_{3,7}\)" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f5e9;strokeColor=#2c522d;strokeWidth=1.25;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="416" y="384" width="104" height="56" as="geometry" />
+        </mxCell>
+        <mxCell id="btail" value="对齐补齐&lt;br&gt;尾槽" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#eaedf2;strokeColor=#464e57;strokeWidth=1;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;dashed=1;" vertex="1" parent="1">
+          <mxGeometry x="528" y="384" width="80" height="56" as="geometry" />
+        </mxCell>
+        <mxCell id="concat_out" value="并行取出 16 行（\(16 \times 80\)）并拼接 → 静态记忆向量 \(\mathbf{e}_t \in \mathbb{R}^{1280}\)" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f5e9;strokeColor=#2c522d;strokeWidth=2;fontFamily=Inter;fontSize=14;fontColor=#1d1d1f;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="80" y="488" width="464" height="48" as="geometry" />
+        </mxCell>
+        <mxCell id="bot_note" value="质数桶长避免哈希低位周期共振；扩容 100 倍仅增大各桶质数 \(p_{n,k}\)，每 token 仍固定做 16 次整数取模与行读取。" style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;fontFamily=Inter;fontSize=12;fontColor=#5c6067;" vertex="1" parent="1">
+          <mxGeometry x="0" y="552" width="624" height="32" as="geometry" />
+        </mxCell>
+        <mxCell id="e_seq_w2" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;endArrow=classic;html=1;strokeColor=#464e57;strokeWidth=1.25;exitX=0.20714285714285716;exitY=1.0;exitDx=0;exitDy=0;entryX=0.5;entryY=0.0;entryDx=0;entryDy=0;fontFamily=Inter;fontSize=12;fontColor=#5c6067;labelBackgroundColor=#fcfcfb;" edge="1" parent="1" source="seq_ids" target="win2">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_seq_w3" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;endArrow=classic;html=1;strokeColor=#464e57;strokeWidth=1.25;exitX=0.7928571428571428;exitY=1.0;exitDx=0;exitDy=0;entryX=0.5;entryY=0.0;entryDx=0;entryDy=0;fontFamily=Inter;fontSize=12;fontColor=#5c6067;labelBackgroundColor=#fcfcfb;" edge="1" parent="1" source="seq_ids" target="win3">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_w2_m2" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;endArrow=classic;html=1;strokeColor=#7b5518;strokeWidth=1.25;exitX=0.5;exitY=1.0;exitDx=0;exitDy=0;entryX=0.5;entryY=0.0;entryDx=0;entryDy=0;fontFamily=Inter;fontSize=12;fontColor=#5c6067;labelBackgroundColor=#fcfcfb;" edge="1" parent="1" source="win2" target="mix2">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_w3_m3" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;endArrow=classic;html=1;strokeColor=#7b5518;strokeWidth=1.25;exitX=0.5;exitY=1.0;exitDx=0;exitDy=0;entryX=0.5;entryY=0.0;entryDx=0;entryDy=0;fontFamily=Inter;fontSize=12;fontColor=#5c6067;labelBackgroundColor=#fcfcfb;" edge="1" parent="1" source="win3" target="mix3">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_m2_m3" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;endArrow=classic;html=1;strokeColor=#7b5518;strokeWidth=1.25;exitX=1.0;exitY=0.5;exitDx=0;exitDy=0;entryX=0.0;entryY=0.5;entryDx=0;entryDy=0;fontFamily=Inter;fontSize=12;fontColor=#5c6067;labelBackgroundColor=#fcfcfb;dashed=1;" edge="1" parent="1" source="mix2" target="mix3">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_m2_mod2" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;endArrow=classic;html=1;strokeColor=#7b5518;strokeWidth=1.25;exitX=0.5;exitY=1.0;exitDx=0;exitDy=0;entryX=0.5;entryY=0.0;entryDx=0;entryDy=0;fontFamily=Inter;fontSize=12;fontColor=#5c6067;labelBackgroundColor=#fcfcfb;" edge="1" parent="1" source="mix2" target="mod2">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_m3_mod3" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;endArrow=classic;html=1;strokeColor=#7b5518;strokeWidth=1.25;exitX=0.5;exitY=1.0;exitDx=0;exitDy=0;entryX=0.5;entryY=0.0;entryDx=0;entryDy=0;fontFamily=Inter;fontSize=12;fontColor=#5c6067;labelBackgroundColor=#fcfcfb;" edge="1" parent="1" source="mix3" target="mod3">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_mod2_tbl" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;endArrow=classic;html=1;strokeColor=#2c522d;strokeWidth=1.25;exitX=0.5;exitY=1.0;exitDx=0;exitDy=0;entryX=0.23717948717948717;entryY=0.0;entryDx=0;entryDy=0;fontFamily=Inter;fontSize=12;fontColor=#5c6067;labelBackgroundColor=#fcfcfb;" edge="1" parent="1" source="mod2" target="tbl_panel">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_mod3_tbl" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;endArrow=classic;html=1;strokeColor=#2c522d;strokeWidth=1.25;exitX=0.5;exitY=1.0;exitDx=0;exitDy=0;entryX=0.7628205128205128;entryY=0.0;entryDx=0;entryDy=0;fontFamily=Inter;fontSize=12;fontColor=#5c6067;labelBackgroundColor=#fcfcfb;" edge="1" parent="1" source="mod3" target="tbl_panel">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_tbl_out" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;endArrow=classic;html=1;strokeColor=#2c522d;strokeWidth=1.25;exitX=0.5;exitY=1.0;exitDx=0;exitDy=0;entryX=0.5;entryY=0.0;entryDx=0;entryDy=0;fontFamily=Inter;fontSize=12;fontColor=#5c6067;labelBackgroundColor=#fcfcfb;" edge="1" parent="1" source="tbl_panel" target="concat_out">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>
