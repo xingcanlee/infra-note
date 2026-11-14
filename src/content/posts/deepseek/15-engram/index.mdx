@@ -33,7 +33,7 @@ Engram 的做法是在少数特定层（例如 30 层模型的第 2、15 层）�
 - **语境 A**：「北京 是 中国 的 **首**」（下文应接「都」）
 - **语境 B**：「公司 新任 的 **首**」（下文应接「席执行官」）
 
-![两句同以「…的首」结尾的输入从规范 ID 映射开始走完五步：第 ① 步压成规范 ID 序列；第 ② 步提取出完全相同的共用 2-gram (12, 88)「的首」与各自的 3-gram；第 ③ 步经确定性哈希各查出 16 行静态向量并投影出偏向「首都」的 Key/Value；第 ④ 步与第 1 层主干隐藏状态做门控点积——语境 A 得 α_A=0.90 开门放行，语境 B 得 α_B=0.09 关门掐断；第 ⑤ 步过短卷积后写回残差流](./diagrams/15-engram-walkthrough.drawio '图 15-1：端到端实例推演——「北京是中国的首」与「公司新任的首」在 t=「首」处的完整走查')
+![两句同以「…的首」结尾的输入从规范 ID 映射开始走完五步：第 ① 步压成规范 ID 序列；第 ② 步提取出完全相同的共用 2-gram (12, 88)「的首」与各自的 3-gram；第 ③ 步经确定性哈希各查出 16 行静态向量并投影出偏向「首都」的 Key/Value；第 ④ 步与第 1 层主干隐藏状态做门控点积——语境 A 得 α_A=0.90 开门放行，语境 B 得 α_B=0.09 关门掐断；第 ⑤ 步过短卷积后写回残差流](./diagrams/15-engram-walkthrough.drawio '图 15-1：端到端实例推演——「北京是中国的首」与「公司新任的首」在当前词「首」处的完整走查')
 
 对照图 15-1，五步操作各司其职：
 
@@ -89,7 +89,7 @@ $$
 
 以 2 个阶（2-gram、3-gram）、每阶 $K=8$ 头、每头维度 $d_{\text{head}}=80$ 为例，每个 token 固定查 $2 \times 8 = 16$ 行，拼出 $d_{\text{mem}} = 1280$ 维向量。具体寻址过程如图 15-3：
 
-![以「…名医张仲景」在 t=「景」处为例：规范 ID 序列分别截取 2-gram (7721, 5509) 与 3-gram (3104, 7721, 5509)，用层专属奇乘数做异或混合（3-gram 增量复用 2-gram 结果），再对 16 个互异质数取模并加上桶前缀偏移，映射到同一张扁平表并取出 16 行拼接](./diagrams/15-engram-hash.drawio '图 15-3：多头质数哈希与扁平分桶寻址（以「张仲景」在 t=「景」处为例）')
+![以「…名医张仲景」在 t=「景」处为例：规范 ID 序列分别截取 2-gram (7721, 5509) 与 3-gram (3104, 7721, 5509)，用层专属奇乘数做异或混合（3-gram 增量复用 2-gram 结果），再对 16 个互异质数取模并加上桶前缀偏移，映射到同一张扁平表并取出 16 行拼接](./diagrams/15-engram-hash.drawio '图 15-3：多头质数哈希与扁平分桶寻址（以「张仲景」末字「景」处为例）')
 
 这里有两个关键工程细节（官方仓库 `engram_demo_v1.py`[^engram-demo]与 `vLLM` 实现一致）：
 
@@ -322,7 +322,7 @@ Engram 不能每层都挂（否则既浪费内存又没有预取缓冲），到�
 - 图 15-4、15-6、15-7、15-8 取自 Engram 论文图 7、3、4、5（[arXiv HTML 版](https://arxiv.org/html/2601.07372v1)，CC BY 4.0 许可）。
 - 下一篇：[16 · mHC](../16-mhc/)——拆解 Engram 所接入的多分支流形受限残差连接。
 
-[^engram-paper]: Cheng et al., _Conditional Memory via Scalable Lookup: A New Axis of Sparsity for Large Language Models_, arXiv:2601.07372（DeepSeek-AI & Peking University，2026-01）。对应章节：§1 表 3（实体逐层重建实例）、§2.1–2.5 式 (1)–(6)（压缩、多头哈希、门控、mHC 共享 Value 与分层预取）、§3.1–3.2 图 3（U 型分配律与无限记忆幂律）、§4 表 1（27B/40B 基准对照）、§5 表 2（长上下文 RULER）、§6.1–6.6 图 4–7（LogitLens/CKA、层位置消融、置零敏感性、100B 主机内存卸载实测、门控可视化）、附录 C（分词器归一压缩）。
+[^engram-paper]: Cheng et al., _Conditional Memory via Scalable Lookup: A New Axis of Sparsity for Large Language Models_, [arXiv:2601.07372](https://arxiv.org/abs/2601.07372)（DeepSeek-AI & Peking University，2026-01）。对应章节：§1 表 3（实体逐层重建实例）、§2.1–2.5 式 (1)–(6)（压缩、多头哈希、门控、mHC 共享 Value 与分层预取）、§3.1–3.2 图 3（U 型分配律与无限记忆幂律）、§4 表 1（27B/40B 基准对照）、§5 表 2（长上下文 RULER）、§6.1–6.6 图 4–7（LogitLens/CKA、层位置消融、置零敏感性、100B 主机内存卸载实测、门控可视化）、附录 C（分词器归一压缩）。
 
 [^engram-demo]: DeepSeek 官方参考实现 [deepseek-ai/Engram](https://github.com/deepseek-ai/Engram) 中的 `engram_demo_v1.py`：包含 NFKC 词表压缩器（`CompressedTokenizer`）、层专属奇乘数异或与质数分桶寻址（`NgramHashMapping`）及带 `sqrt(|x|) * sign(x)` 的上下文门控实现。
 

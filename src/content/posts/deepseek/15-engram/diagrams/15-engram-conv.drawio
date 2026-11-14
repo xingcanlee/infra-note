@@ -55,9 +55,6 @@
         <mxCell id="conv_out" value="④ 输出 \(\mathbf{y}_t = \mathrm{SiLU}(\mathrm{Conv1D}(\hat{\mathbf{u}})) + \mathbf{u}_t\)（训练第 0 步严格恒等于 \(\mathbf{u}_t\)）" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e3f5f3;strokeColor=#0f766e;strokeWidth=2;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;fontStyle=1;" vertex="1" parent="1">
           <mxGeometry x="112" y="328" width="464" height="48" as="geometry" />
         </mxCell>
-        <mxCell id="conv_note" value="对比紧密卷积（\(\delta = 1\) 仅覆盖 6 个 token 且重叠），\(\delta = 3\) 恰好跨过 3-gram 长度，免去大阶哈希碰撞。" style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;fontFamily=Inter;fontSize=12;fontColor=#5c6067;" vertex="1" parent="1">
-          <mxGeometry x="0" y="392" width="624" height="24" as="geometry" />
-        </mxCell>
         <mxCell id="ec_s0" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;endArrow=classic;html=1;strokeColor=#2c522d;strokeWidth=1.25;exitX=0.7222222222222222;exitY=1.0;exitDx=0;exitDy=0;entryX=0.5;entryY=0.0;entryDx=0;entryDy=0;fontFamily=Inter;fontSize=12;fontColor=#5c6067;labelBackgroundColor=#fcfcfb;" edge="1" parent="1" source="sp0" target="tap0">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>

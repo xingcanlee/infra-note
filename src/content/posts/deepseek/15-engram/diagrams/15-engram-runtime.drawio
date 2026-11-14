@@ -34,9 +34,6 @@
         <mxCell id="p_ev" value="记录预取完成事件&lt;br&gt;GPU: cuda.Event | NPU: ExternalEvent" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f5e9;strokeColor=#2c522d;strokeWidth=1.25;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
           <mxGeometry x="328" y="272" width="296" height="48" as="geometry" />
         </mxCell>
-        <mxCell id="p1_note" value="对比 MoE：专家路由依赖上一层输出，无法跨层预取；Engram 索引仅依赖输入 token，前序计算天然掩盖主机访存延迟。" style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;fontFamily=Inter;fontSize=12;fontColor=#5c6067;" vertex="1" parent="1">
-          <mxGeometry x="0" y="472" width="624" height="32" as="geometry" />
-        </mxCell>
         <mxCell id="e_t_c" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;endArrow=classic;html=1;strokeColor=#2f5783;strokeWidth=1.25;exitX=0.2878787878787879;exitY=1.0;exitDx=0;exitDy=0;entryX=0.7142857142857143;entryY=0.0;entryDx=0;entryDy=0;fontFamily=Inter;fontSize=12;fontColor=#5c6067;labelBackgroundColor=#fcfcfb;" edge="1" parent="1" source="tok_top" target="c_l0">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>

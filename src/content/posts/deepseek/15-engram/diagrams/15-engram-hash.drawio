@@ -58,9 +58,6 @@
         <mxCell id="concat_out" value="并行取出 16 行（\(16 \times 80\)）并拼接 → 静态记忆向量 \(\mathbf{e}_t \in \mathbb{R}^{1280}\)" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f5e9;strokeColor=#2c522d;strokeWidth=2;fontFamily=Inter;fontSize=14;fontColor=#1d1d1f;fontStyle=1;" vertex="1" parent="1">
           <mxGeometry x="80" y="488" width="464" height="48" as="geometry" />
         </mxCell>
-        <mxCell id="bot_note" value="质数桶长避免哈希低位周期共振；扩容 100 倍仅增大各桶质数 \(p_{n,k}\)，每 token 仍固定做 16 次整数取模与行读取。" style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;fontFamily=Inter;fontSize=12;fontColor=#5c6067;" vertex="1" parent="1">
-          <mxGeometry x="0" y="552" width="624" height="32" as="geometry" />
-        </mxCell>
         <mxCell id="e_seq_w2" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;endArrow=classic;html=1;strokeColor=#464e57;strokeWidth=1.25;exitX=0.20714285714285716;exitY=1.0;exitDx=0;exitDy=0;entryX=0.5;entryY=0.0;entryDx=0;entryDy=0;fontFamily=Inter;fontSize=12;fontColor=#5c6067;labelBackgroundColor=#fcfcfb;" edge="1" parent="1" source="seq_ids" target="win2">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>

@@ -49,9 +49,6 @@
         <mxCell id="b_out" value="⑤ 短卷积 + 残差写回 \(\mathbf{h}_B + \mathbf{y}_B\)&lt;br&gt;主干语义免受污染 → 下文推理「席执行官」" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#f4f4f2;strokeColor=#5c6067;strokeWidth=1.5;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;fontStyle=1;" vertex="1" parent="1">
           <mxGeometry x="328" y="344" width="296" height="56" as="geometry" />
         </mxCell>
-        <mxCell id="wt_note" value="两句话在「首」处的 2-gram 哈希行号完全相同（FLOPs \(= 0\)），全靠主干上下文门控 \(\alpha_t\) 在第 ④ 步分道扬镳。" style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;fontFamily=Inter;fontSize=12;fontColor=#5c6067;" vertex="1" parent="1">
-          <mxGeometry x="0" y="416" width="624" height="24" as="geometry" />
-        </mxCell>
         <mxCell id="ew_a_ctx" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;endArrow=classic;html=1;strokeColor=#464e57;strokeWidth=1.25;exitX=0.16216216216216217;exitY=1.0;exitDx=0;exitDy=0;entryX=0.42857142857142855;entryY=0.0;entryDx=0;entryDy=0;fontFamily=Inter;fontSize=12;fontColor=#5c6067;labelBackgroundColor=#fcfcfb;dashed=1;" edge="1" parent="1" source="a_tok" target="a_ctx">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
