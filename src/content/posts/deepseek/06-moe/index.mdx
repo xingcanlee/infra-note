@@ -1,0 +1,238 @@
+---
+title: '06 细粒度混合专家（DeepSeekMoE）：计算稀疏、无损均衡与 EP 通信'
+description: '为什么不增激活计算量就能把模型总参数扩展几十倍？拆解细粒度专家划分与共享专家隔离、DeepSeek-V3 Sigmoid 无辅助损失偏置负载均衡、V4 dsv4_topk、Grouped GEMM 对齐，以及 DeepEP 与昇腾 MC2 的 EP 通信调度。'
+series: { id: deepseek, order: 7 }
+pubDate: 2026-11-09
+tags: [DeepSeek, MoE, Roofline, Quantization, vLLM, Ascend]
+category: AI Infra
+toc: true
+---
+
+如果你把一个普通的稠密 Transformer（Dense）前馈网络从 70B 放大到 671B，推理每个词元所需的浮点计算量和访存带宽几乎会同步暴涨接近十倍。原因很简单：稠密层就像一家只有全科通才的诊所，无论病人挂什么号，所有大夫都得一起把全部参数算一遍。
+
+混合专家架构（Mixture-of-Experts，MoE）给出的解法是“专科分诊”：在总参数量扩充到 671B 的前提下，每次前向推理只由一个轻量路由器挑出极少数专家参与计算。以 DeepSeek-V3 为例[^v3-paper]，全模型共 61 层，除前 3 层保持稠密 FFN 外，其余 58 层均采用 MoE，每个词元仅激活 37B 参数——相当于每次只唤醒总参数的约 $5.5\%$。
+
+然而，工程界早期的粗粒度 Top-2 MoE 长期受困于**知识冗余**与**辅助损失拖累精度**两大难题。读完本章，你将重点掌握四个核心机制：
+
+- **细粒度拆分与共享隔离**：如何通过缩小单个专家隐藏维度、划出常驻共享专家，在相同计算预算下撬动指数级专家组合空间并剥离共性语言知识。
+- **无辅助损失偏置均衡**：DeepSeek-V3 如何用“选路加动态偏置 $b_i$、加权仍取无偏亲和度 $s_{i,t}$”彻底替代干扰主任务的平衡损失，并演进到 V4 的 `dsv4_topk` 与多模态独立偏置。
+- **动态路由到规则计算**：`moe_align_block_size` 如何把参差不齐的路由槽位按块大小（如 `64` / `128`）重排对齐，喂给满载运行的 Grouped GEMM。
+- **EP 跨卡通信调度对比**：NVIDIA 侧如何从旧版 `deepep_ht` / `deepep_ll` 双路径统一到 `DeepEP@f6aa38fe` 的 `EPBuffer.dispatch` / `combine`，以及昇腾 `vllm-ascend@3649b8ff` 如何用 `MC2` 实现通信与计算核内融合。
+
+## 先看一个例子：4 个词元如何在 8 个细粒度专家里挑出 Top-2 与 1 个共享专家
+
+为了不陷进抽象公式，我们先跟踪一次只有 4 个词元 $X = [t_0, t_1, t_2, t_3]$ 的微型 MoE 前向传播。设定这层共有 $N_{\text{routed}} = 8$ 个路由专家（均匀分布在节点 0 的 `E0..E3` 与节点 1 的 `E4..E7`），每个词元挑选 $K = 2$ 个路由专家，外加 $N_{\text{shared}} = 1$ 个常驻激活的共享专家 $E_s$。
+
+![4 个词元经过 Sigmoid 无辅助损失路由、块对齐填充与共享专家融合的完整路径](./diagrams/10-moe-walkthrough.drawio '图 6-1：4 个词元经过 Sigmoid 无辅助损失路由、块对齐填充与共享专家融合的完整路径')
+
+整条前向链路拆开看只有四步：
+
+1. **选路与加权解耦（以词元 $t_2$ 为例）**：路由器先算出原始 `Sigmoid` 亲和度 $s_{i,t}$，假设 $t_2$ 对 `E0`、`E1`、`E6` 的原始分分别为 $0.62$、$0.60$、$0.58$。如果上一轮 `E1` 已经接了太多词元，均衡控制器就会给它挂上负偏置 $b_1 = -0.25$，同时给冷门的 `E6` 挂上正偏置 $b_6 = +0.15$。于是判定 Top-2 索引时用的是加偏置后的 $s' = s + b$：`E1` 跌到 $0.35$，`E6` 升至 $0.73$，$t_2$ 最终改选 `(E0, E6)`。但真正算加权权重时，必须回头查**未加偏置的原始分数**，得出 $g_0 = 0.62 / 1.20 = 0.517$、$g_6 = 0.58 / 1.20 = 0.483$。这样既把流量赶走了，又不会扭曲模型本身的语义打分梯度。
+2. **稀疏槽位按块对齐**：假设 4 个词元各选 2 个专家后，一共产生 8 个路由槽位：`E0` 命中 2 次（`[t0, t2]`）、`E4` 命中 3 次（`[t0, t1, t3]`）、`E6` 命中 3 次（`[t1, t2, t3]`），其余 5 个专家全为 0。GPU Tensor Core 无法直接高效处理长度分别为 `2`、`3`、`3` 的锯齿状数组。调用 `moe_align_block_size(block_size=4)` 后，系统把所有活跃专家补齐成 `4` 的整数倍：`Block 0` 为 `[t0, t2, pad, pad]`，`Block 1` 为 `[t0, t1, t3, pad]`，`Block 2` 为 `[t1, t2, t3, pad]`，总共 12 个定长槽位。
+3. **Grouped GEMM 与跳过填充**：硬件并行对这 3 个 `4 x H` 的规整数据块执行 SwiGLU 矩阵乘；写回阶段直接丢弃 `pad` 哨兵槽位，只把真实词元位置的结果乘以各自的权重 $g_{i,t}$ 累加回原词元坐标。
+4. **融合共享专家与残差**：与此同时，常驻旁路的共享专家 $E_s$ 已经平行算完了全部 4 个词元的基础语义变换，最终按 $h'_t = x_t + E_s(x_t) + \sum_{i \in \text{Top2}} g_{i,t} E_i(x_t)$ 直接相加输出。
+
+## 算法演进：细粒度拆分、无辅助损失均衡与 V4 路由
+
+看懂微观数据流后，再看三代 DeepSeek 模型为什么一步步把路由算法改造成今天这个样子。核心矛盾始终围绕两个指标打转：**专家表达效率**与**跨卡负载均衡**。
+
+![DeepSeekMoE 到 DeepSeek-V3 与 DeepSeek-V4/V4.1 的路由与负载均衡演进](./diagrams/10-moe-arch.drawio '图 6-2：DeepSeekMoE 到 DeepSeek-V3 与 DeepSeek-V4/V4.1 的路由与负载均衡演进')
+
+### 细粒度划分与共享专家隔离
+
+DeepSeekMoE 论文指出传统 Top-2 MoE 存在两个天然缺陷[^moe-paper]：一是**知识混杂**，每个大专家不得不同时塞进语法、逻辑和领域事实；二是**知识冗余**，多个独立路由专家重复学习同一套基础句法，浪费了大量参数。
+
+它的改法非常直观：
+
+- **细粒度专家划分**：保持总参数量与总激活计算量不变，把原来 $N$ 个大专家各自切细成 $m$ 份（隐藏维度缩为原来的 $1/m$），同时每个词元激活的数量放大到 $mK$ 个。以论文中的经典对比为例，当 $N=16, K=2$ 拆分为 $m=4$ 倍细粒度（$64$ 个专家中选 $8$ 个）时，理论专家组合数从 $\binom{16}{2} = 120$ 种陡增至 $\binom{64}{8} = 4{,}426{,}165{,}368$ 种，细粒度组合能力跨越好几个数量级。
+- **共享专家隔离**：从激活槽位里专门划出 $K_s$ 个常驻激活的共享专家，无需路由即可承接所有词元的共性语法知识；剩余 $mK - K_s$ 个路由名额就能彻底轻装上阵、专精高分化领域。
+
+实测效果也印证了这种结构红利：2B 规模的 DeepSeekMoE 在 Pile 上的验证损失降到 `1.808`（对比 GShard 的 `1.867`）；16B 模型仅用约 `40%` 的计算量就追平稠密 DeepSeek 7B；而 145B 版本更是只耗费 `28.5%` 计算量就达到稠密 DeepSeek 67B 的性能水准[^moe-paper]。
+
+### 节点受限分组 Top-K 与无辅助损失均衡
+
+当参数扩充到 DeepSeek-V3 的 671B（单层 1 个共享专家 + 256 个路由专家，每次选 8 个）时，新的物理墙出现了：256 个专家必然分散在多台物理服务器之间，而单卡机内 NVLink 带宽（`160 GB/s`）是跨机 InfiniBand 带宽（`50 GB/s`）的 `3.2` 倍[^v3-paper]。如果任意词元可以同时路由到 8 台不同机器，网络带宽立刻锁死。
+
+为此，DeepSeek-V3 的路由源码[^v3-code] 引入了三项关键约束：
+
+1. **用 Sigmoid 替代 Softmax**：门控先对所有专家算出独立亲和度 $s_{i,t} = \mathrm{Sigmoid}(u_t^T e_i)$，避免专家之间被 Softmax 强行拉扯成零和竞争。
+2. **节点受限分组筛选**：将 256 个专家按物理节点分成 $G=8$ 组（每组 32 个），先算每组内得分最高的 Top-2 专家分数之和作为整组得分，只保留得分前 $M=4$ 个节点组，再从这 4 组里挑出最终 Top-8 路由专家，从算法层面把单个词元的跨机通信上限封死在 4 台机器以内。
+3. **无辅助损失偏置负载均衡（Aux-Loss-Free）**：过去为了让每个专家雨露均沾，训练不得不在主损失里硬塞一项辅助均衡惩罚项，结果平衡权重 $\alpha$ 调大了模型变笨、调小了负载照样塌缩。V3 的做法是彻底拆开“选谁”和“占多少权重”：
+
+$$
+g'_{i,t} = \begin{cases}
+s_{i,t}, & s_{i,t} + b_i \in \mathrm{TopK}\!\left(\{s_{j,t} + b_j\}, K_r\right) \\
+0, & \text{otherwise}
+\end{cases}
+$$
+
+每个训练步结束后统计本批负载，超载专家下调偏置 $b_i \leftarrow b_i - \gamma$，欠载专家上调 $b_i \leftarrow b_i + \gamma$。在预训练前 14.3T 词元阶段采用 $\gamma = 0.001$ 动态纠偏，到最后 500B 词元阶段直接设 $\gamma = 0.0$ 冻结路由；同时只挂一个极微弱的序列级防极端塌缩惩罚（$\alpha = 0.0001$）[^v3-paper]，并全程**不丢弃任何词元（No Token-Dropping）**。
+
+这段逻辑在 DeepSeek-V3 官方推理代码 `Gate.forward`[^v3-code] 中极其干净——先用加上 `self.bias` 的 `scores` 选出组与 `indices`，最后 `gather` 权重时却精准索引了提前保存的 `original_scores`：
+
+```python
+scores = linear(x, self.weight).sigmoid()
+original_scores = scores
+if self.bias is not None:
+    scores = scores + self.bias
+# 组内 Top-2 求和并截断至前 topk_groups 个节点组
+group_scores = scores.view(x.size(0), self.n_group, -1).topk(2, dim=-1)[0].sum(dim=-1)
+indices = group_scores.topk(self.topk_group, dim=-1)[1]
+mask = scores.new_ones(x.size(0), self.n_group, dtype=bool).scatter_(1, indices, False)
+scores = scores.masked_fill_(mask.unsqueeze(-1), float("-inf")).flatten(1)
+indices = torch.topk(scores, self.topk, dim=-1)[1]
+# 关键解耦：只用 original_scores 计算门控权重
+weights = original_scores.gather(1, indices)
+weights /= weights.sum(dim=-1, keepdim=True)
+weights *= self.route_scale
+```
+
+### DeepSeek-V4 / V4.1 的 dsv4_topk 与多模态隔离
+
+步入 2026 年的 DeepSeek-V4 与 V4.1，路由器在三个方向继续演进[^v4-paper][^v41-paper]：
+
+- **用 $\sqrt{\operatorname{softplus}(z)}$ 替换 Sigmoid**：当逻辑打分 $z$ 较大时，`Sigmoid` 导数会迅速逼近 0 进入饱和区。vLLM 的 `_dsv4_topk_kernel`[^vllm-dsv4] 将亲和度改为 $s = \sqrt{\operatorname{softplus}(z)}$，并在 $z > 20.0$ 时切换为线性分支 $\sqrt{z}$ 防止指数上溢。
+- **取消节点组限制并引入浅层哈希路由**：V4 在全局 256 或 384 个专家中直接挑选 `topk=6`，不再受限于节点分组约束；同时把以往浅层的稠密 FFN 改造成哈希路由 MoE[^v4-paper]。
+- **多模态独立偏置 `bias_vl`**：多模态混训时，图像词元与文本词元分布截然不同，共用一组 $b_i$ 会互相冲垮均衡。V4.1 与 `dsv4_topk` 专门识别图像哨兵词元区间，对视觉词元切换独立偏置 `bias_vl`，确保图文各守各的专家均衡池[^v41-paper][^vllm-dsv4]。
+
+## 系统执行与 EP 通信调度：对齐分块、DeepEP 演进与昇腾 MC2
+
+算法选出 Top-K 专家只是第一步。在实际多机多卡集群上，MoE 往往采用**专家并行（Expert Parallelism，EP）**——每张 GPU 或 NPU 只存放全模型专家参数的一个子集，词元必须通过跨卡 All-to-All 通信去“找”目标专家，算完后再传回原卡。
+
+![Expert Parallelism 运行时执行流对比：vLLM + DeepEP 演进栈 vs 昇腾 vllm-ascend MC2](./diagrams/10-ep-runtime.drawio '图 6-3：Expert Parallelism 运行时执行流对比：vLLM + DeepEP 演进栈 vs 昇腾 vllm-ascend MC2')
+
+### 为什么必须对齐分块：moe_align_block_size
+
+就算经过无辅助损失均衡，单卡在一个微批次里收到的词元数量在各个本地专家之间依然是不均等的。Grouped GEMM 底层调用的 Tensor Core 矩阵乘核要求每次处理的分块行数必须是硬件友好常数（如 `64` 或 `128`）的整数倍。
+
+vLLM 中的 `moe_align_block_size`[^vllm-align] 正是负责这层重排：它先按专家编号把稀疏路由索引聚拢排序，随后把每个本地活跃专家的长度向上补齐为 `block_size` 的整数倍（空槽填入越界哨兵索引 `topk_ids.numel()`），同时把映射表 `expert_map` 判为非本地专家的块标为 `-1`，最终交付 `(sorted_ids, expert_ids, num_tokens_post_pad)`。计算核只要顺着定长块列表一路全速扫过即可，遇到哨兵槽位直接跳过写回，彻底消灭变长循环带来的流处理器空转。
+
+### vLLM + DeepEP：从 HT/LL 分离到 EPBuffer 统一
+
+在跨卡通信这一步，推理面对两种截然相反的物理负载：
+
+- **Prefill（高吞吐阶段）**：一次输入成千上万个词元，带宽跑满即可掩盖通信延迟，优先合并机内 NVLink 与机间 RDMA 的高吞吐通道。
+- **Decode（低延迟阶段）**：每步每个请求仅吐 1 个词元，批量小、对尾延迟极其敏感，必须绕开臃肿的内核路径，走纯 RDMA 直连通信。
+
+在 `vllm@bb23c0a8` 源码中，还能清晰看到这种双栈过渡痕迹：旧版把两者硬拆成两条独立路径——`deepep_ht.py` 走高吞吐 `buffer.dispatch` / `combine`（且受限无法开启 DP + CUDA Graph），而 `deepep_ll.py` 走 `low_latency_dispatch` / `low_latency_combine`，并依靠 `return_recv_hook=True` 返回异步钩子把等待掩盖在计算流之中[^vllm-ht][^vllm-ll]。
+
+然而对照 `DeepEP@f6aa38fe` 仓库就会发现，上游 DeepEP 已经**正式移除了 `low_latency_*` 旧接口**，将高吞吐与低延迟彻底统一进单一的 `EPBuffer.dispatch` 与 `EPBuffer.combine`[^deepep-ep]：通过 `do_expand`、`do_cpu_sync`、`cached_mode` 等开关即可在同套缓冲区内无缝切换两种模式。与之呼应，vLLM 侧的新一代适配器 `deepep_v2.py`[^vllm-v2] 已按统一语义重构了调度逻辑（源码类型注解写作 `ElasticBuffer`）：
+
+- **Decode CUDA Graph 路径**：关闭 `do_expand` 与 `do_cpu_sync`，将最大接收槽位 `num_max_tokens_per_rank` 向上取整到 2 的幂次以防 Triton/JIT 频繁重编译，并调用片上核函数 `_globalize_recv_topk_idx_kernel` 直接依靠设备端前缀和 `psum_recv_per_rank[-1]` 完成局部到全局编号转换，全程零 CPU 同步停顿。
+- **Prefill 高吞吐路径**：开启 `do_expand=True` 与 `do_cpu_sync=True`，先展开成按专家连续的紧凑布局，回传阶段通过 `combine(..., async_with_compute_stream=True)` 与共享专家前向重叠执行；同时还支持将 MXFP8 缩放因子按 4 个 `uint8` 打包进 `int32` 的 `_pack_mxfp8_scale` 压缩传输。
+
+落到超大规模生产部署上，DeepSeek-V3 技术报告给出了一组典型配置[^v3-paper]：Prefill 采用 `EP32`（跨 4 台 8 卡节点，每卡放 8 个路由专家 + 1 个高频冗余副本）；Decode 激进扩充到 `EP320`（跨 40 台节点，几乎做到每卡仅驻留 1 个专有路由专家外加 64 卡共享冗余），并用 IBGDA 直接发起网卡 RDMA 读写，分发时传 FP8、归约时回传 BF16。到 V4 的 Wave EP MegaMoE 中，单次双向跨卡通信的算术强度更是达到 $V_{\text{comp}} / V_{\text{comm}} = 6hd / (3h) = 2d = 6144\text{ FLOPs/Byte}$[^v4-paper]。
+
+### 昇腾 NPU：AscendMoERunner 与 MC2 算子融合
+
+如果把目光转向国产昇腾硬件，`vllm-ascend@3649b8ff` 展现了一套以“核内融合”为标志的迥异工程路线：
+
+- **双流并发共享专家**：入口调度器 `AscendMoERunner._forward_impl`[^ascend-moe] 在主流执行路由专家 Top-K 与分发的同一时间，把 `AscendSharedExperts` 的 Gate-Up 计算提前推到辅助流并行跑完，尽可能压平通信气泡。
+- **片上融合选路**：`AscendFusedTopKRouter`[^ascend-router] 直接调用 `torch_npu.npu_moe_gating_top_k`（`norm_type=0` 对应 Softmax、`1` 对应 Sigmoid），或在 V4 场景调用 `_C_ascend.moe_gating_top_k_hash`（`norm_type=2` 完成 `sqrtsoftplus` 与多模态 `bias_vl` 选择）。
+- **MC2 通信计算全融合**：传统做法是“通信写入 HBM → 重排 → GEMM 读出 → 写回 → 归约通信”，访存开销极大。昇腾侧用 `TokenDispatcherWithMC2`[^ascend-mc2] 直接调用 `npu_moe_distribute_dispatch_v2`（内置 `quant_mode=2` INT8 或 `4` MXFP 量化）与 `combine_v2`，把重排、量化与 All-to-All 压进通信算子内部，算力侧对接 `npu_grouped_matmul`（`split_item=2`）或融合激活的 `npu_grouped_matmul_swiglu_quant_v2`[^ascend-gmm]；更激进的 `FusedMC2CommImpl`[^ascend-fused] 则干脆通过 `_C_ascend.dispatch_ffn_combine` 或 CANN `MegaMoe` 对称缓冲区，把 Dispatch、双层矩阵乘、SwiGLU 和 Combine 一气呵成在单算子内闭环完成。
+
+关于 EP 通信在跨节点 RDMA / NVLink / HCCS 上的底层开销拆解，以及 DeepEP、MC2 与双批重叠 DBO 的硬件流时序分析，可进一步配合[分布式 03：MoE 跨卡通信与通算融合](../../distributed/03-moe-comm-and-overlap/)对照阅读。
+
+## 最小可运行复现：路由均衡、分块对齐与 dsv4_topk
+
+光靠框图很难体会“偏置只改选路不改权重”以及“对齐填充不改数值结果”到底是如何严格成立的。我们用纯 NumPy 编写了可运行沙箱脚本 `toy.py`，在 130 余行内完整复现了三大核心原语，其中核心路由与对齐逻辑如下：
+
+```python
+def grouped_topk_route(
+    logits: np.ndarray,
+    bias: np.ndarray,
+    n_groups: int,
+    topk_groups: int,
+    topk: int,
+    route_scale: float = 2.5,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    bsz, num_experts = logits.shape
+    raw_scores = sigmoid(logits)
+    sel_scores = raw_scores + bias[None, :]
+    g_size = num_experts // n_groups
+    group_sum = np.sort(sel_scores.reshape(bsz, n_groups, g_size), axis=-1)[:, :, -2:].sum(axis=-1)
+    keep_groups = np.argpartition(group_sum, -topk_groups, axis=-1)[:, -topk_groups:]
+    mask = np.zeros((bsz, n_groups), dtype=bool)
+    np.put_along_axis(mask, keep_groups, True, axis=-1)
+    masked_sel = np.where(np.repeat(mask, g_size, axis=1), sel_scores, -np.inf)
+    topk_idx = np.argpartition(masked_sel, -topk, axis=-1)[:, -topk:]
+    # 权重严格读自未加偏置的 raw_scores
+    raw_picked = np.take_along_axis(raw_scores, topk_idx, axis=-1)
+    weights = (raw_picked / (raw_picked.sum(axis=-1, keepdims=True) + 1e-20)) * route_scale
+    return topk_idx, weights, raw_scores
+```
+
+直接在项目根目录下用 `uv run --with numpy` 执行 `toy.py`，可以得到如下实测结果：
+
+```text
+[Part A] Aux-Loss-Free (gamma=0.003): step 0 max/mean=4.00x -> final20 avg=1.14x (last=1.15x) | weight_err=0.0e+00
+[Part B] AlignBlock: raw_slots=12 -> padded_slots=20 (blocks=5) | max_diff=2.22e-16
+[Part C] dsv4_topk: aff(50)=7.0711 (no overflow) | grad@z=8: sigmoid=3.35e-04 vs sqrt_softplus=0.177
+OK 10
+```
+
+这组实测数字非常直观地验证了三件事：
+
+1. 在强偏斜流量下，初始无偏置时最繁忙专家负载高达均值的 `4.00x`，经过 $\gamma = 0.003$ 的动态偏置迭代后，尾部 20 步平均负载比稳步回落至 `1.14x`，同时门控权重与无偏原始分数的误差严格为 `0.0e+00`。
+2. 6 个词元、Top-2 共 `12` 个原始槽位经 `block_size=4` 补齐成 `20` 个定长槽位（`5` 块）后，块对齐 SwiGLU 输出与逐词元稠密循环基准的最大绝对误差仅为浮点舍入级的 `2.22e-16`。
+3. 即使输入 `z = 50`，`dsv4_topk` 依然精准输出 $\sqrt{50} \approx 7.0711$ 而无溢出；在 `z = 8` 的高置信度区间，`Sigmoid` 导数已经塌缩至 `3.35e-04`，而 `sqrt(softplus)` 仍保持 `0.177` 的健康梯度幅值。
+
+## 生产方案横向对比
+
+| 对比维度           | DeepSeek-V3 原生推理栈                          | vLLM + DeepEP（CUDA）                                | vllm-ascend MC2（昇腾 NPU）                                             |
+| :----------------- | :---------------------------------------------- | :--------------------------------------------------- | :---------------------------------------------------------------------- |
+| **亲和度与选路**   | `Sigmoid` + 分组 Top-2 求和（$M=4$）[^v3-code]  | `ops.grouped_topk` / `_dsv4_topk_kernel`[^vllm-dsv4] | `npu_moe_gating_top_k` / `_hash`[^ascend-router]                        |
+| **负载均衡与隔离** | 动态偏置 $b_i$（选路专用）+ 1 共享专家          | 沿用模型静态偏置 `bias` / `bias_vl`                  | `AscendMoERunner` 辅助流重叠共享专家[^ascend-moe]                       |
+| **EP 通信主干**    | DualPipe + IBGDA（FP8 发 / BF16 收）[^v3-paper] | `DeepEP@f6aa38fe` 统一 `EPBuffer`[^deepep-ep]        | `npu_moe_distribute_dispatch_v2` / `combine_v2`[^ascend-mc2]            |
+| **矩阵计算对齐**   | 变长分组核 / Blockwise FP8                      | `moe_align_block_size` + Grouped GEMM[^vllm-align]   | `npu_grouped_matmul` / `FusedMC2` `MegaMoe`[^ascend-gmm][^ascend-fused] |
+
+## 代价与边界
+
+再巧妙的架构也有它的物理账单，落地 MoE 必须正视三条工程边界：
+
+- **显存容量并不随激活率下降**：虽然计算量只激活了约 $5.5\%$，但 DeepSeek-V3 全部 671B 权重必须完整常驻在集群 HBM 里随时待命，这决定了小卡环境无法单凭稀疏化吃下大模型，必须付诸高卡数大 EP（例如 Decode 阶段扩至 `EP320`）。
+- **No Token-Dropping 伴随瞬态长尾风险**：不丢词元保住了上限精度，但当某一批次突然涌入大量同质领域文本（比如长段代码或数学公式）时，偏置更新率 $\gamma$ 的滞后特性会让热点专家所在的几张卡瞬间吃紧，整体同步等待最慢那张卡（Straggler），拉高尾延迟 P99。
+- **小 Batch 下的对齐填充与通信底噪**：`moe_align_block_size` 按 `64` 或 `128` 对齐块在 Prefill 大吞吐时几乎免费；可一旦 Decode 并发极低、单卡平均每个专家只分到 1 到 2 个词元时，补齐填充算力开销以及小包 All-to-All 延迟会迅速成为性能主导瓶颈。
+
+在下一篇 [07 条件记忆（Engram）：在 MoE 之外再开一条 O(1) 存储稀疏的轴](../07-engram/) 中，我们将进一步看到 DeepSeek 如何把 MoE 里的“静态事实回忆”也从矩阵计算里剥离出去，用零计算量的外部记忆查表把计算稀疏推进到全新境界。
+
+## 自测
+
+1. 为什么在 DeepSeek-V3 中，动态偏置 $b_i$ 只能加在挑选 Top-K 索引的步骤，而不能直接保留在最终加权系数 $g_{i,t}$ 上？
+2. 细粒度划分把专家数量从 $N$ 变成 $mN$、隐藏维缩小到 $1/m$、激活数量变成 $mK$，为什么总 FLOPs 基本不变却能大幅提高表示效率？
+3. 结合 `moe_align_block_size` 的工作原理思考：如果把 `block_size` 从 `64` 改成 `256`，Prefill 阶段和极小 Batch Decode 阶段的端到端吞吐分别会发生什么变化？
+4. 在 `DeepEP@f6aa38fe` 已经统一出 `EPBuffer.dispatch` / `combine` 之后，为什么 `vllm` 的 `deepep_v2.py` 在 Decode CUDA Graph 下依然必须把 `num_max_tokens_per_rank` 向上取整到 2 的幂次？
+5. 昇腾 `TokenDispatcherWithMC2` 与 `FusedMC2CommImpl`（`MegaMoe`）相比传统“离散通信 + 对齐 + 矩阵乘”，各自消除了哪几次冗余的 HBM 读写？
+6. **动手实验**：修改 `toy.py` 第 72 行的步长 `gamma`（分别尝试 `gamma = 0.0005`、默认 `0.003` 和 `gamma = 0.05`）并重新运行，观察 `[Part A]` 尾部 20 步的平均 `max/mean` 与最后一步瞬时值的差异——解释为什么过小的 $\gamma$ 收敛不足，而过大的 $\gamma$ 会诱发类似稳压器振荡的乒乓抖动。
+
+[^moe-paper]: Dai 等，_DeepSeekMoE: Towards Ultimate Expert Specialization in Mixture-of-Experts Language Models_（arXiv:2401.06066，§1–§3、Table 1）。
+
+[^v3-paper]: DeepSeek-AI，_DeepSeek-V3 Technical Report_（arXiv:2412.19437，§2.1 MoE、§3.2 DualPipe、§3.4 Prefill/Decode 部署与 §4.2 超参）。
+
+[^v4-paper]: DeepSeek-AI，_DeepSeek-V4 Technical Report_（arXiv:2606.19348，§2.1 `Sqrt(Softplus)` 与 Hash-routed MoE、§3.1 Wave EP MegaMoE）。
+
+[^v41-paper]: DeepSeek-AI，_DeepSeek-V4.1 Technical Report_（arXiv:2609.19969，§2.1.1 多模态独立偏置与 §4.2.1 架构参数）。
+
+[^v3-code]: DeepSeek-V3 官方推理实现：`DeepSeek-V3/inference/model.py`（`L535-694`，`Gate.forward`、`Expert`、`MoE`）。
+
+[^vllm-dsv4]: vLLM 路由器内核：`vllm/vllm/model_executor/layers/fused_moe/router/dsv4_topk.py`（`L63-107`，`_dsv4_topk_kernel` 稳定分支与 `bias_vl` 选择）。
+
+[^vllm-align]: vLLM 对齐重排实现：`vllm/vllm/model_executor/layers/fused_moe/moe_align_block_size.py`（`L55-169`）。
+
+[^vllm-ht]: vLLM DeepEP HT 准备/收尾模块：`vllm/vllm/model_executor/layers/fused_moe/prepare_finalize/deepep_ht.py`（`L47-399`）。
+
+[^vllm-ll]: vLLM DeepEP LL 准备/收尾模块：`vllm/vllm/model_executor/layers/fused_moe/prepare_finalize/deepep_ll.py`（`L51-421`）。
+
+[^vllm-v2]: vLLM DeepEP v2 统一适配模块：`vllm/vllm/model_executor/layers/fused_moe/prepare_finalize/deepep_v2.py`（`L42-589`）。
+
+[^deepep-ep]: DeepEP 上游缓冲区接口：`DeepEP/deep_ep/buffers/ep.py`（提交 `f6aa38fe`，`L208`、`L562-843` `EPBuffer.dispatch` / `combine`）。
+
+[^ascend-moe]: 昇腾 MoE 执行器：`vllm-ascend/vllm_ascend/ops/fused_moe/fused_moe.py`（提交 `3649b8ff`，`L541-602` `AscendMoERunner._forward_impl`）。
+
+[^ascend-router]: 昇腾融合路由：`vllm-ascend/vllm_ascend/ops/fused_moe/router/fused_topk_router.py`（`L204-239`）。
+
+[^ascend-mc2]: 昇腾 MC2 调度器：`vllm-ascend/vllm_ascend/ops/fused_moe/token_dispatcher.py`（`L251`、`L352` `TokenDispatcherWithMC2`）。
+
+[^ascend-gmm]: 昇腾路由专家计算：`vllm-ascend/vllm_ascend/ops/fused_moe/routed_experts.py`（`L226-318` `AscendUnquantizedFusedMoEMethod`）。
+
+[^ascend-fused]: 昇腾高阶全融合通道：`vllm-ascend/vllm_ascend/ops/fused_moe/moe_comm_method.py`（`L614`、`L671` `FusedMC2CommImpl`）。

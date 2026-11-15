@@ -1,0 +1,75 @@
+<mxfile host="app.diagrams.net" modified="2026-11-15T02:20:00.000Z" agent="wisp" version="24.0.0" type="device">
+  <diagram id="01-paged-attention-arch" name="PagedAttention and Prefix Caching Architecture">
+    <mxGraphModel dx="900" dy="600" grid="1" gridSize="8" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="720" pageHeight="440" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+
+        <!-- Left Column: Logical Views & Prefix Hash -->
+        <mxCell id="log_a" value="&lt;b&gt;Req A 逻辑块视图&lt;/b&gt;&lt;br&gt;L0: [101..104]（完整）&lt;br&gt;L1: [105,106,201,202]&lt;br&gt;L2: [decode ...]（部分）" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f2fb;strokeColor=#2f5783;strokeWidth=1.25;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;align=left;spacingLeft=10;" vertex="1" parent="1">
+          <mxGeometry x="16" y="16" width="184" height="88" as="geometry" />
+        </mxCell>
+        <mxCell id="log_b" value="&lt;b&gt;Req B 逻辑块视图&lt;/b&gt;&lt;br&gt;L0: [101..104]（完整）&lt;br&gt;L1: [105,106,301,302]&lt;br&gt;L2: [303, 304, _, _]" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#fbf2df;strokeColor=#7b5518;strokeWidth=1.25;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;align=left;spacingLeft=10;" vertex="1" parent="1">
+          <mxGeometry x="16" y="128" width="184" height="88" as="geometry" />
+        </mxCell>
+        <mxCell id="hash_box" value="&lt;b&gt;链式前缀哈希（Prefix）&lt;/b&gt;&lt;br&gt;h₀ = hash(NONE, L0)&lt;br&gt;h₁ = hash(h₀, L1, extra)&lt;br&gt;仅满块（size=B）进入哈希表" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f5e9;strokeColor=#2c522d;strokeWidth=1.25;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;align=left;spacingLeft=10;" vertex="1" parent="1">
+          <mxGeometry x="16" y="248" width="184" height="96" as="geometry" />
+        </mxCell>
+
+        <!-- Middle Column: Page Tables & BlockPool -->
+        <mxCell id="bt_box" value="&lt;b&gt;BlockTable（页表映射）&lt;/b&gt;&lt;br&gt;逻辑下标 → 物理块号&lt;br&gt;• A: [ 0, 1, 3 ]&lt;br&gt;• B: [ 0, 2, 4 ]&lt;br&gt;（零复制，仅增 ref_cnt）" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f2fb;strokeColor=#2f5783;strokeWidth=1.25;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;align=left;spacingLeft=10;" vertex="1" parent="1">
+          <mxGeometry x="256" y="16" width="176" height="128" as="geometry" />
+        </mxCell>
+        <mxCell id="pool_box" value="&lt;b&gt;BlockPool + FreeQueue&lt;/b&gt;&lt;br&gt;• 队首 popleft()：优先复&lt;br&gt;  用无哈希空白块 / 最旧缓存&lt;br&gt;• appendleft()：无哈希释放块&lt;br&gt;• append()：已封存缓存块&lt;br&gt;• 0 号保留为 null_block" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f5e9;strokeColor=#2c522d;strokeWidth=1.25;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;align=left;spacingLeft=10;" vertex="1" parent="1">
+          <mxGeometry x="256" y="176" width="176" height="168" as="geometry" />
+        </mxCell>
+
+        <!-- Right Column: Physical KV Pool & Device Kernel -->
+        <mxCell id="hbm_grp" value="物理 HBM KV 块池（B × d_kv）" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#f4f4f2;strokeColor=#e2e2dd;strokeWidth=1;dashed=1;verticalAlign=top;align=left;spacingLeft=10;spacingTop=6;fontFamily=Inter;fontSize=12;fontColor=#5c6067;container=0;" vertex="1" parent="1">
+          <mxGeometry x="480" y="16" width="208" height="192" as="geometry" />
+        </mxCell>
+        <mxCell id="blk_share" value="Phys 0 [101..104] ref=2 共享" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f5e9;strokeColor=#2c522d;strokeWidth=1.25;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="496" y="56" width="176" height="32" as="geometry" />
+        </mxCell>
+        <mxCell id="blk_a" value="Phys 1 / 3（A 独占物理块）" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f2fb;strokeColor=#2f5783;strokeWidth=1;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="496" y="104" width="176" height="32" as="geometry" />
+        </mxCell>
+        <mxCell id="blk_b" value="Phys 2 / 4（B 独占物理块）" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#fbf2df;strokeColor=#7b5518;strokeWidth=1;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="496" y="152" width="176" height="32" as="geometry" />
+        </mxCell>
+
+        <mxCell id="kern_box" value="&lt;b&gt;Device KV 写入与查表计算&lt;/b&gt;&lt;br&gt;slot = phys_id × B + offset&lt;br&gt;• 写入：reshape_and_cache_flash&lt;br&gt;• 读取：Paged Attention 按&lt;br&gt;  block_table 离散拉取 K/V" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#f4f4f2;strokeColor=#1d1d1f;strokeWidth=1.25;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;align=left;spacingLeft=10;" vertex="1" parent="1">
+          <mxGeometry x="480" y="232" width="208" height="120" as="geometry" />
+        </mxCell>
+
+        <!-- Arrows -->
+        <mxCell id="ea_bt" style="edgeStyle=orthogonalEdgeStyle;rounded=1;jettySize=auto;html=1;strokeColor=#2f5783;strokeWidth=1.5;endArrow=block;endFill=1;" edge="1" parent="1" source="log_a" target="bt_box">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="eb_bt" style="edgeStyle=orthogonalEdgeStyle;rounded=1;jettySize=auto;html=1;strokeColor=#7b5518;strokeWidth=1.5;endArrow=block;endFill=1;" edge="1" parent="1" source="log_b" target="bt_box">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="224" y="172" />
+              <mxPoint x="224" y="104" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="eh_pool" style="edgeStyle=orthogonalEdgeStyle;rounded=1;jettySize=auto;html=1;strokeColor=#2c522d;strokeWidth=1.5;endArrow=block;endFill=1;" edge="1" parent="1" source="hash_box" target="pool_box">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="epool_bt" style="edgeStyle=orthogonalEdgeStyle;rounded=1;jettySize=auto;html=1;strokeColor=#2c522d;strokeWidth=1.25;endArrow=block;endFill=1;" edge="1" parent="1" source="pool_box" target="bt_box">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="ebt_hbm" style="edgeStyle=orthogonalEdgeStyle;rounded=1;jettySize=auto;html=1;strokeColor=#5c6067;strokeWidth=1.5;endArrow=block;endFill=1;" edge="1" parent="1" source="bt_box" target="hbm_grp">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="epool_kern" style="edgeStyle=orthogonalEdgeStyle;rounded=1;jettySize=auto;html=1;strokeColor=#5c6067;strokeWidth=1.5;endArrow=block;endFill=1;" edge="1" parent="1" source="pool_box" target="kern_box">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="ehbm_kern" style="edgeStyle=orthogonalEdgeStyle;rounded=1;jettySize=auto;html=1;strokeColor=#5c6067;strokeWidth=1.5;endArrow=block;endFill=1;startArrow=block;startFill=1;" edge="1" parent="1" source="hbm_grp" target="kern_box">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

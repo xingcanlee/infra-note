@@ -1,0 +1,76 @@
+<mxfile host="app.diagrams.net" modified="2026-11-15T00:00:00.000Z" agent="wisp" version="24.7.0">
+  <diagram id="dispatch-walkthrough" name="Four-Step Dispatch Walkthrough">
+    <mxGraphModel dx="900" dy="700" grid="1" gridSize="8" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="850" pageHeight="1100" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="g-d" value="Step D：多卡 DP 跨 Rank 同步与降级（dispatch_cg_and_sync_dp）" style="rounded=1;whiteSpace=wrap;html=1;container=0;fillColor=none;strokeColor=#e2e2dd;fontColor=#5c6067;fontFamily=Inter;fontSize=12;verticalAlign=top;align=left;spacingLeft=12;spacingTop=8;" vertex="1" parent="1">
+          <mxGeometry x="16" y="344" width="672" height="128" as="geometry" />
+        </mxCell>
+        <mxCell id="a1" value="&lt;b&gt;Step A：纯 Decode 批&lt;/b&gt;&lt;br&gt;3 req · 3 tok · u=1 · q=1" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#eaedf2;strokeColor=#464e57;fontColor=#1d1d1f;fontFamily=Inter;fontSize=14;" vertex="1" parent="1">
+          <mxGeometry x="16" y="16" width="184" height="72" as="geometry" />
+        </mxCell>
+        <mxCell id="a2" value="&lt;b&gt;命中 _decode_descs[3]&lt;/b&gt;&lt;br&gt;u=1 匹配 · 向上取整桶 4" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#f4f4f2;strokeColor=#5c6067;fontColor=#1d1d1f;fontFamily=Inter;fontSize=14;" vertex="1" parent="1">
+          <mxGeometry x="264" y="16" width="184" height="72" as="geometry" />
+        </mxCell>
+        <mxCell id="a3" value="&lt;b&gt;FULL (bucket=4 tok)&lt;/b&gt;&lt;br&gt;内层设 NONE · 整图重放" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f5e9;strokeColor=#2c522d;fontColor=#1d1d1f;fontFamily=Inter;fontSize=14;" vertex="1" parent="1">
+          <mxGeometry x="512" y="16" width="176" height="72" as="geometry" />
+        </mxCell>
+        <mxCell id="ea1" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#5c6067;endArrow=block;endFill=1;" edge="1" parent="1" source="a1" target="a2">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="ea2" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#2c522d;endArrow=block;endFill=1;" edge="1" parent="1" source="a2" target="a3">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="b1" value="&lt;b&gt;Step B：混合批 (P+D)&lt;/b&gt;&lt;br&gt;4 req · 19 tok · u=None" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#eaedf2;strokeColor=#464e57;fontColor=#1d1d1f;fontFamily=Inter;fontSize=14;" vertex="1" parent="1">
+          <mxGeometry x="16" y="120" width="184" height="72" as="geometry" />
+        </mxCell>
+        <mxCell id="b2" value="&lt;b&gt;查 _candidates[19]&lt;/b&gt;&lt;br&gt;跳过 FULL · 匹配桶 24" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#f4f4f2;strokeColor=#5c6067;fontColor=#1d1d1f;fontFamily=Inter;fontSize=14;" vertex="1" parent="1">
+          <mxGeometry x="264" y="120" width="184" height="72" as="geometry" />
+        </mxCell>
+        <mxCell id="b3" value="&lt;b&gt;PIECEWISE (24 tok)&lt;/b&gt;&lt;br&gt;分段入图 · 注意力 Eager" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#fbf2df;strokeColor=#7b5518;fontColor=#1d1d1f;fontFamily=Inter;fontSize=14;" vertex="1" parent="1">
+          <mxGeometry x="512" y="120" width="176" height="72" as="geometry" />
+        </mxCell>
+        <mxCell id="eb1" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#5c6067;endArrow=block;endFill=1;" edge="1" parent="1" source="b1" target="b2">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="eb2" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#7b5518;endArrow=block;endFill=1;" edge="1" parent="1" source="b2" target="b3">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="c1" value="&lt;b&gt;Step C：超大 Prefill 批&lt;/b&gt;&lt;br&gt;4 req · 4096 tok &gt; max(32)" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#eaedf2;strokeColor=#464e57;fontColor=#1d1d1f;fontFamily=Inter;fontSize=14;" vertex="1" parent="1">
+          <mxGeometry x="16" y="224" width="184" height="72" as="geometry" />
+        </mxCell>
+        <mxCell id="c2" value="&lt;b&gt;无匹配捕获桶&lt;/b&gt;&lt;br&gt;_candidates[4096] 为空" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#f4f4f2;strokeColor=#5c6067;fontColor=#1d1d1f;fontFamily=Inter;fontSize=14;" vertex="1" parent="1">
+          <mxGeometry x="264" y="224" width="184" height="72" as="geometry" />
+        </mxCell>
+        <mxCell id="c3" value="&lt;b&gt;NONE (4096 tok)&lt;/b&gt;&lt;br&gt;全路径 Eager · 内外皆直通" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#fcedec;strokeColor=#984646;fontColor=#1d1d1f;fontFamily=Inter;fontSize=14;" vertex="1" parent="1">
+          <mxGeometry x="512" y="224" width="176" height="72" as="geometry" />
+        </mxCell>
+        <mxCell id="ec1" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#5c6067;endArrow=block;endFill=1;" edge="1" parent="1" source="c1" target="c2">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="ec2" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#984646;endArrow=block;endFill=1;" edge="1" parent="1" source="c2" target="c3">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="d1" value="&lt;b&gt;Rank 0：FULL (3 tok)&lt;/b&gt;&lt;br&gt;Rank 1：PIECEWISE (19)" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#eaedf2;strokeColor=#464e57;fontColor=#1d1d1f;fontFamily=Inter;fontSize=14;" vertex="1" parent="1">
+          <mxGeometry x="32" y="384" width="176" height="72" as="geometry" />
+        </mxCell>
+        <mxCell id="d2" value="&lt;b&gt;AllReduce 共识&lt;/b&gt;&lt;br&gt;min=PIECEWISE · max=19" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#f4f4f2;strokeColor=#5c6067;fontColor=#1d1d1f;fontFamily=Inter;fontSize=14;" vertex="1" parent="1">
+          <mxGeometry x="272" y="384" width="176" height="72" as="geometry" />
+        </mxCell>
+        <mxCell id="d3" value="&lt;b&gt;双 Rank 同步重分派&lt;/b&gt;&lt;br&gt;统一 PIECEWISE (24)" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#fbf2df;strokeColor=#7b5518;fontColor=#1d1d1f;fontFamily=Inter;fontSize=14;" vertex="1" parent="1">
+          <mxGeometry x="512" y="384" width="160" height="72" as="geometry" />
+        </mxCell>
+        <mxCell id="ed1" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#5c6067;endArrow=block;endFill=1;" edge="1" parent="1" source="d1" target="d2">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="ed2" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#7b5518;endArrow=block;endFill=1;" edge="1" parent="1" source="d2" target="d3">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="note" value="配置：FULL_AND_PIECEWISE | decode_sizes=[1, 2, 4, 8] | prefill_sizes=[1, 2, 4, 8, 16, 24, 32]" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;whiteSpace=wrap;fontColor=#5c6067;fontFamily=Inter;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="16" y="488" width="672" height="24" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

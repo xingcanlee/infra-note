@@ -1,0 +1,73 @@
+<mxfile host="app.diagrams.net" version="24.7.17">
+  <diagram id="capture-replay-walkthrough" name="capture-replay-walkthrough">
+    <mxGraphModel dx="0" dy="0" grid="1" gridSize="8" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="688" pageHeight="496" math="0" shadow="0">
+      <root>
+        <mxCell id="0"/>
+        <mxCell id="1" parent="0"/>
+
+        <mxCell id="s1_box" value="" style="rounded=1;absoluteArcSize=1;arcSize=8;fillColor=#f4f4f2;strokeColor=#2f5783;strokeWidth=1.25;container=0;dashed=1;" vertex="1" parent="1">
+          <mxGeometry x="16" y="16" width="656" height="136" as="geometry"/>
+        </mxCell>
+        <mxCell id="s1_lbl" value="Stage 1：Stream Capture &amp;amp; Instantiate（捕获 B_cap = 4，冻结输入虚拟地址与计算拓扑）" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;whiteSpace=wrap;fontFamily=Inter;fontSize=12;fontStyle=1;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="32" y="24" width="624" height="24" as="geometry"/>
+        </mxCell>
+        <mxCell id="s1_a" value="预分配静态 InputBuffers&lt;br&gt;input_ids [4] @ 0x7f00_1000&lt;br&gt;slot_mapping [4] @ 0x7f00_2000&lt;br&gt;is_padding [4] @ 0x7f00_3000" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;fillColor=#e9f2fb;strokeColor=#2f5783;strokeWidth=1.25;" vertex="1" parent="1">
+          <mxGeometry x="32" y="56" width="216" height="80" as="geometry"/>
+        </mxCell>
+        <mxCell id="s1_b" value="Stream Capture 录制&lt;br&gt;只记录 GPU 算子序列&lt;br&gt;地址 0x7f..1000~3000 烘焙进图" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;fillColor=#e9f2fb;strokeColor=#2f5783;strokeWidth=1.25;" vertex="1" parent="1">
+          <mxGeometry x="264" y="56" width="200" height="80" as="geometry"/>
+        </mxCell>
+        <mxCell id="s1_c" value="Instantiate 可执行图&lt;br&gt;生成 cudaGraphExec_t&lt;br&gt;后续整轮只需 1 次发射" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fontFamily=Inter;fontSize=12;fontStyle=1;fontColor=#1d1d1f;fillColor=#e9f2fb;strokeColor=#2f5783;strokeWidth=1.5;" vertex="1" parent="1">
+          <mxGeometry x="480" y="56" width="176" height="80" as="geometry"/>
+        </mxCell>
+        <mxCell id="e_s1_ab" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#2f5783;strokeWidth=1.25;endArrow=block;endFill=1;" edge="1" parent="1" source="s1_a" target="s1_b">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e_s1_bc" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#2f5783;strokeWidth=1.25;endArrow=block;endFill=1;" edge="1" parent="1" source="s1_b" target="s1_c">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="s2_box" value="" style="rounded=1;absoluteArcSize=1;arcSize=8;fillColor=#f4f4f2;strokeColor=#0f766e;strokeWidth=1.25;container=0;dashed=1;" vertex="1" parent="1">
+          <mxGeometry x="16" y="176" width="656" height="168" as="geometry"/>
+        </mxCell>
+        <mxCell id="s2_lbl" value="Stage 2：安全 Replay（真实批量 B_real = 3，原位 .copy_() 覆写 + 尾部 PAD_SLOT_ID = -1 隔离）" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;whiteSpace=wrap;fontFamily=Inter;fontSize=12;fontStyle=1;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="32" y="184" width="624" height="24" as="geometry"/>
+        </mxCell>
+        <mxCell id="s2_a" value="Host 原位 .copy_() 改值不改址&lt;br&gt;input_ids = [101, 202, 303 | 999]&lt;br&gt;slot_mapping = [2, 5, 9 | -1]&lt;br&gt;is_padding = [F, F, F | T]&lt;br&gt;虚拟地址保持 0x7f00_1000 不变" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;fillColor=#e3f5f3;strokeColor=#0f766e;strokeWidth=1.25;" vertex="1" parent="1">
+          <mxGeometry x="32" y="216" width="224" height="112" as="geometry"/>
+        </mxCell>
+        <mxCell id="s2_b" value="1 次 cudaGraphLaunch&lt;br&gt;硬件直接读取烘焙地址&lt;br&gt;按 shape=[4] 完整执行&lt;br&gt;第 4 行脏值 999 也会参与前向" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;fillColor=#e3f5f3;strokeColor=#0f766e;strokeWidth=1.25;" vertex="1" parent="1">
+          <mxGeometry x="272" y="216" width="184" height="112" as="geometry"/>
+        </mxCell>
+        <mxCell id="s2_c" value="写回屏蔽：脏尾部零副作用&lt;br&gt;Attn 见 slot=-1 跳过写 KV&lt;br&gt;MoE 见 is_padding=T 置 -1/0&lt;br&gt;只返回有效切片 [:3]" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fontFamily=Inter;fontSize=12;fontStyle=1;fontColor=#1d1d1f;fillColor=#e3f5f3;strokeColor=#0f766e;strokeWidth=1.5;" vertex="1" parent="1">
+          <mxGeometry x="472" y="216" width="184" height="112" as="geometry"/>
+        </mxCell>
+        <mxCell id="e_s2_ab" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#0f766e;strokeWidth=1.25;endArrow=block;endFill=1;" edge="1" parent="1" source="s2_a" target="s2_b">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e_s2_bc" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#0f766e;strokeWidth=1.25;endArrow=block;endFill=1;" edge="1" parent="1" source="s2_b" target="s2_c">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e_1_2" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#2f5783;strokeWidth=1.5;endArrow=block;endFill=1;" edge="1" parent="1" source="s1_box" target="s2_box">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="s3_box" value="" style="rounded=1;absoluteArcSize=1;arcSize=8;fillColor=#f4f4f2;strokeColor=#984646;strokeWidth=1.25;container=0;dashed=1;" vertex="1" parent="1">
+          <mxGeometry x="16" y="368" width="656" height="112" as="geometry"/>
+        </mxCell>
+        <mxCell id="s3_lbl" value="Stage 3：反面失效条件（一旦地址漂移或未对齐静态形状，Replay 直接崩溃或静默错算）" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;whiteSpace=wrap;fontFamily=Inter;fontSize=12;fontStyle=1;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="32" y="376" width="624" height="24" as="geometry"/>
+        </mxCell>
+        <mxCell id="s3_a" value="违例 A：指针漂移（如 x = torch.cat(...) 重分配）&lt;br&gt;新张量地址 0x7f00_9000 != 冻结地址 0x7f00_1000&lt;br&gt;图仍读旧缓存旧数据；DEBUG 模式被断言拦截" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;fillColor=#fcedec;strokeColor=#984646;strokeWidth=1.25;" vertex="1" parent="1">
+          <mxGeometry x="32" y="408" width="304" height="56" as="geometry"/>
+        </mxCell>
+        <mxCell id="s3_b" value="违例 B：未 Pad 直接传入 shape=(3,)&lt;br&gt;已捕获算子仍按 stride=[4] 寻址读尾格&lt;br&gt;发生越界读或读取脏 KV slot 污染缓存" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;fillColor=#fcedec;strokeColor=#984646;strokeWidth=1.25;" vertex="1" parent="1">
+          <mxGeometry x="352" y="408" width="304" height="56" as="geometry"/>
+        </mxCell>
+        <mxCell id="e_2_3" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;dashed=1;strokeColor=#984646;strokeWidth=1.5;endArrow=block;endFill=1;" edge="1" parent="1" source="s2_box" target="s3_box">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

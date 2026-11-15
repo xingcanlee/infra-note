@@ -1,0 +1,76 @@
+<mxfile host="app.diagrams.net" modified="2026-11-15T02:25:00.000Z" agent="wisp" version="24.0.0" type="device">
+  <diagram id="02-async-step-runtime" name="Async Scheduling Runtime in vLLM and vllm-ascend">
+    <mxGraphModel dx="900" dy="600" grid="1" gridSize="8" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="720" pageHeight="448" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+
+        <!-- Top Pipeline: EngineCore.step_with_batch_queue overlap -->
+        <mxCell id="pipe_grp" value="EngineCore.step_with_batch_queue()：Host 调度与 Device 异步拷贝并行掩盖" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#f4f4f2;strokeColor=#e2e2dd;strokeWidth=1;dashed=1;verticalAlign=top;align=left;spacingLeft=12;spacingTop=6;fontFamily=Inter;fontSize=12;fontColor=#5c6067;container=0;" vertex="1" parent="1">
+          <mxGeometry x="16" y="16" width="664" height="192" as="geometry" />
+        </mxCell>
+        <mxCell id="cpu_lbl" value="Host CPU" style="rounded=0;whiteSpace=wrap;html=1;fillColor=none;strokeColor=none;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;align=left;" vertex="1" parent="1">
+          <mxGeometry x="24" y="56" width="72" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="dev_lbl" value="Main 流" style="rounded=0;whiteSpace=wrap;html=1;fillColor=none;strokeColor=none;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;align=left;" vertex="1" parent="1">
+          <mxGeometry x="24" y="104" width="72" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="cpy_lbl" value="Copy 流" style="rounded=0;whiteSpace=wrap;html=1;fillColor=none;strokeColor=none;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;align=left;" vertex="1" parent="1">
+          <mxGeometry x="24" y="152" width="72" height="40" as="geometry" />
+        </mxCell>
+
+        <!-- Step t Host -->
+        <mxCell id="t_sched" value="AsyncScheduler(t)&lt;br&gt;占位 +1 token" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f2fb;strokeColor=#2f5783;strokeWidth=1;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="104" y="56" width="128" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="t_sub" value="execute_model(t)&lt;br&gt;+ sample(non_block)" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f2fb;strokeColor=#2f5783;strokeWidth=1;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="240" y="56" width="136" height="40" as="geometry" />
+        </mxCell>
+        <!-- Step t+1 Host overlaps while Device runs t! -->
+        <mxCell id="t1_sched" value="AsyncScheduler(t+1)&lt;br&gt;与 Step t 计算完全重叠" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f5e9;strokeColor=#2c522d;strokeWidth=1.25;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="384" y="56" width="144" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="t1_sync" value="batch_queue 读 t：&lt;br&gt;copy_event.sync()" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#fbf2df;strokeColor=#7b5518;strokeWidth=1;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="536" y="56" width="128" height="40" as="geometry" />
+        </mxCell>
+
+        <!-- Main Stream -->
+        <mxCell id="m_t" value="Step t：Forward + Sample（Device 流持续推进）" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f2fb;strokeColor=#2f5783;strokeWidth=1.25;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="256" y="104" width="272" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="m_t1" value="Step t+1 执行" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f5e9;strokeColor=#2c522d;strokeWidth=1.25;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="536" y="104" width="128" height="40" as="geometry" />
+        </mxCell>
+
+        <!-- Copy Stream -->
+        <mxCell id="c_t" value="copy_stream.wait_stream(main) → AsyncOutput D2H → record(copy_event)" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f5e9;strokeColor=#2c522d;strokeWidth=1;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="256" y="152" width="408" height="40" as="geometry" />
+        </mxCell>
+
+        <!-- Bottom Comparison: vLLM vs vllm-ascend -->
+        <mxCell id="vllm_bot" value="&lt;b&gt;vLLM MRV2 异步护栏（vllm/v1/worker/gpu）&lt;/b&gt;&lt;br&gt;• InputBuffers 常驻显存（input_ids / positions / seq_lens）&lt;br&gt;• async_tensor_h2d(..., out=...) 原地复用，零临时分配&lt;br&gt;• AsyncOutput 延迟至 get_output() 读取结果时再调用&lt;br&gt;  copy_event.synchronize()" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f2fb;strokeColor=#2f5783;strokeWidth=1.25;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;align=left;verticalAlign=top;spacingTop=10;spacingLeft=12;spacingRight=8;" vertex="1" parent="1">
+          <mxGeometry x="16" y="240" width="312" height="176" as="geometry" />
+        </mxCell>
+        <mxCell id="asc_bot" value="&lt;b&gt;vllm-ascend 适配与同步点（NPUModelRunner）&lt;/b&gt;&lt;br&gt;• AscendInputBuffers 额外在 CPU 端维护 seq_lens_cpu&lt;br&gt;• 独立 update_stream + num_computed_tokens_event&lt;br&gt;• 若不能跳过 CPU 长度同步，调用&lt;br&gt;  num_computed_tokens_event.synchronize() 阻塞 Host&lt;br&gt;• AscendAsyncOutput 在 D2H trim 后执行运行检查钩子" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#fbf2df;strokeColor=#7b5518;strokeWidth=1.25;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;align=left;verticalAlign=top;spacingTop=10;spacingLeft=12;spacingRight=8;" vertex="1" parent="1">
+          <mxGeometry x="368" y="240" width="312" height="176" as="geometry" />
+        </mxCell>
+        <mxCell id="e_pv" style="edgeStyle=orthogonalEdgeStyle;rounded=1;jettySize=auto;html=1;strokeColor=#2f5783;strokeWidth=1.5;endArrow=block;endFill=1;" edge="1" parent="1" source="pipe_grp" target="vllm_bot">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="172" y="224" />
+              <mxPoint x="172" y="224" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e_pa" style="edgeStyle=orthogonalEdgeStyle;rounded=1;jettySize=auto;html=1;strokeColor=#7b5518;strokeWidth=1.5;endArrow=block;endFill=1;" edge="1" parent="1" source="pipe_grp" target="asc_bot">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="524" y="224" />
+              <mxPoint x="524" y="224" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

@@ -1,0 +1,55 @@
+<mxfile host="app.diagrams.net" modified="2026-11-15T02:20:00.000Z" agent="wisp" version="24.0.0">
+  <diagram id="cuda-vs-aclgraph-runtime" name="Page-1">
+    <mxGraphModel dx="760" dy="500" grid="1" gridSize="8" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="672" pageHeight="440" math="0" shadow="0">
+      <root>
+        <mxCell id="0"/>
+        <mxCell id="1" parent="0"/>
+        <mxCell id="c_nv" value="vLLM CUDA Graph 运行栈 (NVIDIA GPU)" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#f4f4f2;strokeColor=#e2e2dd;strokeWidth=1;dashed=1;verticalAlign=top;align=left;spacingLeft=12;spacingTop=4;fontFamily=Inter;fontSize=12;fontColor=#5c6067;container=0;" vertex="1" parent="1">
+          <mxGeometry x="16" y="16" width="304" height="328" as="geometry"/>
+        </mxCell>
+        <mxCell id="c_asc" value="vllm-ascend ACLGraph 运行栈 (Ascend NPU)" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#f4f4f2;strokeColor=#e2e2dd;strokeWidth=1;dashed=1;verticalAlign=top;align=left;spacingLeft=12;spacingTop=4;fontFamily=Inter;fontSize=12;fontColor=#5c6067;container=0;" vertex="1" parent="1">
+          <mxGeometry x="352" y="16" width="304" height="328" as="geometry"/>
+        </mxCell>
+        <mxCell id="nv1" value="&lt;b&gt;1. 编译: TorchInductor + Triton&lt;/b&gt;&lt;br&gt;原生代码生成 PTX / CUBIN 融合算子" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f5e9;strokeColor=#2c522d;strokeWidth=1.25;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="32" y="48" width="272" height="56" as="geometry"/>
+        </mxCell>
+        <mxCell id="nv2" value="&lt;b&gt;2. 参数载体: 设备侧持久化张量&lt;/b&gt;&lt;br&gt;cu_seqlens / block_table 驻留固定显存" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f5e9;strokeColor=#2c522d;strokeWidth=1.25;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="32" y="120" width="272" height="56" as="geometry"/>
+        </mxCell>
+        <mxCell id="nv3" value="&lt;b&gt;3. 内存池与重放: global_graph_pool&lt;/b&gt;&lt;br&gt;CUDAGraphWrapper.replay() 直接改指针值" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f5e9;strokeColor=#2c522d;strokeWidth=1.25;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="32" y="192" width="272" height="56" as="geometry"/>
+        </mxCell>
+        <mxCell id="nv4" value="&lt;b&gt;4. 硬件调度: CUDA Driver → GigaThread&lt;/b&gt;&lt;br&gt;默认单流顺序执行 | 异步流依赖事件" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#eaedf2;strokeColor=#464e57;strokeWidth=1.25;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="32" y="264" width="272" height="64" as="geometry"/>
+        </mxCell>
+        <mxCell id="asc1" value="&lt;b&gt;1. 编译: AscendCompiler (npugraph_ex)&lt;/b&gt;&lt;br&gt;GraphFusionPassManager + CANN Opiling" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f2fb;strokeColor=#2f5783;strokeWidth=1.25;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="368" y="48" width="272" height="56" as="geometry"/>
+        </mxCell>
+        <mxCell id="asc2" value="&lt;b&gt;2. 参数载体: Host 整型数组 + 设备张量&lt;/b&gt;&lt;br&gt;FIA / PA 接收 Host actual_seq_lengths 列表" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#fbf2df;strokeColor=#7b5518;strokeWidth=1.5;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="368" y="120" width="272" height="56" as="geometry"/>
+        </mxCell>
+        <mxCell id="asc3" value="&lt;b&gt;3. 热更新: UpdatableGraph.update()&lt;/b&gt;&lt;br&gt;update_stream 刷新算子参数与 Task 句柄" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#fbf2df;strokeColor=#7b5518;strokeWidth=1.5;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="368" y="192" width="272" height="56" as="geometry"/>
+        </mxCell>
+        <mxCell id="asc4" value="&lt;b&gt;4. 硬件调度: CANN RTS → AI Core/Vector&lt;/b&gt;&lt;br&gt;ExternalEvent 显式跨流 | 207008 流配额" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f2fb;strokeColor=#2f5783;strokeWidth=1.25;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="368" y="264" width="272" height="64" as="geometry"/>
+        </mxCell>
+        <mxCell id="sum" value="&lt;b&gt;移植最大认知差&lt;/b&gt;: 静态张量地址固定在 NPU 上不够用 — 依赖 Host 数组参数的 CANN Attention 算子必须经由 UpdatableGraph 热改写, 且任何分叉流都必须用 ExternalEvent 显式缝合图内同步边界" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#fbf2df;strokeColor=#7b5518;strokeWidth=1.5;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="16" y="360" width="640" height="64" as="geometry"/>
+        </mxCell>
+        <mxCell id="d1" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#5c6067;strokeWidth=1.25;dashed=1;startArrow=classic;startFill=1;" edge="1" parent="1" source="nv1" target="asc1">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="d2" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#7b5518;strokeWidth=1.5;startArrow=classic;startFill=1;" edge="1" parent="1" source="nv2" target="asc2">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="d3" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#7b5518;strokeWidth=1.5;startArrow=classic;startFill=1;" edge="1" parent="1" source="nv3" target="asc3">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="d4" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#5c6067;strokeWidth=1.25;dashed=1;startArrow=classic;startFill=1;" edge="1" parent="1" source="nv4" target="asc4">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

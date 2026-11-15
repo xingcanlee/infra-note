@@ -9,7 +9,8 @@ export default defineConfig({
     wisp({
       site: {
         title: 'infra-note',
-        description: 'LLM 推理基础设施笔记：编译图、设备图、运行时调度与性能排错。',
+        description:
+          '从零推导的 LLM 推理系统笔记：异构硬件与量化、分布式并行通信、DeepSeek 架构演进及 vLLM / 昇腾运行时实战。',
         author: 'xingcanlee',
         authorGithub: 'https://github.com/xingcanlee',
         lang: 'zh-CN',
@@ -20,7 +21,7 @@ export default defineConfig({
         { label: '关于', href: '/about/' },
       ],
       social: [{ kind: 'rss', href: '/rss.xml' }],
-      home: { featuredCount: 3, pageSize: 10 },
+      home: { featuredCount: 4, pageSize: 10 },
       features: {
         codeCopy: true,
         lineNumbers: true,

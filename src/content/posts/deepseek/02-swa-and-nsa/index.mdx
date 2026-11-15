@@ -1,0 +1,264 @@
+---
+title: '02 原生稀疏注意力（NSA）：从滑动窗口、汇聚点到三路硬件对齐稀疏'
+description: '从长文本 KV 带宽崩溃与 StreamingLLM 注意力汇聚点出发，拆解事后稀疏为何无法稳定反向传播并饿死 Tensor Core；精讲 DeepSeek NSA 三分支门控融合与 GQA 组共享块稀疏的硬件对齐设计。'
+series: { id: deepseek, order: 3 }
+pubDate: 2026-11-05
+tags: [DeepSeek, Sparse Attention, NSA, KV Cache, FlashAttention, vLLM]
+category: AI Infra
+toc: true
+---
+
+在 [01 MLA](../01-mla/) 与 [基础 04：FlashAttention 与 FlashMLA](../../foundations/04-flash-attention/) 里，我们分别打掉了大模型长上下文的两座大山：MLA 把每个词元的 KV 缓存压缩到单头潜在向量，FlashAttention 则把 $O(T^2)$ 大小的中间注意力矩阵塞进片上 SRAM 在线归约，不再反复刷写显存（HBM）。但把上下文推向 `128K` 甚至更长时，注意力机制本身的计算与访存瓶颈依然卡死吞吐量：
+
+- **预填充（Prefill）的算力仍随长度平方爆炸**：就算不在 HBM 存下 $T \times T$ 矩阵，FlashAttention 依然要把所有 $(t, s)$ 词元对在片上点积一遍，计算量依旧是 $O(T^2)$；
+- **解码（Decode）的访存每步都要全盘扫描**：每吐出 `1` 个新词元，都要从 HBM 把前面所有 $t$ 个词元的 KV 缓存重新读进片上算子——NSA 论文统计，在 `64K` 上下文下，注意力计算会独自吃掉高达 **`70%–80%`** 的解码总延迟[^nsa]。
+
+而一个反常识的经验事实是：真正驱动语义理解的注意力矩阵**极其稀疏**，训练成熟的大模型在大多数层里，超过 `95%` 的历史词元近乎零贡献，真正活跃的注意力权重往往只占 `< 5%`。既然绝大部分历史词元分到的权重微乎其微，**我们能不能直接把它们删掉，或者推理时只挑分数最高的那一小撮来算？**
+
+事实证明「直接删」和「事后挑」都会踩进致命陷阱。本文围绕下面四个核心问题展开：
+
+1. **为什么不能直接切滑动窗口丢掉旧词元**：开头几个词元充当了 Softmax 的「注意力汇聚点（Attention Sink）」，一删就会引发局部权重暴涨、困惑度崩溃。
+2. **为什么事后稀疏与逐词挑选在工程上走不通**：既无法把稀疏决策纳入端到端训练，又会用非连续散读彻底摧毁 Tensor Core 与 TMA 合并访存。
+3. **DeepSeek NSA 如何实现原生可训练且硬件对齐的稀疏**：用「粗粒度压缩 `cmp` + 复用打分的 GQA 组共享选块 `slc` + 独立局部滑窗 `win`」三路并行，再用可学习 Sigmoid 门控融合。
+4. **从 GQA-NSA 到生产生态的真实坐标**：对照 `vllm` 与 `vllm-ascend` 上游源码，看清带 Sink 的滑动窗口如何落地生产，以及 DeepSeek 为何在 V3.2 与 V4 系列转向基于单头 MLA 的稀疏注意力。
+
+---
+
+## 先看一个例子：拿 8 个词元算一次，为什么删掉开头词元就会让 Softmax 失控
+
+假如你手头有一句 `8` 个词元的文本（下标 $t = 0, 1, \dots, 7$），模型已经处理到最后一个词元 $q_7$。此时我们想靠**滑动窗口注意力（SWA，Sliding Window Attention）**省内存——固定只保留最近 $w = 4$ 个词元 `[4..7]`，把更早的 `[0..3]` 全部踢出 KV 缓存。
+
+先看 $q_7$ 对这 `8` 个历史词元点积得到的原始打分（Logits，未归一化）向量 $z \in \mathbb{R}^8$，设它的数值如下（可直接在后文 `toy.py` 中复现）：
+
+- $t = 0$（开头词元，比如 `<bos>` 起始符）：$z_0 = 6.0$；
+- $t = 1, 2, 3$（中段常规词元）：$z_{1..3} = [0.2,\, 0.1,\, 0.0]$；
+- $t = 4, 5, 6, 7$（最近 `4` 个局部词元）：$z_{4..7} = [1.0,\, 1.2,\, 1.5,\, 2.0]$。
+
+这里最反直觉的地方在于：**$t=0$ 根本没有任何实际语义信息，为什么它的打分 $z_0 = 6.0$ 高得离谱？**
+
+原因出在 Softmax 的数学契约上。标准注意力的输出要求概率之和严格等于 `1`（$\sum_{j=0}^{t} p_j = 1$）。当第 $t$ 步模型其实并不想从近期上下文中提取太多特征——换句话说，注意头此刻想「保持沉默、少掺和局部噪音」——模型必须找一个**所有后续词元都能稳定看得见**的公共角落，把多余的概率预算倾倒进去。在因果掩码（Causal Mask）下，从头到尾永远可见的位置只有一个：**序列最开头的几个词元**[^sink]。
+
+理解了「概率泄洪池」的直觉，再把下面这个 Softmax 归一化分布的变化对照着算一遍。设当前保留的合法索引集合为 $\Omega \subseteq \{0, 1, \dots, t\}$，查询对选中键的原始打分为 $z_j$，对应输出值向量矩阵为 $V \in \mathbb{R}^{8 \times d_v}$，则输出向量为：
+
+$$
+p_j^{(\Omega)} = \frac{\exp(z_j)}{\sum_{k \in \Omega} \exp(z_k)} \quad (j \in \Omega), \qquad o^{(\Omega)} = \sum_{j \in \Omega} p_j^{(\Omega)} V_j
+$$
+
+代入上面的 `8` 个数值，三套截断策略的结果立刻拉出惊人差距：
+
+1. **① 全量注意基准（$\Omega_{\text{full}} = [0..7]$）**：开头词元 $t=0$ 凭一己之力吸走 **$p_0 = 95.00\%$** 的概率质量；局部窗口 `[4..7]` 四个词元加在一起只占 **`0.0422`（`4.22%`）**，输出 $o_{\text{full}}$ 由极低噪音的主导权重平滑合成。
+2. **② 纯滑动窗口（$\Omega_{\text{win}} = [4..7]$，粗暴丢掉 `t=0`）**：分母里突然少了巨大的 $e^{6.0}$，剩下的四个局部词元被迫在内部凑够 `100%` 的权重！原本只占 `4.22%` 的局部总重瞬间暴涨 **`23.7` 倍**，硬生生拉满到 **`1.0000`**。模型把本该置之不理的局部琐碎词元当成绝对主信号塞进输出，导致输出向量 L2 偏移高达 **$\|\Delta o\| = 1.4393$**，平滑 KL 散度（$\varepsilon = 10^{-12}$）飙升到 **`26.2369`**（若不平滑，因为丢弃了非零全量概率项，严格 KL 直接为 $\infty$），对称 Jensen-Shannon 散度（JSD）也高达 **`0.6049`**。
+3. **③ 保留注意力汇聚点（$\Omega_{\text{sw}} = \{0\} \cup [4..7]$）**：只要把 `t=0` 这 `1` 个槽位重新请回 KV 缓存，哪怕中段的 `[1..3]` 依然全丢，$p_0 = 95.75\%$ 也会立刻重新接管泄洪任务，局部 `[4..7]` 权重同步压回 **`0.0425`（`4.25%`）**。此时输出误差骤降 `118` 倍至 **$\|\Delta o\| = 0.0122$**，KL 散度狂降 `162` 倍至 **`0.1621`**，JSD 降到 **`0.0027`**！
+
+![8 词元 Softmax 分布对比：全量基准、无 Sink 纯滑窗、保留 Sink 与中段遗忘陷阱](./diagrams/06-sink-walkthrough.drawio '图 2-1：拿 8 个词元算一次，为什么删掉开头词元会让局部权重暴涨 23.7 倍，而保留 Sink 仍会漏掉中段关键事实。')
+
+StreamingLLM（`arXiv:2309.17453`）用真实开源大模型验证了这个简单的数字奇迹，也揭示了它的天花板[^sink]：
+
+- **只需极少初始词元就能救活整个序列**：在 Llama-2-13B 的 PG19 `65K` 长文本评测中，直接上 `1024` 宽度的纯滑窗（`0+1024`），困惑度（PPL）直接崩到 **`5158.07`**（输出彻底乱码）；而仅仅腾出前 `4` 个词元作为汇聚点（`4+1020`），PPL 瞬间恢复至正常水平 **`5.40`**。更绝的是，哪怕把前 `4` 个词元硬塞成 `4` 个毫无语义的换行符 `"\n"`（`4"\n"+1020`），PPL 依然能稳在 **`5.60`**——证明模型需要的根本不是开头的文义，而是分母里那个合法的泄洪锚点。
+- **不占用语义槽位的「可学习汇聚点」**：在 `160M` 参数从零预训练消融实验中，如果在 Softmax 分母中显式加入可学习偏置（Learnable Sink），哪怕只留 `1` 个虚拟汇聚位置（`1+1023`），PPL 就能拿到 **`18.01`**，完全不输保留 `4` 个真实词元（`18.05`）。这也是后文我们在 `vLLM` 与 `Ascend` 算子参数中会见到的 `sinks` / `learnable_sink` 字段的直接起源。
+- **稳定流式不等于长程记忆**：借助缓存 RoPE 之前的原始 Key 并在滚动窗口内重新分配相对位置 `[0..cache_size-1]`，StreamingLLM 能在长达 **`4M+` 词元** 的流式对话中保持 PPL 稳定（在 Llama-2-7B `400K` PG19 上将 `0+4096` 的 `3359.95` 拉回 `9.59`），推理速度比滑窗重算快 **`22.2×`**。但看一眼图 2-1 最底部的 **④ 中段盲区**：如果某个关键事实正好写在 $t = 2$（设 $z_2 = 7.5$），全量注意下它本该占走 **`81.02%`** 的聚光灯；可一旦 $t = 2$ 滑出局部窗口，纯 `Sink + SWA` 会毫不留情地把它归零（$p_2 = 0.0000$，$\|\Delta o\| = 0.3097$）。
+
+**只会保留「开头锚点 + 最近窗口」，做不好长文本检索与多步推理。**我们需要的是一种既能跨越几万词元精准捞回 $t = 2$ 这类关键事实，又不破坏硬件效率的动态稀疏机制。
+
+---
+
+## 事后稀疏的两道死墙：算不过来，也训不动
+
+既然不能按固定几何位置一刀切，最自然的下一个念头就是「事后动态挑选」（Post-hoc / Training-free Sparse）：模型照常按全量注意预训练，等上线推理甚至做稀疏改造时，再挑那些打分最高的键值对去算。NSA 论文第二章系统拆解了这条路线为何在落地中四面碰壁[^nsa]：
+
+1. **半截省流，顾此失彼（Phase Restriction）**：不少早期稀疏方案只在推理链条的单一阶段生效。例如 H2O 类缓存驱逐只缩减解码阶段 KV 大小，预填充照样要跑 $O(T^2)$ 算力；而 MInference 等预填充稀疏加速了首字延迟，却对漫长的长文解码无能为力。
+2. **近似挑选本身准确率不足，且阻断端到端训练**：
+   - **静态剪枝或简单启发式漏检严重**：MagicPIG 的观测显示，即便事后动态保留前 `20%` 的高分词元，平均也只能覆盖约 `70%` 的真实注意力质量。
+   - **离散采样不可微**：基于 $k$-means 聚类（ClusterKV）或局部敏感哈希 SimHash（MagicPIG）的方法无法通过反向传播微调，模型自身从未被训练去适应「只能看见稀疏块」的约束；而如果硬塞一个辅助 KL 蒸馏损失逼选择器去拟合稠密教师（SeerAttention 类路线），NSA 第 6.1 节的 `3B` 预训练损失曲线实验表明，双目标拉扯不仅收敛更慢，性能也明显不如原生端到端联合训练。
+3. **最致命的工程灾难——硬件错位（Hardware Misalignment）**：
+   - **逐词散读（Token-level Granularity）毁掉连续瓦片加载**：像 HashAttention 这样把颗粒度细到单个词元，哪怕稀疏度高达 `90%`，落到 GPU 物理内存上也是隔三差五的碎片地址跳跃，根本喂不出 [基础 04：FlashAttention 与 FlashMLA](../../foundations/04-flash-attention/) 赖以吃满带宽的连续块读取（TMA / Async Copy）。
+   - **GQA 头间各自选块引爆并集灾难**：现代大模型普遍使用分组查询注意力（GQA，同一组内的 $G_q$ 个查询头共享同一份 KV 缓存）。像 Quest 这类方法允许组内每个头各自挑选不同的重要 KV 块——单看每个头似乎只选了 `Top-n` 块，可它们共享底层的 HBM 空间，底层算子为了同时服务这 $G_q$ 个头，被迫从 HBM 把**所有头选中块的并集**悉数搬进片上 SRAM！只要头之间挑的块稍微错开，实际访存几乎退化成全量扫描。
+
+要破局，必须让**稀疏选择在预训练第一天就参与反向传播（原生可训练）**，同时把**访存块形状与 GQA 组共享写进算法约束（硬件对齐）**。这就是 DeepSeek **NSA** 的设计起点。
+
+---
+
+## DeepSeek NSA：三分支原生可训练稀疏与 GQA 组共享
+
+DeepSeek 提出的 **NSA（Native Sparse Attention，原生稀疏注意力）**[^nsa] 给出了一个非常干净的结构重构：把原本向全量历史 $\mathbf{k}_{:t}, \mathbf{v}_{:t}$ 一次查询的过程，拆解为面向当前时刻 $t$ 同步计算的三条互补注意力支路 $c \in \{\text{cmp},\, \text{slc},\, \text{win}\}$——分别负责**全局粗览**、**重点精读**与**近期句法**，最后用一个仅依赖当前隐状态 $\mathbf{x}_t$ 的门控网络做加权求和。
+
+### 符号、维度与三分支总览公式
+
+为了避免「参数共享导致局部梯度绑架全局特征」，NSA 的三条分支各自拥有**独立的键值投影矩阵** $W_K^c \in \mathbb{R}^{d_{\text{model}} \times d_k}$ 与 $W_V^c \in \mathbb{R}^{d_{\text{model}} \times d_v}$，再把各自构造出的活跃键值张量记作 $\tilde{K}_t^c \in \mathbb{R}^{N_c \times d_k}$、$\tilde{V}_t^c \in \mathbb{R}^{N_c \times d_v}$：
+
+- $\mathbf{x}_t \in \mathbb{R}^{d_{\text{model}}}$：第 $t$ 个词元的输入隐状态；
+- $\mathbf{q}_t \in \mathbb{R}^{d_k}$（若按单组 GQA 展开则为 $\mathbf{Q}_g \in \mathbb{R}^{G_q \times d_k}$）：当前时刻的查询向量；
+- $g_t^c \in (0, 1)$：由当前词元隐状态经过两层或线性映射加 Sigmoid 激活 $\sigma(\cdot)$ 算出的三路标量门控权重；
+- $N_t = N_{\text{cmp}} + N_{\text{slc}} + N_{\text{win}}$：当前词元实际参与计算的活跃 KV 词元总数，满足 $N_t \ll t$。
+
+在这个定义下，第 $t$ 步 NSA 的输出 $\mathbf{o}_t^* \in \mathbb{R}^{d_v}$ 写成三分支门控叠加：
+
+$$
+\mathbf{o}_t^* = \sum_{c \in \{\text{cmp},\, \text{slc},\, \text{win}\}} g_t^c \cdot \operatorname{Attn}\!\left(\mathbf{q}_t,\, \tilde{K}_t^c,\, \tilde{V}_t^c\right)
+$$
+
+拿一套缩小尺寸的参数在 `toy.py` 中核对维度：当序列总长 $T = 1024$、特征维度 $d_k = 24, d_v = 16$、GQA 每组查询头数 $G_q = 16$ 时，三条支路分别产生活跃 KV 行数 $N_{\text{cmp}} = 63$、$N_{\text{slc}} = 256$、$N_{\text{win}} = 64$，总活跃预算 $N_t = 383$（只占 `1024` 的 **`37.4%`**，直接跳过 `62.6%`）。而在论文真实的 `64K` 长文本配置下（压缩块长 $l = 32$、步长 $d = 16$、选块宽 $l' = 64$、挑选块数 $n = 16$、滑窗 $w = 512$），`65536` 个历史词元被压缩进约 `5632` 个等效词元访问量，**显存读取量直降 `11.6×`**。
+
+![DeepSeek NSA 三分支原生可训练稀疏注意力与 GQA 组共享选块架构](./diagrams/06-nsa-arch.drawio '图 2-2：NSA 三分支（压缩 cmp、组共享选择 slc、局部滑窗 win）通过可学习 Sigmoid 门控融合，其中选块下标在 GQA 组内共享。')
+
+### 三条支路如何各司其职、把梯度打通
+
+1. **分支 1：粗粒度压缩注意力 `cmp`——顺手帮后面把重点勾出来**
+   把历史键序列按宽度 $l$、滑动步长 $d$（$d < l$ 保持块间重叠，减小边界信息割裂）切片，全长 $T$ 共切出 $n_{\text{cmp}} = \lfloor(T - l)/d\rfloor + 1$ 块（在 `toy.py` 中 `(1024 - 32)//16 + 1 = 63` 块）。每块先加上块内位置编码，再经过一个可学习的轻量级压缩网络 $\varphi$（MLP），把原本 $l$ 个词元压扁成 `1` 个代表性压缩键 $\tilde{\mathbf{k}}_i^{\text{cmp}}$（与压缩值 $\tilde{\mathbf{v}}_i^{\text{cmp}}$）。
+   接着查询与这 $n_{\text{cmp}}$ 个压缩向量做常规缩放点积 Softmax，**一举两得**：既输出了全局摘要 $\mathbf{o}_t^{\text{cmp}}$（让梯度顺着交叉熵损失端到端反传更新压缩网络 $\varphi$），又白白得到了一份现成的粗粒度注意力概率分布 $\mathbf{p}_t^{\text{cmp}} \in \mathbb{R}^{n_{\text{cmp}}}$！
+
+2. **分支 2：GQA 组共享块选择注意力 `slc`——零额外打分器 + 全组共选连续块**
+   光看压缩向量容易丢掉高精度的词法细节（比如精准代码变量名或数字），所以必须挑出少数最关键的原生态历史块来精算。NSA 的巧妙之处在于：**它不再从头训一个昂贵的额外打分网络，而是直接复用 `cmp` 分支顺手算出来的 $\mathbf{p}_t^{\text{cmp}}$**。
+   具体做法是把原始序列切成宽度为 $l'$（如 $l'=64$，贴合底层硬件块大小）的非重叠选择块，共 $n_{\text{slc}} = T / l'$ 块。若第 $i$ 个压缩块的范围 $[id,\, id+l)$ 与第 $j$ 个选择块 $[jl',\, (j+1)l')$ 有交集，就把它的概率累加进来；随后最关键的一步来了——**沿着同一 GQA 组内的 $G_q$ 个查询头求和**：
+
+   $$
+   \mathbf{p}_t^{\text{slc},(h)}[j] = \sum_{i:\, [id,\, id+l) \cap [jl',\, (j+1)l') \neq \emptyset} \mathbf{p}_t^{\text{cmp},(h)}[i], \qquad \bar{\mathbf{p}}_t^{\text{slc}}[j] = \sum_{h=1}^{G_q} \mathbf{p}_t^{\text{slc},(h)}[j]
+   $$
+
+   其中 $\mathbf{p}_t^{\text{cmp},(h)}[i]$ 是组内第 $h$ 个头对第 $i$ 个压缩块的注意力概率；$\mathbf{p}_t^{\text{slc},(h)}[j]$ 是它聚合到第 $j$ 个精细选择块上的局部得分；最终组内共享得分向量 $\bar{\mathbf{p}}_t^{\text{slc}} \in \mathbb{R}^{n_{\text{slc}}}$ 在所有 $G_q$ 个头之间完全相同。整组据此联合选出分数最高的 Top-$n$ 块索引集合 $\mathcal{I}_t$（论文默认 $n = 16$，且固定包含开头 `1` 块与紧邻局部 `2` 块，等价内置了注意力汇聚点！`toy.py` 中设 `top_n = 4`）。
+   拿 `toy.py` 的具体形状核对一遍：`overlap` 矩阵形状 `(16, 63)`，`p_slc_heads` 形状 `(16, 16)`，跨头求和后 `p_slc_group` 变成一维向量 `[16]`，最后全组 `16` 个头共同锁定完全一致的 `4` 个块（共 `4 × 64 = 256` 个连续词元）。**哪怕挑选过程 `argsort` 本身不可微，打分来源 $\mathbf{p}_t^{\text{cmp}}$ 依然每步都受 $\mathbf{o}_t^{\text{cmp}}$ 的梯度持续锤炼，训练越久勾重点越准！**
+
+3. **分支 3：独立局部滑窗注意力 `win`——给远程分支让出梯度通道**
+   最近 $w$ 个词元（论文中 $w = 512$，`toy.py` 中 `w_win = 64`）保留独立滑窗分支。为什么一定要把 `win` 单独拆出去，还要配**独立的一套** $W_K^{\text{win}}, W_V^{\text{win}}$ 投影权重？因为语言建模中局部相邻句法的信号极强、收敛极快。如果三路共用一套键值对，早期反向传播几乎全部被近邻词元主导，压缩块和远程选择块还没学会怎么挑跨段语义，投影矩阵就被局部特征占满了[^nsa]。拆开三套独立投影、加上独立门控 $g_t^{\text{win}}$，局部语法和长程记忆终于井水不犯河水。
+
+在 DeepSeek 发布的 `27B` 总参数 / `3B` 激活参数 MoE 实验模型（`30` 层、$d=2560$、`4` 个 GQA 组 × 每组 `16` 个查询头、$d_k = 192, d_v = 128$）上，全量预训练后的 NSA 不仅没有掉点，甚至在多类长短任务上**反超稠密全量基线**：
+
+- **通用基础能力**：平均得分 `0.456` 优于 Full Attention 基线 `0.443`（DROP 高 `+0.042`，GSM8K 高 `+0.034`）；
+- **长上下文评测**：`64K` 大海捞针全中（`100%`），LongBench 均分 **`0.469`** 明显高于全量基线 `0.437`（HPQ `+0.087`、2Wiki `+0.051`、PassR-en `+0.075`、LCC `+0.069`）；
+- **长思维链数学推理**：在经过 CoT 监督微调后的 AIME 24 测试上，NSA 于 `8K` 长度达到 `0.121`（Full 为 `0.046`）、`16K` 达到 `0.146`（Full 为 `0.092`），验证了干净过滤噪音后长链推理反而更稳。
+
+---
+
+## 硬件对齐的 SRAM 调度与生产生态坐标
+
+光有漂亮的算法公式还不够。为什么按 GQA 组共享 $\mathcal{I}_t$ 这一个小小的加法求和，能决定 NSA 在 `A100` 上跑出 **`9.0×` 前向、`6.0×` 反向**加速（`64K` 序列 Triton 内核）[^nsa]？答案藏在 GPU Tensor Core 的物理指令里。
+
+### Group-Centric Data Loading：怎样把稀疏计算塞回 Tensor Core
+
+Tensor Core 做一次矩阵乘加指令（MMA）有个硬脾气：左矩阵的行维度 $M$ 必须够高（通常至少 `16` 行）才能让计算阵列满载。在生成解码阶段，每次只有 `1` 个当前词元（$q_t$）。
+
+- 如果你的稀疏注意力**按单头或逐词元独立选块**：单次算子手里只有 `1` 个查询向量（$M = 1$），`15/16` 的硬件矩阵单元全部在空转；更糟的是，为了满足组内 `16` 个头各自挑出来的不同位置，SRAM 内循环不得不把这些碎块的并集一个个从 HBM 散读进来。
+- **NSA 以 GQA 组为中心的 SRAM 调度（Group-Centric Data Loading）**：
+  1. **外层 Grid 按 `(词元位置 t, GQA 组 g)` 划分线程块**：一次性把整组 $G_q = 16$ 个查询头打包成小矩阵 $\mathbf{Q}_g \in \mathbb{R}^{G_q \times d_k}$ 常驻片上 SRAM；
+  2. **内层循环按共享块索引 $\mathcal{I}_t$ 连续流式读取**：把选中块的完整连续键值切片 $\mathbf{K}_b \in \mathbb{R}^{B_k \times d_k}$ 与 $\mathbf{V}_b \in \mathbb{R}^{B_k \times d_v}$（子块宽 $B_k$ 整除选择块宽 $l'$）直接搬入 SRAM；
+  3. **片上做稠密 MMA + 在线 Softmax**：核心点积瞬间变成标准矩阵乘法 `[G_q, d_k] × [d_k, B_k]`，不仅一行都没浪费 Tensor Core，TMA 合并访存效率也与常规 FlashAttention 别无二致。
+
+![NSA GQA 组中心 SRAM 调度对比与 vLLM/Ascend 生产生态坐标](./diagrams/06-nsa-sram-runtime.drawio '图 2-3：反例按头独立选块/逐词散读与 NSA GQA 组中心连续块 MMA 调度的对比，以及 vllm 与 vllm-ascend 的现行落地位置。')
+
+### 上游生产生态现状：SWA + Sink 已全面上线，DeepSeek 为何把稀疏转向 MLA？
+
+读到这里你可能会想马上去 `vLLM` 里搜一套叫 `nsa` 的算子出来跑。先打住——直接核对上游源码快照 `vllm@bb23c0a8` 与 `vllm-ascend@3649b8ff`，**目前生产主干里既没有独立的 GQA 版 NSA 内核，也不存在任何名为 `native_sparse` 的算子**。真正在线上大规模跑起来的技术脉络分成了两条清晰的路：
+
+1. **路线 A：带 Sink 的滑动窗口注意力（SWA + Learnable Sink）已成标配**
+   - 在 `vllm/v1/attention/backends/flash_attn.py` 中，`FlashAttentionImpl` 会在解码器因果场景下把 `self.sliding_window` 设为 `(sliding_window - 1, 0)`（不启用滑窗时为 `(-1, -1)`），并检查绑定到每个注意力头的汇聚点权重张量 `self.sinks`（校验 `sinks.shape[0] == num_heads`），最终前向调用直接把 `window_size=sliding_window_size` 与 `s_aux=self.sinks` 喂进底层注意力内核 `_FA4_DENSE_ATTENTION_KERNEL`[^vllm-fa]。
+   - 在华为昇腾生态 `vllm-ascend/vllm_ascend/attention/attention_v1.py` 中，`AscendAttentionBackendImpl` 同样维护 `self.sliding_window` 与 `self.sinks`，并在 `forward_fused_infer_attention` 分支里调用 `torch_npu.npu_fused_infer_attention_score_v2(..., sparse_mode=4 if self.sliding_window is not None else 3, pre_tokens=..., next_tokens=0, learnable_sink=self.sinks)`（无汇聚点且开因果滑窗时则落回 `npu_fused_infer_attention_score`）[^vllm-ascend]。
+2. **路线 B：DeepSeek 家族没有回头改用 GQA，而是把稀疏直接嫁接在了 1 头 MLA 上**
+   - 回忆 [01 MLA](../01-mla/)：从 DeepSeek-V2/V3 起，DeepSeek 主力模型就已经把 KV 缓存压成了**所有 `128` 个查询头共享同 `1` 个潜在 KV 向量**的架构！这天然自带了比 GQA 组更夸张的 $M = 128$ 满载优势，根本不需要退回 GQA-NSA。
+   - 因此后续演进选择「保留 1 头 MLA + 在潜空间上叠稀疏/混合滑窗」：在 `vllm/model_executor/models/deepseek_v2.py` 里，DeepSeek-V3.2 在 `DeepseekV2MLAAttention` 内挂接轻量化 `Indexer`（`n_head=64, head_dim=128, rope_dim=64, q_lora_rank=1536`）做潜在空间 `top-k` 动态选词（**DSA**）；而在 `vllm/models/deepseek_v41/attention.py` 与 `vllm_ascend/attention/dsa_v41.py` 中，DeepSeek-V4/V4.1 进一步把 `compress_ratio=0` 的纯滑窗层（配置 `window_size=config.sliding_window` 与 `attn_sink`）和 `compress_ratio in (1, 2)` 的压缩稀疏 MLA 层（`DeepseekV4Indexer` 与 Ascend 侧 `npu_sparse_flash_mla`）混合编排[^v41]。
+
+换言之：**NSA 奠定了「硬件对齐的块级连续稀疏 + 原生端到端可训练门控」这套黄金工程原则，而 DeepSeek-V3.2 DSA 则把这套原则移植进了更极致的单头 MLA 底座。**
+
+---
+
+## 跑一遍：用 NumPy 复现 Softmax 泄洪与三分支组共享等价性
+
+现在我们用 `toy.py` 把前文所有直觉全部跑成可验证的数字。完整脚本共 `139` 行（仅依赖标准库与 `numpy`，固定随机种子 `default_rng(42)`），分为两段核心验证：
+
+```python
+# ① 8 词元 Attention Sink 数值推演（t=0..7，局部窗口 w=4 保留 [4..7]）
+logits = np.array([6.0, 0.2, 0.1, 0.0, 1.0, 1.2, 1.5, 2.0])
+V_8 = rng.normal(0.0, 1.0, size=(8, 4))
+p_full = softmax(logits)
+p_win = np.zeros(8)
+p_win[4:] = softmax(logits[4:])
+p_sw = np.zeros(8)
+p_sw[[0, 4, 5, 6, 7]] = softmax(logits[[0, 4, 5, 6, 7]])
+```
+
+第二段则完整实现单个 GQA 组（$G_q=16, T=1024, d_k=24, d_v=16$）的 `cmp`、`slc`、`win` 三路独立投影与门控融合，并拿「直接拼接选出 `4` 块求输出」与「按 Hardware Tile $B_k=32$ 逐块进 SRAM 做 `[G_q, d_k] @ [d_k, B_k]` 在线 Softmax 累加」作逐元素严格核对：
+
+```python
+p_slc_heads = p_cmp @ overlap.T               # [G_q, n_slc]
+p_slc_group = np.sum(p_slc_heads, axis=0)     # GQA 组共享聚合得分 [n_slc]
+shared_blocks = np.sort(np.argsort(p_slc_group)[-top_n:])
+indep_blocks = [np.argsort(p_slc_heads[h])[-top_n:] for h in range(G_q)]
+union_blocks = len(set().union(*map(set, indep_blocks)))
+
+# 对照组共享块内循环：以 [G_q, d_k] @ [d_k, B_k] 在 SRAM 分块在线 Softmax 累加
+for blk in shared_blocks:
+    for off in range(0, l_prime, B_k):
+        K_b = k_slc_all[blk * l_prime + off : blk * l_prime + off + B_k]
+        V_b = v_slc_all[blk * l_prime + off : blk * l_prime + off + B_k]
+        S_b = (Q_g @ K_b.T) * inv_sqrt_d      # 硬件 MMA：[G_q, d_k] @ [d_k, B_k]
+```
+
+在仓库根目录下直接运行命令：
+
+```bash
+uv run src/content/posts/deepseek/02-swa-and-nsa/toy.py
+```
+
+真实输出如下：
+
+```text
+① 8 词元 Softmax 失真：Full 局部总重=0.0422, 无 Sink=1.0000, 留 Sink=0.0425
+   KL(ε=1e-12)：无 Sink=26.2369 vs 留 Sink=0.1621 | JSD：0.6049 vs 0.0027
+   输出误差 ||Δo||：无 Sink=1.4393 vs 留 Sink=0.0122 | 中段事实 t=2 遗忘误差=0.3097
+② 三分支张量形状：K_cmp=(63, 24), K_slc=(256, 24), K_win=(64, 24)
+   活跃 KV 预算 N_t = 383 / T=1024（占比 37.4%，稀疏跳过 62.6%）
+   GQA 组共享等价性 max|ΔO| = 1.11e-16，门控 g=[0.493, 0.358, 0.607]
+   slc 访存节省：独立选块并集=16 块（1024 tokens） vs 组共享=4 块（256 tokens，带宽省 4.00×）
+OK 06
+```
+
+从这组实测结果可以一次性看透四个关键细节：
+
+- 丢掉 Sink 时局部总权重确实从 `0.0422` 暴涨至 `1.0000`，而留回 `t=0` 后仅需 `0.0122` 的微调误差即可还原全量输出；但当高权重事实落在窗口外 $t=2$ 时，`Sink + SWA` 照样束手无策（`0.3097` 遗忘误差）。
+- 三分支各保留独立形态的 KV 张量，总预算从 `1024` 压到 `383`（跳过 `62.6%`）；
+- 以 `[G_q, d_k] @ [d_k, B_k]` 分片在线 Softmax 归约的结果，与直接完整拼接所选块算出的精确参考输出误差仅有 `1.11e-16`（双精度浮点舍入上限），**数学上完全等价**；
+- 一旦允许组内 `16` 个头各自独立挑 `4` 块，并集立刻覆盖全部 `16` 个选块（`1024` tokens，等同全量扫描），而组共享只需搬运 `4` 个块（`256` tokens），立省 **`4.00×`** HBM 带宽！
+
+---
+
+## 代价与边界
+
+在决定是否以及何时采用 SWA 或 NSA 时，必须清楚每一层机制背后的物理约束与迁移成本：
+
+- **纯 Sink + SWA 无法支撑强检索与代码/长推理**：只要任务依赖窗口外的精确中间事实（如 `100K` 源码跨文件跳转、长文多跳问答），固定丢弃中段历史的滑动窗口必然出现盲区。生产系统通常只将 SWA 作为混合层级架构中的「局部层」（搭配若干全量层或压缩稀疏 MLA 层），或用于无尽对话缓存控制。
+- **NSA 需要维护三套 KV 投影与非均质缓存状态**：三分支各自独立 $W_K^c, W_V^c$ 与压缩网络 $\varphi$ 会增加参数与线性投影开销；在流式解码部署期，系统除了追加常规 KV 缓存，还必须同步更新按步长 $d$ 滑过的压缩槽位 `K_cmp, V_cmp`，这对现有的 PagedAttention 块管理器带来了非均匀页表的调度复杂度。
+- **组共享假设与从头预训练绑定**：NSA 把「GQA 多头分组」视为天经地义的前提，且压缩投影 $\varphi$ 和三分支门控必须在预训练阶段就一同从头磨合。假如模型已经先用了极端省显存的单头潜在压缩（MLA），或者团队手里只有已训练完毕的全量大模型、希望用较小微调代价开启稀疏推理——我们就不能再靠 GQA 组共享撑起矩阵乘，而必须换一种直接建在单头潜在向量之上的轻量化选词机制。
+
+这也正好把接力棒交给了下一章：DeepSeek-V3.2 如何舍弃分块组共享，发明出能直接和单头 MLA 咬合在一起的闪电索引器——继续阅读 **[03 DeepSeek 稀疏注意力（DSA）](../03-dsa/)**。
+
+---
+
+## 自测
+
+在进入下一章前，建议合上原文用下面 5 个概念问题检验自己是否真正吃透，再动手修改一遍 `toy.py`：
+
+1. **为什么 `toy.py` 中保留 `t=0` 后局部总重立刻回落到 `4.25%`？如果把所有词元的原始打分 $z_j$ 统一加上一个常数 `+10.0`，这种泄洪机制还会不会起作用？**
+   **参考解答**：起决定性作用的是 $z_0$ 与其它词元打分之间的**差值**（$e^{z_0}$ 占据绝对主导权使得局部项相对变小）。因为 Softmax 具有平移不变性，给所有位置同时加上 `+10.0` 后概率分布丝毫不变；一旦删掉 `t=0`，剩下的词元间相互竞争凑满 `100%` 概率，局部噪音依然会暴涨。
+
+2. **StreamingLLM 能把 Llama-2-7B 稳定推到 `400K` 甚至 `4M` 词元不崩坏，为什么依然要发明 NSA 这种更复杂的块选择机制？**
+   **参考解答**：StreamingLLM 的稳定指的是「语言生成局部连贯、PPL 不发散」，而不是「记得住 20 万词前说过的一句人名或数字」。正如 `toy.py` 第 44 行所示，只要关键事实 `t=2` 滑出固定窗口且不是开头几个词元，纯 `Sink + SWA` 对它的权重直接归零。NSA 通过 `cmp + slc` 实现了跨任意距离的内容按需检索。
+
+3. **NSA 明明可以用一套 $W_K, W_V$ 投出键值对再切给三个分支用，为什么论文特意给 `cmp`、`slc`、`win` 配三套独立投影？**
+   **参考解答**：局部滑窗（`win`）的句法规律极易学、梯度信号强；若三路共用 KV 权重，训练初期的反向传播会被局部模式压倒，导致底层的 KV 表示只迎合近期词元，让需要捕获长程摘要与重点语义的 `cmp`/`slc` 分支学不出来。
+
+4. **假定一个 GQA 组有 `16` 个头，每个头都只挑 Top-`4` 块，为什么硬件访存却可能几乎没有任何加速？NSA 用什么公式消除了这个隐患？**
+   **参考解答**：同一 GQA 组共享 HBM 中的物理 KV 存储；如果 16 个头挑出互不重叠的各 4 块，内核被迫把它们的并集（多达 $16 \times 4$ 块，或整个序列全部块）读进 SRAM 才能完成全部头的点积。NSA 用 $\bar{\mathbf{p}}_t^{\text{slc}}[j] = \sum_{h=1}^{G_q} \mathbf{p}_t^{\text{slc},(h)}[j]$ 先在组内汇总得分，强制整组 **16 个头共享同一个 Top-$n$ 块索引集 $\mathcal{I}_t$**，把每次迭代读取的 KV 锁死在 $n$ 块连续内存中。
+
+5. **既然 NSA 在 A100 上跑出了 `9.0×` 前向加速，为什么在 `vllm@bb23c0a8` 主干源码中查不到独立的 GQA-NSA 内核？**
+   **参考解答**：因为 DeepSeek 旗舰线自 V2/V3 起已全面转向 **MLA**（所有 `128` 个查询头共享 `1` 份压缩潜在 KV 缓存），本身就能把查询高度 $M = 128$ 直接拉满到远超 Tensor Core 门槛，无须回退到 GQA 架构。因此 DeepSeek 将稀疏选词继续叠加在 MLA 上，演化成了 V3.2 的 DSA 与 V4/V4.1 的混合 SWA + 压缩稀疏 MLA。
+
+6. **动手实验（修改 `toy.py`）**：打开同目录下的 `toy.py`，把第 60 行的 `top_n` 从 `4` 改为 `2`，或把 `G_q` 从 `16` 调为 `8`，重新执行 `uv run src/content/posts/deepseek/02-swa-and-nsa/toy.py`——观察 `N_t` 稀疏占比、GQA 独立并集块数与组共享节省倍数如何变化，并验证 `max|ΔO|` 是否依然维持在 `1e-16` 机器精度量级。
+
+[^sink]: Xiao et al., [Efficient Streaming Language Models with Attention Sinks (arXiv:2309.17453)](https://arxiv.org/abs/2309.17453)，首次系统揭示自回归大模型对初始词元的高概率汇聚现象，并给出 `4+1020`、`4"\n"+1020`、`Learnable Sink` 与 `4M+` 词元流式推理评测数据。
+
+[^nsa]: Yuan et al., [Native Sparse Attention: Hardware-Aligned and Natively Trainable Sparse Attention (arXiv:2502.11089)](https://arxiv.org/abs/2502.11089)，提出 `cmp / slc / win` 三分支门控融合、GQA 组共享块选择与 Group-Centric Triton 内核，并报告 `27B/A3B` MoE 模型基准及 `64K` 长度 `9.0× / 6.0×` 加减速实测。
+
+[^vllm-fa]: 上游推理框架 `vllm@bb23c0a8` 源码 `vllm/v1/attention/backends/flash_attn.py`：`FlashAttentionImpl` 中 `self.sliding_window`、`self.sinks` 校验及向 `_FA4_DENSE_ATTENTION_KERNEL` 透传 `window_size`、`s_aux` 参数的实现。
+
+[^vllm-ascend]: 上游昇腾后端 `vllm-ascend@3649b8ff` 源码 `vllm_ascend/attention/attention_v1.py`：`AscendAttentionBackendImpl.forward_fused_infer_attention` 对 `npu_fused_infer_attention_score_v2` 传入 `sparse_mode=4`、`pre_tokens=self.sliding_window` 与 `learnable_sink=self.sinks` 的调度逻辑。
+
+[^v41]: DeepSeek-V3.2 DSA 与 DeepSeek-V4/V4.1 混合 SWA/压缩稀疏 MLA 上游实现：`vllm@bb23c0a8` 中 `vllm/model_executor/models/deepseek_v2.py`（`DeepseekV2MLAAttention` 与 `Indexer`）与 `vllm/models/deepseek_v41/attention.py`（`DeepseekV4Attention` 的 `compress_ratio`、`make_attention_sink` 与 `DeepseekV4Indexer`），以及 `vllm-ascend@3649b8ff` 中 `vllm_ascend/attention/dsa_v41.py`（`AscendDSAV41Impl._forward_attention` 调用 `npu_sparse_flash_mla`）。

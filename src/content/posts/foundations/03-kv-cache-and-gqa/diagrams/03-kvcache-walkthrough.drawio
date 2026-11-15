@@ -1,0 +1,73 @@
+<mxfile host="Electron" modified="2026-11-15T01:38:00.000Z" agent="wisp-diagram" version="24.0.0">
+  <diagram id="kvcache-walkthrough" name="KV Cache 三步生成对比">
+    <mxGraphModel dx="640" dy="460" grid="1" gridSize="8" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="0" pageScale="1" pageWidth="688" pageHeight="460" math="1" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="g-recomp" value="" style="rounded=1;whiteSpace=wrap;html=1;absoluteArcSize=1;arcSize=12;fillColor=#f4f4f2;strokeColor=#e2e2dd;strokeWidth=1;" vertex="1" parent="1">
+          <mxGeometry x="16" y="16" width="656" height="144" as="geometry" />
+        </mxCell>
+        <mxCell id="g-recomp-lbl" value="无 KV Cache：每生成一个新词元都重算整段前缀" style="text;html=1;align=left;verticalAlign=middle;whiteSpace=wrap;fontFamily=Inter;fontSize=14;fontStyle=1;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="32" y="24" width="440" height="24" as="geometry" />
+        </mxCell>
+        <mxCell id="r-in" value="完整前缀输入&lt;br&gt;\([x_0, x_1, x_2, x_3]\)&lt;br&gt;形状 \([4, d]\)" style="rounded=1;whiteSpace=wrap;html=1;absoluteArcSize=1;arcSize=8;fillColor=#eaedf2;strokeColor=#464e57;strokeWidth=1.25;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="32" y="56" width="144" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="r-proj" value="重复投影 \(K_{0..3}, V_{0..3}\)&lt;br&gt;\(K_{0..2}, V_{0..2}\) 上一步已算过&lt;br&gt;累计投影开销 \(O(T^2)\)" style="rounded=1;whiteSpace=wrap;html=1;absoluteArcSize=1;arcSize=8;fillColor=#fcedec;strokeColor=#984646;strokeWidth=1.25;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="216" y="56" width="216" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="r-attn" value="用 \(q_3\) 对 \(K_{0..3}, V_{0..3}\)&lt;br&gt;做因果注意力&lt;br&gt;输出 \(y_3\)" style="rounded=1;whiteSpace=wrap;html=1;absoluteArcSize=1;arcSize=8;fillColor=#e9f2fb;strokeColor=#2f5783;strokeWidth=1.25;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="472" y="56" width="184" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="e-r1" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#464e57;strokeWidth=1.25;endArrow=classic;endFill=1;" edge="1" parent="1" source="r-in" target="r-proj">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e-r2" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#464e57;strokeWidth=1.25;endArrow=classic;endFill=1;" edge="1" parent="1" source="r-proj" target="r-attn">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <mxCell id="g-cache" value="" style="rounded=1;whiteSpace=wrap;html=1;absoluteArcSize=1;arcSize=12;fillColor=#f4f4f2;strokeColor=#e2e2dd;strokeWidth=1;" vertex="1" parent="1">
+          <mxGeometry x="16" y="192" width="656" height="224" as="geometry" />
+        </mxCell>
+        <mxCell id="g-cache-lbl" value="有 KV Cache：只投影当前词元 x₃，历史键值对从显存追加并复用" style="text;html=1;align=left;verticalAlign=middle;whiteSpace=wrap;fontFamily=Inter;fontSize=14;fontStyle=1;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="32" y="200" width="520" height="24" as="geometry" />
+        </mxCell>
+        <mxCell id="c-in" value="仅当前词元 \(x_3\)&lt;br&gt;形状 \([1, d]\)" style="rounded=1;whiteSpace=wrap;html=1;absoluteArcSize=1;arcSize=8;fillColor=#e9f2fb;strokeColor=#2f5783;strokeWidth=1.25;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="32" y="232" width="112" height="64" as="geometry" />
+        </mxCell>
+        <mxCell id="c-proj" value="单步线性投影&lt;br&gt;\(q_3, k_3, v_3\)（开销 \(O(1)\)）" style="rounded=1;whiteSpace=wrap;html=1;absoluteArcSize=1;arcSize=8;fillColor=#e9f2fb;strokeColor=#2f5783;strokeWidth=1.25;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="176" y="232" width="176" height="64" as="geometry" />
+        </mxCell>
+        <mxCell id="c-write" value="按 slot_mapping[3] 散射写入&lt;br&gt;仅追加 \(k_3, v_3\)，历史槽位只读" style="rounded=1;whiteSpace=wrap;html=1;absoluteArcSize=1;arcSize=8;fillColor=#fbf2df;strokeColor=#7b5518;strokeWidth=1.25;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="432" y="232" width="224" height="64" as="geometry" />
+        </mxCell>
+        <mxCell id="c-attn" value="注意力输出 \(y_3\)&lt;br&gt;与无缓存重算逐位一致" style="rounded=1;whiteSpace=wrap;html=1;absoluteArcSize=1;arcSize=8;fillColor=#e9f2fb;strokeColor=#2f5783;strokeWidth=2;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="176" y="344" width="176" height="56" as="geometry" />
+        </mxCell>
+        <mxCell id="c-pool" value="KV 缓存池（Paged 物理块）&lt;br&gt;\([KV_0, KV_1, KV_2 \mid KV_3]\)" style="rounded=1;whiteSpace=wrap;html=1;absoluteArcSize=1;arcSize=8;fillColor=#fbf2df;strokeColor=#7b5518;strokeWidth=1.25;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="432" y="344" width="224" height="56" as="geometry" />
+        </mxCell>
+
+        <mxCell id="e-c1" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#2f5783;strokeWidth=1.25;endArrow=classic;endFill=1;" edge="1" parent="1" source="c-in" target="c-proj">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e-c2" value="k₃, v₃" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#7b5518;strokeWidth=1.25;endArrow=classic;endFill=1;fontFamily=Inter;fontSize=12;fontColor=#5c6067;verticalAlign=bottom;" edge="1" parent="1" source="c-proj" target="c-write">
+          <mxGeometry y="12" relative="1" as="geometry"><mxPoint as="offset" /></mxGeometry>
+        </mxCell>
+        <mxCell id="e-c3" value="q₃" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#2f5783;strokeWidth=1.25;endArrow=classic;endFill=1;fontFamily=Inter;fontSize=12;fontColor=#5c6067;align=right;" edge="1" parent="1" source="c-proj" target="c-attn">
+          <mxGeometry x="-0.1" y="-8" relative="1" as="geometry"><mxPoint as="offset" /></mxGeometry>
+        </mxCell>
+        <mxCell id="e-c4" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#7b5518;strokeWidth=1.25;endArrow=classic;endFill=1;" edge="1" parent="1" source="c-write" target="c-pool">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e-c5" value="读 0..3" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#7b5518;strokeWidth=1.25;endArrow=classic;endFill=1;fontFamily=Inter;fontSize=12;fontColor=#5c6067;verticalAlign=bottom;" edge="1" parent="1" source="c-pool" target="c-attn">
+          <mxGeometry y="-12" relative="1" as="geometry"><mxPoint as="offset" /></mxGeometry>
+        </mxCell>
+
+        <mxCell id="note" value="缓存把投影从 O(T²) 降到 O(T)，但每步解码仍需把历史 KV[0..T] 全量搬进片上计算。" style="text;html=1;align=left;verticalAlign=middle;whiteSpace=wrap;fontFamily=Inter;fontSize=12;fontColor=#5c6067;" vertex="1" parent="1">
+          <mxGeometry x="16" y="424" width="656" height="24" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

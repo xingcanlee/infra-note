@@ -1,0 +1,78 @@
+<mxfile host="app.diagrams.net" modified="2026-11-15T01:55:00.000Z" agent="wisp" version="24.0.0" type="device">
+  <diagram id="ced-runtime" name="CED 编码解码分离与 SWA 有界重放运行时架构">
+    <mxGraphModel dx="0" dy="0" grid="1" gridSize="8" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="672" pageHeight="400" math="1" shadow="0" background="#ffffff">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+
+        <!-- Top Flow: CED Encoder -> One-shot KV Proj -> Decoder Replay -->
+        <mxCell id="ced-enc" value="&lt;b&gt;Causal Encoder&lt;/b&gt;&lt;br&gt;&lt;b&gt;L0–L19（20 层）&lt;/b&gt;&lt;br&gt;&lt;br&gt;Prefill 全长 \(N\)&lt;br&gt;激活：\(8\text{B}\)/token&lt;br&gt;输出隐状态 \(H_{L/2}\)" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fontFamily=Inter;fontSize=14;fillColor=#e9f2fb;strokeColor=#2f5783;strokeWidth=1.25;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="16" y="24" width="144" height="176" as="geometry" />
+        </mxCell>
+
+        <mxCell id="ced-proj" value="&lt;b&gt;CED 一次投影 Eq.(1)&lt;/b&gt;&lt;br&gt;\(C_l = H_{L/2} W_l^{KV}\)&lt;br&gt;\(Z_l = H_{L/2} W_l^Z \;(l &gt; L/2)\)" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fontFamily=Inter;fontSize=12;fillColor=#fbf2df;strokeColor=#7b5518;strokeWidth=1.25;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="224" y="24" width="168" height="80" as="geometry" />
+        </mxCell>
+
+        <mxCell id="ced-skip" value="&lt;b&gt;早期前缀（前 \(N - n_{\mathrm{win}}\)）&lt;/b&gt;&lt;br&gt;Decoder 跳过逐层重算&lt;br&gt;全局 KV 由 \(H_{L/2}\) 直接投影" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fontFamily=Inter;fontSize=12;fillColor=#eaedf2;strokeColor=#464e57;strokeWidth=1;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="224" y="128" width="168" height="72" as="geometry" />
+        </mxCell>
+
+        <mxCell id="ced-dec" value="&lt;b&gt;Decoder L20–L39（20 层）&lt;/b&gt;&lt;br&gt;&lt;br&gt;Prefill 仅重放近窗 \(n_{\mathrm{win}}\)&lt;br&gt;SWA KV 按当前 \(H_l\) 计算&lt;br&gt;Decode 全模型 \(16\text{B}\)/token&lt;br&gt;开销 \(\mathcal{O}(\frac{NL}{2} + n_{\mathrm{win}}\frac{L}{2})\)" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fontFamily=Inter;fontSize=14;fillColor=#e9f5e9;strokeColor=#2c522d;strokeWidth=1.25;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="456" y="24" width="200" height="176" as="geometry" />
+        </mxCell>
+
+        <!-- Clean non-overlapping parallel horizontal arrows -->
+        <mxCell id="e-enc-proj" value="\(H_{L/2}\)" style="edgeStyle=orthogonalEdgeStyle;rounded=1;endArrow=classic;strokeColor=#2f5783;strokeWidth=2;fontFamily=Inter;fontSize=12;fontColor=#2f5783;verticalAlign=bottom;verticalLabelPosition=top;labelBackgroundColor=none;exitX=1;exitY=0.23;entryX=0;entryY=0.5;html=1;" edge="1" parent="1" source="ced-enc" target="ced-proj">
+          <mxGeometry y="4" relative="1" as="geometry">
+            <mxPoint as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e-enc-skip" value="近窗截断" style="edgeStyle=orthogonalEdgeStyle;rounded=1;endArrow=classic;dashed=1;strokeColor=#464e57;strokeWidth=1.25;fontFamily=Inter;fontSize=12;fontColor=#464e57;verticalAlign=bottom;verticalLabelPosition=top;labelBackgroundColor=none;exitX=1;exitY=0.80;entryX=0;entryY=0.5;html=1;" edge="1" parent="1" source="ced-enc" target="ced-skip">
+          <mxGeometry y="4" relative="1" as="geometry">
+            <mxPoint as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e-proj-dec" value="全局 KV" style="edgeStyle=orthogonalEdgeStyle;rounded=1;endArrow=classic;strokeColor=#7b5518;strokeWidth=2;fontFamily=Inter;fontSize=12;fontColor=#7b5518;verticalAlign=bottom;verticalLabelPosition=top;labelBackgroundColor=none;exitX=1;exitY=0.5;entryX=0;entryY=0.23;html=1;" edge="1" parent="1" source="ced-proj" target="ced-dec">
+          <mxGeometry y="4" relative="1" as="geometry">
+            <mxPoint as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e-skip-dec" value="末 \(n_{\mathrm{win}}\)" style="edgeStyle=orthogonalEdgeStyle;rounded=1;endArrow=classic;strokeColor=#2c522d;strokeWidth=2;fontFamily=Inter;fontSize=12;fontColor=#2c522d;verticalAlign=bottom;verticalLabelPosition=top;labelBackgroundColor=none;exitX=1;exitY=0.5;entryX=0;entryY=0.80;html=1;" edge="1" parent="1" source="ced-skip" target="ced-dec">
+          <mxGeometry y="4" relative="1" as="geometry">
+            <mxPoint as="offset" />
+          </mxGeometry>
+        </mxCell>
+
+        <!-- Bottom Container: Persistent Storage Tiering & SWA Bounded Replay (Two tiers feeding HBM runtime) -->
+        <mxCell id="tier-box" value="" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#f4f4f2;strokeColor=#5c6067;strokeWidth=1;container=0;" vertex="1" parent="1">
+          <mxGeometry x="16" y="232" width="640" height="152" as="geometry" />
+        </mxCell>
+        <mxCell id="tier-hdr" value="多轮智能体缓存分层：全局 KV 长存 SSD，SWA 仅留小容量 DRAM 并在失效时有界重放" style="text;html=1;align=left;verticalAlign=middle;fontFamily=Inter;fontSize=12;fontColor=#5c6067;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="24" y="240" width="616" height="24" as="geometry" />
+        </mxCell>
+
+        <mxCell id="tier-ssd" value="&lt;b&gt;SSD 全局 KV（≥ 72 h）&lt;/b&gt;&lt;br&gt;只存全局 KV（890 B/tok）&lt;br&gt;总持久化体积降至 1/8" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fontFamily=Inter;fontSize=12;fillColor=#fbf2df;strokeColor=#7b5518;strokeWidth=1.25;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="32" y="272" width="160" height="96" as="geometry" />
+        </mxCell>
+        <mxCell id="tier-hbm" value="&lt;b&gt;HBM 运行时恢复&lt;/b&gt;&lt;br&gt;加载全局 KV + 仅重算末&lt;br&gt;\(n_{\mathrm{win}}=128\) 步替代 \(L \times n_{\mathrm{win}}\)" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fontFamily=Inter;fontSize=12;fillColor=#e9f5e9;strokeColor=#2c522d;strokeWidth=1.25;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="256" y="272" width="168" height="96" as="geometry" />
+        </mxCell>
+        <mxCell id="tier-dram" value="&lt;b&gt;Host DRAM 池（10%）&lt;/b&gt;&lt;br&gt;分钟级短寿命 SWA 缓存&lt;br&gt;命中直读、过期即丢" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fontFamily=Inter;fontSize=12;fillColor=#eaedf2;strokeColor=#464e57;strokeWidth=1;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="488" y="272" width="152" height="96" as="geometry" />
+        </mxCell>
+
+        <mxCell id="e-tier-12" value="直载全局" style="edgeStyle=orthogonalEdgeStyle;rounded=1;endArrow=classic;strokeColor=#7b5518;strokeWidth=2;fontFamily=Inter;fontSize=12;fontColor=#7b5518;verticalAlign=bottom;verticalLabelPosition=top;labelBackgroundColor=none;html=1;" edge="1" parent="1" source="tier-ssd" target="tier-hbm">
+          <mxGeometry y="4" relative="1" as="geometry">
+            <mxPoint as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e-tier-32" value="热 SWA" style="edgeStyle=orthogonalEdgeStyle;rounded=1;startArrow=classic;endArrow=none;strokeColor=#464e57;strokeWidth=1.25;fontFamily=Inter;fontSize=12;fontColor=#464e57;verticalAlign=bottom;verticalLabelPosition=top;labelBackgroundColor=none;html=1;" edge="1" parent="1" source="tier-hbm" target="tier-dram">
+          <mxGeometry y="4" relative="1" as="geometry">
+            <mxPoint as="offset" />
+          </mxGeometry>
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

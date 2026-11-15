@@ -1,0 +1,74 @@
+<mxfile host="app.diagrams.net" version="24.7.17">
+  <diagram id="four-boundaries-arch" name="four-boundaries-arch">
+    <mxGraphModel dx="0" dy="0" grid="1" gridSize="8" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="688" pageHeight="496" math="0" shadow="0">
+      <root>
+        <mxCell id="0"/>
+        <mxCell id="1" parent="0"/>
+
+        <mxCell id="q1_box" value="" style="rounded=1;absoluteArcSize=1;arcSize=8;fillColor=#f4f4f2;strokeColor=#2f5783;strokeWidth=1.25;container=0;dashed=1;" vertex="1" parent="1">
+          <mxGeometry x="16" y="16" width="320" height="224" as="geometry"/>
+        </mxCell>
+        <mxCell id="q1_lbl" value="边界 1：冻结虚拟设备指针" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;whiteSpace=wrap;fontFamily=Inter;fontSize=12;fontStyle=1;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="32" y="24" width="288" height="24" as="geometry"/>
+        </mxCell>
+        <mxCell id="q1_a" value="硬规则：捕获后输入/工作区虚拟地址永久冻结&lt;br&gt;不得重分配输入或在前向中修改持久化缓存" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;fillColor=#e9f2fb;strokeColor=#2f5783;strokeWidth=1.25;" vertex="1" parent="1">
+          <mxGeometry x="32" y="56" width="288" height="48" as="geometry"/>
+        </mxCell>
+        <mxCell id="q1_b" value="违例后果：旧地址被释放重用 -&amp;gt; 静默算错&lt;br&gt;_buffers.update 写入非对称指针导致图失效" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;fillColor=#fcedec;strokeColor=#984646;strokeWidth=1.25;" vertex="1" parent="1">
+          <mxGeometry x="32" y="112" width="288" height="48" as="geometry"/>
+        </mxCell>
+        <mxCell id="q1_c" value="vLLM 防线：InputBuffers 原位 .copy_()&lt;br&gt;DEBUG 校验指针 + 禁 _buffers.update" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fontFamily=Inter;fontSize=12;fontStyle=1;fontColor=#1d1d1f;fillColor=#eaedf2;strokeColor=#464e57;strokeWidth=1;" vertex="1" parent="1">
+          <mxGeometry x="32" y="168" width="288" height="56" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="q2_box" value="" style="rounded=1;absoluteArcSize=1;arcSize=8;fillColor=#f4f4f2;strokeColor=#2f5783;strokeWidth=1.25;container=0;dashed=1;" vertex="1" parent="1">
+          <mxGeometry x="352" y="16" width="320" height="224" as="geometry"/>
+        </mxCell>
+        <mxCell id="q2_lbl" value="边界 2：静态形状与 Padding 安全" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;whiteSpace=wrap;fontFamily=Inter;fontSize=12;fontStyle=1;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="368" y="24" width="288" height="24" as="geometry"/>
+        </mxCell>
+        <mxCell id="q2_a" value="硬规则：只按固定 BatchDescriptor 规格重放&lt;br&gt;所有变长请求必须向更大捕获档位向上对齐" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;fillColor=#e9f2fb;strokeColor=#2f5783;strokeWidth=1.25;" vertex="1" parent="1">
+          <mxGeometry x="368" y="56" width="288" height="48" as="geometry"/>
+        </mxCell>
+        <mxCell id="q2_b" value="违例后果：Padding 行写坏共享状态&lt;br&gt;错写 KV Cache、阻塞 MoE 专家负载统计" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;fillColor=#fcedec;strokeColor=#984646;strokeWidth=1.25;" vertex="1" parent="1">
+          <mxGeometry x="368" y="112" width="288" height="48" as="geometry"/>
+        </mxCell>
+        <mxCell id="q2_c" value="vLLM 防线：PAD_SLOT_ID=-1 屏蔽 KV 写回&lt;br&gt;BlockTables 脏行清理 + padding 屏蔽 MoE" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fontFamily=Inter;fontSize=12;fontStyle=1;fontColor=#1d1d1f;fillColor=#eaedf2;strokeColor=#464e57;strokeWidth=1;" vertex="1" parent="1">
+          <mxGeometry x="368" y="168" width="288" height="56" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="q3_box" value="" style="rounded=1;absoluteArcSize=1;arcSize=8;fillColor=#f4f4f2;strokeColor=#7b5518;strokeWidth=1.25;container=0;dashed=1;" vertex="1" parent="1">
+          <mxGeometry x="16" y="256" width="320" height="224" as="geometry"/>
+        </mxCell>
+        <mxCell id="q3_lbl" value="边界 3：捕获期间零 Host 同步" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;whiteSpace=wrap;fontFamily=Inter;fontSize=12;fontStyle=1;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="32" y="264" width="288" height="24" as="geometry"/>
+        </mxCell>
+        <mxCell id="q3_a" value="硬规则：Stream Capture 仅在构建指令图&lt;br&gt;Host 侧不可读取任何 GPU 未完成计算结果" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;fillColor=#fbf2df;strokeColor=#7b5518;strokeWidth=1.25;" vertex="1" parent="1">
+          <mxGeometry x="32" y="296" width="288" height="48" as="geometry"/>
+        </mxCell>
+        <mxCell id="q3_b" value="违例后果：.item() / .cpu() / 动态分支直接报错&lt;br&gt;触发 cudaErrorStreamCaptureUnsupported" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;fillColor=#fcedec;strokeColor=#984646;strokeWidth=1.25;" vertex="1" parent="1">
+          <mxGeometry x="32" y="352" width="288" height="48" as="geometry"/>
+        </mxCell>
+        <mxCell id="q3_c" value="vLLM 防线：NumPy / async_tensor_h2d&lt;br&gt;prepare_inputs_to_capture 零同步构造" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fontFamily=Inter;fontSize=12;fontStyle=1;fontColor=#1d1d1f;fillColor=#eaedf2;strokeColor=#464e57;strokeWidth=1;" vertex="1" parent="1">
+          <mxGeometry x="32" y="408" width="288" height="56" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="q4_box" value="" style="rounded=1;absoluteArcSize=1;arcSize=8;fillColor=#f4f4f2;strokeColor=#7b5518;strokeWidth=1.25;container=0;dashed=1;" vertex="1" parent="1">
+          <mxGeometry x="352" y="256" width="320" height="224" as="geometry"/>
+        </mxCell>
+        <mxCell id="q4_lbl" value="边界 4：多流 Fork-Join 闭合与跨秩一致" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;whiteSpace=wrap;fontFamily=Inter;fontSize=12;fontStyle=1;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="368" y="264" width="288" height="24" as="geometry"/>
+        </mxCell>
+        <mxCell id="q4_a" value="硬规则：捕获内从主流分叉出的所有辅助流&lt;br&gt;必须在 capture_end 前靠 wait_stream 汇合" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;fillColor=#fbf2df;strokeColor=#7b5518;strokeWidth=1.25;" vertex="1" parent="1">
+          <mxGeometry x="368" y="296" width="288" height="48" as="geometry"/>
+        </mxCell>
+        <mxCell id="q4_b" value="违例后果：Unjoined 流触发捕获失败或悬空竞争&lt;br&gt;DP 多卡选型分歧（FULL vs Eager）导致死锁" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;fillColor=#fcedec;strokeColor=#984646;strokeWidth=1.25;" vertex="1" parent="1">
+          <mxGeometry x="368" y="352" width="288" height="48" as="geometry"/>
+        </mxCell>
+        <mxCell id="q4_c" value="vLLM 防线：sync_prev / join_after_forward&lt;br&gt;EngramPrefetch.join + dispatch_cg_sync_dp" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fontFamily=Inter;fontSize=12;fontStyle=1;fontColor=#1d1d1f;fillColor=#eaedf2;strokeColor=#464e57;strokeWidth=1;" vertex="1" parent="1">
+          <mxGeometry x="368" y="408" width="288" height="56" as="geometry"/>
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

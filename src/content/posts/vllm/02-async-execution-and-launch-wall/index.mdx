@@ -1,0 +1,273 @@
+---
+title: '02 异步执行模型与发射墙'
+pubDate: 2026-10-27
+category: 'AI Infra'
+series: { id: vllm, order: 3 }
+tags: [vLLM, Ascend, PyTorch, Roofline, Profiling]
+description: '从零拆解 PyTorch 异步流队列与 Launch Wall 发射墙成因，推导 .item() 同步排水与 Async Scheduling 掩盖边界，对照双仓库异步源码。'
+toc: true
+---
+
+在[第 01 篇：PagedAttention 与连续批处理调度](../01-paged-attention-and-scheduler/)中，我们已经把显存碎片与变长批调度的问题解决掉了：并发请求被打包成紧致的物理块与统一 token 预算，理论上硬件算力再也不该空等。然而在真实线上服务里，只要你把小批量（small-batch）decode 阶段的推理进程拉进 Nsight Systems 或昇腾 msprof，往往会看见一幅反直觉的画面：**GPU / NPU 的计算流时间线上布满了密密麻麻的黑色空洞——计算内核只跑了几微秒，设备却动辄空转十多微秒。**
+
+设备明明是全速芯片，为什么一半以上的时间都在发呆？根因不在芯片算力不够，而在 **CPU 侧“下发算子指令”的速度追不上设备侧“做完算子”的速度**。这一篇我们从零拆开 PyTorch 异步执行流队列模型，量化 **发射墙（Launch Wall）**、隐式同步排水与 **Async Scheduling（异步调度）** 各自能治什么病、又各自停在哪里。
+
+## 从零看懂 PyTorch 的生产者—消费者异步队列
+
+很多工程师初学 PyTorch 时，容易误以为代码执行到 `y = x @ w` 时，GPU 就同步算完矩阵乘然后才进入下一行 Python。真实运行机制完全不同：CPU 与 GPU（或昇腾 NPU）之间隔着一条**异步任务队列（CUDA Stream / CANN Task Queue）**[^pytorch-cuda]，构成标准的“生产者—消费者”流水线。
+
+当 Python 代码调用一次算子时，Host 侧 CPU 必须依次走完四道固定工序：
+
+1. **Python 封装与检查层**：进入 `Module.__call__`、检查输入张量形状/类型、包装 Python 对象并触发 C++ 绑定（pybind / TorchBind）。
+2. **PyTorch C++ Dispatcher**：根据输入张量的 `DispatchKeySet`（是否开启 Autograd、是 CUDA 还是 PrivateUse1/NPU 设备、是否包含自定义算子核）路由到对应的底层注册实现。
+3. **Runtime 驱动入队**：调用 `cudaLaunchKernel`（CUDA）或 CANN `aclnn` 算子下发接口，把核函数指针、Grid/Block 维度与标量参数打包成一条命令描述符，**非阻塞地压入设备 Stream 队列**，然后立刻把控制权交还给 Python 继续准备下一行算子。
+4. **Device 异步流消费**：GPU / NPU 从流队列头部按 FIFO 顺序取出描述符真正上核运算；只要硬件队列里一直“存货充足”，算子与算子之间就能做到微秒级甚至零气泡的背靠背无缝衔接。
+
+### 什么是 Launch Wall（发射墙）
+
+问题就出在“存货能否一直充足”的不等式上。在 Roofline 视角下，推理的 prefill 阶段是算力受限（compute-bound），单次大矩阵乘可以在设备上稳稳跑上几百到上千微秒，CPU 花 20 微秒发完指令后立刻领先设备十几步；而进入 **decode 阶段**后，每条请求每步只算 1 个新 token，小批量 GEMV/GEMM 与逐元素 RMSNorm/RoPE/Residual 加法每次读写极少数据，GPU / NPU 上的单算子执行时间 $t_{\text{dev}}$ 往往压缩到 **5～15 微秒**[^pytorch-compile]。
+
+但无论矩阵有多小，CPU 每下发一次算子都要老老实实跑一遍 Python + C++ Dispatcher + Runtime 入队，单次发射耗时 $t_{\text{cpu}}$ 常常稳定在 **15～30 微秒**。一旦满足：
+
+$$
+t_{\text{cpu}} > t_{\text{dev}}
+$$
+
+生产者就再也跑不赢消费者：异步队列永远处于空池边缘，Device 每次只花几微秒算完当前算子，不得不停下来干等十几微秒，直到 CPU 从下一轮 Python 解释与分发循环里腾出手压进新指令。一个典型的 32 层 Transformer 单步 decode 往往包含 **300 个以上零碎算子**：CPU 光发射就要花 $320 \times 20\text{ us} \approx 6.4\text{ ms}$，而设备真正计算总共只用了 $320 \times 8\text{ us} \approx 2.56\text{ ms}$——这就是所谓的 **Launch Wall（发射墙）**。
+
+## 先看一个例子
+
+为了精准捕捉“CPU 领跑”、“小批发射墙”以及“一次隐式同步如何毁掉队列提前量”，我们把单步前向压缩成一个 **12 个算子的极简 decode 微层**（具体数值与后文 `toy.py` 完全一致）：
+
+1. **健康提前队列（重型算子：`CPU = 10 us`，`Dev = 18 us`）**：CPU 比设备快，op0 在 `t = 10 us` 入队启动，到 `t = 120 us` 时 CPU 已经把全部 12 个算子压进流里，而设备稳步持续计算至 `t = 226 us`，中间气泡为零，设备利用率高达 **95.6%**。
+2. **Decode 发射墙（小算子：`CPU = 20 us`，`Dev = 8 us`）**：设备虽然只要 `8 us` 就能算完一个算子，但必须等 CPU 花 `20 us` 才能拿到下一个算子。于是 op0 在 `20..28 us` 算完后，设备流硬生生空转 **`12 us`**（`28..40 us`）等 op1 入队；第 12 个算子直到 `12 × 20 + 8 = 248 us` 才落下，真正做计算的时间只有 `12 × 8 = 96 us`，硬件利用率骤跌至 **38.7%**。
+3. **步中 `.item()` 隐式同步排水（`sync@op5` + `12 us` D2H 回传）**：哪怕你处于“CPU 原本领跑队列”的健康状态（场景 1），如果在第 6 个算子（`op5`）处不小心写了一句 `if loss.item() > 0:` 或 `tensor.cpu()`，CPU 在 `60 us` 发完 `op5` 后便被驱动死死卡住——必须等 Device 把先前积压在队列里的 `op0..op5` 全部算完并耗费 `12 us` 传回 Host（总计堵塞到 `t = 130 us`），CPU 才能重新醒来发射 `op6`。不仅原本建立的队列深度归零，Device 在等 CPU 重新把 `op6` 压入流的这段间隙还多吞下一段 **队列排空气泡**，整段总时长被拉长到 `248 us`（`95.6% -> 87.1%`）；放在小批 decode 下更会把总耗时继续拖到 **`268 us`**（利用率跌至 **35.8%**）。
+
+![三类算子节奏下的 CPU 发射流与 Device 计算流时序对照](./diagrams/02-async-queue-walkthrough.drawio '图 1：三类算子节奏下的 CPU 发射流与 Device 计算流时序对照（1us = 4px，精准对齐示例数值）。')
+
+## 步间异步调度与步内发射墙的两层边界
+
+看清队列时序之后，很容易得出一个极关键的工程判断：**推理引擎里的 CPU 空转并非铁板一块，而是由“步间控制面”与“步内计算面”两股彼此正交的开销叠加而成**。如果不分清边界，只开异步调度往往会在 Profiler 里看到令人摸不着头脑的“零提升”。
+
+![PyTorch 四层算子发射栈与双正交瓶颈解法](./diagrams/02-launch-wall-arch.drawio '图 2：PyTorch 四层算子发射栈，以及步间 Async Scheduling 与步内图重放的分治边界。')
+
+### 1. 步间开销：为什么常规服务引擎会“每步等采样完才敢排下一批”
+
+在[第 01 篇](../01-paged-attention-and-scheduler/)里，调度器 `Scheduler.schedule()` 每一步都要决定这轮运行哪些请求、新生成了哪个 token ID、是否命中 EOS 停止符。如果在同步模式（`EngineCore.step()`）下运行：
+
+- Host 必须等待 GPU 把第 `t` 步前向算完、把采样好的 `sampled_token_ids` 从 HBM 拷回内存（D2H 同步），才知道“哪条请求结束了、每条请求下一轮要喂什么 token”；
+- 只有拿到这份真实 token ID，CPU 才开始跑第 `t+1` 步的 `Scheduler.schedule()` + `prepare_inputs()` + H2D 拷贝；
+- 在 CPU 忙着算 Python 块表、维护请求队列的这几百微秒里，GPU / NPU **整卡完全空转停摆**。
+
+### 2. 解法 A：Async Scheduling + `AsyncOutput` + 常驻 `InputBuffers`
+
+为了让第 `t+1` 步的调度决策与第 `t` 步的设备计算并行重叠，vLLM V1 引入了三项环环相扣的异步机制：
+
+1. **占位符预推（`AsyncScheduler`）**[^vllm-async-sched]：在 `vllm/v1/core/sched/async_scheduler.py` 中，`AsyncScheduler._update_after_schedule()` 不等设备采样返回，就在调度完成瞬间直接把正在 decode 的请求 `num_output_placeholders` 提前加 1（或多加投机草稿占位符）。于是 CPU 根本无需看第 `t` 步到底抽出了哪个词，立刻就能排布第 `t+1` 步的块分配与调度批计划！
+2. **双流异步回传（`AsyncOutput` 与 `step_with_batch_queue`）**[^vllm-core][^vllm-async-utils]：打开 `async_scheduling` 后，`EngineCore` 切换到 `step_with_batch_queue()`。执行器 `GPUModelRunner.sample_tokens()` 在独立拷贝流 `copy_stream` 上先调用 `copy_stream.wait_stream(main_stream)` 建立流间屏障，再把采样张量非阻塞拷贝回 pinned numpy（`async_copy_to_np(..., non_blocking=True)`）并记录阻塞型事件 `copy_event`（`torch.cuda.Event(blocking=True)`）。函数立即返回一个尚未同步的 `AsyncOutput` 句柄，CPU 转头就去跑第 `t+1` 步的调度与模型提交；直到队列头部真要取回第 `t` 步结果时，`AsyncOutput.get_output()` 才压线调用 `self.copy_event.synchronize()`。
+3. **常驻预分配缓冲（`InputBuffers`）**[^vllm-inputbuf]：如果每次 `prepare_inputs()` 都在设备现 alloc 新张量或做小数组拼接，PyTorch 内存分配器锁和隐式校验同样会打断流水。`InputBuffers` 在初始化阶段预先把 `input_ids`、`positions`、`query_start_loc`、`seq_lens` 按最大容量驻留在显存里，每步只做原地增量 `async_tensor_h2d(..., out=...)` 覆写，并禁止一切 `.item()`、`.cpu()` 或基于张量值的 Python `if` 分支。
+
+### 3. 解法 B 留下的真相：步内 Launch Wall 依然存在
+
+读到这里你可能会想：既然第 `t+1` 步调度已经与第 `t` 步设备计算重叠了，小批 decode 应该立刻起飞了吧？答案往往出乎意料：**如果第 `t` 步的前向依然跑在 PyTorch Eager 模式（300+ 个小算子逐个发射），单独开启 Async Scheduling 对小批 decode 几乎毫无加速！**
+
+原因用小学算术就能看穿：在 Eager 小批 decode 下，CPU 本身在发 `forward()` 的 320 个小算子就已经要耗时 `6.4 ms`，比 GPU 计算整步的 `2.56 ms` 还慢了一倍多——**CPU 自始至终没有空闲时间能拿来提前重叠第 `t+1` 步调度！** 只有当第 03～06 篇引入 **`torch.compile` 算子融合** 与 **CUDA Graph / ACLGraph 整图重放**把整步 320 个小算子的发射成本压成 **1 次 45 微秒的图启动调用** 之后，CPU 终于从发射墙里解脱出来，此时 Async Scheduling 原本隐藏的 450 微秒调度开销才能真正“藏”进 GPU `2.56 ms` 的计算窗口背面，把两者合力变成乘法级加速！
+
+## 动手验证：运行双流队列离散事件模拟器
+
+下面的 `toy.py`（99 行）构造了一个轻量级的双流离散事件仿真器（CPU 发射流与 Device 计算流推进各自时钟 `cpu_t` / `dev_t`，严格遵循 `dev_t = max(dev_t, cpu_t) + dev_us` 与 `.item()` 同步排水规则）。前半段精确验证前文的 12 算子示例；后半段用 `default_rng(42)` 模拟 **8 步 × 320 算子/步** 的真实 decode 服务，对照开关 Async Scheduling、步中 `.item()` 以及整图重放（Graph Replay）5 种组合的真实吞吐差距。
+
+```python
+from dataclasses import dataclass
+import numpy as np
+
+
+@dataclass
+class SimResult:
+    name: str
+    total_us: float
+    device_busy_us: float
+    idle_gap_us: float
+
+    @property
+    def util(self) -> float:
+        return self.device_busy_us / self.total_us
+
+
+def simulate_workload(
+    op_cpu: np.ndarray,
+    op_dev: np.ndarray,
+    steps: int,
+    sched_us: float,
+    async_sched: bool,
+    sync_op_idx: int | None = None,
+    sync_d2h_us: float = 15.0,
+    graph_launch_us: float | None = None,
+) -> SimResult:
+    cpu_t, dev_t, busy = 0.0, 0.0, 0.0
+    next_ready = 0.0
+    n_ops = op_cpu.shape[1]
+    for s in range(steps):
+        if async_sched:
+            # Async scheduling prepares step s while device finishes earlier work
+            cpu_t = max(cpu_t, next_ready) + sched_us
+        else:
+            # Synchronous scheduling waits for previous device completion first
+            cpu_t = max(cpu_t, dev_t) + sched_us
+
+        step_dev_total = float(op_dev[s].sum())
+        busy += step_dev_total
+        if graph_launch_us is not None:
+            launch_done = cpu_t + graph_launch_us
+            dev_t = max(dev_t, launch_done) + step_dev_total
+            cpu_t = launch_done
+            next_ready = cpu_t
+        else:
+            for k in range(n_ops):
+                cpu_t += float(op_cpu[s, k])
+                dev_t = max(dev_t, cpu_t) + float(op_dev[s, k])
+                if sync_op_idx is not None and k == sync_op_idx:
+                    # .item() / .cpu() drains device stream + adds D2H latency
+                    cpu_t = dev_t + sync_d2h_us
+            next_ready = cpu_t if async_sched else dev_t
+            if not async_sched:
+                cpu_t = dev_t + sync_d2h_us
+    total_us = max(cpu_t, dev_t)
+    return SimResult("", total_us, busy, total_us - busy)
+
+
+def main() -> None:
+    print("=== Worked example: 12-op decode mini-layer (CPU=20us/op, GPU=8us/op) ===")
+    cpu_12 = np.full((1, 12), 20.0)
+    dev_12 = np.full((1, 12), 8.0)
+    r_wall = simulate_workload(cpu_12, dev_12, 1, 0.0, True)
+    r_sync = simulate_workload(cpu_12, dev_12, 1, 0.0, True, sync_op_idx=5, sync_d2h_us=12.0)
+    r_graph = simulate_workload(cpu_12, dev_12, 1, 0.0, True, graph_launch_us=18.0)
+    print(f"1) Eager Launch Wall (cpu=20, dev=8): busy={r_wall.device_busy_us:.0f}us total={r_wall.total_us:.0f}us util={r_wall.util:.1%}")
+    print(f"2) With mid-step .item() sync@op5:    busy={r_sync.device_busy_us:.0f}us total={r_sync.total_us:.0f}us util={r_sync.util:.1%}")
+    print(f"3) Single Graph Replay (launch=18us): busy={r_graph.device_busy_us:.0f}us total={r_graph.total_us:.0f}us util={r_graph.util:.1%}")
+
+    r_ahead = simulate_workload(np.full((1, 12), 10.0), np.full((1, 12), 18.0), 1, 0.0, True)
+    r_drain = simulate_workload(np.full((1, 12), 10.0), np.full((1, 12), 18.0), 1, 0.0, True, sync_op_idx=5, sync_d2h_us=12.0)
+    print(f"4) Ahead queue (cpu=10, dev=18): clean={r_ahead.total_us:.0f}us ({r_ahead.util:.1%}) vs .item()_drain={r_drain.total_us:.0f}us ({r_drain.util:.1%})")
+
+    rng = np.random.default_rng(42)
+    steps, n_ops = 8, 320
+    op_cpu = rng.uniform(16.0, 24.0, size=(steps, n_ops))
+    op_dev = rng.uniform(6.0, 10.0, size=(steps, n_ops))
+    sched_us = 450.0
+
+    configs = [
+        ("SyncSched + Eager", False, None, None),
+        ("SyncSched + Eager + .item()", False, n_ops // 2, None),
+        ("AsyncSched + Eager", True, None, None),
+        ("SyncSched + GraphReplay", False, None, 45.0),
+        ("AsyncSched + GraphReplay", True, None, 45.0),
+    ]
+    print("\n=== 8-step x 320-op decode serving simulation ===")
+    results = []
+    for label, a_sched, s_idx, g_us in configs:
+        res = simulate_workload(op_cpu, op_dev, steps, sched_us, a_sched, sync_op_idx=s_idx, graph_launch_us=g_us)
+        res.name = label
+        results.append(res)
+        print(f"{res.name:28s} | total={res.total_us:8.1f}us | busy={res.device_busy_us:8.1f}us | idle={res.idle_gap_us:8.1f}us | util={res.util:5.1%}")
+    print(f"Speedup vs baseline: Async+Eager={results[0].total_us/results[2].total_us:.2f}x, Sync+Graph={results[0].total_us/results[3].total_us:.2f}x, Async+Graph={results[0].total_us/results[4].total_us:.2f}x")
+    print("OK 02")
+
+
+if __name__ == "__main__":
+    main()
+```
+
+实际运行 `toy.py` 得到的完整输出如下：
+
+```text
+=== Worked example: 12-op decode mini-layer (CPU=20us/op, GPU=8us/op) ===
+1) Eager Launch Wall (cpu=20, dev=8): busy=96us total=248us util=38.7%
+2) With mid-step .item() sync@op5:    busy=96us total=268us util=35.8%
+3) Single Graph Replay (launch=18us): busy=96us total=114us util=84.2%
+4) Ahead queue (cpu=10, dev=18): clean=226us (95.6%) vs .item()_drain=248us (87.1%)
+
+=== 8-step x 320-op decode serving simulation ===
+SyncSched + Eager            | total= 54964.9us | busy= 20397.0us | idle= 34567.9us | util=37.1%
+SyncSched + Eager + .item()  | total= 55148.2us | busy= 20397.0us | idle= 34751.3us | util=37.0%
+AsyncSched + Eager           | total= 54787.2us | busy= 20397.0us | idle= 34390.2us | util=37.2%
+SyncSched + GraphReplay      | total= 24357.0us | busy= 20397.0us | idle=  3960.0us | util=83.7%
+AsyncSched + GraphReplay     | total= 20892.0us | busy= 20397.0us | idle=   495.0us | util=97.6%
+Speedup vs baseline: Async+Eager=1.00x, Sync+Graph=2.26x, Async+Graph=2.63x
+OK 02
+```
+
+这组实测数字非常诚实，直接戳穿了实战中常见的一个排查误区：**只开 `AsyncSched + Eager`，设备利用率仅仅从 `37.1%` 微调到 `37.2%`（加速比 `1.00x`）**；而当通过 GraphReplay 打穿逐算子发射墙后，在 `SyncSched + GraphReplay` 上已经拿到 `83.7%` 利用率（`2.26x`），此时再叠加 `AsyncSched` 掩盖那 450 微秒调度与回传间隙，才一步跨越到 **97.6%** 利用率（**2.63x** 加速）！两者缺少任何一环都会在各自边界停滞。
+
+## 源码级对照：vLLM 与 vllm-ascend 中的异步与同步护栏
+
+深入双仓库源码（`vllm @ bb23c0a8` 与 `vllm-ascend @ 3649b8ff`），可以清楚看到两套后端为了保护这段脆弱的异步流水线分别加上了哪些护栏，又在什么地方被迫踩下隐式同步刹车[^vllm-async-utils][^vllm-ascend-guard]。
+
+![vLLM 两步异步流水线与 GPU/Ascend 同步护栏对照](./diagrams/02-async-step-runtime.drawio '图 3：vLLM EngineCore 两步流水重叠机制，以及 GPU 与 Ascend NPU Runner 的异步缓冲与同步护栏对照。')
+
+| 模块 / 阶段        | vLLM V1（MRV2 主路径）                                                                  | vllm-ascend（昇腾 NPU 路径）                                                                                                                                            | 对异步流水线的影响                                                                                                          |
+| :----------------- | :-------------------------------------------------------------------------------------- | :---------------------------------------------------------------------------------------------------------------------------------------------------------------------- | :-------------------------------------------------------------------------------------------------------------------------- |
+| **引擎步重叠**     | `EngineCore.step_with_batch_queue()`（`vllm/v1/engine/core.py`）+ `AsyncScheduler`      | 默认复用上游 `step_with_batch_queue`；若开启专属调度子类则由 `platform.py` 配对选用其 `Async*` 变体[^vllm-ascend-plat2]                                                 | 将第 `t+1` 步调度与第 `t` 步执行重叠，需保证前向过程中绝不回读未完结结果                                                    |
+| **异步采样回传**   | `AsyncOutput`（`vllm/v1/worker/gpu/async_utils.py`）使用 `copy_stream` + `copy_event`   | `AscendAsyncOutput`（`vllm_ascend/observability/runtime_guard/hooks.py`）包裹 `AsyncOutput.get_output()`                                                                | 运行时观测检查严格延后到 D2H trim 完成之后触发，避免额外插入中段同步[^vllm-ascend-guard]                                    |
+| **预分配输入缓冲** | `InputBuffers`（`vllm/v1/worker/gpu/input_batch.py`）+ `async_tensor_h2d`               | `AscendInputBuffers`（`vllm_ascend/worker/v2/input_batch.py`）额外维护 `seq_lens_cpu` 与 `seq_lens_np`                                                                  | NPU Attention 后端（如 FIA）需要 CPU 侧序列长度视图，比纯 GPU 多一份同步维护成本                                            |
+| **隐藏同步陷阱**   | 严格避免 `prepare_inputs` 阶段 `.cpu()` / `.item()`；图捕获输入仅依赖预先填好的设备张量 | `NPUModelRunner`（`vllm_ascend/worker/v2/model_runner.py`）设有 `num_computed_tokens_stream/event`，特定投机解码路径下触发 `.synchronize()` 或 `seq_lens.cpu().numpy()` | 源码明确注释该事件同步“在 D2H 完成前阻塞 CPU 提交，可能卡住异步流水”，是昇腾 NPU Profiling 重点排查点[^vllm-ascend-runner2] |
+
+这里尤其值得对照 NVIDIA 与昇腾两套端侧在异步流与 Host 同步上的深层分歧：
+
+- **NVIDIA CUDA 异步拷贝闭环**：`AsyncOutput` 在主计算流之外单独拉起 `copy_stream = torch.cuda.Stream()`，先 `wait_stream(main_stream)` 保证采样落盘，再将 `sampled_token_ids` 等异步拷回主机内存并记录 `torch.cuda.Event(blocking=True)`，避免 `get_output()` 忙等自旋锁死 CUDA Driver[^vllm-async-utils]。
+- **昇腾 CANN TaskQueue 与 Host 元数据拉扯**：`vllm_ascend/worker/v2/utils.py` 先用 `torch_cuda_wrapper()` 把 `torch.cuda.Stream` / `Event` 无缝映射到 `torch.npu.Stream` / `Event`，并发端在容器与生产脚手架中依赖 `TASK_QUEUE_ENABLE=1`（或 `2`）开启 CANN 算子异步派发队列；`AscendAsyncOutput` 严格把观测校验延后到 `AsyncOutput.get_output()` D2H 裁剪之后[^vllm-ascend-guard]。
+- **NPU 特有的 `seq_lens_cpu` 与投机回读门禁**：因为昇腾 Attention 后端常读取 Host 整型长度，且 `NPUModelRunner` 额外维护 `num_computed_tokens_stream` 与 `num_computed_tokens_event`，当投机验证路径无法命中 `_can_skip_spec_cpu_length_sync()` 时，`num_computed_tokens_event.synchronize()` 或 `.cpu().numpy()` 会充当微秒级流水闸门[^vllm-ascend-runner2]，正是昇腾 Profiling 时的重点核查项。
+
+## 代价与边界
+
+全面开启 Async Scheduling 与预分配常驻流水线并非毫无代价，实际部署时需要注意四项工程权衡：
+
+1. **占位符状态的回滚复杂度**：`AsyncScheduler` 敢提前把 `num_output_placeholders` 加 1，前提是假定请求下一步“还在继续”。如果第 `t` 步其实恰好采样出了 EOS，或者投机验证接受长度少于预期，`update_from_output` 阶段必须精准扣除多余占位、修正 `num_computed_tokens` 并回收多挂的临时 KV 块。
+2. **`InputBuffers` 与 `batch_queue` 的显存与主机内存开销**：为了容忍多个 in-flight batch 并行排队且不重分配内存，输入张量与页表缓冲都需按 `max_num_reqs` 与 `max_num_tokens` 静态顶格预留。
+3. **异常栈延迟报错（Async Fault Localization）**：因为内核入队是完全非阻塞的，越界访存或非法索引往往在真正触发它的那一步几步之后，才在某个毫不相干的 `copy_event.synchronize()` 处炸出异常栈（排查时往往需要临时关闭 `async_scheduling` 或打开同步环境变量定位真实算子）。
+4. **任何一条隐藏同步语句都能一票否决流水效果**：只要算子适配层里藏了一句张量标量判定、动态切分长度读取（如 `.tolist()` / `.item()`），甚至仅在非均匀分支下触发 `cpu()` 回读，整个异步队列深度就会瞬间归零退化为串行锁定。
+
+## 自测
+
+**1. 既然 PyTorch 在调用 `cudaLaunchKernel` / `aclnn` 时本身就是非阻塞入队的异步执行模型，为什么还要大费周章写 `EngineCore.step_with_batch_queue()` 与 `AsyncOutput`？两者针对的是同一段延迟吗？**
+
+<details>
+  <summary>参考答案</summary>
+  不是同一段。PyTorch 异步队列掩盖的是**同一步（step）内部算子 A 计算与算子 B 准备之间**的重叠；而
+  `EngineCore` 在没有开启 Async Scheduling 时，每跑完一步必须在步尾同步等待采样结果回到
+  Host，才能开始跑下一步的 Python 调度器（`Scheduler.schedule`）和块表构建。`step_with_batch_queue`
+  配合 `AsyncOutput` 的 `copy_stream` 把**相邻两步（step `t` 的设备计算/回传 vs step `t+1` 的 Python
+  调度）**重叠了起来。
+</details>
+
+**2. 为什么在上面 `toy.py` 的 `8-step × 320-op` 模拟里，单纯从 `SyncSched + Eager` 切换到 `AsyncSched + Eager` 加速比几乎等于 `1.00x`？在什么负载下只开 Async Scheduling 就会立竿见影？**
+
+<details>
+  <summary>参考答案</summary>
+  因为模拟设置里单个 decode 算子在 GPU 上只算 `~8 us`，而 CPU 下发要 `~20 us`，整个 `forward()` 本身已经严重 CPU-bound（6.4 ms > 2.56 ms），CPU 线程没有任何多余空闲时间能并行执行下一步调度。相反，当你的批大小较长或模型算子极重（`op_dev > op_cpu`，如 prefill 或大 batch 阶段，或算子已经经过 Graph 打包成单次 45 us 发射）时，CPU 提前下发完一整步流队列并产生长达数毫秒的等卡余量，此时开启 Async Scheduling 就能把调度耗时彻底藏掉。
+</details>
+
+**3. 动手修改 `toy.py`**：把 `main()` 里的 `op_dev = rng.uniform(6.0, 10.0, size=(steps, n_ops))` 改成大算子重型阶段 `op_dev = rng.uniform(25.0, 35.0, size=(steps, n_ops))`，重新运行观察 `SyncSched + Eager`、`SyncSched + Eager + .item()` 以及 `AsyncSched + Eager` 之间的总时间与利用率分化——验证一下当算子本身够“厚”时，`.item()` 排水和 `AsyncSched` 分别会带来多大幅度的升降。
+
+---
+
+走到这里，整个异步执行链条的最后一公里已经彻底摆上台面：**步间调度延迟**已被 `AsyncScheduler` 与 `AsyncOutput` 稳稳藏住，唯一卡死小批 decode 利用率的那堵高墙，只剩每步 `forward()` 里面那 **300 多次 Python 与 C++ Dispatcher 重复发射**。在接下来的[第 03 篇：torch.compile 与分段编译](../03-torch-compile-and-piecewise/)中，我们将拆解 `torch.compile` 与分段编译（Piecewise Compilation）如何把零碎动态图拆切成少而规整的静态子图；再紧接着用 CUDA Graph 与昇腾 ACLGraph，把整步上百次算子发射真正压缩成一次硬件级图重放。
+
+[^pytorch-cuda]: PyTorch 官方关于异步流执行与主机同步点的机制说明，见 [CUDA Semantics — Asynchronous execution](https://pytorch.org/docs/stable/notes/cuda.html#asynchronous-execution)。
+
+[^pytorch-compile]: PyTorch 2 编译与开销分析（阐述 Python Dispatch 开销与 Graph Capture 动机），见 [PyTorch 2: Faster Machine Learning Through Dynamic Python Bytecode Transformation and Graph Compilation](https://pytorch.org/assets/pytorch2-2.pdf), ASPLOS 2024。
+
+[^vllm-core]: vLLM 异步流水主循环 `EngineCore.step_with_batch_queue()`，见 [core.py](https://github.com/vllm-project/vllm/blob/bb23c0a81779ba733923a7dab9b840b4e533f6a5/vllm/v1/engine/core.py)。
+
+[^vllm-async-sched]: vLLM 占位符预推异步调度器 `AsyncScheduler`，见 [async_scheduler.py](https://github.com/vllm-project/vllm/blob/bb23c0a81779ba733923a7dab9b840b4e533f6a5/vllm/v1/core/sched/async_scheduler.py)。
+
+[^vllm-async-utils]: vLLM 独立拷出流与延迟事件同步 `AsyncOutput`，见 [async_utils.py](https://github.com/vllm-project/vllm/blob/bb23c0a81779ba733923a7dab9b840b4e533f6a5/vllm/v1/worker/gpu/async_utils.py)。
+
+[^vllm-inputbuf]: vLLM 常驻预分配缓冲与零重分配调度输入，见 [input_batch.py](https://github.com/vllm-project/vllm/blob/bb23c0a81779ba733923a7dab9b840b4e533f6a5/vllm/v1/worker/gpu/input_batch.py) 与 [model_runner.py](https://github.com/vllm-project/vllm/blob/bb23c0a81779ba733923a7dab9b840b4e533f6a5/vllm/v1/worker/gpu/model_runner.py)。
+
+[^vllm-ascend-plat2]: vllm-ascend 各专用调度器对 `async_scheduling` 子类的自动选择，见 [platform.py](https://github.com/vllm-project/vllm-ascend/blob/3649b8ff7fd69e707db2c634073d2b4c40eadf15/vllm_ascend/platform.py)。
+
+[^vllm-ascend-runner2]: vllm-ascend NPU 执行器中的 `AscendInputBuffers`、CPU 同步事件与 `seq_lens_cpu`，见 [input_batch.py](https://github.com/vllm-project/vllm-ascend/blob/3649b8ff7fd69e707db2c634073d2b4c40eadf15/vllm_ascend/worker/v2/input_batch.py) 与 [model_runner.py](https://github.com/vllm-project/vllm-ascend/blob/3649b8ff7fd69e707db2c634073d2b4c40eadf15/vllm_ascend/worker/v2/model_runner.py)。
+
+[^vllm-ascend-guard]: vllm-ascend 异步输出运行时检查包裹类 `AscendAsyncOutput`，见 [hooks.py](https://github.com/vllm-project/vllm-ascend/blob/3649b8ff7fd69e707db2c634073d2b4c40eadf15/vllm_ascend/observability/runtime_guard/hooks.py)。

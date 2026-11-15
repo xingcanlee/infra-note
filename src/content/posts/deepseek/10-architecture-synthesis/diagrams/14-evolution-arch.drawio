@@ -1,0 +1,47 @@
+<mxfile host="app.diagrams.net">
+  <diagram id="14-evolution-arch" name="DeepSeek-V2 到 V4.1 五代架构演进图谱">
+    <mxGraphModel dx="0" dy="0" grid="1" gridSize="8" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="0" pageScale="1" pageWidth="850" pageHeight="1100" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+
+        <mxCell id="g1" value="&lt;b&gt;DeepSeek-V2（打破 KV Cache 显存容量墙）&lt;/b&gt;&lt;br&gt;MLA 低秩投影缓存 + 推理矩阵吸收大幅压缩 KV；细粒度 DeepSeekMoE + 共享专家降低激活参数" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f2fb;strokeColor=#2f5783;fontColor=#1d1d1f;strokeWidth=1.5;fontSize=12;align=center;verticalAlign=middle;spacing=8;" vertex="1" parent="1">
+          <mxGeometry x="16" y="16" width="664" height="64" as="geometry" />
+        </mxCell>
+
+        <mxCell id="g2" value="&lt;b&gt;DeepSeek-V3（打破 FP8 精度与集群通信墙）&lt;/b&gt;&lt;br&gt;细粒度分块 FP8 + 无辅助损失路由均衡 + 因果串联 MTP（密集监督兼投机）+ DualPipe 跨节点重叠" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e3f5f3;strokeColor=#0f766e;fontColor=#1d1d1f;strokeWidth=1.5;fontSize=12;align=center;verticalAlign=middle;spacing=8;" vertex="1" parent="1">
+          <mxGeometry x="16" y="104" width="664" height="64" as="geometry" />
+        </mxCell>
+
+        <mxCell id="g3" value="&lt;b&gt;DeepSeek-V3.2（打破长序列注意力二次方瓶颈）&lt;/b&gt;&lt;br&gt;引入 DSA（Lightning Indexer + Top-K 选块）+ FlashMLA 稀疏核，把长上下文访存复杂度压向近线性" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e3f5f3;strokeColor=#0f766e;fontColor=#1d1d1f;strokeWidth=1.5;fontSize=12;align=center;verticalAlign=middle;spacing=8;" vertex="1" parent="1">
+          <mxGeometry x="16" y="192" width="664" height="64" as="geometry" />
+        </mxCell>
+
+        <mxCell id="g4" value="&lt;b&gt;DeepSeek-V4（打破静态知识浪费与深层拓扑墙）&lt;/b&gt;&lt;br&gt;CSA/HCA 分层压缩注意力 + Engram O(1) N-gram 查表记忆 + mHC（n=4 双随机流）+ MegaMoE 波次重叠" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#f5eef9;strokeColor=#4d335c;fontColor=#1d1d1f;strokeWidth=1.5;fontSize=12;align=center;verticalAlign=middle;spacing=8;" vertex="1" parent="1">
+          <mxGeometry x="16" y="280" width="664" height="64" as="geometry" />
+        </mxCell>
+
+        <mxCell id="g5" value="&lt;b&gt;DeepSeek-V4.1-Flash（打破单 token 890B 带宽与草稿串行瓶颈）&lt;/b&gt;&lt;br&gt;CSA2 + CED + 逆 RoPE（288 B NVFP4，每 token KV 降 5.5× 至 890 B）+ Mega-mHC + DSpark 半自回归" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#f5eef9;strokeColor=#4d335c;fontColor=#1d1d1f;strokeWidth=1.5;fontSize=12;align=center;verticalAlign=middle;spacing=8;" vertex="1" parent="1">
+          <mxGeometry x="16" y="368" width="664" height="72" as="geometry" />
+        </mxCell>
+
+        <mxCell id="e1" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#5c6067;strokeWidth=1.5;endArrow=block;endFill=1;" edge="1" parent="1" source="g1" target="g2">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e2" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#5c6067;strokeWidth=1.5;endArrow=block;endFill=1;" edge="1" parent="1" source="g2" target="g3">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e3" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#5c6067;strokeWidth=1.5;endArrow=block;endFill=1;" edge="1" parent="1" source="g3" target="g4">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e4" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#5c6067;strokeWidth=1.5;endArrow=block;endFill=1;" edge="1" parent="1" source="g4" target="g5">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <mxCell id="note" value="注：五代演化不是推翻重来，而是针对当前瓶颈做正交加法——所有底层加速结构在 V4.1 中被完整融合。" style="text;html=1;align=left;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=12;fontColor=#5c6067;strokeColor=none;fillColor=none;" vertex="1" parent="1">
+          <mxGeometry x="16" y="448" width="664" height="24" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

@@ -1,0 +1,95 @@
+<mxfile host="wisp-diagram">
+  <diagram id="ep-runtime" name="EP Runtime Execution: vLLM DeepEP vs vllm-ascend MC2">
+    <mxGraphModel dx="720" dy="688" grid="1" gridSize="8" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="720" pageHeight="688" math="1" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+
+        <mxCell id="router_out" value="路由输出：\((\mathrm{topk\_ids}, \mathrm{topk\_weights})\) 与隐状态 \(X\)（按 Expert Parallelism 跨卡分发）" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#f4f4f2;strokeColor=#5c6067;strokeWidth=1;fontFamily=Inter;fontSize=14;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="16" y="16" width="688" height="48" as="geometry" />
+        </mxCell>
+
+        <mxCell id="grp_cuda" value="NVIDIA GPU：vLLM + DeepEP 演进栈" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#f4f4f2;strokeColor=#e2e2dd;strokeWidth=1;dashed=1;verticalAlign=top;align=left;spacingLeft=12;spacingTop=4;fontFamily=Inter;fontSize=12;fontColor=#5c6067;container=0;" vertex="1" parent="1">
+          <mxGeometry x="16" y="96" width="320" height="528" as="geometry" />
+        </mxCell>
+
+        <mxCell id="cuda_legacy" value="旧版双路径（vllm@bb23c0a8）&lt;br&gt;Prefill：deepep_ht（NVLink+RDMA）&lt;br&gt;Decode：deepep_ll（纯 RDMA）&lt;br&gt;return_recv_hook 与计算重叠" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f2fb;strokeColor=#2f5783;strokeWidth=1;fontFamily=Inter;fontSize=14;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="32" y="128" width="288" height="96" as="geometry" />
+        </mxCell>
+
+        <mxCell id="cuda_v2" value="统一 EPBuffer（DeepEP@f6aa38fe）&lt;br&gt;deepep_v2 统一 dispatch / combine：&lt;br&gt;Prefill：do_expand &amp; do_cpu_sync=True&lt;br&gt;Decode 图：全 False + 片上全局 ID" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e3f5f3;strokeColor=#0f766e;strokeWidth=1.25;fontFamily=Inter;fontSize=14;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="32" y="272" width="288" height="96" as="geometry" />
+        </mxCell>
+
+        <mxCell id="cuda_gemm" value="moe_align_block_size 垫块重排&lt;br&gt;按 block_size=64/128 对齐补 pad&lt;br&gt;送入 Grouped GEMM Tensor Core&lt;br&gt;（Decode 按 2 的幂次分桶防重编译）" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#fceee4;strokeColor=#762f06;strokeWidth=1;fontFamily=Inter;fontSize=14;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="32" y="400" width="288" height="96" as="geometry" />
+        </mxCell>
+
+        <mxCell id="cuda_combine" value="异步 Combine + 共享专家重叠&lt;br&gt;开启 async_with_compute_stream&lt;br&gt;回传期间并行算 Shared Experts&lt;br&gt;支持 MXFP8 UE8M0 比例打包" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e3f5f3;strokeColor=#0f766e;strokeWidth=1;fontFamily=Inter;fontSize=14;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="32" y="528" width="288" height="80" as="geometry" />
+        </mxCell>
+
+        <mxCell id="grp_ascend" value="昇腾 NPU：vllm-ascend@3649b8ff" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#f4f4f2;strokeColor=#e2e2dd;strokeWidth=1;dashed=1;verticalAlign=top;align=left;spacingLeft=12;spacingTop=4;fontFamily=Inter;fontSize=12;fontColor=#5c6067;container=0;" vertex="1" parent="1">
+          <mxGeometry x="384" y="96" width="320" height="528" as="geometry" />
+        </mxCell>
+
+        <mxCell id="ascend_topk" value="片上融合 Top-K 算子&lt;br&gt;AscendFusedTopKRouter 调用：&lt;br&gt;npu_moe_gating_top_k（V3）&lt;br&gt;或 moe_gating_top_k_hash（V4）" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f2fb;strokeColor=#2f5783;strokeWidth=1;fontFamily=Inter;fontSize=14;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="400" y="128" width="288" height="96" as="geometry" />
+        </mxCell>
+
+        <mxCell id="ascend_mc2" value="双流重叠与 MC2 分发&lt;br&gt;AscendMoERunner 辅助流先行&lt;br&gt;SharedExperts Gate-Up；路由走&lt;br&gt;npu_moe_distribute_dispatch_v2" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e3f5f3;strokeColor=#0f766e;strokeWidth=1.25;fontFamily=Inter;fontSize=14;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="400" y="272" width="288" height="96" as="geometry" />
+        </mxCell>
+
+        <mxCell id="ascend_gmm" value="分组矩阵乘与量化融合&lt;br&gt;npu_grouped_matmul（split_item=2）&lt;br&gt;或融合激活量化算子&lt;br&gt;grouped_matmul_swiglu_quant_v2" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#fceee4;strokeColor=#762f06;strokeWidth=1;fontFamily=Inter;fontSize=14;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="400" y="400" width="288" height="96" as="geometry" />
+        </mxCell>
+
+        <mxCell id="ascend_combine" value="归约合并 / FusedMC2 MegaMoe&lt;br&gt;npu_moe_distribute_combine_v2&lt;br&gt;高阶融合 dispatch_ffn_combine&lt;br&gt;一站完成通信与全双工计算" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e3f5f3;strokeColor=#0f766e;strokeWidth=1;fontFamily=Inter;fontSize=14;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="400" y="528" width="288" height="80" as="geometry" />
+        </mxCell>
+
+        <mxCell id="note" value="注：DeepEP@f6aa38fe 已移除 low_latency_* 旧 API 并入 EPBuffer；昇腾 MC2 在通信算子内直接消化重排与部分融合。" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontFamily=Inter;fontSize=12;fontColor=#5c6067;" vertex="1" parent="1">
+          <mxGeometry x="16" y="640" width="688" height="24" as="geometry" />
+        </mxCell>
+
+        <mxCell id="e_top_cuda" style="edgeStyle=orthogonalEdgeStyle;rounded=1;endArrow=classic;html=1;strokeColor=#1d1d1f;strokeWidth=1.25;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" edge="1" parent="1" source="router_out" target="grp_cuda">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="176" y="80" />
+              <mxPoint x="176" y="80" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e_top_ascend" style="edgeStyle=orthogonalEdgeStyle;rounded=1;endArrow=classic;html=1;strokeColor=#1d1d1f;strokeWidth=1.25;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" edge="1" parent="1" source="router_out" target="grp_ascend">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="544" y="80" />
+              <mxPoint x="544" y="80" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+
+        <mxCell id="e_l12" value="接口统一" style="edgeStyle=orthogonalEdgeStyle;rounded=1;endArrow=classic;html=1;strokeColor=#5c6067;strokeWidth=1;dashed=1;fontFamily=Inter;fontSize=12;fontColor=#5c6067;" edge="1" parent="1" source="cuda_legacy" target="cuda_v2">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_l23" style="edgeStyle=orthogonalEdgeStyle;rounded=1;endArrow=classic;html=1;strokeColor=#1d1d1f;strokeWidth=1.25;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" edge="1" parent="1" source="cuda_v2" target="cuda_gemm">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_l34" style="edgeStyle=orthogonalEdgeStyle;rounded=1;endArrow=classic;html=1;strokeColor=#1d1d1f;strokeWidth=1.25;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" edge="1" parent="1" source="cuda_gemm" target="cuda_combine">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <mxCell id="e_r12" style="edgeStyle=orthogonalEdgeStyle;rounded=1;endArrow=classic;html=1;strokeColor=#1d1d1f;strokeWidth=1.25;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" edge="1" parent="1" source="ascend_topk" target="ascend_mc2">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_r23" style="edgeStyle=orthogonalEdgeStyle;rounded=1;endArrow=classic;html=1;strokeColor=#1d1d1f;strokeWidth=1.25;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" edge="1" parent="1" source="ascend_mc2" target="ascend_gmm">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_r34" style="edgeStyle=orthogonalEdgeStyle;rounded=1;endArrow=classic;html=1;strokeColor=#1d1d1f;strokeWidth=1.25;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" edge="1" parent="1" source="ascend_gmm" target="ascend_combine">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

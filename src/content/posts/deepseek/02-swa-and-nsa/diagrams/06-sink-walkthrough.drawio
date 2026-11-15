@@ -1,0 +1,40 @@
+<mxfile host="wisp-diagram">
+  <diagram id="sink-walkthrough" name="8词元实例：滑窗丢弃Sink与中段遗忘的Softmax演进">
+    <mxGraphModel dx="640" dy="392" grid="1" gridSize="8" guides="1" page="0" math="1" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="in_seq" value="8 词元原始打分（查询 \(q_7\)，滑窗 \(w=4\) 仅留 \([4..7]\)）&lt;br&gt;\(t=0\): \(6.0\)（Sink）｜\(t=1..3\): \(0.2,\,0.1,\,0.0\)｜\(t=4..7\): \(1.0,\,1.2,\,1.5,\,2.0\)" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#eaedf2;strokeColor=#464e57;strokeWidth=1.25;fontFamily=Inter;fontSize=14;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="0" y="0" width="624" height="64" as="geometry" />
+        </mxCell>
+        <mxCell id="col_full" value="① 全量注意 \([0..7]\)&lt;br&gt;\(p_0 = 95.00\%\) 吸收冗余&lt;br&gt;\(p_{4..7}\) 合计仅 \(4.22\%\)&lt;br&gt;作为输出基准 \(o_{\text{full}}\)" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#f4f4f2;strokeColor=#1d1d1f;strokeWidth=1.25;fontFamily=Inter;fontSize=14;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="0" y="104" width="192" height="120" as="geometry" />
+        </mxCell>
+        <mxCell id="col_win" value="② 纯滑窗 \([4..7]\)（丢 \(0\)）&lt;br&gt;局部暴涨 \(23.7\times\) 凑 \(100\%\)&lt;br&gt;\(\|\Delta o\| = 1.4393\)&lt;br&gt;\(D_{\text{KL}} = 26.24\)" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#fcedec;strokeColor=#984646;strokeWidth=1.5;fontFamily=Inter;fontSize=14;fontColor=#1d1d1f;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="216" y="104" width="192" height="120" as="geometry" />
+        </mxCell>
+        <mxCell id="col_sink" value="③ 留 Sink \(\{0\}\cup[4..7]\)&lt;br&gt;\(p_0 = 95.75\%\)，局部 \(4.25\%\)&lt;br&gt;\(\|\Delta o\| = 0.0122\)&lt;br&gt;\(D_{\text{KL}} = 0.16\)" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f5e9;strokeColor=#2c522d;strokeWidth=1.5;fontFamily=Inter;fontSize=14;fontColor=#1d1d1f;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="432" y="104" width="192" height="120" as="geometry" />
+        </mxCell>
+        <mxCell id="mid_trap" value="④ 纯 Sink + 滑窗的盲区：若关键事实落在中段 \(t=2\)（\(z_2=7.5\)，全量占 \(81.02\%\)）&lt;br&gt;滑出窗口后 \(p_2\) 归零（\(\|\Delta o\|=0.3097\)）→ 需要可检索长程稀疏（NSA）" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#fbf2df;strokeColor=#7b5518;strokeWidth=1.5;fontFamily=Inter;fontSize=14;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="0" y="264" width="624" height="64" as="geometry" />
+        </mxCell>
+        <mxCell id="note" value="注：所有数值由 toy.py 实测；KL 按平滑 \(\varepsilon=10^{-12}\) 计算（未平滑时丢弃非零项为 \(\infty\)），JSD 从 0.6049 降至 0.0027。" style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;fontFamily=Inter;fontSize=12;fontColor=#5c6067;" vertex="1" parent="1">
+          <mxGeometry x="0" y="344" width="624" height="32" as="geometry" />
+        </mxCell>
+        <mxCell id="e_in_full" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;endArrow=classic;html=1;strokeColor=#1d1d1f;strokeWidth=1.25;exitX=0.15384615384615385;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="in_seq" target="col_full">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_in_win" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;endArrow=classic;html=1;strokeColor=#984646;strokeWidth=1.25;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="in_seq" target="col_win">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_in_sink" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;endArrow=classic;html=1;strokeColor=#2c522d;strokeWidth=1.25;exitX=0.8461538461538461;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="in_seq" target="col_sink">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_sink_mid" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;endArrow=classic;html=1;strokeColor=#7b5518;strokeWidth=1.25;dashed=1;exitX=0.5;exitY=1;entryX=0.8461538461538461;entryY=0;" edge="1" parent="1" source="col_sink" target="mid_trap">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

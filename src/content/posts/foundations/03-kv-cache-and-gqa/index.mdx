@@ -1,0 +1,162 @@
+---
+title: '03 KV Cache 与头共享妥协：从显存带宽账本到 MQA 与 GQA'
+description: '理解自回归解码为何必须缓存历史 Key 与 Value，算清 64 层 MHA 的显存与带宽账本；对比 MQA 与 GQA 如何把算术强度拉升 g 倍，以及头共享背后的表达力妥协。'
+series: { id: foundations, order: 4 }
+pubDate: 2026-11-15
+tags: [DeepSeek, Attention, KV Cache, GQA, Roofline, vLLM, Ascend]
+category: AI Infra
+toc: true
+---
+
+自回归模型每吐出第 1001 个词元，注意力层都需要和前面 0 到 999 个历史词元的键（Key）和值（Value）做交互；而这批历史键值对与生成第 1000 个词元时算出的结果完全相同。如果不缓存它们，每次吐出新词元都要把整段前缀重新投影一遍，单序列投影计算量会从线性 $O(T)$ 膨胀到平方 $O(T^2)$；一旦缓存它们，64 层多头注意力在长上下文和大并发下又会迅速把 HBM 容量与访存带宽塞满。
+
+读完本章，你可以带走四件确定的事：
+
+1. **为什么 KV Cache 与重算在数学上逐位等价**：只投影当前新词元并按物理槽位追加写入，可以把线性投影开销压回 $O(T)$，双精度实测输出误差不超过 `1e-15`。
+2. **64 层 MHA 撞墙的精确账本**：64 个注意力头在 BF16 下每词元要吃掉 `2.0 MiB` 缓存；16 路并发跑 32K 上下文总缓存高达 `1024 GiB`，且单步解码算术强度仅有 `0.999 FLOP/B`。
+3. **MQA 与 GQA 如何靠头共享拉升算术强度**：把 $n_q$ 个 Query 头拆成 $n_{kv}$ 组共享同一份 Key/Value，每搬运 1 字节历史 KV 就能服务组内 $g = n_q / n_{kv}$ 个 Query 头，显存与带宽同步下降 $g$ 倍、算术强度抬升接近 $g$ 倍，但也引入了明确的表达力妥协。
+4. **生产推理框架如何落地槽位写入与分组调度**：在 vLLM 中由 `reshape_and_cache_flash` 写入 5D 分页池[^vllm-fa]，在 vllm-ascend 中由 `DeviceOperator.reshape_and_cache` 按硬件族路由至散射写入与融合推理注意力算子[^vllm-ascend-attn]。
+
+## 先看一个例子：3 步自回归生成，算一次缓存 vs 重算差多少
+
+假设一段 4 词元的提示词（$t = 0,1,2,3$）已经过 Prefill 阶段处理完毕，现在进入 Decode 第 4 步，根据新位置隐状态 $x_3$ 计算注意力输出 $y_3$。无缓存路径会把 `[x_0, x_1, x_2, x_3]` 重新送入 $W_K, W_V$ 线性层；有缓存路径只对 $x_3$ 做一次投影，把新算出的 $k_3, v_3$ 写入空闲物理槽位，再让 $q_3$ 读取历史 `[0..3]` 完成点积与加权和。
+
+![KV Cache 与无缓存重算的三步生成对比](./diagrams/03-kvcache-walkthrough.drawio)
+
+在没有 KV Cache 的情况下，生成长度 $T_{\text{gen}}$ 步时累计的前缀重算长度为首项 $T_{\text{prompt}}+1$、末项 $T_{\text{prompt}}+T_{\text{gen}}$ 的等差数列。对应到本章配套验证脚本 `toy.py` 中的 `T_prompt = 4, T_gen = 4` 最小算例：重算路径总共执行了 $5+6+7+8 = 26$ 次全词元投影，而开启 KV Cache 的 Decode 循环仅需 $4$ 次单词元投影，投影计算量直接相差 `6.50x`，序列越长这一倍差会越接近 $T/2$ 线性放大。
+
+## 显存与带宽账本：64 层 MHA 为什么会撞墙
+
+先把容量账算清楚。设模型共有 $L$ 层，每层有 $n_{kv}$ 个 Key/Value 头，单头维度为 $d_{\text{head}}$，每个元素占 $b_{\text{dtype}}$ 字节（BF16 取 2 字节）。由于每一层都要同时存下 Key 与 Value 两个张量，单个词元在全模型占用的 KV 缓存字节数为：
+
+$$
+M_{\text{tok}} = 2 \cdot L \cdot n_{kv} \cdot d_{\text{head}} \cdot b_{\text{dtype}}
+$$
+
+其中 $L$ 为 Transformer 层数，$n_{kv}$ 为每层缓存的 KV 头数，$d_{\text{head}}$ 为单头向量长度，$b_{\text{dtype}}$ 为单元素字节数；张量逻辑形状等价于每层维护 `[2, T, n_kv, d_head]`。代入主流 64 层标准 MHA 模型（$L=64$、$n_q = n_{kv} = 64$、$d_{\text{head}} = 128$、$b_{\text{dtype}} = 2$）：
+
+- **单词元缓存开销**：$2 \times 64 \times 64 \times 128 \times 2 = 2{,}097{,}152\text{ B} = 2048.0\text{ KiB/tok} = 2.0\text{ MiB/tok}$。
+- **并发与长文本容量爆炸**：当批大小 $B = 16$、序列长度 $T = 32768$ 时，总 KV 缓存达到 $16 \times 32768 \times 2.0\text{ MiB} = 1024.0\text{ GiB} = 1.0\text{ TiB}$，远远超出单张 `80 GB` HBM 加速卡的物理显存上限。
+
+比显存容量更隐蔽的是单步 Decode 的**带宽墙**。当批大小 $B = 1$、当前上下文长度为 $T$ 时，单层注意力只生成 1 个词元：向量 $q_t$ 的形状是 `[n_q, d_head]`，而历史键缓存 $K$ 与值缓存 $V$ 的形状各是 `[T, n_kv, d_head]`。统计注意力核函数内部的乘加浮点操作数与 HBM 读写字节数，算术强度为：
+
+$$
+I_{\text{attn}} = \frac{4 \, T \, n_q \, d_{\text{head}}}{\bigl(2(T + 1)\, n_{kv}\, d_{\text{head}} + 2\, n_q\, d_{\text{head}}\bigr)\cdot b_{\text{dtype}}}
+$$
+
+分子来自 $Q K^\top$ 与 $P V$ 两次矩阵向量乘（每次每元素 1 乘 1 加共 2 FLOP，合计 4 FLOP）；分母统计了读取 $Q$、写入新词元 $k_t, v_t$、读取长度为 $T$ 的历史 $K, V$ 以及写回输出 $O$ 的总字节流量。在标准 BF16 MHA（$n_{kv} = n_q$、$b_{\text{dtype}} = 2$）条件下，当 $T \gg 1$ 时分子分母约去共同因子：
+
+- 取 $T = 2048$ 代入上式，MHA 的解码算术强度仅有 `0.999 FLOP/B`（严格小于 `1 FLOP/B`）。
+- 这意味着硬件芯片每从 HBM 里辛苦搬运 2 个字节的数据，在片上计算单元只做 2 次浮点乘加就丢掉了，计算单元绝大部分时间都在空转等数据。
+
+## MQA 与 GQA：用头共享换取 g 倍带宽与算术强度
+
+既然标准 MHA 的症结在于每个 Query 头都要搬运自己专属的 Key/Value 头，最直接的工程思路就是让多个 Query 头共用同一组 Key 和 Value。把 $n_q$ 个 Query 头均匀切分为 $n_{kv}$ 组，每组包含 $g = n_q / n_{kv}$ 个 Query 头，这一连续谱系覆盖了三种典型结构：
+
+![MHA、GQA 与 MQA 的 Query 与 KV 头映射关系对比](./diagrams/03-mqa-gqa-arch.drawio)
+
+- **MHA（$g = 1$，$n_{kv} = n_q$）**：每个 Query 头独占 1 组 KV，容量最大、访存最多、算术强度被钉死在 `1 FLOP/B` 附近。
+- **MQA（Multi-Query Attention，$g = n_q$，$n_{kv} = 1$）**：Shazeer 在 2019 年提出让层内所有 Query 头共享唯一的一对 $K_0, V_0$[^mqa-paper]。在论文表 2 的 TPUv2 实测中，贪心解码单步增量注意力耗时从 MHA 的 `46 us/token` 骤降至 `3.8 us/token`（Beam-4 下从 `203 us` 降至 `32 us`）；对应到上面 64 层账本，每词元缓存缩减 64 倍至 `32.0 KiB/tok`，`B=16, 32K` 总量仅需 `16.0 GiB`。
+- **GQA（Grouped-Query Attention，$1 \lt g \lt n_q$）**：Ainslie 等人在 2023 年取两者的折中，让每 $g$ 个 Query 头共享 1 组 KV，并用均值池化（mean pooling）把已有 MHA 检查点的多头 KV 权重合并初始化，再做 `5%` 比例的继续训练（uptraining）[^gqa-paper]。在论文表 1 的 T5-XXL 测试集对比中，MHA 平均分 `47.2`、单样本耗时 `1.51 s`，MQA 耗时降至 `0.24 s` 但分数滑落至 `46.6`，而取 8 个 KV 头的 GQA-8 把平均分拉回到接近 MHA 的 `47.1`，同时单样本耗时仍控制在 `0.28 s`。
+
+为什么把 $n_{kv}$ 压小能让芯片矩阵计算单元真正「吃饱」？观察同组内 $g$ 个 Query 头对同 1 个共享 Key 头的打分乘法：原先 MHA 里每个头是 `[1, d_head] @ [d_head, T]` 的纯向量内积（GEMV）；而在 GQA 中，同一组里的 $g$ 个 Query 向量天然组成矩阵 `[g, d_head]`，与共享块 `[d_head, T_block]` 做**小矩阵乘** `[g, d_head] @ [d_head, T_block]`。片上只需从 HBM 加载 1 份历史 $K, V$ 到寄存器或共享内存，就能一次性喂给 $g$ 个 Query 头复用，算术强度随之按 $g$ 倍抬升——在 $T = 2048$ 的 64 层账本里，GQA-8 将解码算术强度从 `0.999 FLOP/B` 提升到 `7.965 FLOP/B`，MQA 则进一步升至 `62.031 FLOP/B`。
+
+但头共享是一场绕不开的**表达力妥协**。当模型从零训练且不加后续 uptraining 补救时，减少独立 KV 头的数量会直接削弱多子空间同时检索不同历史特征的能力：
+
+| 模型配置与来源                                                | KV 压缩比例       | 代表任务表现对比                                                                             |
+| :------------------------------------------------------------ | :---------------- | :------------------------------------------------------------------------------------------- |
+| 1B-word 语言模型（Shazeer 2019 表 3[^mqa-paper]）             | MHA vs MQA        | 困惑度（PPL）：MHA `29.9` vs MQA `30.2`（若硬砍 $h$ 或 $d_k$ 会退化到 `30.9`–`31.2`）        |
+| T5-XXL 微调（Ainslie 等 2023 表 1[^gqa-paper]）               | GQA-8（$g=8$）    | 综合均分：MHA `47.2` vs GQA-8 `47.1` vs MQA `46.6`                                           |
+| 7B Dense 从零训 1.33T tokens（DeepSeek-V2 表 8[^dsv2-paper]） | MHA / GQA-8 / MQA | MMLU `45.2` / `41.2` / `37.9`；BBH `37.0` / `35.6` / `33.2`；C-Eval `42.9` / `37.7` / `30.0` |
+
+DeepSeek-V2 团队在同一套 7B 稠密架构下做的从零对照实验尤其刺眼[^dsv2-paper]：同样训练 `1.33T` tokens，MHA 在 MMLU 拿到 `45.2`、C-Eval 拿到 `42.9`；换成 GQA-8 后分别掉到 `41.2` 与 `37.7`；激进降到 MQA 更是跌破 `37.9` 与 `30.0`。这正是下一章 MLA 要正面回答的命题：能不能**不靠砍掉独立头数**就把 KV 缓存压下来？
+
+## 生产 KV Cache 排布与写入调度
+
+在工业推理框架中，PagedAttention 将长序列切成固定大小的物理块（`block_size`），当前步新投影出来的 `[num_tokens, n_kv, d_head]` 并不是在 Python 里做动态 `torch.cat`，而是由融合内核按一维整型映射张量 `slot_mapping` 原地散射写入物理显存槽位。
+
+![vLLM 与 vllm-ascend 的 KV Cache 散射写入与读取路径](./diagrams/03-kv-runtime.drawio)
+
+以 **vLLM** 的 `FlashAttentionImpl`（`vllm/v1/attention/backends/flash_attn.py`）和 **vllm-ascend** 的 `AscendAttentionBackendImpl`（`vllm_ascend/attention/attention_v1.py`）为例，两条后端的写入与调度接口分工清晰：
+
+| 对比维度             | vLLM GPU（`flash_attn.py`[^vllm-fa]）                                                                  | vllm-ascend NPU（`attention_v1.py`[^vllm-ascend-attn]）                                                                          |
+| :------------------- | :----------------------------------------------------------------------------------------------------- | :------------------------------------------------------------------------------------------------------------------------------- |
+| **KV Pool 物理形状** | `[num_blocks, n_kv, block_size, 2 * head_size]` 合并视图                                               | `[2, num_blocks, block_size, n_kv, head_size]`，量化分支支持 `NZ_FMT_LAST_DIM = 32` 5D 分形排布                                  |
+| **槽位散射算子**     | `do_kv_cache_update` 调用 `.transpose(1, 2).split(head_size, dim=-1)` 后触发 `reshape_and_cache_flash` | `DeviceOperator.reshape_and_cache` 在 A2/A3 调用 `npu_scatter_pa_kv_cache`，310P 调用 `_npu_reshape_and_cache`[^vllm-ascend-dev] |
+| **分组注意力读取**   | `FlashAttention` CUDA 内核内部按 `num_q_heads / num_kv_heads` 索引偏移复用读取同一组 KV                | `forward_fused_infer_attention` 以 `TND` 布局调用 `npu_fused_infer_attention_score` 或 `_v2`                                     |
+| **混合批处理路由**   | 依赖 `FlashAttentionMetadata` 统计 `num_prefill_tokens` 与 `num_decode_tokens` 同批调度                | 对 Chunked Prefill 等长前缀采用 `_forward_fia_chunked_prefill_split` 拆分后合流                                                  |
+
+两条硬件后端在布局对齐上的约束差异尤为明显：
+
+- **NVIDIA GPU 关注 TMA 步长对齐**：`FlashAttentionImpl.forward`（`flash_attn.py:1241-1258, 1378-1403`）在拆分 K/V 并送入 `_FA4_DENSE_ATTENTION_KERNEL` 之前，必须先执行 `canonicalize_singleton_dim_strides` 规整单元素维度的步长，以满足 Hopper/Blackwell TMA 引擎至少 16 字节对齐的硬件契约。
+- **昇腾 NPU 关注 `128` 块长、`TND` 紧致包与分形视图**：`AscendAttentionBackend.get_supported_kernel_block_sizes` 默认锁定 `[128]` 以贴合 DaVinci AI Core 块搬运粒度；在融合算子 `npu_fused_infer_attention_score_v2` 中直接接收紧致变长序列布局 `input_layout="TND"`；开启 `C8` 量化缓存时，`AscendC8AttentionBackendImpl._nz_5d_view` 按 `NZ_FMT_LAST_DIM = 32` 转成五维分形视图喂给硬件。
+
+需要留意一个工程细节：无论是在 GPU 上用 CUDA 块索引偏移，还是在昇腾 NPU 上用亲和算子读取，GQA 的 Query 头分组对齐都不会在显存里真的复制 $g$ 份 KV 物理数据，而是直接把 `[n_kv]` 个物理头地址交给底层算子，由算子在片上寄存器与本地缓存中完成跨 $g$ 个 Query 头的广播复用。
+
+## 数值验证：缓存一致性与带宽账本
+
+下面用纯 NumPy 实现可复现的验证脚本（`toy.py`）。上半部分分别在 MHA（`n_kv=8`）、GQA（`n_kv=2`）与 MQA（`n_kv=1`）三种拓扑下对比「全前缀重算」与「增量追加 KV Cache」的每步解码输出；下半部分精确计算 64 层生产模型的单词元容量、并发显存占用与 $T=2048$ 解码算术强度：
+
+```python
+def attn_step_cached(x_t, wq, wk, wv, k_cache, v_cache, n_q, n_kv):
+    d_model = x_t.shape[0]
+    d_head = d_model // n_q
+    g = n_q // n_kv
+    q_t = (x_t @ wq).reshape(n_q, d_head)
+    k_t = (x_t @ wk).reshape(n_kv, d_head)
+    v_t = (x_t @ wv).reshape(n_kv, d_head)
+    k_cache.append(k_t)
+    v_cache.append(v_t)
+    k_all = np.repeat(np.stack(k_cache, axis=0), g, axis=1)
+    v_all = np.repeat(np.stack(v_cache, axis=0), g, axis=1)
+    scores = np.einsum("hd,khd->hk", q_t, k_all) / np.sqrt(d_head)
+    probs = softmax(scores, axis=-1)
+    out = np.einsum("hk,khd->hd", probs, v_all).reshape(d_model)
+    return out, 2 * d_model * (d_model + 2 * n_kv * d_head)
+```
+
+运行该脚本（`uv run toy.py`）的实测输出如下：
+
+```text
+[equiv] n_q= 8, n_kv= 8 (g= 1) | max_abs_diff=8.88e-16 | proj_flops_ratio(full/cached)=6.50x
+[equiv] n_q= 8, n_kv= 2 (g= 4) | max_abs_diff=7.22e-16 | proj_flops_ratio(full/cached)=6.50x
+[equiv] n_q= 8, n_kv= 1 (g= 8) | max_abs_diff=8.33e-16 | proj_flops_ratio(full/cached)=6.50x
+
+--- 64-Layer Ledger (n_q=64, d_head=128, BF16, T_ctx=2048 decode) ---
+MHA   (n_kv=64, g= 1):  2048.0 KiB/tok | B=16,32K: 1024.0 GiB | Decode AI= 0.999 FLOP/B
+GQA-8 (n_kv= 8, g= 8):   256.0 KiB/tok | B=16,32K:  128.0 GiB | Decode AI= 7.965 FLOP/B
+MQA   (n_kv= 1, g=64):    32.0 KiB/tok | B=16,32K:   16.0 GiB | Decode AI=62.031 FLOP/B
+OK 03
+```
+
+三组头映射的数值差全部控制在双精度机器舍入误差（`8.88e-16` 以内），同时清楚展示了从 MHA 到 GQA-8 再到 MQA 时显存与算术强度各自呈 `8x` 与 `64x` 的同步迁移。
+
+## 代价与边界
+
+- **GQA 的硬件天花板依然存在**：即便压缩到 GQA-8，64 层模型在 `B=16, 32K` 下仍需 `128.0 GiB` KV 缓存，且 `7.965 FLOP/B` 仍远低于主流训练/推理卡两百以上的算术强度拐点（ridge point），需要进一步靠增加 Decode 并发批大小或压缩单层 KV 维度来弥补。
+- **张量并行（TP）下的头数约束**：当使用 8 卡甚至更高路数 TP 切分权重时，如果模型的 $n_{kv}$ 小于 TP 度（例如 MQA 的 $n_{kv}=1$ 或 GQA-4 跑在 TP8 上），每张卡不得不各自复制完整一份相同的 KV 缓存，省下来的显存红利会被并行复制抵消。
+- **结构性瓶颈未破**：GQA 本质上是在**显存省量**与**独立特征头数**之间做二选一。要打破这组零和博弈，必须换一种代数视角——不再粗暴删减头数，而是先把多头 Key/Value 联合压缩进低秩潜在空间保存，只在需要做乘法时再由投影矩阵等价重组。这就是[系列三 DeepSeek 01：多头潜在注意力（MLA）](../../deepseek/01-mla/)要彻底拆解的机制；而在继续优化架构压缩之前，下一章我们先回到内核本身，看看哪怕不压缩 KV 头数，**FlashAttention** 如何用片上分块消除 $O(N^2)$ 中间显存读写。
+
+## 自测与动手实验
+
+在继续阅读下一章前，先用下面三个问题核对核心直觉：
+
+1. 为什么给推理加上 KV Cache 后，投影矩阵的输入长度从 $O(T)$ 变成了 $O(1)$，但解码阶段却依然容易撞上性能瓶颈？
+2. 在 GQA-8 中，KV 缓存体积比 MHA 缩小了 8 倍，为什么单步解码的算术强度也会跟着放大接近 8 倍，而不是保持不变？
+3. 如果要把一个 `n_kv = 4` 的 GQA 模型强行部署在 8 卡张量并行（TP=8）集群上，单卡实际持有的 KV Cache 总量会比单卡部署时减半还是翻倍？
+
+**动手实验**：打开本章目录中的 `toy.py`，在 `print_ledger()` 里把 `t_decode` 从 `2048` 依次改小成 `64`、再改大成 `32768`，重新执行 `uv run toy.py` 观察三组结构 `Decode AI` 的变化趋势——你会看到当上下文短到几十个词元时，读取 $Q$ 和写回 $O$ 的固定流量会把 MQA 的算术强度拉离 `64` 渐近线；而当上下文上万之后，三者几乎严格落在 `1`、`8`、`64` 这三条水平线上。
+
+理清 KV Cache 的内存账与 GQA 妥协后，下一步要把注意力从「存了多少 KV」转向「计算 $QK^\top$ 时怎么避免 $O(N^2)$ 中间分数把 HBM 写爆」。请继续阅读 [04 · FlashAttention 与硬件对齐内核：从在线 Softmax 到 FA-4、FlashMLA 与昇腾融合注意力](../04-flash-attention/)。
+
+[^mqa-paper]: Noam Shazeer. _Fast Transformer Decoding: One Write-Head is All You Need_ (`arXiv:1911.02150`), 2019, Section 2 & Tables 1–3.
+
+[^gqa-paper]: Joshua Ainslie et al. _GQA: Training Generalized Multi-Query Transformer Models from Multi-Head Checkpoints_ (`arXiv:2305.13245`), 2023, Section 2–3 & Table 1.
+
+[^dsv2-paper]: DeepSeek-AI. _DeepSeek-V2: A Strong, Economical, and Efficient Mixture-of-Experts Language Model_ (`arXiv:2405.04434`), 2024, Appendix D.1 Table 8.
+
+[^vllm-fa]: vLLM (`vllm@bb23c0a8`): `vllm/v1/attention/backends/flash_attn.py` 中的 `FlashAttentionImpl.forward` 与 `do_kv_cache_update`（调用 `vllm/_custom_ops.py` 的 `reshape_and_cache_flash`）。
+
+[^vllm-ascend-attn]: vllm-ascend (`vllm-ascend@3649b8ff`): `vllm_ascend/attention/attention_v1.py` 中的 `AscendAttentionBackendImpl.reshape_and_cache`、`forward_fused_infer_attention` 与 `AscendC8AttentionBackendImpl._nz_5d_view`。
+
+[^vllm-ascend-dev]: vllm-ascend (`vllm-ascend@3649b8ff`): `vllm_ascend/device/device_op.py` 中的 `DeviceOperator.reshape_and_cache`（默认/A2/A3 调用 `npu_scatter_pa_kv_cache`，`Ascend310PDeviceAdaptor` 调用 `torch_npu._npu_reshape_and_cache`）。

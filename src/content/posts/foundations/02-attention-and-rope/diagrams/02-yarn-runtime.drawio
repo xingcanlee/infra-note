@@ -1,0 +1,51 @@
+<mxfile host="wisp-diagram">
+  <diagram id="d02-yarn" name="02-yarn-runtime">
+    <mxGraphModel dx="664" dy="424" grid="1" gridSize="8" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="664" pageHeight="424" math="1" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+
+        <!-- Top Row: 3 Frequency Bands -->
+        <mxCell id="b_high" value="&lt;b&gt;高频短波段（低维索引）&lt;/b&gt;&lt;br&gt;周期数 \(&gt; \beta_{\text{fast}}=32\)&lt;br&gt;保留原频率 \(\theta_i\)&lt;br&gt;护住局部相邻词序" style="rounded=1;whiteSpace=wrap;html=1;absoluteArcSize=1;arcSize=8;fillColor=#e3f5f3;strokeColor=#0f766e;strokeWidth=1.5;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="16" y="16" width="168" height="128" as="geometry" />
+        </mxCell>
+        <mxCell id="b_mid" value="&lt;b&gt;中频线性斜坡区&lt;/b&gt;&lt;br&gt;线性斜坡 \(\text{ramp}\in(0,1)\)&lt;br&gt;在 \(\theta_i\) 与 \(\theta_i/s\) 间&lt;br&gt;平滑混合过渡" style="rounded=1;whiteSpace=wrap;html=1;absoluteArcSize=1;arcSize=8;fillColor=#fbf2df;strokeColor=#7b5518;strokeWidth=1.5;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="248" y="16" width="168" height="128" as="geometry" />
+        </mxCell>
+        <mxCell id="b_low" value="&lt;b&gt;低频长波段（高维索引）&lt;/b&gt;&lt;br&gt;周期数 \(&lt; \beta_{\text{slow}}=1\)&lt;br&gt;全量缩放 \(\theta_i / s\)&lt;br&gt;撑开长距离全局外推" style="rounded=1;whiteSpace=wrap;html=1;absoluteArcSize=1;arcSize=8;fillColor=#e9f2fb;strokeColor=#2f5783;strokeWidth=1.5;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="480" y="16" width="168" height="128" as="geometry" />
+        </mxCell>
+
+        <!-- Middle: YaRN Frequency Mixer -->
+        <mxCell id="mixer" value="&lt;b&gt;YaRN 分频斜坡混合器（\(L=4096,\,s=40\)）&lt;/b&gt;&lt;br&gt;\(\theta'_i = (1-\text{extrap}_i)\cdot\frac{\theta_i}{s} + \text{extrap}_i\cdot\theta_i\quad(\text{extrap}=1-\text{ramp})\)" style="rounded=1;whiteSpace=wrap;html=1;absoluteArcSize=1;arcSize=8;fillColor=#f4f4f2;strokeColor=#5c6067;strokeWidth=1.5;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="16" y="184" width="632" height="80" as="geometry" />
+        </mxCell>
+
+        <!-- Bottom: Temperature mscale & MLA Production Landing -->
+        <mxCell id="mscale" value="&lt;b&gt;注意力温度补偿 \(\text{mscale}\)&lt;/b&gt;&lt;br&gt;\(\text{mscale}=0.1\ln(s)+1=1.3689\)&lt;br&gt;抑制长上下文注意力熵发散" style="rounded=1;whiteSpace=wrap;html=1;absoluteArcSize=1;arcSize=8;fillColor=#fbf2df;strokeColor=#7b5518;strokeWidth=1.5;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="16" y="304" width="288" height="96" as="geometry" />
+        </mxCell>
+        <mxCell id="mla_scale" value="&lt;b&gt;DeepSeek-V3 生产落地&lt;/b&gt;&lt;br&gt;\(\text{softmax\_scale}\leftarrow \text{softmax\_scale}\times\text{mscale}^2\)&lt;br&gt;等效缩放因数 \(\text{mscale}^2=1.8739\)" style="rounded=1;whiteSpace=wrap;html=1;absoluteArcSize=1;arcSize=8;fillColor=#e9f2fb;strokeColor=#2f5783;strokeWidth=1.5;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="368" y="304" width="280" height="96" as="geometry" />
+        </mxCell>
+
+        <!-- Connectors -->
+        <mxCell id="e1" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#0f766e;strokeWidth=1.5;endArrow=block;endFill=1;exitX=0.5;exitY=1;entryX=0.133;entryY=0;" edge="1" parent="1" source="b_high" target="mixer">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e2" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#7b5518;strokeWidth=1.5;endArrow=block;endFill=1;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="b_mid" target="mixer">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e3" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#2f5783;strokeWidth=1.5;endArrow=block;endFill=1;exitX=0.5;exitY=1;entryX=0.867;entryY=0;" edge="1" parent="1" source="b_low" target="mixer">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e4" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#7b5518;strokeWidth=1.5;endArrow=block;endFill=1;exitX=0.228;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="mixer" target="mscale">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e5" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#2f5783;strokeWidth=1.5;endArrow=block;endFill=1;exitX=0.778;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="mixer" target="mla_scale">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

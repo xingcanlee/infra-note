@@ -94,8 +94,19 @@
       "PingFang SC",
       "monospace"
     ],
-    "hand": ["Excalifont", "Virgil", "Noto Sans SC Variable", "PingFang SC", "sans-serif"],
-    "$comment": "hand 仅用于 Excalidraw 手绘风图表。中文统一回落到 Noto Sans SC，不使用小赖体。"
+    "hand": [
+      "Inter Variable",
+      "Noto Sans SC Variable",
+      "-apple-system",
+      "BlinkMacSystemFont",
+      "PingFang SC",
+      "HarmonyOS Sans SC",
+      "MiSans",
+      "Noto Sans CJK SC",
+      "Microsoft YaHei",
+      "sans-serif"
+    ],
+    "$comment": "hand 与 sans 统一使用 Inter + Noto Sans SC 印刷体，保留 Excalidraw 框线手绘感的同时确保技术术语清晰易读。"
   },
   "type": {
     "base-px": { "mobile": 16, "desktop": 17 },

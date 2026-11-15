@@ -1,0 +1,60 @@
+<mxfile host="wisp-diagram">
+  <diagram id="moe-arch" name="DeepSeekMoE Algorithm Evolution: V2 to V3 to V4">
+    <mxGraphModel dx="672" dy="608" grid="1" gridSize="8" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="672" pageHeight="608" math="1" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+
+        <mxCell id="grp_v2" value="阶段 1 · DeepSeekMoE（2401.06066）：细粒度切分 + 共享专家隔离" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#f4f4f2;strokeColor=#e2e2dd;strokeWidth=1;dashed=1;verticalAlign=top;align=left;spacingLeft=12;spacingTop=4;fontFamily=Inter;fontSize=12;fontColor=#5c6067;container=0;" vertex="1" parent="1">
+          <mxGeometry x="16" y="16" width="640" height="144" as="geometry" />
+        </mxCell>
+        <mxCell id="v2_base" value="传统 Top-2 MoE&lt;br&gt;\(N=16, K=2\)&lt;br&gt;\(\binom{16}{2}=120\) 种组合&lt;br&gt;知识混杂与冗余" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#eaedf2;strokeColor=#464e57;strokeWidth=1;fontFamily=Inter;fontSize=14;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="32" y="48" width="184" height="96" as="geometry" />
+        </mxCell>
+        <mxCell id="v2_fine" value="细粒度切分（\(m=4\)）&lt;br&gt;拆为 \(mN=64\) 个小专家&lt;br&gt;单专家维度缩为 \(1/m\)&lt;br&gt;组合飙升至 \(4.43 \times 10^9\)" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e3f5f3;strokeColor=#0f766e;strokeWidth=1;fontFamily=Inter;fontSize=14;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="232" y="48" width="208" height="96" as="geometry" />
+        </mxCell>
+        <mxCell id="v2_shared" value="共享专家隔离（\(K_s\)）&lt;br&gt;共享专家承接共性句法&lt;br&gt;路由专家专精细分领域&lt;br&gt;辅以专家/设备均衡损失" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e3f5f3;strokeColor=#0f766e;strokeWidth=1.25;fontFamily=Inter;fontSize=14;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="456" y="48" width="184" height="96" as="geometry" />
+        </mxCell>
+
+        <mxCell id="grp_v3" value="阶段 2 · DeepSeek-V3（2412.19437）：Sigmoid 节点受限 + 无辅助损失均衡" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#f4f4f2;strokeColor=#e2e2dd;strokeWidth=1;dashed=1;verticalAlign=top;align=left;spacingLeft=12;spacingTop=4;fontFamily=Inter;fontSize=12;fontColor=#5c6067;container=0;" vertex="1" parent="1">
+          <mxGeometry x="16" y="192" width="640" height="168" as="geometry" />
+        </mxCell>
+        <mxCell id="v3_group" value="Sigmoid + 节点受限路由&lt;br&gt;\(N=256\) 分 8 个节点组&lt;br&gt;组内 Top-2 之和定组序&lt;br&gt;仅选前 \(M=4\) 节点&lt;br&gt;严格封顶跨机 IB 流量" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f2fb;strokeColor=#2f5783;strokeWidth=1;fontFamily=Inter;fontSize=14;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="32" y="224" width="192" height="120" as="geometry" />
+        </mxCell>
+        <mxCell id="v3_bias" value="动态偏置负载均衡&lt;br&gt;选路：\(s'_{i,t} = s_{i,t} + b_i\)&lt;br&gt;超载 \(b_i \leftarrow b_i - \gamma\)&lt;br&gt;欠载 \(b_i \leftarrow b_i + \gamma\)&lt;br&gt;消除辅助损失干扰梯度" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#fceee4;strokeColor=#762f06;strokeWidth=1.25;fontFamily=Inter;fontSize=14;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="240" y="224" width="192" height="120" as="geometry" />
+        </mxCell>
+        <mxCell id="v3_weight" value="无偏加权 + 不丢弃词元&lt;br&gt;权重 \(g_{i,t}\) 读取原始 \(s_{i,t}\)&lt;br&gt;极小序列均衡 \(\alpha=10^{-4}\)&lt;br&gt;全程 No Token-Dropping&lt;br&gt;671B 总参数 / 37B 激活" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e3f5f3;strokeColor=#0f766e;strokeWidth=1;fontFamily=Inter;fontSize=14;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="448" y="224" width="192" height="120" as="geometry" />
+        </mxCell>
+
+        <mxCell id="grp_v4" value="阶段 3 · DeepSeek-V4 / V4.1（2026）：SqrtSoftplus 与多模态/哈希路由" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#f4f4f2;strokeColor=#e2e2dd;strokeWidth=1;dashed=1;verticalAlign=top;align=left;spacingLeft=12;spacingTop=4;fontFamily=Inter;fontSize=12;fontColor=#5c6067;container=0;" vertex="1" parent="1">
+          <mxGeometry x="16" y="392" width="640" height="144" as="geometry" />
+        </mxCell>
+        <mxCell id="v4_affinity" value="亲和度升级（dsv4_topk）&lt;br&gt;\(s = \sqrt{\mathrm{softplus}(z)}\)&lt;br&gt;\(z>20\) 取线性防溢出&lt;br&gt;避免 Sigmoid 梯度饱和" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f2fb;strokeColor=#2f5783;strokeWidth=1;fontFamily=Inter;fontSize=14;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="32" y="424" width="192" height="96" as="geometry" />
+        </mxCell>
+        <mxCell id="v4_vl" value="多模态独立偏置&lt;br&gt;文本用 bias&lt;br&gt;图像哨兵段用 bias_vl&lt;br&gt;消除跨模态抢专家冲突" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#fceee4;strokeColor=#762f06;strokeWidth=1;fontFamily=Inter;fontSize=14;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="240" y="424" width="192" height="96" as="geometry" />
+        </mxCell>
+        <mxCell id="v4_hash" value="移除节点限制 + 哈希路由&lt;br&gt;全域 Top-6（256/384 专家）&lt;br&gt;浅层 FFN 改哈希路由 MoE&lt;br&gt;配合 Wave EP / MegaMoE" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e3f5f3;strokeColor=#0f766e;strokeWidth=1.25;fontFamily=Inter;fontSize=14;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="448" y="424" width="192" height="96" as="geometry" />
+        </mxCell>
+
+        <mxCell id="note" value="注：三代均延续“细粒度路由 + 共享专家隔离”骨架；V3 解决损失干扰与跨机带宽墙，V4 进一步消除饱和区并按模态隔离偏置。" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontFamily=Inter;fontSize=12;fontColor=#5c6067;" vertex="1" parent="1">
+          <mxGeometry x="16" y="552" width="640" height="32" as="geometry" />
+        </mxCell>
+
+        <mxCell id="e_12" style="edgeStyle=orthogonalEdgeStyle;rounded=1;endArrow=classic;html=1;strokeColor=#1d1d1f;strokeWidth=1.25;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" edge="1" parent="1" source="grp_v2" target="grp_v3">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_23" style="edgeStyle=orthogonalEdgeStyle;rounded=1;endArrow=classic;html=1;strokeColor=#1d1d1f;strokeWidth=1.25;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" edge="1" parent="1" source="grp_v3" target="grp_v4">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

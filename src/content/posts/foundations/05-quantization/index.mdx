@@ -1,0 +1,244 @@
+---
+title: '05 模型与 KV 量化：从 INT8、FP8 细粒度缩放到 MXFP4 与昇腾量化差异'
+description: '从 Roofline 带宽与算力收益出发，手算拆解 INT8、FP8 E4M3 与 MXFP4 微缩放格式，结合 DeepSeek-V3、vLLM 与 vLLM-Ascend 源码对比离群值治理、KV 量化及 NVIDIA 与昇腾硬件适配差异。'
+series: { id: foundations, order: 6 }
+pubDate: 2026-11-15
+tags: [Quantization, FP8, MXFP4, ModelSlim, NVIDIA, Ascend]
+category: AI Infra
+toc: true
+---
+
+前两章 [03 KV Cache 与头共享妥协](../03-kv-cache-and-gqa/) 与 [04 FlashAttention 与硬件对齐内核](../04-flash-attention/) 算清了历史 KV 的显存带宽账本，并把注意力中间结果从 HBM 往返里解放出来，但线性层权重与压缩后的 KV Cache 仍默认按 `BF16` 每次搬运 `2 B`。
+
+当单卡显存和带宽成为主要约束时，**量化（Quantization）** 用更少比特编码张量，把显存读写体积降到原来的 $1/2$ 到 $1/4$，同时解锁硬件上的低精度矩阵算力单元。
+
+## 一、为什么必须量化：Roofline 双重收益与手算起步
+
+回顾 [01 硬件与 Roofline](../01-hardware-and-roofline/) 的瓶颈分界，低精度在 LLM 推理的两个阶段同时带来收益，但发力点完全不同：
+
+- **Decode 阶段（访存受限）**：自回归每次只生成一个 token（有效算术强度极低），权重读取占据绝大部分时间；把权重从 `BF16` 压到 8-bit 或 4-bit，HBM 搬运字节数分别降为 $1/2$ 与约 $1/3.76$，生成吞吐几乎同步倍增。
+- **Prefill 阶段（算力受限）**：长提示词矩阵乘的算术强度高；NVIDIA Tensor Core 与昇腾 Cube 单元对 `INT8` 或 `FP8` 的峰值 FLOPS/TOPS 通常达到 `BF16` 的 `2×`，直接压缩首字延迟（TTFT）。
+
+先用一个 **4 元素对称量化手算例** 建立直觉。设原向量 $x = [0.42, -1.18, 0.05, 0.89]$，目标整数区间为对称 `[-127, 127]`（跳过补码不对称的 `-128` 以便正负范围一致）：
+
+1. **求缩放因子 $s$**：取绝对值最大值 $a_{\max} = \max|x| = 1.18$，得到步长 $s = a_{\max} / 127 = 1.18 / 127 \approx 0.009291$。
+2. **量化取整 $q$**：按 $q = \text{clip}(\text{round}(x / s), -127, 127)$ 映射，得 $x / s \approx [45.20, -127.00, 5.38, 95.79]$，四舍五入后为 $q = [45, -127, 5, 96]$。
+3. **反量化重建 $\hat{x}$**：按 $\hat{x} = q \cdot s$ 还原，得 $\hat{x} \approx [0.4181, -1.1800, 0.0465, 0.8920]$。
+
+每个元素的量化截断误差 $|x_i - \hat{x}_i|$ 在理论上有严格上界 $s / 2 \approx 0.004646$。本例最大绝对误差发生在元素 `0.05` 上（$|0.05 - 5s| = 0.003543 \le s/2$）。
+
+把一整个张量共用一个 $s$ 称为 **Per-Tensor（逐张量）** 量化；把每个权重输出通道或激活每个 token 切分出来独立求 $s$，分别称为 **Per-Channel（逐通道）** 与 **Per-Token（逐词元）**；进一步把张量沿规约维切成固定大小的子块，则是 **Group-wise / Block-wise（分组/分块）** 量化。
+
+## 二、数值格式全景：INT8、FP8 与 MXFP4 微缩放
+
+同样占用 8-bit 或 4-bit，整数均匀网格与浮点对数网格对大动态范围的表达能力截然不同。下面把生产推理最核心的四种格式拆开对比：
+
+| 格式           | 位宽布局（S/E/M） | 最大有限值          | 缩放因子粒度                 | 均摊单元素字节 | 典型硬件与角色                  |
+| :------------- | :---------------- | :------------------ | :--------------------------- | :------------- | :------------------------------ |
+| `INT8`（对称） | 1S + 7 幅值       | `127`（整数步）     | Per-Tensor / Token / Channel | `1.00 B`       | 910B 主力 W8A8、老架构通用      |
+| `FP8 E4M3FN`   | 1S + 4E + 3M      | `448`（无 Inf）     | Per-Tensor 或 `128 × 128`    | `1.00 B`       | Ada/Hopper、DeepSeek-V3 前向    |
+| `FP8 E5M2`     | 1S + 5E + 2M      | `57344`（含 Inf）   | Per-Tensor / Block           | `1.00 B`       | 训练反向梯度、极宽动态范围      |
+| `MXFP4`（OCP） | 1S + 2E + 1M      | `6`（每 32 维共享） | 每 32 元素 1 个 8-bit `E8M0` | `0.53125 B`    | Blackwell SM100、昇腾 A5（950） |
+
+先看同样是 8-bit 的 **`E4M3` 与 `E5M2` 分工**。按 OCP / NVIDIA 规范[^fp8_e4m3]，前向推理常用的 `float8_e4m3fn` 把 `e=15, m=7` 留给 `NaN` 而舍弃了无穷大编码，把有限数值上限推到 $2^8 \times (1 + 6/8) = 448$。
+
+相比 `E5M2` 虽然指数少 1 bit、动态范围收窄，但 `E4M3` 多出的 1 bit 尾数让每个 2 的幂次区间内排满 `8` 个均匀刻度，相对精度提升一倍。因为大语言模型前向激活与权重很少突破百万级数量级，却对局部相对分辨率极为敏感，所以前向推理几乎清一色采用 `E4M3`，而把 `E5M2` 留给跨度极大的反向梯度。
+
+再看更激进的 **4-bit 微缩放格式 `MXFP4`**。4-bit `E2M1` 只有 16 个比特组合，去掉符号位与零之后，正半轴一共只有 **7 个非零离散幅值**：$\{0.5, 1, 1.5, 2, 3, 4, 6\}$（连正负共 15 个有限值）。
+
+如此稀疏的 15 个点一旦放在全张量尺度下，只要有一个大数撑开分母，几乎所有常规数值都会直接坍缩成 `0`。OCP MX 标准[^mx_spec] 的解法是引入**微缩放（Microscaling）**：让每 `32` 个连续元素共享一个 `8-bit` 的 **`E8M0` 纯指数缩放因子**（0 位符号、0 位尾数，严格表示 $2^e$，存储零尾数硬件移位即可还原，且可防止缩放自身发生复杂舍入）。
+
+均摊下来，每个元素消耗的数据位与缩放开销合计 $4 + 8 / 32 = 4.25\text{ bit}$（`0.53125 B`），权重体积相对 `BF16` 压缩 **$3.76\times$**；而 NVIDIA 在 Blackwell 上还进一步提供 `NVFP4` 思路，把分组缩到 `16` 元素并把缩放因子升级为更细腻的 `E4M3`。
+
+![4 元素对称 INT8 量化手算流程与 INT8、FP8 E4M3、MXFP4 位宽结构对比](./diagrams/05-quant-formats-walkthrough.excalidraw)
+
+_图 1：左/上为 4 元向量的对称 INT8 手算步长映射，下为 INT8、FP8 E4M3 与 MXFP4 的编码与共享缩放结构。_
+
+## 三、离群值陷阱与应对三板斧
+
+真实大模型的隐藏层激活并非各向同性高斯分布，而是存在少数固定维度——**离群通道（Outlier Channels）**——其幅度持续比其余维度大 `20× ~ 100×`。
+
+假设输入矩阵 $X \in \mathbb{R}^{64 \times 128}$ 绝大多数通道服从 $\mathcal{N}(0, 1)$，但第 `17`、`73` 列被放大了 `40×`。在 Per-Tensor `INT8` 下，全局步长 $s$ 被这两列撑大近 40 倍，导致其余 126 个常规通道全部挤在 `-1, 0, 1` 三个整数格子上，信噪比骤跌至 `13.19 dB`；换作 Per-Tensor `FP4` 更是把常规通道全部抹成零（`0.00 dB`）。
+
+工程界针对这一现象演化出三类递进解法：
+
+### 1. 通道平滑迁移（SmoothQuant / AWQ）
+
+核心恒等式只有一行：$Y = X W = (X\,\text{diag}(s)^{-1})(\text{diag}(s)\,W)$。通过离线统计激活每列的幅度与权重每行的幅度，按迁移系数 $\alpha$ 构造列尺度 $s_j = \max(|X_{:,j}|)^\alpha / \max(|W_{j,:}|)^{1-\alpha}$。
+
+把激活尖峰缩小、权重对应行等比例放大后，两端的数值动态范围变得接近，无需任何线上额外重排，只需把 `diag(s)` 融进上一层 Norm 或投影权重即可。
+
+### 2. 正交旋转摊平能量（Hadamard / QuaRot / FlatQuant）
+
+仅做列缩放无法消除同一行内部单通道内的突发尖峰，于是更进一步引入正交矩阵 $H$（满足 $H H^\top = I$）：
+
+$$
+Y = X W = (X H)(H^\top W)
+$$
+
+离线把 $H^\top$ 乘进权重矩阵，在线用快速 Walsh-Hadamard 变换（复杂度 $O(K \log K)$，无需显式存稠密 $H$）把单个离群通道的能量均匀打散到全部 $K$ 个维度上。
+
+在 `vLLM` 中[^vllm_hadamard]，`vllm/model_executor/layers/quantization/input_hadamard.py` 的 `hadamard_matrix` 在 FP32 下构造 $1/\sqrt{\text{size}}$ 归一化的 Sylvester Hadamard 矩阵，`InputHadamardLinearMethod` 分别通过 `rotate_weight` 与在线 `block_hadamard_rotate` 对权重与激活做对称旋转；而在 `vLLM-Ascend` 中[^ascend_flatquant]，`w4a4_flatquant.py` 走的是更精细的 Kronecker 分解旋转：把大维旋转矩阵拆成左右两个小矩阵的 Kronecker 积（`solve_kronecker_decompose`），推理时调用融合算子 `npu_kronecker_quant` 并受 `KRONECKER_QUANT_MAX_BATCH_SIZE = 32768` 的批次上限约束。
+
+### 3. 细粒度分块与 FP32 累加（DeepSeek-V3 `kernel.py`）
+
+如果直接采用 `FP8` 且硬件支持块级缩放，就无需依赖容易受校准分布偏移影响的平滑矩阵。`DeepSeek-V3/inference/kernel.py`[^ds_kernel] 给出了推理侧块级 FP8 的参考范式：
+
+- **激活 `1 × 128` 动态分块**（`act_quant_kernel` / `act_quant`）：沿着特征维每 `128` 个连续元素算一次局部绝对最大值 `amax = tl.maximum(tl.max(tl.abs(x)), 1e-4)`，缩放因子 `s = amax / 448.`（支持可选 `ue8m0` 向上取 2 的整数次幂），将结果逐元素压进 `float8_e4m3fn`。
+- **权重 `128 × 128` 二维分块**（`weight_dequant_kernel` / `weight_dequant`）：权重伴随形状为 `(M // 128, N // 128)` 的细粒度块缩放张量，单个局部大块不会污染相邻区块。
+- **FP32 外层提升累加**（`fp8_gemm_kernel`）：内层以 `BLOCK_SIZE_K = 128` 切块送入 Tensor Core 执行低精度 `tl.dot(a, b)`，得到局部和后**在循环外以 FP32 寄存器乘回块缩放** `accumulator += tl.dot(a, b) * a_s[:, None] * b_s[None, :]`，从而避免 Tensor Core 内部低位宽累加器长期积累造成的精度漂移。
+
+即使某一行里仍藏有 `40×` 离群通道，只要改用 `FP8 E4M3` 的对数刻度，常规通道小值仍能依靠指数位与 3-bit 尾数守住精度，无需任何离线迁移即可保住 `31.52 dB` 常规通道信噪比。
+
+![40 倍离群通道下 Per-Tensor 坍塌与 Hadamard 正交旋转、DeepSeek-V3 分块 FP8 两条缓解路径](./diagrams/05-finegrained-quant-arch.excalidraw)
+
+_图 2：面对 40 倍离群通道时，全局均匀缩放崩溃，而正交旋转摊平与块级 FP8 + FP32 外层累加两条工程路径均可恢复高精度。_
+
+## 四、KV Cache 量化：写读对齐与非线性放大
+
+当上下文拉长到数十万 token、并发请求叠加时，KV Cache 常常先于权重触顶 HBM 容量。把 KV 从 `BF16` 压至 8-bit 不仅立刻让槽位翻倍，也能在注意力访存阶段（详见 [04 FlashAttention 与硬件对齐内核](../04-flash-attention/)）削减一半显存带宽。
+
+从源码实现上看，NVIDIA 与昇腾围绕 KV 量化走出了两条不同路线的 `KVCache` 封装：
+
+- **vLLM NVIDIA 路径**[^vllm_kv]：`fp8.py` 中的 `Fp8KVCacheMethod` 继承自 `BaseKVCacheMethod`（`kv_cache.py`），在模块上挂载 `q_scale`、`k_scale`、`v_scale`、`prob_scale` 等 `KVCacheScaleParameter`。在注意力写回阶段（`v1/attention/backends/flash_attn.py` 的 `do_kv_cache_update`），算子 `reshape_and_cache_flash` 使用 `_k_scale` 与 `_v_scale` 把新算出的 KV 压成 FP8 写进物理页；在 FlashAttention 读取块时，再把 `k_descale` 与 `v_descale` 传进内核做即时反量化。
+- **vLLM-Ascend 路径**[^ascend_kv]：在 `910B` 上采用基于 `INT8` 的 `AscendC8KVCacheAttentionMethod`（`kv_c8.py`），将缓存类型设为 `torch.int8`，把注意力后端切换为 `AscendC8AttentionBackendImpl`，并按昇腾分形规范把缓存组织成带 `NZ_FMT_LAST_DIM = 32` 的 5D 视图（`attention_v1.py`）。到了支持微缩放的新架构，则提供 `AscendC8MXFPKVCacheAttentionMethod`（`mxfp_c8.py`，通过 `--kv-cache-dtype mxfp8` 开启）：KV 数据统一存入 `float8_e4m3fn`，其中 **K 在写入时动态计算 E8M0 块缩放，而 V 采用静态按通道 E8M0 缩放**，并在预处理阶段把异常 `0` 字节清洗成 `127`（对应缩放因子 `1.0`）、预先缓存倒数 `1 / exp2(raw - 127)` 供注意力读时还原。
+
+KV 量化有一个极易忽略的精度特征：**Key 误差比 Value 误差危险得多**。Key 参与 $\text{softmax}(Q K^\top / \sqrt{d_k})$ 打分，任何微小的扰动都会在指数运算下被非线性放大，可能导致长上下文精确检索（大海捞针）注意力跑偏；而 Value 仅参与概率加权线性求平均，对轻微截断噪声宽容得多。
+
+## 五、NVIDIA 与昇腾（Ascend）量化生态与源码对照
+
+如果把 NVIDIA GPU 与华为昇腾 NPU 的量化推理栈并排放在一起，二者在工具链起点、硬件指令代差、PD 混部策略以及张量内存排布上存在根本差异，切忌把一套脚本直接套到另一套硬件上。
+
+![NVIDIA vLLM 与昇腾 vLLM-Ascend 量化配置路由、算子与硬件布局差异对照](./diagrams/05-nv-vs-ascend-quant-runtime.excalidraw)
+
+_图 3：vLLM 围绕算力号做 FP8/MXFP4 派发，vLLM-Ascend 按 ModelSlim 描述文件与芯片代际分流至静态/动态 INT8、PDMix 与 A5 原生微缩放。_
+
+| 对比维度             | NVIDIA (`vllm@bb23c0a8`)                                      | 昇腾 `910B` (`vllm-ascend@3649b8ff`)                                 | 昇腾新一代 `A5 / 950` (`vllm-ascend@3649b8ff`)                          |
+| :------------------- | :------------------------------------------------------------ | :------------------------------------------------------------------- | :---------------------------------------------------------------------- |
+| **配置与导出生态**   | `Fp8Config`（`min_cap=75`）与 `Mxfp4Config`（`min_cap=80`）   | MindStudio `AscendModelSlimConfig` 读 `quant_model_description.json` | 同兼容 `ModelSlim`，新增 `AscendFp8Config`、`AscendModelOptMxFp8Config` |
+| **原生矩阵算力格式** | SM89/90 原生 `FP8`；SM100 原生 `MXFP4`（`E2M1×2 + g32 E8M0`） | **无原生 FP8 Cube**，主力为 `INT8` 与 `W8A8` / `W4A8` / `W4A4`       | 原生 `FP8`、`HIF8`、`MXFP8`、`MXFP4`（支持 Mega MoE 融合）              |
+| **旧代/跨格式兜底**  | 非原生卡退回 `Marlin` 权重解包内核（如 FP8/MXFP4 解包算）     | 依赖离线校准+平滑/FlatQuant 保证 `INT8`/`INT4` 精度                  | `fp8_block.py` 将输入激活 `npu_dynamic_mx_quant` 实时转 `MXFP8` 执行    |
+| **PD 混部优化路由**  | 主要通过通用 `FP8` 统一服务                                   | `W8A8_MIX` 按 `layer.is_kv_consumer` 切换动态/静态 W8A8              | 原生微缩放支撑 Prefill/Decode 低精度高吞吐                              |
+| **权重量化存储排布** | 标准 ND 行/列主序配合 Tensor Core `ldmatrix`                  | 主力需转 `ACL_FORMAT_FRACTAL_NZ (29)`（`W4A4` 当前不支持 NZ）        | 分细粒度 `C0` 定制分形（如 `fp4_packed_nz`、`mxfp8_nz`）                |
+| **KV Cache 量化**    | `Fp8KVCacheMethod` 静态 `k/v_scale`                           | `AscendC8`（`INT8` + 5D `FRACTAL_NZ`）                               | `AscendC8MXFP`（`mxfp8`：`K` 动态 E8M0、`V` 静态倒数缩放）              |
+
+下面重点拆解昇腾源码中四个最容易决定上线成败的硬差异：
+
+### 1. 910B 无原生 FP8 vs A5 原生微缩放路由
+
+在 `vllm_ascend/device/hardware_profile.py` 中可以看到硬件画像的硬切分：`A2 / A3`（即 `910B` 系列）支持 `BF16 / FP16 / INT8 / INT4`，而不支持硬件 `FP8`；只有 `AscendDeviceType.A5`（950）才打开了 `FP8 / HIF8 / MXFP8 / MXFP4` 与 `FP8_ATTENTION` 开关。
+
+因此，`AscendModelSlimConfig` 甚至把 `get_min_capability()` 直接实现为抛出 `NotImplementedError`，路由不看数字版本号，而看模型目录下的 `quant_model_description.json`。而 `AscendFp8Config` 与 `fp8_block.py` 在初始化时就会检查当前是否为 `A5` 设备——非 A5 直接报错拒绝；在 A5 上读入 DeepSeek 类 `128 × 128` FP8 权重时，前向推理会先调用 `npu_dynamic_mx_quant` 把激活实时转成 `group_size=32` 的 `MXFP8`（`float8_e4m3fn` + 打包的 `float8_e8m0fnu` 缩放因子），再送进 `npu_quant_matmul`[^ascend_mx]。
+
+### 2. PD 分离混部的 `W8A8_MIX` 策略
+
+在 Prefill 与 Decode 分离（PD Disaggregated）架构下，两个阶段的激活行为截然不同：Prefill 批次序列长、动态范围剧烈波动，适合按每个 token 实时统计缩放因子；Decode 节点单步延迟极其敏感，希望省去激活在线归约的 Launch 与同步开销。
+
+`vllm-ascend` 的 `w8a8_pdmix.py`[^ascend_pdmix] 给 `AscendW8A8PDMixLinearMethod` 注册了 `W8A8_MIX` 方案，在推理期直接根据 `layer.is_kv_consumer` 切换执行器：Prefill 实例走 `AscendW8A8DynamicLinearMethod`（`npu_dynamic_quant`），而作为 KV 消费者的 Decode 实例自动切到静态 `AscendW8A8LinearMethod`（走离线静态标定好的输入 scale 与 `deq_scale`）。如果希望 Decode 彻底走纯权重压缩（如 `W8A16`），则需启用独立权重量化方案 `w8a16.py`（`npu_weight_quant_batchmatmul`），且代码中已备注 MoE 层的 `W8A8_PDMIX` 在当前版本中已被弃用。
+
+### 3. 昇腾分形排布 `FRACTAL_NZ` 与 `C0` 对齐
+
+NVIDIA 线性层权重维持普通的二维连续内存（ND）即可高效 Feeding Tensor Core；但昇腾达芬奇架构 Cube 单元的 L0 缓冲读取粒度高度偏好二维小分形 **`FRACTAL_NZ`**（`ACL_FORMAT_FRACTAL_NZ = 29` 对标标准格式 `ACL_FORMAT_FRACTAL_ND = 2`）。
+
+在 `vllm_ascend/utils.py` 中，`maybe_trans_nz` 会把线性层权重重排为 NZ 格式（同时显式跳过 `k = 1` 或 `n = 1` 的退化尺寸以免调用 `aclnnMatmulWeightNZ` 触发异常）；到 `nz.py`[^ascend_nz] 中，针对 `MXFP8` 和 `MXFP4` 还专门区分了 `mxfp8_nz`、`fp4_packed_nz` 与 `fp4_semantic_nz` 等 `NzCastSpec`，因为 `4-bit` 紧致打包（两个 FP4 装进 1 字节）后，沿内维 `C0 = 16 / 32` 的分形跨度不再与 16-bit/8-bit 张量相同。至于使用在线 Kronecker 旋转的 `w4a4_flatquant.py`，源码注释至今明确标明不支持权重 NZ 重排。
+
+### 4. `div_mode` 缩放因子倒数约定坑
+
+接入或自定义昇腾量化算子时，有一个在 `register_custom_ops.py`（L208–224）专门写明注释提醒的高危差异[^ascend_divmode]：
+
+- **独立量化算子 `torch_npu.npu_quantize`（对应 `aclnnAscendQuantV3`）采用 `div_mode=False`**，算子内部做的是**乘法** $x \times \text{scale}$，所以外部必须传入**缩放因子倒数 `input_scale_reciprocal`**（即 $1/s$）。
+- **融合算子 `npu_add_rms_norm_quant`（对应 `aclnnAddRmsNormQuantV2`）采用 `div_mode=True`**，算子内部直接做**除法** $x / \text{scale}$，必须传入**正向 `input_scale`**（即 $s$）。
+
+一旦把两条路径的尺度方向传反，输出激活会被错误放大或缩水 $s^2$ 倍，精度直接崩溃而不会触发任何形状报错。
+
+## 六、动手实验：7 种量化方案同场实测
+
+在同目录的 `toy.py`（125 行，纯 Python + NumPy）中，我们精确构建了 `FP8 E4M3FN` 有限数值表与 `FP4 E2M1` 离散表，在固定种子下复现前面讨论的全部核心场景：先检查 4 元对称量化误差上界，再构造带有两个 `40×` 离群通道（第 `17`、`73` 列）的 `[64, 128]` 激活与 `[128, 128]` 权重矩阵乘，对比 7 种方案的**常规通道信噪比（`NormX_dB`）、最终输出信噪比（`GEMM_dB`）、相对 L2 误差（`RelL2`）与权重压缩比（`WtComp` vs `BF16`）**。
+
+核心量化调度与评估片段如下（完整脚本见 `toy.py`）：
+
+```python
+# 1) 4-element symmetric INT8 walkthrough
+x4 = np.array([0.42, -1.18, 0.05, 0.89], dtype=np.float64)
+s4 = np.max(np.abs(x4)) / 127.0
+q4 = np.clip(np.round(x4 / s4), -127, 127).astype(np.int8)
+
+# 2) SmoothQuant (alpha=0.5) + Sylvester Hadamard orthogonal rotation
+col_s = (np.max(np.abs(x), axis=0) ** 0.5) / (np.max(np.abs(w), axis=1) ** 0.5)
+h = sylvester_hadamard(128)
+x_sqh_q = quant_int8_per_tensor((x / col_s[None, :]) @ h)
+w_sqh_q = quant_int8_per_tensor(h.T @ (w * col_s[:, None]))
+
+# 3) DeepSeek-V3 1x128 act + 128x128 weight FP8 & OCP MXFP4 (group=32 E8M0)
+x_fp8, w_fp8 = quant_fp8_blocks(x, 1, 128), quant_fp8_blocks(w, 128, 128)
+x_mx, w_mx = quant_mxfp4(x, 32), quant_mxfp4(w, 32)
+```
+
+在 `infra-note/` 目录下执行 `uv run --with numpy python src/content/posts/foundations/05-quantization/toy.py`，实测完整输出如下：
+
+```text
+[4-elem] s=0.009291, q=[45, -127, 5, 96], max_err=0.003543 <= s/2=0.004646
+Scheme                     NormX_dB  GEMM_dB    RelL2  WtComp
+Per-Tensor INT8 (W8A8)        13.19    25.75   0.0516   2.00x
+Smooth+Hadamard INT8          39.15    46.69   0.0046   2.00x
+DS-V3 FP8 (1x128/128x128)     31.52    31.05   0.0280   2.00x
+Per-Tensor FP4 (no MX)         0.00    11.12   0.2779   4.00x
+MXFP4 g=32 (W4A4)              5.78    14.16   0.1960   3.76x
+Smooth+Hadamard MXFP4         16.84    24.55   0.0592   3.76x
+W4A8 (FP8 x MXFP4 wt)         31.52    18.43   0.1198   3.76x
+OK 05
+```
+
+三组数字一目了然地印证了前文机制：
+
+- **离群值破坏力与旋转修复**：`Per-Tensor INT8` 的常规通道只剩 `13.19 dB`，而加上 SmoothQuant 与 Hadamard 旋转后直接飙升到 `39.15 dB`（最终 GEMM 误差降到 `0.46%`）；`Per-Tensor FP4` 更是在常规通道彻底归零（`0.00 dB`）。
+- **块级 FP8 的即插即用优势**：`DS-V3 FP8` 不经过任何离线校准与正交矩阵变换，靠对数尾数与 `1 × 128 / 128 × 128` 块缩放就能交出 `31.52 dB` 常规通道与 `31.05 dB` GEMM 精度，同时达成 `2.00×` 压缩。
+- **4-bit 落地的两个实用前提**：裸用 `MXFP4 W4A4` 在有离群列的 32 维分组内仍受牵连（`14.16 dB`），必须要么把激活留在 `FP8` 做 `W4A8`（`18.43 dB`，常规激活 `31.52 dB`），要么叠加上 `Smooth + Hadamard` 旋转（`GEMM_dB` 跃升至 `24.55 dB`），才能在享受 **`3.76×`** 权重压缩的同时保持可用精度。
+
+## 七、工程选型边界与反面代价
+
+量化从来不是免费的午餐，落地时必须盯着四个现实代价：
+
+- **小矩阵 / 小 Batch 的算子调度开销**：`act_quant` 或 `npu_dynamic_quant` 每次前向都要扫一遍隐藏维算 `amax`，若 Batch 极小且权重已经偏小（如中小尺寸端侧模型或高频 Launch 阶段），额外内核开销会抵消一部分低精度增益。
+- **离线校准分布偏移**：SmoothQuant、静态 `W8A8` 与静态 KV 缩放高度依赖校准集覆盖面；一旦线上流量突然从日常对话切到密集代码、小语种或超长 JSON，未见过的新离群峰会被静态裁剪区间截断并引发雪崩掉点。
+- **硬件原生退化陷阱**：在老卡上强行部署 `FP8` 或 `MXFP4`，若运行时退化为软件/Marlin 解包回高比特再算（如部分 `Mxfp4Config` 在老计算能力 GPU 上、或 `910B` 处理不兼容指令），只能省下存储带宽而拿不到双倍算力，甚至引入额外解包寄存器压力。
+- **敏感任务精度回退**：多步数学推理、精确长上下文检索以及 MoE 路由门控（Router Gate）对微弱对数差异极为敏感；主流实践通常将 Embedding、LM Head 与 MoE Router 保留在 `BF16 / FP32`，只在主体 Linear 与 FFN 专家上做低精度压榨。
+
+## 八、自测与系列衔接
+
+1. 已知激活向量含离群值 `120.0` 与常规值 `0.8`，为什么全张量对称 `INT8`（127 档）下 `0.8` 几乎丧失区分度，而改用同样 8-bit 的 `FP8 E4M3FN` 却能保住较高精度？
+2. 计算每 32 个元素共享 1 个 `E8M0`（8-bit）缩放因子的 `MXFP4` 单元素均摊位宽与相对 `BF16` 的理论压缩倍数；为什么直接裸用 `MXFP4 W4A4` 面对离群通道仍不够稳，需要叠加 Hadamard 旋转或切到 `W4A8`？
+3. 在 `vllm-ascend` 中，将 `DeepSeek-V3` 风格的 `FP8` 块级权重加载到 `910B` 与加载到 `A5（950）` 时执行结果有何本质差异？为什么调用 `npu_quantize` 与 `npu_add_rms_norm_quant` 时缩放因子必须互为倒数？
+
+<details>
+<summary>参考答案</summary>
+
+1. 全张量对称 `INT8` 的全局步长 $s = 120 / 127 \approx 0.945$，此时 `0.8 / s ≈ 0.847` 会直接取整成 `1`（相对误差超 18%），再小一点的值（如 `0.4`）直接归零；而 `FP8 E4M3FN` 的有效区间是对数划分的，$0.8$ 缩放到 $0.8 \times (448/120) \approx 2.987$ 后仍落在带 `3-bit` 尾数（相对步长约 $1/16$）的指数档内，无论最大值如何拉高，各指数档始终保有相对精度。
+2. 均摊位宽为 $4 + 8/32 = 4.25\text{ bit}$（`0.53125 B`），相对 `BF16`（`2 B`）压缩比 $2 / 0.53125 \approx 3.76\times$。即便切成 32 元素一组，包含离群列的那一组内其余 31 个小值仍与离群列共享一个 $2^e$ 缩放因子且只剩 7 个 E2M1 非零档位，容易被同时压到 0；叠加 Hadamard 可先把尖峰能量分散到全部维度，切到 `W4A8` 则把敏感激活留在精度充裕的 FP8 中。
+3. 910B（A2/A3）缺少原生 FP8 Cube 算力单元，对应 `AscendFp8Config` / `fp8_block.py` 会直接报错拒绝执行（需改用 MindStudio 导出的 `INT8` / `INT4` `ModelSlim` 权重）；A5（950）则会在运行时先对激活调用 `npu_dynamic_mx_quant` 转为 32 维共享 `E8M0` 的 `MXFP8` 再执行矩阵乘。`div_mode` 差异源于算子实现约定：`npu_quantize`（`aclnnAscendQuantV3`）设 `div_mode=False` 做乘法 $x \times \text{scale}$，需传倒数 `1/s`；融合算子 `npu_add_rms_norm_quant`（`aclnnAddRmsNormQuantV2`）设 `div_mode=True` 做除法 $x / \text{scale}$，需传正向 `s`。
+
+</details>
+
+到这里，第一篇「Foundations 单机推理基础」已完整打通：我们从单卡的算力/带宽天花板（01）出发，走过张量并行计算与解码器底座（02）、KV 显存账本与头共享妥协（03）、FlashAttention 分块 I/O 重构（04），最终在量化（05）完成位宽压缩与多芯片算子适配的闭环。下一篇我们将迈入单卡再怎么压榨也装不下或算不完的临界点，开启 **[系列二：分布式并行与跨卡通信](../../distributed/)**，拆解 TP / PP / EP / SP 切分与跨节点通信掩盖。
+
+[^fp8_e4m3]: NVIDIA / ARM / Intel _FP8 Formats for Deep Learning_ 规范及 `vllm@bb23c0a8` `vllm/model_executor/layers/quantization/fp8.py`（`Fp8LinearMethod` 仅接受 `torch.float8_e4m3fn`）。
+
+[^mx_spec]: OCP Microscaling Formats (MX) v1.0 规范及 `vllm@bb23c0a8` `vllm/model_executor/layers/quantization/mxfp4.py`（`Mxfp4MoEMethod`：`mxfp4_block=32`，打包 `uint8` `E2M1` + `float8_e8m0fnu` 缩放）。
+
+[^vllm_hadamard]: `vllm@bb23c0a8` `vllm/model_executor/layers/quantization/input_hadamard.py`（L25–42 `hadamard_matrix` / `block_hadamard_rotate`；L46–150 `InputHadamardLinearMethod`）。
+
+[^ascend_flatquant]: `vllm-ascend@3649b8ff` `vllm_ascend/quantization/methods/w4a4/w4a4_flatquant.py`（L28 `KRONECKER_QUANT_MAX_BATCH_SIZE=32768`、L39–54 `solve_kronecker_decompose`、L81–210 `AscendW4A4FlatQuantDynamicLinearMethod`，L201 注明不支持 weight nz）。
+
+[^ds_kernel]: `DeepSeek-V3@9b4e9788` `inference/kernel.py`（L10–57 `act_quant_kernel` / `act_quant`；L61–110 `weight_dequant_kernel` / `weight_dequant`；L114–172 `fp8_gemm_kernel` 外层 FP32 缩放累加）。
+
+[^vllm_kv]: `vllm@bb23c0a8` `vllm/model_executor/layers/quantization/kv_cache.py`（`BaseKVCacheMethod`）、`fp8.py`（L862–866 `Fp8KVCacheMethod`）及 `vllm/v1/attention/backends/flash_attn.py`（L1431–1440 `reshape_and_cache_flash`、L1278–1279 传入 `k_descale` / `v_descale`）。
+
+[^ascend_kv]: `vllm-ascend@3649b8ff` `vllm_ascend/quantization/methods/kv_cache/kv_c8.py`（`AscendC8KVCacheAttentionMethod`）、`attention/attention_v1.py`（L1528–1531 `NZ_FMT_LAST_DIM=32`）及 `mxfp_c8.py`（L51–120 `AscendC8MXFPKVCacheAttentionMethod`）。
+
+[^ascend_mx]: `vllm-ascend@3649b8ff` `vllm_ascend/device/hardware_profile.py`、`quantization/configs/modelslim_config.py`（L163 `quant_model_description.json`、L520 `NotImplementedError`）、`configs/fp8_config.py`、`methods/w8a8/fp8_block.py`（L114–145 非 A5 拒绝与 A5 `npu_dynamic_mx_quant` 重量化）及 `w8a8_mxfp8.py`、`w4a8_mxfp4.py`。
+
+[^ascend_pdmix]: `vllm-ascend@3649b8ff` `vllm_ascend/quantization/methods/w8a8/w8a8_pdmix.py`（L36–93 `AscendW8A8PDMixLinearMethod` 按 `layer.is_kv_consumer` 切换 `AscendW8A8DynamicLinearMethod` 与 `AscendW8A8LinearMethod`）及 `wna16/w8a16.py`。
+
+[^ascend_nz]: `vllm-ascend@3649b8ff` `vllm_ascend/utils.py`（L62–63 `ACL_FORMAT_FRACTAL_ND=2` / `ACL_FORMAT_FRACTAL_NZ=29`，L370–436 `maybe_trans_nz`）与 `quantization/nz.py`（L29–88 `fp4_packed_nz` / `fp4_semantic_nz` / `mxfp8_nz`）。
+
+[^ascend_divmode]: `vllm-ascend@3649b8ff` `vllm_ascend/ops/register_custom_ops.py`（L208–224 `npu_quantize(..., div_mode=False)` 与 `npu_add_rms_norm_quant(..., div_mode=True)` 注释及 `_quantize_impl` 实现）。

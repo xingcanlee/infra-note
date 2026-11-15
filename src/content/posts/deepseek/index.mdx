@@ -1,0 +1,72 @@
+---
+title: 'DeepSeek 架构演进：从 MLA、细粒度 MoE 到稀疏压缩、Engram 与 mHC'
+description: '聚焦 DeepSeek-V2 到 V4.1 的十篇核心架构创新：MLA 低秩压缩、NSA/DSA/CSA/CSA2+CED 稀疏压缩、细粒度 MoE、Engram 条件记忆、mHC 双随机残差、MTP/DSpark 与双硬件全栈落地。'
+series: { id: deepseek, order: 1 }
+pubDate: 2026-11-03
+featured: true
+tags: [DeepSeek, vLLM, Ascend, MLA, MoE, Sparse Attention, Engram, mHC, Speculative Decoding]
+category: AI Infra
+toc: true
+---
+
+本系列作为全站**系列三**，专注拆解 DeepSeek 从 V2[^ds-v2]、V3[^ds-v3] 一路演进到 V4 / V4.1[^ds-v41] 的十大架构创新：模型究竟如何绕过传统密集 Transformer 的显存带宽墙、参数激活墙与层间数值放大极限。
+
+与前序系列分工清晰：硬件 Roofline、RoPE、GQA、FlashAttention 与低比特量化底座见[系列一：大模型推理基础底座](../foundations/)；NVLink / HCCS 集合通信、PD 分离与 EP 通算重叠见[系列二：分布式并行与通信系统](../distributed/)。
+
+![DeepSeek 架构演进系列 10 篇学习路线图](./diagrams/00-deepseek-roadmap.excalidraw '图 1：系列三（DeepSeek 架构演进 01–10）双轴演化路线与上下游系列衔接')
+
+## 两条核心演化轴线
+
+纵观从 DeepSeek-V2 到 V4.1 的迭代，所有创新都围绕同一个系统第一性原理展开——在推理 Decode 阶段受限于 HBM 与片间通信带宽的前提下，压榨**每比特搬运换取的有效信息密度**。十篇内容沿两条轴线推进，最终在第 10 篇合流：
+
+1. **轴线一 · 注意力与 KV 压缩（第 01–05 篇）**：从低秩联合压缩与矩阵吸收（MLA）出发，经三路硬件对齐稀疏（NSA）与闪电索引器动态选词（DSA），演进到 V4 的跨位置/跨层压缩（CSA / HCA），最终落定于 V4.1 三维压缩（CSA2）与智能体工具链隔离缓存（CED），把长上下文 KV 搬运压至每词元 890 B。
+2. **轴线二 · 主干稀疏、记忆分离与解码加速（第 06–09 篇）**：用细粒度混合专家与无辅助损失动态偏置实现计算稀疏，用 Engram 开辟 $O(1)$ 查表存储稀疏轴，用流形受限超连接（mHC）稳住 $n=4$ 宽残差流的千层信号增益，再以 MTP 与 DSpark 把单步只吐 1 个 token 的访存瓶颈拉成半自回归多词元并行验证。
+3. **全链路合流与双硬件对照（第 10 篇）**：把 V2 到 V4.1 同一解码步内的所有模块串成八步完整数据流，并在同一框架下对照 NVIDIA（FlashMLA / DeepGEMM / DeepEP）与华为昇腾（MLAPO / SparseFlashMla / Fused MC2）两大真实生产栈[^ds-vllm][^ds-ascend]。
+
+## 10 篇章节路线与验证对照
+
+| 篇目                                                       | 核心瓶颈与解决的问题                        | 关键机制 / `toy.py` 验证目标                                     |
+| :--------------------------------------------------------- | :------------------------------------------ | :--------------------------------------------------------------- |
+| [01 多头潜在注意力（MLA）](./01-mla/)                      | GQA 共享头掉精度，直接压缩又卡 RoPE         | 低秩潜向量 $c_t^{KV}$、解耦 RoPE 与矩阵吸收数值等价              |
+| [02 原生稀疏注意力（NSA）](./02-swa-and-nsa/)              | 固定滑窗丢失远处关键上下文                  | 滑动窗口与汇聚点、NSA 压缩/选块/滑窗三路硬件对齐门控融合         |
+| [03 DeepSeek 稀疏注意力（DSA）](./03-dsa/)                 | 静态分块选不准，全量计算打分太贵            | 轻量 Lightning Indexer、Top-K 动态选词与潜空间稀疏 MLA 重算      |
+| [04 序列压缩注意力（上）：CSA 与 HCA](./04-csa-and-hca/)   | 逐词元独立存储与跨层重复读取 KV             | CSA $m=4$ 多位置共用潜向量、HCA 跨层复用与物理/虚拟索引解耦      |
+| [05 序列压缩注意力（下）：CSA2 与 CED](./05-csa2-and-ced/) | 长尾每词 890 B 搬运与智能体多轮前缀失效     | HSI + 逆 RoPE / MXFP4 压缩、CED 编码/重播与工具输出边界隔离      |
+| [06 细粒度混合专家（DeepSeekMoE）](./06-moe/)              | 稠密 FFN 占据绝大多数激活参数与路由坍塌     | 细粒度切分 + 共享专家、无辅助损失偏置均衡与 EP 跨卡通信          |
+| [07 条件记忆（Engram）](./07-engram/)                      | 静态实体知识查表占用深度推理宝贵算力        | 多头质数哈希 $O(1)$ 查表、上下文门控与 Host DRAM 异步预取        |
+| [08 流形受限超连接（mHC）](./08-mhc/)                      | 扩宽 $n=4$ 残差流引发跨层 $3000\times$ 爆炸 | Birkhoff 双随机多面体、Sinkhorn 投影与 V4.1 Single-Pass Mega-mHC |
+| [09 MTP 与动态推测解码（DSpark）](./09-mtp-and-dspark/)    | 单步只吐 1 个 token 浪费读取全权重带宽      | 无损拒绝采样、V3 因果串联 MTP 与 V4.1 DSpark 单层稀疏草稿        |
+| [10 串珠成链与双硬件全景](./10-architecture-synthesis/)    | 多重优化如何在同一推理步与双生态协同落地    | V4.1 单步 8 步全链路拆解与 NVIDIA / 昇腾双全栈对照表             |
+
+## 无 GPU 也能跑通实验与核对源码
+
+每一章的 `toy.py` 只依赖 Python 标准库与 NumPy，固定随机数种子 `default_rng(42)`。在站点目录 `infra-note/` 下可以直接一条命令跑通全系列 10 个脚本：
+
+```bash
+uv run scripts/verify_toys.py deepseek
+```
+
+全系列涉及的算法与工程源码均锁定在以下上游仓与论文快照，文内对照表与文件名均可按对应提交核查：
+
+- **推理引擎源码**：`vllm`（`bb23c0a81779`）[^ds-vllm] 与 `vllm-ascend`（`3649b8ff7fd6`）[^ds-ascend]；
+- **模型与内核参考仓**：`DeepSeek-V3`（`9b4e9788e4a3`）[^ds-v3-repo]、`FlashMLA`（`395cb3afbb33`）[^ds-flashmla]、`DeepEP`（`f6aa38fe06cd`）[^ds-deepep] 与 `Engram`（`fb7f84a21f91`）[^ds-engram]。
+
+读完 `01 → 10` 后，模型单步前向的每张张量与访存约束已全部透明；下一站即可进入[系列四：vLLM 与昇腾推理引擎](../vllm/)，看调度器、异步执行、`torch.compile` 与 CUDA Graph / ACLGraph 如何把这些算子真正跑满在线并发。
+
+[^ds-vllm]: vLLM Project. _vLLM Inference Engine_. https://github.com/vllm-project/vllm/tree/bb23c0a81779ba733923a7dab9b840b4e533f6a5 (commit `bb23c0a8`).
+
+[^ds-ascend]: vLLM Ascend Project. _vLLM Ascend Plugin_. https://github.com/vllm-project/vllm-ascend/tree/3649b8ff7fd69e707db2c634073d2b4c40eadf15 (commit `3649b8ff`).
+
+[^ds-v2]: DeepSeek-AI. _DeepSeek-V2: A Strong, Economical, and Efficient Mixture-of-Experts Language Model_. https://arxiv.org/abs/2405.04434 (2024).
+
+[^ds-v3]: DeepSeek-AI. _DeepSeek-V3 Technical Report_. https://arxiv.org/abs/2412.19437 (2024).
+
+[^ds-v41]: DeepSeek-AI. _DeepSeek-V4.1-Flash Technical Report_. https://arxiv.org/abs/2609.19969 (2026).
+
+[^ds-v3-repo]: DeepSeek-AI. _DeepSeek-V3 Reference Code_. https://github.com/deepseek-ai/DeepSeek-V3/tree/9b4e9788e4a3a731f7567338ed15d3ec549ce03b (commit `9b4e9788`).
+
+[^ds-flashmla]: DeepSeek-AI. _FlashMLA Kernel Repository_. https://github.com/deepseek-ai/FlashMLA/tree/395cb3afbb331fef7b1b21e9340861b9436b42d8 (commit `395cb3af`).
+
+[^ds-deepep]: DeepSeek-AI. _DeepEP Expert Parallel Communication Library_. https://github.com/deepseek-ai/DeepEP/tree/f6aa38fe06cd4a0489e70730365d4e0114970a2f3 (commit `f6aa38fe`).
+
+[^ds-engram]: DeepSeek-AI. _Engram Conditional Memory Repository_. https://github.com/deepseek-ai/Engram/tree/fb7f84a21f91223715394a33a1dc24bbfb7f788e (commit `fb7f84a2`).

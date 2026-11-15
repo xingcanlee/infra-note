@@ -1,0 +1,55 @@
+<mxfile host="wisp-diagram">
+  <diagram id="nsa-arch" name="NSA 三分支原生可训练稀疏注意力与 GQA 组共享选块架构">
+    <mxGraphModel dx="640" dy="448" grid="1" gridSize="8" guides="1" page="0" math="1" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="in_all" value="输入隐状态 \(\mathbf{x}_t\) 与历史序列 \(\mathbf{k}_{:t},\mathbf{v}_{:t}\)&lt;br&gt;投出 GQA 查询组 \(\mathbf{Q}_g\)、三路独立 KV 分支与门控 \(g_t^c = \sigma(\operatorname{MLP}(\mathbf{x}_t))\)" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#eaedf2;strokeColor=#464e57;strokeWidth=1.25;fontFamily=Inter;fontSize=14;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="0" y="0" width="624" height="64" as="geometry" />
+        </mxCell>
+        <mxCell id="br_cmp" value="① 粗粒度压缩分支 cmp&lt;br&gt;块长 \(l=32\)，步长 \(d=16\)&lt;br&gt;\(\varphi\) 产出 \(\mathbf{p}_t^{\text{cmp}}\) 与 \(\mathbf{o}_t^{\text{cmp}}\)" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#fbf2df;strokeColor=#7b5518;strokeWidth=1.25;fontFamily=Inter;fontSize=14;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="0" y="104" width="192" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="slc_kv" value="细粒度 KV 空间分块&lt;br&gt;连续块宽 \(l'=64\)&lt;br&gt;等待组共享块下标 \(\mathcal{I}_t\)" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#f4f4f2;strokeColor=#5c6067;strokeWidth=1;fontFamily=Inter;fontSize=14;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="216" y="104" width="192" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="br_win" value="③ 局部滑窗分支 win&lt;br&gt;仅保留最近 \(w=512\) 词&lt;br&gt;独立产出近邻输出 \(\mathbf{o}_t^{\text{win}}\)" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#f4f4f2;strokeColor=#1d1d1f;strokeWidth=1.25;fontFamily=Inter;fontSize=14;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="432" y="104" width="192" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="br_slc" value="② 组共享块选择注意力 slc&lt;br&gt;复用 \(\mathbf{p}_t^{\text{cmp}}\) 映射并组内求和 \(\sum_{h=1}^{G_q}\mathbf{p}_t^{\text{slc},(h)}\)&lt;br&gt;整组同选 Top-\(n\) 块 \(\mathcal{I}_t\) → 算 \(\mathbf{o}_t^{\text{slc}}\)" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f2fb;strokeColor=#2f5783;strokeWidth=1.5;fontFamily=Inter;fontSize=14;fontColor=#1d1d1f;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="128" y="224" width="368" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="gate_sum" value="④ 可学习 Sigmoid 门控融合输出&lt;br&gt;\(\mathbf{o}_t^* = g_t^{\text{cmp}}\mathbf{o}_t^{\text{cmp}} + g_t^{\text{slc}}\mathbf{o}_t^{\text{slc}} + g_t^{\text{win}}\mathbf{o}_t^{\text{win}}\)（\(g_t^c \in (0,1)\)）" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e3f5f3;strokeColor=#0f766e;strokeWidth=2;fontFamily=Inter;fontSize=14;fontColor=#1d1d1f;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="0" y="344" width="624" height="64" as="geometry" />
+        </mxCell>
+        <mxCell id="note" value="注：梯度经 \(\mathbf{o}_t^{\text{cmp}}\) 反传给 \(\varphi\) 自动教会 \(\mathbf{p}_t^{\text{cmp}}\) 挑块；独立 win 分支防止局部句法截断远程分支梯度。" style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;fontFamily=Inter;fontSize=12;fontColor=#5c6067;" vertex="1" parent="1">
+          <mxGeometry x="0" y="424" width="624" height="24" as="geometry" />
+        </mxCell>
+        <mxCell id="e_in_cmp" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;endArrow=classic;html=1;strokeColor=#7b5518;strokeWidth=1.25;exitX=0.15384615384615385;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="in_all" target="br_cmp">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_in_kv" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;endArrow=classic;html=1;strokeColor=#5c6067;strokeWidth=1.25;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="in_all" target="slc_kv">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_in_win" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;endArrow=classic;html=1;strokeColor=#1d1d1f;strokeWidth=1.25;exitX=0.8461538461538461;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="in_all" target="br_win">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_cmp_slc" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;endArrow=classic;html=1;strokeColor=#7b5518;strokeWidth=1.25;dashed=1;exitX=0.7916666666666666;exitY=1;entryX=0.06521739130434782;entryY=0;" edge="1" parent="1" source="br_cmp" target="br_slc">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_kv_slc" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;endArrow=classic;html=1;strokeColor=#5c6067;strokeWidth=1.25;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="slc_kv" target="br_slc">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_cmp_gate" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;endArrow=classic;html=1;strokeColor=#0f766e;strokeWidth=1.25;exitX=0.25;exitY=1;entryX=0.07692307692307693;entryY=0;" edge="1" parent="1" source="br_cmp" target="gate_sum">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_slc_gate" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;endArrow=classic;html=1;strokeColor=#0f766e;strokeWidth=1.25;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="br_slc" target="gate_sum">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_win_gate" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;endArrow=classic;html=1;strokeColor=#0f766e;strokeWidth=1.25;exitX=0.5;exitY=1;entryX=0.8461538461538461;entryY=0;" edge="1" parent="1" source="br_win" target="gate_sum">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

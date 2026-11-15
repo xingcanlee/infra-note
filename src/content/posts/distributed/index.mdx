@@ -1,0 +1,46 @@
+---
+title: '分布式并行与跨卡通信：从互连拓扑、集合通信到混合并行与通算融合'
+description: '零基础系统拆解 LLM 多卡多机推理：α-β 通信模型、Ring/Tree 集合通信、NVLink/NCCL vs 昇腾 HCCS/UB/HCCL、TP/SP/CP/DP+EP 混合并行、PD 分离 KV 传输及 DeepEP/MC2/DBO 通算融合。'
+pubDate: 2026-11-14
+series: { id: distributed, order: 1 }
+tags: [Distributed, NCCL, HCCL, Parallelism, PD Disaggregation, NVIDIA, Ascend]
+category: AI Infra
+toc: true
+featured: true
+---
+
+当模型权重与长上下文 KV Cache 远超单卡显存上限，单卡硬件本身的性能分析就必须扩展为跨卡、跨机协作的系统工程。
+
+紧接 [系列一：推理与异构硬件基础](../foundations/) 中对 HBM 带宽、算力屋顶线与 PagedAttention 的单卡分析，本系列将视角抬升至 8 卡单机乃至百卡集群，从物理链路一路追到 `vLLM` 与 `vLLM-Ascend` 的分布式执行代码。
+
+![分布式并行与跨卡通信系列路线图](./diagrams/00-distributed-roadmap.excalidraw '图 1：系列二章节演进与 NVIDIA / 昇腾双栈映射总览')
+
+## 为什么推理必须跨越单卡边界
+
+假设部署一个 671B 参数量的 MoE 模型：即使采用 FP8/BF16 混合精度，仅模型权重就超过 600 GB，远非单张 64 GB 或 80 GB 显存的加速器所能容纳；即便把权重硬塞进多卡，32K 或 128K 长上下文下并发请求的 KV Cache 也会迅速耗尽剩余 HBM。
+
+多卡扩展并不是把算力简单相加——只要数据跨越芯片边界，**每一步推理的端到端延迟就变成「计算时间」与「通信延迟」的博弈**。Prefill 阶段动辄传递数十 MB 激活值，受限于互连带宽；Decode 阶段每步只生成 1 个 token，传递几 KB 向量却要经过几十次同步，受限于每跳启动延迟。
+
+## 本系列的三章路线
+
+为了不靠死记硬背分布式术语，我们按照「物理互连 → 并行切分 → 通算重叠」的三层递进结构拆解整个系统：
+
+| 章节                                                             | 核心问题                                       | 数学模型与算子聚焦                                              | 双生态对照源码重点                                                                                               |
+| :--------------------------------------------------------------- | :--------------------------------------------- | :-------------------------------------------------------------- | :--------------------------------------------------------------------------------------------------------------- |
+| [01 硬件互连拓扑与集合通信](./01-interconnects-and-collectives/) | 卡间字节如何以最小延迟和最高带宽搬运？         | 4 卡集合通信手算、$\alpha\text{-}\beta$ 模型、Ring 与 Tree 拐点 | `CudaCommunicator` / `CustomAllreduce` / `SymmMem` vs `NPUCommunicator` / `QuantizedAllReduce` / `HCCL_BUFFSIZE` |
+| [02 分布式并行与 PD 分离](./02-parallelism-and-disaggregation/)  | 权重、激活与 KV Cache 如何在多卡多节点间分工？ | Megatron TP 手算、SP 显存消除、CP 与混合并行显存账              | `parallel_state.py`、`DCP`、`NIXL` vs `OTP`/`MC2`/`P_TP`、`PCP`、`MooncakeLayerwise` / `PA_NZ`                   |
+| [03 MoE 跨卡通信与通算融合](./03-moe-comm-and-overlap/)          | 稀疏专家动态路由如何避免通信拖垮算力？         | Dispatch/Combine 负载不均建模与通信掩盖窗口                     | `DeepEP`、`IBGDA` 低延迟核、`MC2` 算子融合与 `DBO` 双批重叠                                                      |
+
+## 两条硬件与系统演进主线
+
+贯穿全系列的每章都会在统一数学框架下并排比较 NVIDIA GPU 与华为昇腾 NPU 的两条技术路线：
+
+- **NVIDIA 路线**：以高带宽 NVLink 与 NVSwitch 构建单机 8 卡乃至跨机 NVL72 全互连域，配合 `NVLS SHARP` 在网计算、`GPUDirect RDMA` 与 `IBGDA` 让 GPU 直接触发网卡；上层 `vLLM` 在 `CudaCommunicator` 中依据张量大小在 `Torch/NCCL SymmMem`、`CustomAllreduce` P2P IPC 与 `PyNccl` 间精细分流。
+- **华为昇腾路线**：从 910B 机内 HCCS 全互连演进到 910C 与超节点统一的 UB 总线、片上多口集成 RoCEv2 与 L2 SDMA 引擎；上层 `vLLM-Ascend` 不仅通过 `NPUCommunicator`、910B 专用的 `QuantizedAllReduce` 与静态 `HCCL_BUFFSIZE` 隔离管理通信内存，还拆分出 `OTP`、`MLP_TP`、`LM_TP`、`MC2` 等细粒度局部通信域，并通过 `MooncakeLayerwise` 逐层边算边传 `PA_NZ` 格式 KV Cache。
+
+## 系列衔接与前置建议
+
+- **前置基础**：若对 GPU Tensor Core / 昇腾 Cube 脉动阵列、HBM 带宽、Roofline 算访比拐点以及 PagedAttention 块表还不熟悉，建议先阅读 [系列一：推理与异构硬件基础](../foundations/)。
+- **后续进阶**：打通多卡互连、混合并行与 MoE 通算重叠之后，[系列三：DeepSeek 架构演进](../deepseek/) 将把 MLA 低秩 KV 压缩、DeepSeekMoE 细粒度专家路由与这些分布式基础设施真正拼合在一起，展示模型结构与硬件互连如何双向塑形。
+
+现在从底层物理链路与集合通信原语出发：进入 [01 硬件互连拓扑与集合通信](./01-interconnects-and-collectives/)。

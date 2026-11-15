@@ -1,0 +1,90 @@
+<mxfile host="app.diagrams.net">
+  <diagram id="14-cluster-dbo-runtime" name="PD 分离集群拓扑与双批重叠 DBO 执行时序">
+    <mxGraphModel dx="0" dy="0" grid="1" gridSize="8" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="0" pageScale="1" pageWidth="850" pageHeight="1100" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+
+        <mxCell id="grp_p" value="Prefill 集群（算力受限 Compute-Bound）" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#f4f4f2;strokeColor=#8b9098;fontColor=#1d1d1f;strokeWidth=1.25;dashed=1;dashPattern=6 4;fontSize=14;fontStyle=1;align=left;verticalAlign=top;spacingLeft=12;spacingTop=10;" vertex="1" parent="1">
+          <mxGeometry x="16" y="16" width="296" height="168" as="geometry" />
+        </mxCell>
+        <mxCell id="p_1" value="&lt;b&gt;中小规模并行（如 TP4+DP8+EP32）&lt;/b&gt;&lt;br&gt;高算术强度跑 Chunked Prefill 吞吐" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f2fb;strokeColor=#2f5783;fontColor=#1d1d1f;strokeWidth=1.5;fontSize=12;align=center;verticalAlign=middle;spacing=8;" vertex="1" parent="1">
+          <mxGeometry x="32" y="56" width="264" height="56" as="geometry" />
+        </mxCell>
+        <mxCell id="p_2" value="&lt;b&gt;KV 传输至 Decode（288 B / 890 B 级）&lt;/b&gt;&lt;br&gt;MLA + CED 大幅压缩跨集群 RDMA 带宽" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f2fb;strokeColor=#2f5783;fontColor=#1d1d1f;strokeWidth=1.5;fontSize=12;align=center;verticalAlign=middle;spacing=8;" vertex="1" parent="1">
+          <mxGeometry x="32" y="120" width="264" height="48" as="geometry" />
+        </mxCell>
+
+        <mxCell id="grp_d" value="Decode 集群（带宽受限 Memory-Bound）" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#f4f4f2;strokeColor=#8b9098;fontColor=#1d1d1f;strokeWidth=1.25;dashed=1;dashPattern=6 4;fontSize=14;fontStyle=1;align=left;verticalAlign=top;spacingLeft=12;spacingTop=10;" vertex="1" parent="1">
+          <mxGeometry x="384" y="16" width="296" height="168" as="geometry" />
+        </mxCell>
+        <mxCell id="d_1" value="&lt;b&gt;Attn 小 TP（DP）+ MoE 大 EP（EP320）&lt;/b&gt;&lt;br&gt;MLA 免复制 KV；大 EP 均摊专家权重" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f5e9;strokeColor=#2c522d;fontColor=#1d1d1f;strokeWidth=1.5;fontSize=12;align=center;verticalAlign=middle;spacing=8;" vertex="1" parent="1">
+          <mxGeometry x="400" y="56" width="264" height="56" as="geometry" />
+        </mxCell>
+        <mxCell id="d_2" value="&lt;b&gt;FULL Graph + 全节点高并发推测&lt;/b&gt;&lt;br&gt;每卡仅常驻 1–2 个路由专家，凑足大图批量" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f5e9;strokeColor=#2c522d;fontColor=#1d1d1f;strokeWidth=1.5;fontSize=12;align=center;verticalAlign=middle;spacing=8;" vertex="1" parent="1">
+          <mxGeometry x="400" y="120" width="264" height="48" as="geometry" />
+        </mxCell>
+
+        <mxCell id="e_pd" value="KV" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#2f5783;strokeWidth=1.5;endArrow=block;endFill=1;fontSize=12;fontColor=#5c6067;verticalAlign=bottom;spacingBottom=4;" edge="1" parent="1" source="grp_p" target="grp_d">
+          <mxGeometry y="12" relative="1" as="geometry">
+            <mxPoint as="offset" />
+          </mxGeometry>
+        </mxCell>
+
+        <mxCell id="grp_dbo" value="单层双批重叠 DBO（num_ubatches = 2，UBatchContext 双线程协程让渡）" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#f4f4f2;strokeColor=#8b9098;fontColor=#1d1d1f;strokeWidth=1.25;dashed=1;dashPattern=6 4;fontSize=14;fontStyle=1;align=left;verticalAlign=top;spacingLeft=12;spacingTop=10;" vertex="1" parent="1">
+          <mxGeometry x="16" y="216" width="664" height="224" as="geometry" />
+        </mxCell>
+
+        <mxCell id="lbl_comp" value="&lt;b&gt;计算流&lt;/b&gt;&lt;br&gt;compute" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#eaedf2;strokeColor=#464e57;fontColor=#1d1d1f;strokeWidth=1.5;fontSize=12;align=center;verticalAlign=middle;spacing=4;" vertex="1" parent="1">
+          <mxGeometry x="32" y="264" width="80" height="56" as="geometry" />
+        </mxCell>
+        <mxCell id="lbl_comm" value="&lt;b&gt;通信流&lt;/b&gt;&lt;br&gt;comm" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#eaedf2;strokeColor=#464e57;fontColor=#1d1d1f;strokeWidth=1.5;fontSize=12;align=center;verticalAlign=middle;spacing=4;" vertex="1" parent="1">
+          <mxGeometry x="32" y="368" width="80" height="56" as="geometry" />
+        </mxCell>
+
+        <mxCell id="c1" value="&lt;b&gt;μBatch 0&lt;/b&gt;&lt;br&gt;Attn + 路由" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f2fb;strokeColor=#2f5783;fontColor=#1d1d1f;strokeWidth=1.5;fontSize=12;align=center;verticalAlign=middle;spacing=4;" vertex="1" parent="1">
+          <mxGeometry x="128" y="264" width="128" height="56" as="geometry" />
+        </mxCell>
+        <mxCell id="c2" value="&lt;b&gt;μBatch 1&lt;/b&gt;&lt;br&gt;Attn + 路由" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f2fb;strokeColor=#2f5783;fontColor=#1d1d1f;strokeWidth=1.5;fontSize=12;align=center;verticalAlign=middle;spacing=4;" vertex="1" parent="1">
+          <mxGeometry x="264" y="264" width="128" height="56" as="geometry" />
+        </mxCell>
+        <mxCell id="c3" value="&lt;b&gt;μBatch 0&lt;/b&gt;&lt;br&gt;MoE GEMM" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f2fb;strokeColor=#2f5783;fontColor=#1d1d1f;strokeWidth=1.5;fontSize=12;align=center;verticalAlign=middle;spacing=4;" vertex="1" parent="1">
+          <mxGeometry x="400" y="264" width="128" height="56" as="geometry" />
+        </mxCell>
+        <mxCell id="c4" value="&lt;b&gt;μBatch 1&lt;/b&gt;&lt;br&gt;MoE GEMM" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f2fb;strokeColor=#2f5783;fontColor=#1d1d1f;strokeWidth=1.5;fontSize=12;align=center;verticalAlign=middle;spacing=4;" vertex="1" parent="1">
+          <mxGeometry x="536" y="264" width="128" height="56" as="geometry" />
+        </mxCell>
+
+        <mxCell id="m1" value="&lt;b&gt;μBatch 0&lt;/b&gt;&lt;br&gt;Dispatch A2A" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#fbf2df;strokeColor=#7b5518;fontColor=#1d1d1f;strokeWidth=1.5;fontSize=12;align=center;verticalAlign=middle;spacing=4;" vertex="1" parent="1">
+          <mxGeometry x="264" y="368" width="128" height="56" as="geometry" />
+        </mxCell>
+        <mxCell id="m2" value="&lt;b&gt;μBatch 1&lt;/b&gt;&lt;br&gt;Dispatch A2A" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#fbf2df;strokeColor=#7b5518;fontColor=#1d1d1f;strokeWidth=1.5;fontSize=12;align=center;verticalAlign=middle;spacing=4;" vertex="1" parent="1">
+          <mxGeometry x="400" y="368" width="128" height="56" as="geometry" />
+        </mxCell>
+        <mxCell id="m3" value="&lt;b&gt;μBatch 0&lt;/b&gt;&lt;br&gt;Combine A2A" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#fbf2df;strokeColor=#7b5518;fontColor=#1d1d1f;strokeWidth=1.5;fontSize=12;align=center;verticalAlign=middle;spacing=4;" vertex="1" parent="1">
+          <mxGeometry x="536" y="368" width="128" height="56" as="geometry" />
+        </mxCell>
+
+        <mxCell id="d_e1" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#5c6067;strokeWidth=1.25;endArrow=block;endFill=1;exitX=0.5;exitY=1;entryX=0.25;entryY=0;" edge="1" parent="1" source="c1" target="m1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="d_e2" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#5c6067;strokeWidth=1.25;endArrow=block;endFill=1;exitX=0.75;exitY=0;entryX=0.25;entryY=1;" edge="1" parent="1" source="m1" target="c3">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="d_e3" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#5c6067;strokeWidth=1.25;endArrow=block;endFill=1;exitX=0.5;exitY=1;entryX=0.25;entryY=0;" edge="1" parent="1" source="c2" target="m2">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="d_e4" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#5c6067;strokeWidth=1.25;endArrow=block;endFill=1;exitX=0.75;exitY=0;entryX=0.25;entryY=1;" edge="1" parent="1" source="m2" target="c4">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="d_e5" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#5c6067;strokeWidth=1.25;endArrow=block;endFill=1;exitX=0.5;exitY=1;entryX=0.25;entryY=0;" edge="1" parent="1" source="c3" target="m3">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <mxCell id="note" value="注：同一时刻上下两栏（如 μBatch 1 Attn 与 μBatch 0 Dispatch A2A）在独立 CUDA/NPU 流上并行执行，掩盖跨节点通信。" style="text;html=1;align=left;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=12;fontColor=#5c6067;strokeColor=none;fillColor=none;" vertex="1" parent="1">
+          <mxGeometry x="16" y="448" width="664" height="32" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

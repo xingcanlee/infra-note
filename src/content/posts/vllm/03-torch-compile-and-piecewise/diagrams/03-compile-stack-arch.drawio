@@ -1,0 +1,99 @@
+<mxfile host="app.diagrams.net" version="24.7.17">
+  <diagram id="compile-stack-arch" name="compile-stack-arch">
+    <mxGraphModel dx="0" dy="0" grid="1" gridSize="8" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="688" pageHeight="504" math="0" shadow="0">
+      <root>
+        <mxCell id="0"/>
+        <mxCell id="1" parent="0"/>
+
+        <mxCell id="l1_box" value="" style="rounded=1;absoluteArcSize=1;arcSize=8;fillColor=#e9f2fb;strokeColor=#2f5783;strokeWidth=1.25;container=0;" vertex="1" parent="1">
+          <mxGeometry x="16" y="16" width="656" height="88" as="geometry"/>
+        </mxCell>
+        <mxCell id="l1_title" value="1. 入口封装层：_support_torch_compile + TorchCompileWithNoGuardsWrapper" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;whiteSpace=wrap;fontFamily=Inter;fontSize=12;fontStyle=1;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="32" y="24" width="624" height="24" as="geometry"/>
+        </mxCell>
+        <mxCell id="l1_left" value="_mark_dynamic_inputs：标定 num_tokens 为 symint&lt;br&gt;enable_cpp_symbolic_shape_guards=False" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;fillColor=#f4f4f2;strokeColor=#e2e2dd;strokeWidth=1;" vertex="1" parent="1">
+          <mxGeometry x="32" y="48" width="304" height="40" as="geometry"/>
+        </mxCell>
+        <mxCell id="l1_right" value="skip_all_guards_unsafe + bytecode_hook：&lt;br&gt;直接替换 forward.__code__，零步间 Guard 开销" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;fillColor=#f4f4f2;strokeColor=#e2e2dd;strokeWidth=1;" vertex="1" parent="1">
+          <mxGeometry x="352" y="48" width="304" height="40" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="l2_box" value="" style="rounded=1;absoluteArcSize=1;arcSize=8;fillColor=#e9f2fb;strokeColor=#2f5783;strokeWidth=1.25;container=0;" vertex="1" parent="1">
+          <mxGeometry x="16" y="128" width="656" height="88" as="geometry"/>
+        </mxCell>
+        <mxCell id="l2_title" value="2. 整图捕获与后端适配：TorchDynamo（fullgraph=True）-&amp;gt; VllmBackend" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;whiteSpace=wrap;fontFamily=Inter;fontSize=12;fontStyle=1;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="32" y="136" width="624" height="24" as="geometry"/>
+        </mxCell>
+        <mxCell id="l2_left" value="只追踪 Python 一次，禁止运行时 Graph Break&lt;br&gt;VLLM_USE_AOT_COMPILE 支持字节码与产物缓存" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;fillColor=#f4f4f2;strokeColor=#e2e2dd;strokeWidth=1;" vertex="1" parent="1">
+          <mxGeometry x="32" y="160" width="304" height="40" as="geometry"/>
+        </mxCell>
+        <mxCell id="l2_right" value="AlwaysHitShapeEnv：伪装符号形状全命中，&lt;br&gt;让同一张 FX 图可反复实例化不同尺寸编译产物" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;fillColor=#f4f4f2;strokeColor=#e2e2dd;strokeWidth=1;" vertex="1" parent="1">
+          <mxGeometry x="352" y="160" width="304" height="40" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="e_12" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#2f5783;strokeWidth=1.5;endArrow=block;endFill=1;" edge="1" parent="1" source="l1_box" target="l2_box">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="p_left_box" value="" style="rounded=1;absoluteArcSize=1;arcSize=8;fillColor=#f4f4f2;strokeColor=#464e57;strokeWidth=1;container=0;dashed=1;" vertex="1" parent="1">
+          <mxGeometry x="16" y="240" width="320" height="164" as="geometry"/>
+        </mxCell>
+        <mxCell id="p_left_title" value="3A. 默认路径（inductor_partition=False）" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;whiteSpace=wrap;fontFamily=Inter;fontSize=12;fontStyle=1;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="32" y="248" width="288" height="24" as="geometry"/>
+        </mxCell>
+        <mxCell id="p_l_1" value="split_graph() 在 FX 层先切开 splitting_ops&lt;br&gt;（Attn 与 KV Cache Update 留在子图外）" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;fillColor=#eaedf2;strokeColor=#464e57;strokeWidth=1.25;" vertex="1" parent="1">
+          <mxGeometry x="32" y="272" width="288" height="40" as="geometry"/>
+        </mxCell>
+        <mxCell id="p_l_2" value="PiecewiseBackend + PostGradPassManager：&lt;br&gt;段内 Inductor 生成 fused Triton kernel" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;fillColor=#e3f5f3;strokeColor=#0f766e;strokeWidth=1.25;" vertex="1" parent="1">
+          <mxGeometry x="32" y="320" width="288" height="40" as="geometry"/>
+        </mxCell>
+        <mxCell id="p_l_3" value="wrap_with_cudagraph_if_needed -&amp;gt; CG" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fontFamily=Inter;fontSize=12;fontStyle=1;fontColor=#1d1d1f;fillColor=#fbf2df;strokeColor=#7b5518;strokeWidth=1.25;" vertex="1" parent="1">
+          <mxGeometry x="32" y="368" width="288" height="28" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="p_right_box" value="" style="rounded=1;absoluteArcSize=1;arcSize=8;fillColor=#f4f4f2;strokeColor=#0f766e;strokeWidth=1;container=0;dashed=1;" vertex="1" parent="1">
+          <mxGeometry x="352" y="240" width="320" height="164" as="geometry"/>
+        </mxCell>
+        <mxCell id="p_right_title" value="3B. 新路径（inductor_partition=True）" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;whiteSpace=wrap;fontFamily=Inter;fontSize=12;fontStyle=1;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="368" y="248" width="288" height="24" as="geometry"/>
+        </mxCell>
+        <mxCell id="p_r_1" value="保留整张 FX 图直接过 PostGradPassManager：&lt;br&gt;可跨 Attn 边界融合 AttnQuant / RopeKVCache" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fontFamily=Inter;fontSize=12;fontStyle=1;fontColor=#1d1d1f;fillColor=#e3f5f3;strokeColor=#0f766e;strokeWidth=1.25;" vertex="1" parent="1">
+          <mxGeometry x="368" y="272" width="288" height="40" as="geometry"/>
+        </mxCell>
+        <mxCell id="p_r_2" value="inductor_partition_rule_context：&lt;br&gt;在 Inductor 调度层按 partition ops 切分" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;fillColor=#eaedf2;strokeColor=#464e57;strokeWidth=1.25;" vertex="1" parent="1">
+          <mxGeometry x="368" y="320" width="288" height="40" as="geometry"/>
+        </mxCell>
+        <mxCell id="p_r_3" value="maybe_use_cudagraph_partition_wrapper" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fontFamily=Inter;fontSize=12;fontStyle=1;fontColor=#1d1d1f;fillColor=#fbf2df;strokeColor=#7b5518;strokeWidth=1.25;" vertex="1" parent="1">
+          <mxGeometry x="368" y="368" width="288" height="28" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="e_2_l" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#464e57;strokeWidth=1.25;endArrow=block;endFill=1;exitX=0.25;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="l2_box" target="p_left_box">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e_2_r" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#0f766e;strokeWidth=1.25;endArrow=block;endFill=1;exitX=0.75;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="l2_box" target="p_right_box">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="l4_box" value="" style="rounded=1;absoluteArcSize=1;arcSize=8;fillColor=#fbf2df;strokeColor=#7b5518;strokeWidth=1.5;container=0;" vertex="1" parent="1">
+          <mxGeometry x="16" y="424" width="656" height="72" as="geometry"/>
+        </mxCell>
+        <mxCell id="l4_title" value="4. 为什么 torch.compile + Inductor 之后仍然必须叠 CUDA Graph？（两种互补瓶颈）" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;whiteSpace=wrap;fontFamily=Inter;fontSize=12;fontStyle=1;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="32" y="424" width="624" height="24" as="geometry"/>
+        </mxCell>
+        <mxCell id="l4_l" value="Inductor：算子融合减少 HBM 读写，但 CPU 仍需逐个 cudaLaunchKernel" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;fillColor=#f4f4f2;strokeColor=#e2e2dd;strokeWidth=1;" vertex="1" parent="1">
+          <mxGeometry x="32" y="448" width="304" height="40" as="geometry"/>
+        </mxCell>
+        <mxCell id="l4_r" value="CUDA Graph：把多次驱动发射折叠为 1 次 cudaGraphLaunch，消除 Host 墙" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;fillColor=#f4f4f2;strokeColor=#e2e2dd;strokeWidth=1;" vertex="1" parent="1">
+          <mxGeometry x="352" y="448" width="304" height="40" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="e_l_4" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#7b5518;strokeWidth=1.25;endArrow=block;endFill=1;exitX=0.5;exitY=1;entryX=0.25;entryY=0;" edge="1" parent="1" source="p_left_box" target="l4_box">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e_r_4" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#7b5518;strokeWidth=1.25;endArrow=block;endFill=1;exitX=0.5;exitY=1;entryX=0.75;entryY=0;" edge="1" parent="1" source="p_right_box" target="l4_box">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

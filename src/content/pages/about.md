@@ -1,20 +1,26 @@
 ---
 title: '关于'
-description: '关于 infra-note：一份记录 LLM 推理基础设施的学习笔记。'
+description: '关于 infra-note：面向零基础开发者的异构硬件、分布式通信、DeepSeek 模型演进与 vLLM / 昇腾推理引擎实战笔记。'
 ---
 
-infra-note 是一份围绕 LLM 推理基础设施的技术笔记：关注模型如何被编译成计算图、如何下沉到内核与设备执行，以及运行时怎样调度、缓存和排错。
+`infra-note` 是一份面向会写 Python、不默认熟悉深度学习缩写或硬件行话的 LLM 推理系统笔记：全站坚持**先给可手算的微型具体数字与示意图、再推正式公式、最后落到可运行 NumPy 沙箱（`toy.py`）和 NVIDIA / 昇腾双仓真实源码行号**。
 
-目前有两条主线：vLLM 图模式系列从 CUDA Graph 讲到 Ascend ACLGraph，DeepSeek 系列从 Attention/KV Cache 讲到 MLA、稀疏注意力、MoE 与推测解码。文章按问题、数据流、源码证据和边界组织，便于从概念一路读到实现。
+## 四大递进系列（共 29 篇）
 
-## 阅读路线
+站点按**「通用硬件与算子底座 → 多卡并行与通信 → 纯 DeepSeek 架构创新 → 推理引擎运行时」**划分为 4 条互相衔接的系列（`4` 篇系列导览 + `25` 篇精讲正文章）：
 
-推荐先读 vLLM 系列的 00、05、01，建立请求、图桶与回退的直觉；再从 DeepSeek 系列 01、02、08 开始，理解 Attention、MLA 和稀疏读取的关系。没有设备时，可以阅读 Mermaid、draw.io 和纯 Python 练习，跳过需要 GPU/NPU 的捕获、重放与性能验证。
+1. **[推理与异构硬件基础（01–05 + 导览）](../posts/foundations/)**：从单层前向、Roofline 带宽墙及 **NVIDIA SM vs 昇腾 DaVinci AI Core（Cube/Vector/UB/FRACTAL_NZ）** 出发，系统拆解 Attention / RoPE、KV Cache 与 MQA/GQA、FlashAttention / FlashMLA 与昇腾融合注意力，以及 INT8 / FP8 细粒度缩放 / MXFP4 与昇腾 ModelSlim / PDMix 量化差异。
+2. **[分布式并行与跨卡通信（01–03 + 导览）](../posts/distributed/)**：拆解 $\alpha\text{-}\beta$ 通信模型、Ring/Tree 集合通信与 **NVLink/NCCL vs 昇腾 HCCS/UB/HCCL** 互连差异，推导 TP / SP / CP / Attention DP + MoE EP 混合并行与 PD 分离跨机 KV 传输，并深入 **DeepEP 双模式/v2、昇腾 HCCL MC2/FlashComm 与双微批重叠（DBO）**。
+3. **[DeepSeek 架构演进（01–10 + 导览）](../posts/deepseek/)**：纯粹聚焦 DeepSeek 模型本身的架构突破——从 MLA 矩阵吸收、NSA、DSA、CSA/HCA 与 V4.1 CSA2 + CED，推进到 DeepSeekMoE、Engram、mHC / Mega-mHC、MTP / DSpark，最后串成 V2–V4.1 单步全链路与 NVIDIA / 昇腾全栈对照。
+4. **[vLLM 与昇腾推理引擎（01–07 + 导览）](../posts/vllm/)**：把前序模型与通信机制拉进生产调度与编译栈——拆解 PagedAttention 与连续批处理、异步发射墙、`torch.compile` 分段编译、CUDA Graph 四道边界、运行时模式分派与 DP 降级、昇腾 `ACLGraph` / `npugraph_ex` / `UpdatableGraph`，直到 Profiler 轨迹指纹识别与五维排障。
 
-## 内容边界
+建议零基础读者按「`foundations` → `distributed` → `deepseek` → `vllm`」顺序通读；如专注在线服务调优，也可从[分布式并行与跨卡通信](../posts/distributed/)或[vLLM 与昇腾推理引擎](../posts/vllm/)切入，再回查硬件与量化前置章。
 
-文中的源码分析固定在文章注明的提交附近，不代表当前版本的完整兼容矩阵。工作目录下与本仓库同级的 `reference/` 保存 vLLM、vLLM-Ascend、DeepSeek 及相关内核的本地浅克隆，只用于阅读和定位源码，不参与站点编译，也不在本机安装依赖。没有 GPU 或 NPU 时，捕获、重放和性能收益只能作为机制分析，不能替代目标硬件上的正确性检查与 profiler 证据。
+## 实验环境与双硬件源码快照
 
-## 图表
+- **无 GPU/NPU 也可完整运行全部验证**：全站 `25` 篇正文章均配有 `<= 150` 行纯 NumPy 独立脚本 `toy.py`（固定随机种子 `default_rng(42)`），在 `infra-note` 根目录运行 `uv run scripts/verify_toys.py` 即可在 CPU 上验证全部数值结论。
+- **严谨的上游代码与论文锚定**：正文所有源码路径与行号均核验自仓库外快照目录：上游 `vllm`（`bb23c0a8`）、`vllm-ascend`（`3649b8ff`）、`DeepSeek-V3`（`9b4e9788`）、`FlashMLA`（`395cb3af`）、`DeepEP`（`f6aa38fe`）与 `Engram`（`fb7f84a2`）。论文实测数据与技术报告数字一律标注原始测试条件，不编造本地芯片实测。
 
-图表源文件与生成的 Wisp SVG 保存在对应文章目录中。draw.io 源文件可以下载后继续编辑，SVG 版本用于站点内的主题化展示。
+## 图表工程
+
+全部结构图、数值走查图与运行时序图均托管于每篇文章的 `diagrams/` 目录，遵守 Wisp 语义调色板并统一编译为明暗双主题自适应 `.wisp.svg`（新增与重写章节统一采用手绘 `.excalidraw`，保留篇章采用规整 `.drawio`，确保单篇内部画风完全一致）。

@@ -13,6 +13,7 @@
 """
 from __future__ import annotations
 
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -23,17 +24,23 @@ POSTS = ROOT / "src" / "content" / "posts"
 
 def main() -> int:
     needle = sys.argv[1] if len(sys.argv) > 1 else ""
-    toys = sorted(p for p in POSTS.glob("*/*/toy.py") if needle in str(p.relative_to(POSTS)))
+    toys = sorted(p for p in POSTS.glob("*/*/toy.py") if needle in p.relative_to(POSTS).as_posix())
     if not toys:
         print(f"没有找到匹配 {needle!r} 的 toy.py")
         return 1
 
+    env = {**os.environ, "PYTHONUTF8": "1"}
     failed: list[str] = []
     for toy in toys:
-        rel = toy.relative_to(ROOT)
+        rel = toy.relative_to(ROOT).as_posix()
         # -I：隔离模式，不把脚本目录和当前目录加入 import 路径
         proc = subprocess.run(
-            [sys.executable, "-I", str(toy)], capture_output=True, text=True, cwd=toy.parent
+            [sys.executable, "-I", str(toy)],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            env=env,
+            cwd=toy.parent,
         )
         ok = proc.returncode == 0
         print(f"{'  ok  ' if ok else ' FAIL '} {rel}")

@@ -1,0 +1,105 @@
+<mxfile host="app.diagrams.net">
+  <diagram id="mhc-runtime" name="V4.1 Single-Pass Mega-mHC 与生产融合">
+    <mxGraphModel dx="900" dy="600" grid="1" gridSize="8" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="688" pageHeight="456" math="1" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+
+        <mxCell id="pnl_multi" value="" style="rounded=1;absoluteArcSize=1;arcSize=8;fillColor=#f4f4f2;strokeColor=#e2e2dd;strokeWidth=1.25;" vertex="1" parent="1">
+          <mxGeometry x="8" y="8" width="672" height="96" as="geometry" />
+        </mxCell>
+        <mxCell id="hdr_multi" value="原始 Multi-Pass mHC（eq. 2–5）：层内数据依赖迫使反复读写 HBM" style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;fontFamily=Inter;fontSize=12;fontStyle=1;fontColor=#7b5518;" vertex="1" parent="1">
+          <mxGeometry x="16" y="16" width="520" height="24" as="geometry" />
+        </mxCell>
+        <mxCell id="mp_1" value="Kernel 1：读 \(X_l\)&lt;br&gt;全局归约算 \((A_l,B_l,C_l)\)" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#fbf2df;strokeColor=#7b5518;fontColor=#1d1d1f;fontFamily=Inter;fontSize=12;strokeWidth=1.25;" vertex="1" parent="1">
+          <mxGeometry x="16" y="48" width="160" height="48" as="geometry" />
+        </mxCell>
+        <mxCell id="mp_2" value="Kernel 2：再读 \(X_l\)&lt;br&gt;算 \(A_l X_l + \mathrm{Norm}\)" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#fbf2df;strokeColor=#7b5518;fontColor=#1d1d1f;fontFamily=Inter;fontSize=12;strokeWidth=1.25;" vertex="1" parent="1">
+          <mxGeometry x="192" y="48" width="160" height="48" as="geometry" />
+        </mxCell>
+        <mxCell id="mp_3" value="Kernel 3：三读 \(X_l\)&lt;br&gt;\(B_l X_l + C_l \mathcal{F}_l(\cdot)\)" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#fbf2df;strokeColor=#7b5518;fontColor=#1d1d1f;fontFamily=Inter;fontSize=12;strokeWidth=1.25;" vertex="1" parent="1">
+          <mxGeometry x="368" y="48" width="160" height="48" as="geometry" />
+        </mxCell>
+        <mxCell id="mp_io" value="激活访存总量&lt;br&gt;\((4n+4)d = 20d\)" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#eaedf2;strokeColor=#464e57;fontColor=#7b5518;fontFamily=Inter;fontSize=12;fontStyle=1;strokeWidth=1.25;" vertex="1" parent="1">
+          <mxGeometry x="544" y="48" width="128" height="48" as="geometry" />
+        </mxCell>
+
+        <mxCell id="pnl_sp" value="" style="rounded=1;absoluteArcSize=1;arcSize=8;fillColor=#f4f4f2;strokeColor=#e2e2dd;strokeWidth=1.25;" vertex="1" parent="1">
+          <mxGeometry x="8" y="112" width="672" height="112" as="geometry" />
+        </mxCell>
+        <mxCell id="hdr_sp" value="V4.1 Single-Pass mHC（eq. 6）：用上层 \(A_{l-1}\) 解除依赖，Mega-mHC 单遍读写" style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;fontFamily=Inter;fontSize=12;fontStyle=1;fontColor=#0f766e;" vertex="1" parent="1">
+          <mxGeometry x="16" y="120" width="560" height="24" as="geometry" />
+        </mxCell>
+        <mxCell id="sp_in" value="边界输入 \((X_{l-1}, Y_{l-1})\)&lt;br&gt;\((A_{l-1},B_{l-1},C_{l-1})\) 已就绪" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f2fb;strokeColor=#2f5783;fontColor=#1d1d1f;fontFamily=Inter;fontSize=12;strokeWidth=1.25;" vertex="1" parent="1">
+          <mxGeometry x="16" y="152" width="160" height="64" as="geometry" />
+        </mxCell>
+        <mxCell id="sp_mega" value="Mega-mHC 单核分块融合（寄存器一次过）：&lt;br&gt;① \(X_l = B_{l-1}X_{l-1}+C_{l-1}Y_{l-1}\)&lt;br&gt;② \(A_{l-1}X_l+\mathrm{Norm+FP8}\) · ③ 累加 \(\mathcal{H}(X_l)\)" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e3f5f3;strokeColor=#0f766e;fontColor=#1d1d1f;fontFamily=Inter;fontSize=12;strokeWidth=1.25;" vertex="1" parent="1">
+          <mxGeometry x="192" y="152" width="336" height="64" as="geometry" />
+        </mxCell>
+        <mxCell id="sp_io" value="单读单写最优下界&lt;br&gt;\((2n+2)d = 10d\)（2×）" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e3f5f3;strokeColor=#0f766e;fontColor=#0f766e;fontFamily=Inter;fontSize=12;fontStyle=1;strokeWidth=1.25;" vertex="1" parent="1">
+          <mxGeometry x="544" y="152" width="128" height="64" as="geometry" />
+        </mxCell>
+
+        <mxCell id="pnl_std" value="" style="rounded=1;absoluteArcSize=1;arcSize=8;fillColor=#f4f4f2;strokeColor=#e2e2dd;strokeWidth=1.25;" vertex="1" parent="1">
+          <mxGeometry x="8" y="232" width="336" height="216" as="geometry" />
+        </mxCell>
+        <mxCell id="hdr_std" value="标准层边界：mhc_shifted_post_pre" style="text;html=1;whiteSpace=wrap;align=center;verticalAlign=middle;fontFamily=Inter;fontSize=14;fontStyle=1;fontColor=#0f766e;" vertex="1" parent="1">
+          <mxGeometry x="16" y="240" width="320" height="24" as="geometry" />
+        </mxCell>
+        <mxCell id="std_prev" value="上一步算子输出 \(Y_{l-1}\)（MLA 或 MoE 分片）" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#eaedf2;strokeColor=#464e57;fontColor=#1d1d1f;fontFamily=Inter;fontSize=12;strokeWidth=1.25;" vertex="1" parent="1">
+          <mxGeometry x="24" y="272" width="304" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="std_fused" value="&lt;b&gt;跨层融合核 mhc_shifted_post_pre&lt;/b&gt;&lt;br&gt;TP Lamport AllReduce + prev_post + next_pre&lt;br&gt;SM100 走 DeepGEMM / CuTe 16-CTA DSMEM" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e3f5f3;strokeColor=#0f766e;fontColor=#1d1d1f;fontFamily=Inter;fontSize=12;strokeWidth=1.25;" vertex="1" parent="1">
+          <mxGeometry x="24" y="328" width="304" height="56" as="geometry" />
+        </mxCell>
+        <mxCell id="std_next" value="输出下一算子输入（\(T\le 16\) 可用延迟重叠流）" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f2fb;strokeColor=#2f5783;fontColor=#1d1d1f;fontFamily=Inter;fontSize=12;strokeWidth=1.25;" vertex="1" parent="1">
+          <mxGeometry x="24" y="400" width="304" height="40" as="geometry" />
+        </mxCell>
+
+        <mxCell id="pnl_eng" value="" style="rounded=1;absoluteArcSize=1;arcSize=8;fillColor=#f4f4f2;strokeColor=#e2e2dd;strokeWidth=1.25;" vertex="1" parent="1">
+          <mxGeometry x="352" y="232" width="328" height="216" as="geometry" />
+        </mxCell>
+        <mxCell id="hdr_eng" value="Engram 层边界（layers.1 / 14）：融合拆解" style="text;html=1;whiteSpace=wrap;align=center;verticalAlign=middle;fontFamily=Inter;fontSize=14;fontStyle=1;fontColor=#2f5783;" vertex="1" parent="1">
+          <mxGeometry x="360" y="240" width="312" height="24" as="geometry" />
+        </mxCell>
+        <mxCell id="eng_1" value="TP AllReduce → mhc_post_tilelang 写出 \([T, 4, d]\)" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f2fb;strokeColor=#2f5783;fontColor=#1d1d1f;fontFamily=Inter;fontSize=12;strokeWidth=1.25;" vertex="1" parent="1">
+          <mxGeometry x="368" y="272" width="296" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="eng_2" value="self.engram 在 4 分支状态上原位门控更新" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#fbf2df;strokeColor=#7b5518;fontColor=#1d1d1f;fontFamily=Inter;fontSize=12;strokeWidth=1.25;" vertex="1" parent="1">
+          <mxGeometry x="368" y="336" width="296" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="eng_3" value="mhc_pre_delayed_tilelang 重聚单流送入 MLA" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f2fb;strokeColor=#2f5783;fontColor=#1d1d1f;fontFamily=Inter;fontSize=12;strokeWidth=1.25;" vertex="1" parent="1">
+          <mxGeometry x="368" y="400" width="296" height="40" as="geometry" />
+        </mxCell>
+
+        <mxCell id="e_mp1" style="rounded=1;html=1;strokeColor=#7b5518;strokeWidth=1.25;endArrow=block;endFill=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="mp_1" target="mp_2">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_mp2" style="rounded=1;html=1;strokeColor=#7b5518;strokeWidth=1.25;endArrow=block;endFill=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="mp_2" target="mp_3">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_mp3" style="rounded=1;html=1;strokeColor=#7b5518;dashed=1;strokeWidth=1.25;endArrow=block;endFill=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="mp_3" target="mp_io">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_sp1" style="rounded=1;html=1;strokeColor=#0f766e;strokeWidth=1.25;endArrow=block;endFill=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="sp_in" target="sp_mega">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_sp2" style="rounded=1;html=1;strokeColor=#0f766e;dashed=1;strokeWidth=1.25;endArrow=block;endFill=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="sp_mega" target="sp_io">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_std1" style="rounded=1;html=1;strokeColor=#0f766e;strokeWidth=1.25;endArrow=block;endFill=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="std_prev" target="std_fused">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_std2" style="rounded=1;html=1;strokeColor=#0f766e;strokeWidth=1.25;endArrow=block;endFill=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="std_fused" target="std_next">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_eng1" style="rounded=1;html=1;strokeColor=#2f5783;strokeWidth=1.25;endArrow=block;endFill=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="eng_1" target="eng_2">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_eng2" style="rounded=1;html=1;strokeColor=#2f5783;strokeWidth=1.25;endArrow=block;endFill=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="eng_2" target="eng_3">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

@@ -1,0 +1,225 @@
+---
+title: '04 序列压缩注意力（上）：DeepSeek-V4 的 CSA 与 HCA 双重配方'
+description: 'DSA 省了算力却省不下长文本显存容量；本文拆解 DeepSeek-V4 的序列压缩注意力（CSA）如何把多词元潜向量门控折叠、配对 SWA 与双轨 RoPE（含输出逆旋转），以及与重度压缩注意力 HCA 的分工。'
+series: { id: deepseek, order: 5 }
+pubDate: 2026-11-07
+tags: [DeepSeek, Sparse Attention, CSA, MLA, KV Cache, vLLM, Ascend]
+category: AI Infra
+toc: true
+---
+
+上一章的 DeepSeek-V3.2 稀疏注意力（DSA）依靠闪电索引器筛选出 `Top-k = 2048` 个关键历史词元，把单步注意力计算量从平方复杂度 $O(L^2)$ 压到了 $O(Lk)$[^dsv32-paper]。然而仔细算一笔 HBM 容量账就会发现：**DSA 省下了核心算力，却没有删掉哪怕一个历史词元的 KV 缓存**。因为在推理开始前，谁也不知道后续词元会挑中哪 2048 个位置，于是全部 $L$ 个未压缩的潜在向量都必须老老实实驻留在显存里。
+
+按 DeepSeek-V3.2 在 Hopper 上的 FP8 稀疏布局计算[^flashmla-doc]，每层每词元需要 `656 B`（`512 B` 的 FP8 潜在向量、4 个 FP32 缩放因子共 `16 B`，以及 `64` 维 BF16 RoPE 位置键 `128 B`）。放进 `61` 层模型里跑百万上下文（$L = 1{,}000{,}000$）、并发批大小 $B = 16$ 时，单靠显存容量算术就已经炸穿单机 8 卡 H800 集群：
+
+$$
+\text{KV}_{\text{V3.2}} = 16 \times 1{,}000{,}000 \times 656\,\text{B} \times 61 \approx 640.3\,\text{GB}
+$$
+
+其中 $16$ 为并发请求数，$1{,}000{,}000$ 为上下文词元数，$656\,\text{B}$ 为单层每词元缓存字节，$61$ 为注意力层数。既然 [01 MLA](../01-mla/) 已经把单条向量的宽度压缩到了极限，继续压垮长文本瓶颈的唯一维度，只剩下**序列长度轴 $L$**——问题在于，怎样把连续多个词元折成一条潜向量，同时又不让精密的上下文变成一团模糊的均值？
+
+读完本章，你可以带走四件确定的事：
+
+1. **门控折块与双缓存协同**：DeepSeek-V4 通过带位置偏置的逐通道 Softmax 门控把连续 $m$ 个词元加权折叠进 `Main KV`，同时用小容量定长 `State Cache` 存住滑窗（SWA）与未满块尾词元，规避因果遮挡与信号稀释[^dsv4-paper]。
+2. **CSA 与 HCA 的双重配方**：CSA（压缩稀疏注意力）以 $m=4$ 重叠折块配合 `FP4` 闪电索引器筛选 `Top-k`；HCA（重度压缩注意力）则用 $m'=128$ 非重叠极重压缩取消索引器直接全块读取，两者交错堆叠把百万上下文缓存压到 V3.2 的 `7%–10%`[^dsv4-paper]。
+3. **双轨 RoPE 与输出逆旋转**：SWA 局部支坚持原始频谱 `factor=1.0`，而压缩全局支启用 `deepseek_yarn`；由于共用 KV 条目携带绝对旋转角，Core Attention 输出端必须在末尾 64 维执行一次位置 `-t` 的逆 RoPE 才能还原相对位置关系[^dsv4-paper]。
+4. **生产代码的两套状态机实现**：对照 `vllm@bb23c0a8` 的 `CompressorStateCache` 与 `fused_save_compress_norm`／`rope_quant_insert`[^vllm-comp41]，以及 `vllm-ascend@3649b8ff` 的 `c2_ring_metadata`、三段 Triton 核与 `AscendDSAV41Impl._apply_rotary(..., inverse=True)`[^ascend-dsa41]。
+
+## 先看一个例子：把 8 个词元的 KV 折成 2 组压缩块，同时保留 4 个局部滑窗词元
+
+先把所有工程优化放在一边，看一个步长 $G = 4$ 的极简序列。假设现在输入了 $8$ 个词元 $t_0 \dots t_7$，其中 $t_1$ 和 $t_6$ 各自携带了一段决定后续推理的关键事实（如精确的函数参数名），其余 6 个词元大多是过渡虚词。
+
+如果直接按每 4 个词元做**等权平均池化**，每个词元分摊 $1/4 = 0.25$ 的权重，$t_1$ 的特征向量瞬间被其余三个背景词元稀释到原来的四分之一；在 $G=16$ 或 $m'=128$ 的真实长块里，信号甚至会被冲淡到几乎看不见。CSA 与 HCA 的做法是让每个词元在投影潜向量 $C$ 的同时，顺手输出一条同维度的门控打分向量 $Z$，叠加块内位置偏置 $B$ 后沿块内词元维做 Softmax：
+
+![图 4-1：步长 G=4 下 8 词元门控折块与 SWA／环形尾部状态缓存协同示意图](./diagrams/08-csa-walkthrough.drawio)
+
+顺着图 4-1 的数字往下走，整个流程分成三条互不阻塞的账本：
+
+1. **块 0 与块 1 写入主缓存（`Main KV`）**：块 0（$t_0 \dots t_3$）经门控给出权重 `[0.10, 0.72, 0.12, 0.06]`，把 `72%` 的容量留给了关键词元 $t_1$；块 1（$t_4 \dots t_7$）类似地把 `65%` 的权重交给 $t_6$。原本 8 条缓存条目被折成 `2` 条主缓存条目，主存储立省 `75%`。
+2. **新到词元 $t_8$ 先停进环形状态缓存（`Circular Ring`）**：流式解码刚吐出第 9 个词元 $t_8$ 时，块 2（$t_8 \dots t_{11}$）还缺 3 个伙伴。此时 $t_8$ 不会向 `Main KV` 写任何条目，而是把 `[kv, score]` 暂时写入一个只有 `G = 4` 个槽位的固定大小环形缓存，直到凑满第 4 个词元才触发一次折块写回。
+3. **局部滑窗（`SWA`, `n_win = 4`）兜底同块因果盲区**：为了严格满足因果律，DeepSeek-V4 规定查询词元只能看见**已经闭合的早期压缩块**（$s < \lfloor t / G \rfloor$）[^dsv4-paper]。换言之，正在生成的 $t_7$ 既看不见自己所在的未闭合块 1，也很难从被折成 1 条的块向量里逐字抄写近邻语法。于是 SWA 分支单独为最近 $n_{\text{win}} = 4$ 个词元保留完整未压缩的精确 KV，保证近距离依赖与逐词抄写零损失。
+
+这个 `G = 4` 玩具把核心矛盾揭示得一清二楚：序列压缩负责砍掉历史长尾的内存占用，定长滑窗与环形状态槽则用可控的常数级显存（与总长 $L$ 无关），抹平了块边界延迟与同块因果盲区。实际论文与代码只是把 $G$ 换成了更大的步长——比如后文 `toy.py` 中的 `G = 16`（主缓存直接压缩 `16x`），或者 DeepSeek-V4 论文里的 $m = 4$ 与 $m' = 128$。
+
+## DeepSeek-V4 架构全景：CSA、HCA 与嵌套双轨 RoPE
+
+在 DeepSeek-V4 技术报告（`arXiv:2606.19348`）中[^dsv4-paper]，团队并没有拿同一种压缩率一刀切到底，而是把每一层注意力配成「压缩全局支 + 局部 SWA 支」的双支结构，再把全局支分成 **CSA** 与 **HCA** 两种互补变体交替堆叠。
+
+![图 4-2：DeepSeek-V4 中 CSA 与 HCA 的结构对照、双轨 RoPE 调度与输出逆旋转](./diagrams/08-csa-hca-arch.drawio)
+
+### 块级门控折叠：CSA 的重叠双窗与 HCA 的非重叠重压
+
+对于输入隐藏状态矩阵 $H \in \mathbb{R}^{n \times d}$，**CSA（Compressed Sparse Attention）** 取压缩步长 $m = 4$，但每次从相邻位置切出长度为 $2m = 8$ 的重叠窗口。它用两套独立线性层分别投影出前窗与后窗的内容向量和门控对数几率：
+
+$$
+C^a = H W^{aKV},\quad C^b = H W^{bKV},\qquad Z^a = H W^{aZ},\quad Z^b = H W^{bZ}
+$$
+
+其中 $W^{aKV}, W^{bKV}, W^{aZ}, W^{bZ} \in \mathbb{R}^{d \times c}$ 为可训练投影权重，$c$ 为共享 KV 潜在维度（生产配置为 `512`）。把第 $i$ 块涵盖的 $m$ 个前窗行与 $m$ 个后窗行拼在一起，分别加上可学习块内位置偏置 $B^a, B^b \in \mathbb{R}^{m \times c}$，沿时间行维做**逐通道 Softmax** 后再加权求和，便得到第 $i$ 个主压缩条目 $C_i^{\text{Comp}} \in \mathbb{R}^c$[^dsv4-paper]：
+
+$$
+[S_i^a;\, S_i^b] = \operatorname{Softmax}_{\text{row}}\!\bigl([Z_{mi:m(i+1)-1}^a + B^a;\; Z_{m(i-1):mi-1}^b + B^b]\bigr)
+$$
+
+$$
+C_i^{\text{Comp}} = \sum_{j=0}^{m-1} S_{i,j}^a \odot C_{mi+j}^a + \sum_{j=0}^{m-1} S_{i,j}^b \odot C_{m(i-1)+j}^b
+$$
+
+这里的 $\odot$ 表示按元素哈达玛积，$S_i^a, S_i^b \in \mathbb{R}^{m \times c}$ 的每个特征通道各自独立竞争窗口内 $2m$ 个时间步的注意力贡献。因为步长是 $m$ 而不是 $2m$，序列长度净压缩到 $1/m$，而相邻压缩块之间共享了 $m$ 个原词元的边界上下文，显著减轻了固定切块导致的边界信息撕裂。
+
+相比之下，**HCA（Heavily Compressed Attention）** 在同一篇技术报告中的定位非常明确：**它并不是跨层 KV 共享，而是大幅提高单层序列压缩比的“重度压缩注意力”**[^dsv4-paper]。HCA 将步长一口气放大到 $m' = 128$（即每 128 个词元折成 1 条潜块），为了控制窗口投影开销，它取消了双窗重叠，只用单组 $W^{KV}, W^Z \in \mathbb{R}^{d \times c}$ 与单个位置偏置 $B \in \mathbb{R}^{m' \times c}$ 对连续 $m'$ 行做 Softmax 折叠，使序列长度直接压成 $1/m'$。
+
+### 压缩态闪电索引器、MHA-to-MQA 共用值与 Attention Sink
+
+块折好之后，CSA 与 HCA 的检索策略出现分叉：
+
+- **CSA 继续配闪电索引器做稀疏精选**：CSA 用独立小投影把每 $m=4$ 个词元也折成一条索引键 $K_s^{\text{IComp}} \in \mathbb{R}^{c^I}$，配合 FP4 低精度计算 ReLU 打分 $I_{t,s} = \sum_h w_{t,h}^I \operatorname{ReLU}(\mathbf{q}_{t,h}^I \cdot K_s^{\text{IComp}})$，只挑出最高分的 `Top-k` 个压缩块送入核心注意力（V4-Flash 取 `k = 512`，V4-Pro 取 `k = 1024`，仅为 V3.2 `k = 2048` 的四分之一到二分之一）[^dsv4-paper]。
+- **HCA 完全省去稀疏索引器**：在百万词元上下文下，$m' = 128$ 会把全序列折成区区 $1{,}000{,}000 / 128 \approx 7{,}812$ 块。对几千条单头 KV 做稠密注意力已经极快，保留全块稠密读取反而能帮模型兜住 `Top-k` 偶发漏选的全局线索。
+
+两条路径最终都把挑选或留存下来的压缩 KV 与各自层的 **SWA 局部滑窗**（`n_win = 128` 个最新未压缩词元）拼接起来[^dsv4-paper]，并在进入 Core Attention 前先对查询 $Q$ 与 KV 条目各做一次 **RMSNorm**，防止点积数值爆表。
+
+随后，计算主路径以**单头共享 KV 的 MQA**（Shared KV MQA）完成注意力加权，同时在 Softmax 分母额外加入各头可学习的 **Attention Sink** 项 $\exp(z'_h)$，让无需回看历史的查询头把多余概率质量安全倒进零输出槽；最后通过**分组输出投影（Grouped Output Projection）**先将 $n_h$ 个头分成 $g$ 组降维至 $d_g$，再汇总到隐藏维 $d$，压低超大输出矩阵乘法的计算开销[^dsv4-paper]。
+
+### 为什么需要双轨 RoPE 与输出逆旋转（Inverse RoPE）？
+
+把位置编码塞进“压缩全局支 + 局部 SWA 支”时，DeepSeek-V4 踩到了两个非处理不可的几何细节：
+
+1. **为什么 `SWA` 和压缩层必须用两套 RoPE 参数？**
+   在 `vllm` 源码的 `build_deepseek_v4_rope` 工厂函数里[^vllm-rope]，模型配置字典显式拆成了 `"main"` 与 `"compress"` 两套旋转参数：凡是参与序列压缩的全局分支（`compress_ratio > 0`），开启 `config.compress_rope_theta` 与 `deepseek_yarn` 长文本缩放；而 SWA 局部层（`compress_ratio == 0`）永远只在最近 `128` 个词元内做精确局部对齐，强制回退到 `config.rope_theta` 并把缩放因子锁死为 `factor = 1.0`。两者都统一关闭 NeoX 半区劈分（`is_neox_style = False`，即按相邻偶数/奇数通道配对的 GPT-J 交错旋转），且只旋转向量**最后 `64` 维**。
+
+2. **为什么注意力输出之后还要做一次「位置 `-t` 的逆旋转」？**
+   回顾前面写下的 MQA 公式：在 DeepSeek-V4 中，经过压缩并写进缓存的条目 $C^{\text{Comp}}$ **既当 Key 又当 Value**，其中最后 64 维已经预先叠上了该压缩块所在位置 $k_{\text{pos}}$ 的绝对 RoPE 旋转矩阵 $R_{k_{\text{pos}}}$[^dsv4-paper]。那么第 $t$ 个查询词元算出来的 Core Attention 输出 $\mathbf{o}_{t,h}$，在最后 64 维里实际等于各被选中历史块在绝对位置 $k_{\text{pos}}$ 旋转后的加权和：
+
+   $$
+   \mathbf{o}_{t,h}^{[-64:]} = \sum_j a_{t,h,j}\, \bigl(R_{k_{\text{pos}}(j)}\, \mathbf{v}_j^{[-64:]}\bigr)
+   $$
+
+   如果不做处理，输出特征带着的是跟查询无关的“绝对历史坐标”，位置平移不变性就被彻底破坏了。DeepSeek-V4 的解法非常优雅：利用二维正交旋转的可加性 $R_{-t} R_{k_{\text{pos}}} = R_{k_{\text{pos}} - t}$，在 Core Attention 吐出 $\mathbf{o}_{t,h}$ 之后，紧接着对最后 64 维乘上当前查询位置 $-t$ 的**逆向 RoPE**（代码里记为 `inverse=True`），瞬间把所有加权和里的绝对位置旋转变成只依赖相对距离 $k_{\text{pos}}(j) - t$ 的编码[^dsv4-paper][^vllm-invrope]！
+
+   $$
+   R_{-t}\, \mathbf{o}_{t,h}^{[-64:]} = \sum_j a_{t,h,j}\, \bigl(R_{k_{\text{pos}}(j) - t}\, \mathbf{v}_j^{[-64:]}\bigr)
+   $$
+
+   其中 $a_{t,h,j}$ 为第 $h$ 头对第 $j$ 条历史 KV 的归一化注意力权重，$\mathbf{v}_j^{[-64:]}$ 为压缩向量旋转前最后 64 维的原始内容分量，$R_{\theta}$ 为按偶数/奇数对作用的块对角旋转矩阵。
+
+### 混合层堆叠与实测收益
+
+基于这两种配方，DeepSeek-V4 系列给出了两种量产配比[^dsv4-paper]：
+
+| 模型版本              | 层数与参数规模                    | 层类型混合方式                                                  | 1M 上下文相对 V3.2 算力 / 显存                                                     |
+| :-------------------- | :-------------------------------- | :-------------------------------------------------------------- | :--------------------------------------------------------------------------------- |
+| **DeepSeek-V4-Flash** | `43` 层（总 `284B` / 激活 `13B`） | `L0–1` 为纯 SWA，`L2–42` 交错堆叠 `CSA (m=4)` 与 `HCA (m'=128)` | 单 token FLOPs 降至 **`10%`**，KV 缓存降至 **`7%`**（约为 BF16 GQA-8 的 **`2%`**） |
+| **DeepSeek-V4-Pro**   | `61` 层（总 `1.6T` / 激活 `49B`） | `L0–1` 为 `HCA`，`L2–60` 交错堆叠 `CSA (m=4)` 与 `HCA (m'=128)` | 单 token FLOPs 降至 **`27%`**，KV 缓存降至 **`10%`**                               |
+
+还需特别说明一个版本演进的细节，免得读者在翻看仓库代码时对不上号：在 DeepSeek-V4 论文（`V4.0`）里，压缩比取 `[4, 128]` 且带重叠双窗与块内绝对位置参数 `ape`；而到了 `vllm/models/deepseek_v41` 对应的 `DeepSeek-V4.1` 迭代中[^dsv41-paper]，工程师发现跨层共享结合 `ratio in (1, 2)` 的无重叠单窗压缩就能在更简洁的内核下进一步砍掉缓存，于是主动移除了 `2m` 重叠与 `ape` 参数（`deepseek_v41/compressor.py` 对 `ratio=4/128` 甚至直接抛出提示，将其留在 `deepseek_v4/` 目录保留兼容）[^vllm-comp41]。这一「单层压缩 → 跨层复用」的接力，会在第 05 章展开。
+
+## 生产代码落地：vLLM 与 vllm-ascend 中的环形状态与逆旋转实现
+
+理解论文公式之后，把视线切回 `vllm@bb23c0a8`（GPU）与 `vllm-ascend@3649b8ff`（昇腾 NPU）仓库。工程落地的核心难点完全不在乘加计算本身，而在于**流式解码时每个请求处于不同的折块相位，如何用一块定长状态缓存不打架地完成跨步汇聚、量化落盘与逆旋转**。
+
+![图 4-3：vLLM GPU 与 vllm-ascend NPU 序列压缩、环形状态与输出逆旋转源码落地对照](./diagrams/08-csa-runtime.drawio)
+
+### 两条代码线里的关键工程机制
+
+在 `vLLM` 主干的 `deepseek_v4/compressor.py` 与 `deepseek_v41/compressor.py` 中，压缩器被彻底拆成了两个职责清晰的物理对象：
+
+1. **固定容量的 `CompressorStateCache`**：状态张量强制采用 `FP32` 精度保存未折完词元的 `[kv, score]`，避免反复进出缓存引入精度漂移。在 `V4.0`（`[4, 128]`）里借助 `SlidingWindowManager` 为 `m=4` 预留 `coff * m` 槽位（重叠时 `coff=2`）；在 `V4.1`（`ratio in (1, 2)`）里改用 `CircularBufferManager` 每请求维护一个环形状态块，并且只在第 `p % ratio == ratio - 1` 步把闭合好的组折成一条 `BF16` 潜块 `latent`[^vllm-comp41][^vllm-fused]。
+2. **解耦的编码落盘与多格式压缩缓存**：`fused_save_compress_norm` 在 Triton 内核里先把上一步残留在环内的 `prev_rows` 与本轮新到达词元做两趟 Softmax 折叠和 RMSNorm；随后独立的 `rope_quant_insert` 才读取 `DeepseekV4ScalingRotaryEmbedding.cos_sin_cache`，按块对齐位置（`position // COMPRESS_RATIO * COMPRESS_RATIO`）对最后 64 维施加 GPT-J 旋转并直接量化塞入页式主缓存——对应单条目字节数在 `V4` FP8+BF16 混合格式下为 `584 B`、在 `V4.1` `MXFP8` 下为 `528 B`，在 `NVFP4`（`nvfp4_ds_mla`）下更是压到只有 `288 B`[^vllm-attn41][^vllm-fused]。
+3. **输出逆旋转的两种执行位置**：在普通未融合路径里，`DeepseekV4ScalingRotaryEmbedding` 通过 `rope_dim_offset = head_size - self.rotary_dim` 定位末尾 64 维并在 `inverse=True` 时把 `sin` 取反，或交由 `fused_inv_rope_fp8_quant` 在进 `DeepseekV4GroupedWoA` 前一并完成逆旋转与 FP8 量化；而在 Hopper/Blackwell 的极致优化路径里，FlashMLA 的 mega-attention 内核干脆把「Q 的 RoPE + 稀疏注意力 + 输出 Inverse RoPE + FP8 Cast」全吞进同一个大核，省去整趟全局内存读写[^vllm-invrope][^vllm-flashmla]。
+
+在 `vllm-ascend@3649b8ff` 昇腾 NPU 仓这边，由于硬件内存分形与算子调度模型不同，压缩器走出了另一套非常清晰的工程切分：
+
+- **`V4.0` 算子融合 vs `V4.1` 三段 Triton**：`vllm_ascend/models/deepseek_v4/compressor.py` 面向 `[4, 128]` 直接下沉到 `torch.ops._C_ascend.compressor` 原生算子并挂载 `ComplexExpRotaryEmbedding`[^ascend-comp4]；而 `vllm_ascend/models/deepseek_v41/compressor.py` 改由 `compressor_from_projected` 调用三段式 Triton 内核（`K1 _proj_kernel` 算投影、`K2 _pool_kernel` 跨环两趟 Softmax 折叠与 RMSNorm、`K3 _cache_update_kernel` 更新环表）[^ascend-comp41][^ascend-triton]。
+- **纯设备端 `5` 行环形元数据**：为了避免每次解码都回传 CPU 算槽位，`c2_ring_metadata.py` 在设备侧直接构造 5 行 `ring_metadata` 张量，并利用 `source_positions = positions - 1` 与 `complete = (positions % 2) == 1` 判定哪些词元刚凑成一对，再把对应的 `cos/sin` 切片喂给 RoPE[^ascend-ring]。
+- **显式呼出 `_apply_rotary(..., inverse=True)`**：在 `AscendDSAV41Impl._forward_attention` 调用完 `npu_sparse_flash_mla`（或量化稀疏核 `qsmla`）拿到核心注意力输出后，NPU 后端目前直接在输出端显式调用 `_apply_rotary(attn, attention_output, cos, sin, inverse=True)`（内部委托 `DeviceOperator.apply_partial_rotary_inplace(..., start=nope_head_dim, end=head_dim, inverse=True)`）[^ascend-dsa41]，确保数学语义与 GPU 路径逐位对齐。
+
+把两边关键路径汇总到一张对照表里，方便你查源码对号入座：
+
+| 维度                       | `vLLM` GPU（`vllm@bb23c0a8`）                                                                                           | `vllm-ascend` NPU（`vllm-ascend@3649b8ff`）                                                                                      |
+| :------------------------- | :---------------------------------------------------------------------------------------------------------------------- | :------------------------------------------------------------------------------------------------------------------------------- |
+| **状态缓存与管理器**       | `CompressorStateCache`（`FP32`）：`V4` 用 `SlidingWindowManager`（`4/128`），`V4.1` 用 `CircularBufferManager`（`1/2`） | `AscendCompressorStateCache` / `AscendCircularBufferSpec`，配合 `c2_ring_metadata` 生成设备端 5 行环索引                         |
+| **折块折叠内核**           | `fused_save_compress_norm`（`V4.1` Triton 跨环折叠 + RMSNorm）或 CuTe-DSL 核（`V4`）                                    | `torch.ops._C_ascend.compressor`（`V4`）或 `compressor_triton` 三段核 `K1/K2/K3`（`V4.1`）                                       |
+| **缓存单条目精度与大小**   | `rope_quant_insert`：`584 B`（V4 混合）/ `528 B`（MXFP8）/ `288 B`（NVFP4）                                             | `npu_sparse_flash_mla` / `packed_cache_ops.qsmla` 读取页式量化缓存                                                               |
+| **双轨 RoPE 与输出逆旋转** | `build_deepseek_v4_rope` 区分 `compress` 与 `main`；输出端 `fused_inv_rope_fp8_quant` 或由 FlashMLA 内核融合执行        | `ComplexExpRotaryEmbedding` 分组（`default` / `c{ratio}`）；`AscendDSAV41Impl._apply_rotary(..., inverse=True)` 显式还原末尾通道 |
+
+## 数值验证：G=16 序列折块、门控防糊与逆 RoPE 往返
+
+下面这段独立的纯 NumPy 验证脚本 `toy.py`（固定种子 `default_rng(42)`）把本章最核心的三个数值命题放在同一个台面上实测一遍：
+
+1. **容量压缩倍数与环形尾缓冲**：按 `G = 16` 对 `L = 100` 个词元做流式折叠，验证已闭合部分精确落盘为 `6` 条主缓存（相对 `96` 个已闭合词元严格达到 `16.0x` 压缩），剩余 `4`（`< 16`）个未满块词元乖乖待在环形缓存里等待凑块。
+2. **门控加权 vs 均匀池化防糊验证**：在 `16` 个词元构成的块中埋入 1 个强信号「针词元」（索引 `11`）和 `15` 个背景填充词元，比对均匀均值与 Softmax 门控对原针向量的余弦相似度，看等权平均会把目标信号稀释成什么样。
+3. **部分 GPT-J 逆 RoPE 往返与相对位置取消定理**：按 `DeepseekV4ScalingRotaryEmbedding` 的逻辑只旋转最后 `16` 维（前 `48` 维 NoPE 零误差不动），既验证 `inverse=True` 的双向往返恢复误差达到双精度极限，也验证对已施加位置 `k_pos=17` 的 Value 再施加查询位置 `q_pos=50` 的逆旋转后，结果严丝合缝等于直接旋转到相对位置 `k_pos - q_pos = -33`。
+
+```python
+# 只对末尾 rope_dim 维执行 GPT-J 交错旋转；inverse=True 等价于将 sin 取反
+def apply_partial_gptj_rope(x, pos, rope_dim=16, theta=10000.0, inverse=False):
+    inv_freq = 1.0 / (theta ** (np.arange(0, rope_dim, 2) / rope_dim))
+    angles = np.outer(pos, inv_freq) if np.ndim(pos) > 0 else pos * inv_freq
+    cos, sin = np.cos(angles), np.sin(angles)
+    if inverse:
+        sin = -sin
+    out = x.copy()
+    even, odd = out[..., -rope_dim:][..., 0::2], out[..., -rope_dim:][..., 1::2]
+    out[..., -rope_dim:][..., 0::2] = even * cos - odd * sin
+    out[..., -rope_dim:][..., 1::2] = odd * cos + even * sin
+    return out
+```
+
+在本机直接执行配套脚本 `toy.py`，三次断言全部一次通过：
+
+```text
+[1] Compression L=100, G=16: main_blocks=6 (16.0x vs 96 completed tokens), tail_ring=4/16
+[2] Needle cosine (G=16, idx=11): mean=0.3554, gated=0.9986
+[3] Partial GPT-J RoPE (last 16/64 dims): nope_drift=0.0e+00, roundtrip_err=4.44e-16, rel_pos_err=1.22e-15
+OK 08
+```
+
+从数值结果可以直观看到：在 `G = 16` 的块内，等权平均把关键针词元的余弦相似度直接打穿到了 `0.3554`，而门控加权稳稳保住了 `0.9986`；同时前 `48` 维 NoPE 纹丝不动（`0.0e+00`），逆旋转无论是往返恢复（`4.44e-16`）还是跨位置合成相对角度（`1.22e-15`），误差都压在 `1e-12` 量级以下十万倍的双精度机器极限内。
+
+## 代价与边界
+
+sequence 轴的折块红利绝不是免费午餐，真实部署时有四条清晰的边界需要注意：
+
+1. **常驻状态缓存与异步核调度竞争**：虽然环形缓存在并发请求数 $B$ 固定时只占常数显存，但它必须在每次 Prefill/Decode 前精确维护请求槽位；如昇腾 `compressor_triton.py` 注释提示的那样，当 K2 跨环折块核与 K3 写回核并发交叠时若不严格按边界隔离便会引入读写竞争[^ascend-triton]，同时同时混用 `CSA`（`m=4`）与 `HCA`（`m'=128`）会让页式管理器的物理块大小受最小公倍数 `lcm(m, m')` 约束[^dsv4-paper]。
+2. **门控折块的前置开销与超长块信息模糊**：每步必须额外完成 $[W_{KV}, W_Z]$ 线性投影、FP32 环形写存以及两趟 Softmax 折叠，而且当压缩比拉高到 HCA 的 $m'=128$ 时，单个潜块再怎么加权也很难同时无损记住 128 个词元里的多条独立精确数字，局部逐字回溯仍高度依赖 `SWA` 滑窗与同模型里的浅层/高分辨率 `CSA` 层配合。
+3. **逆旋转绑死在注意力输出后级**：只要坚持让压缩潜块兼任 Key 和 Value，输出端那一次位置 `-t` 的逆旋转就省不掉；若底层推理引擎没把逆旋转与后接 FP8 量化/输出降维融合到同一个内核里（如 GPU 上的 `fused_inv_rope_fp8_quant` 或 `FlashMLA`），就会平白多出一趟对 `n_heads * head_dim` 中间张量的 HBM 读写。
+4. **单层各自压缩仍残留跨层冗余**：DeepSeek-V4 的 CSA/HCA 只压榨了「单条目宽度 × 序列长度」两根轴，每一层仍然各自独立存储完整的压缩主缓存并独立跑一遍索引打分。当工程师希望把百万上下文缓存和 Prefill 算力再向下砍掉一个量级时，就必须把目光投向第三根轴——层间共享与非对称编解码，这正是下一章 [05 序列压缩注意力（下）：V4.1 三维压缩 CSA2 与智能体缓存 CED](../05-csa2-and-ced/) 要解决的问题。
+
+## 自测
+
+1. 假设模型采用 `CSA`（步长 $m=4$），当前某个新会话一共只输入了 `7` 个词元（索引 `0..6`），请问此刻有多少个块已经写入主缓存 `Main KV`、多少个词元留在环形状态缓存里？如果查询第 `6` 个词元时没有配对 SWA 局部滑窗，它能看见第 `4` 和第 `5` 个词元的上下文吗？
+2. 为什么 DeepSeek-V4 的 SWA 局部层与全局压缩层都可以共用 `is_neox_style=False` 的部分旋转代码，却必须在 `build_deepseek_v4_rope` 里把两者的 `factor` 和 `theta` 参数拆开配置？
+3. 在什么场景下你会优先用 `HCA`（$m'=128$ 全块稠密）替代 `CSA`（$m=4$ + `Top-k` 索引器），为什么两种层必须交错堆叠而不能全模型只用 HCA？
+4. **动手任务**：打开同目录下的 `toy.py`，试着把第 1 部分的步长 `stride_g` 改成 `128`，观察主缓存条目数和环形尾槽的变化；再把第 2 部分的 `gate_logits[needle_idx] += 4.5` 删掉（改用均匀随机数），重新运行 `uv run --with numpy python toy.py`，看看 `mean` 和 `gated` 在超大块下会怎么同时坍缩。
+
+## 参考资料
+
+[^dsv32-paper]: DeepSeek-AI. (2025). _DeepSeek-V3.2: Pushing the Frontier of Open Large Language Models_ (`arXiv:2512.02556`).
+
+[^flashmla-doc]: DeepSeek-AI. `FlashMLA/docs/20250929-hopper-fp8-sparse-deep-dive.md` (`656 B/token` Hopper FP8 sparse KV format).
+
+[^dsv4-paper]: DeepSeek-AI. (2026). _DeepSeek-V4 Technical Report_ (`arXiv:2606.19348`, Section 2.3 CSA & HCA, Section 3.5 Heterogeneous KV Cache).
+
+[^dsv41-paper]: DeepSeek-AI. (2026). _DeepSeek-V4.1-Flash Technical Report_ (`arXiv:2609.19969`, Section 2.2 CED & Section 2.3 CSA2).
+
+[^vllm-comp41]: `vllm@bb23c0a8`: `vllm/models/deepseek_v41/compressor.py` (`CompressorStateCache`, `DeepseekCompressor`) & `vllm/models/deepseek_v4/compressor.py`.
+
+[^vllm-rope]: `vllm@bb23c0a8`: `vllm/models/deepseek_v41/common/rope.py` (`build_deepseek_v4_rope`) & `vllm/model_executor/layers/rotary_embedding/deepseek_scaling_rope.py` (`DeepseekV4ScalingRotaryEmbedding`).
+
+[^vllm-fused]: `vllm@bb23c0a8`: `vllm/models/deepseek_v41/common/ops/fused_compress_quant_cache.py` (`fused_save_compress_norm`, `rope_quant_insert`).
+
+[^vllm-attn41]: `vllm@bb23c0a8`: `vllm/models/deepseek_v41/attention.py` (`DeepseekV4Attention`, `swa_bytes_per_token`, `compressed_bytes_per_token`).
+
+[^vllm-invrope]: `vllm@bb23c0a8`: `vllm/models/deepseek_v4/common/ops/fused_inv_rope_fp8_quant.py` & `vllm/models/deepseek_v4/common/grouped_wo_a.py` (`DeepseekV4GroupedWoA`).
+
+[^vllm-flashmla]: `vllm@bb23c0a8`: `vllm/models/deepseek_v41/nvidia/flash_mla_mega_attn.py`.
+
+[^ascend-comp4]: `vllm-ascend@3649b8ff`: `vllm_ascend/models/deepseek_v4/compressor.py` & `vllm_ascend/models/deepseek_v4/model.py`.
+
+[^ascend-comp41]: `vllm-ascend@3649b8ff`: `vllm_ascend/models/deepseek_v41/compressor.py` (`DeepseekV41Compressor`).
+
+[^ascend-ring]: `vllm-ascend@3649b8ff`: `vllm_ascend/ops/triton/c2_ring_metadata.py` (`_build_c2_ring_metadata_kernel`).
+
+[^ascend-triton]: `vllm-ascend@3649b8ff`: `vllm_ascend/ops/triton/compressor/compressor_triton.py` (`K1 _proj_kernel`, `K2 _pool_kernel`, `K3 _cache_update_kernel`).
+
+[^ascend-dsa41]: `vllm-ascend@3649b8ff`: `vllm_ascend/attention/dsa_v41.py` (`AscendDSAV41Impl._apply_rotary`).

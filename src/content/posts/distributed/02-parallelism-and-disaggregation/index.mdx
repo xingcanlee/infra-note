@@ -1,0 +1,166 @@
+---
+title: '02 分布式并行与 PD 分离：TP、SP、CP、Attention DP + MoE EP 与跨机 KV 传输'
+description: '零基础拆解多卡多机大模型推理并行范式：Megatron TP 手算与 SP 显存消除、CP/DCP/PCP 长上下文切分、纯 TP 为何转向 DP+EP 混合并行，以及 NIXL 与 Mooncake/PA_NZ PD 分离 KV 传输源码对照。'
+pubDate: 2026-11-14
+series: { id: distributed, order: 3 }
+tags: [Distributed, Parallelism, KV Cache, PD Disaggregation, MLA, vLLM, Ascend]
+category: AI Infra
+toc: true
+---
+
+有了上一章的集合通信原语与 $\alpha\text{-}\beta$ 模型作为底盘，这一章回答多卡多机推理的架构核心问题：**模型权重、词元序列、KV Cache 和计算角色究竟该如何分工，才能既装得下超大模型，又不被跨卡同步拖垮？**
+
+## Megatron 张量并行（TP）：为什么每层只需 2 次 AllReduce
+
+在单块权重就突破单卡 HBM 或单卡计算耗时过长时，最直觉的切法是**张量并行（Tensor Parallelism, TP）**——把同一个线性层的权重矩阵切开让多张卡合力算完。但如果不小心切，矩阵乘法前后都要同步，每层 FFN 就要做 2 次通信、整层就要做 4 次通信。Megatron-LM 通过「先列切、后行切」的配对技巧，把每层 `AllReduce` 压缩到了 **2 次**。
+
+### 2 卡 MLP 手算例：ColumnParallel + RowParallel
+
+以 2 层 MLP $Z = \text{ReLU}(X W_1) W_2$ 为例，设输入 $X \in \mathbb{R}^{1 \times 2}$ 为 $[1, 2]$，第一层权重 $W_1 \in \mathbb{R}^{2 \times 2}$、第二层权重 $W_2 \in \mathbb{R}^{2 \times 2}$ 分别为：
+
+$$
+W_1 = \begin{bmatrix} 1 & 2 \\ 3 & 4 \end{bmatrix}, \quad
+W_2 = \begin{bmatrix} 1 & 0 \\ 0 & 1 \end{bmatrix}
+$$
+
+单卡直接计算时：$X W_1 = [7, 10]$，经 ReLU 仍为 $[7, 10]$，再乘 $W_2$ 得到最终输出 $Z = [7, 10]$。现在把计算拆给两张卡：
+
+1. **列切 `ColumnParallelLinear`**：把 $W_1$ 按列拆成两块 $W_1^{(0)} = \begin{bmatrix} 1 \\ 3 \end{bmatrix}$ 与 $W_1^{(1)} = \begin{bmatrix} 2 \\ 4 \end{bmatrix}$，两卡共享同一份输入 $X = [1, 2]$：
+   - Rank 0 本地算 $Y^{(0)} = \text{ReLU}(X W_1^{(0)}) = [7]$
+   - Rank 1 本地算 $Y^{(1)} = \text{ReLU}(X W_1^{(1)}) = [10]$
+     因为 ReLU 是**逐元素非线性函数**，对拼接向量做 ReLU 等价于分别在分片上做 ReLU。**这里不需要任何跨卡通信！**
+2. **行切 `RowParallelLinear`**：把 $W_2$ 按行（输入维度）拆成 $W_2^{(0)} = \begin{bmatrix} 1 & 0 \end{bmatrix}$ 与 $W_2^{(1)} = \begin{bmatrix} 0 & 1 \end{bmatrix}$，两卡直接拿各自刚算好的本地分片相乘：
+   - Rank 0 本地算 $Z^{(0)} = Y^{(0)} W_2^{(0)} = [7, 0]$
+   - Rank 1 本地算 $Z^{(1)} = Y^{(1)} W_2^{(1)} = [0, 10]$
+     此时按矩阵分块乘法 $Y W_2 = Y^{(0)} W_2^{(0)} + Y^{(1)} W_2^{(1)}$，两张卡各自手握同形状的**部分和**，只需做 **1 次 `AllReduce(Sum)`**，每张卡就都拿到 $[7, 10]$。
+
+Attention 块完全对称：QKV 投影与多头注意力是独立的（按注意力头 `ColumnParallel` 切分），到了输出投影 `o_proj` 再按行切分并用 **1 次 `AllReduce`** 汇总。这就是为什么 Transformer 每一层只有 2 次 `AllReduce`（Attention 后 1 次、MLP 后 1 次），而不是 4 次。
+
+对照 `vllm/model_executor/layers/linear.py`：在 `ColumnParallelLinear.forward`（第 619–637 行）中，默认 `gather_output=False` 跳过所有通信；而在 `RowParallelLinear.forward`（第 1859–1885 行）中，为了防止各卡把 `bias` 加重 $P$ 次，还专门写了 `bias_ = None if (self.tp_rank > 0 or self.skip_bias_add) else self.bias`，仅让 Rank 0 在 GEMM 里融合偏置，随后执行 `tensor_model_parallel_all_reduce`。
+
+## 序列并行（SP）：零通信增量砍掉重复激活显存
+
+即便 MLP 省到了 2 次 `AllReduce`，`RowParallelLinear` 之后的残差相加、层归一化 `RMSNorm` 以及下一层的输入，依然在所有 TP 卡上完整保存着一份一模一样的 $[T, H]$ 激活张量——每张卡都在重复算相同的 `RMSNorm`。
+
+**序列并行（Sequence Parallelism, SP）** 用到了上一章验证过的恒等式：
+
+$$
+\text{AllReduce}(Z) \equiv \text{AllGather}\!\big(\text{ReduceScatter}(Z)\big)
+$$
+
+与其在 `RowParallel` 结束时直接用 `AllReduce` 把完整的 $[T, H]$ 发给每张卡，不如按下面三步走：
+
+1. 用 **`ReduceScatter(dim=0)`** 沿着序列长度维 $T$ 规约并切分，让第 $r$ 张卡只拿到属于自己的 $[T/P, H]$ 片段。
+2. 在每张卡上，仅对这 $1/P$ 的激活与残差切片 $[T/P, H]$ 计算 **`RMSNorm`**：不仅激活显存立刻降为 $1/P$，归一化计算量也同步降为 $1/P$。
+3. 在进入下一层 `ColumnParallel` 之前，再做一次 **`AllGather(dim=0)`**，把 $T$ 拼回完整 $[T, H]$ 送入 QKV 或门控上投影。
+
+![纯 TP 与 TP+SP 序列并行路径及激活显存对比](./diagrams/02-tp-sp-walkthrough.excalidraw '图 1：Megatron 纯 TP 路径与开启 SP 后 ReduceScatter + 本地 RMSNorm + AllGather 拆解对照')
+
+从第 1 章的 $\alpha\text{-}\beta$ 模型看，`ReduceScatter` 发 $\frac{P-1}{P}S$、`AllGather` 发 $\frac{P-1}{P}S$，**两段合起来总通信字节数与一次 `AllReduce` 严格相等**。以 `vllm/model_executor/models/deepseek_v2.py`（第 1388–1425 行）为例，当 `use_sequence_parallel_moe` 开启时，Attention 前先做 `tensor_model_parallel_all_gather`，Attention 后补齐长度并做 `tensor_model_parallel_reduce_scatter` 与 `sequence_parallel_chunk(residual)`，从而让整段 Norm 与后续路由保持切片状态。
+
+更进一步，通信还能与矩阵乘融合。在 `vllm/models/common/ops/sequence_parallel.py`（第 39–91 行）中，`sp_all_gather_matmul` 通过 `torch.ops.symm_mem.fused_all_gather_matmul`（在单卡 token 数达到 `_FUSED_AG_MATMUL_MIN_TOKENS_PER_RANK = 1024` 时启用）把 `AllGather` 与紧接其后的 GEMM 合并掩盖；而在昇腾侧 `vllm_ascend/compilation/passes/mm_reduce_scatter_fusion_pass.py` 中，`MatmulReduceScatterFusionPass` 在图编译阶段直接把 `unquantized_gemm` 与紧随其后的 `reduce_scatter` 改写成单算子 `npu_mm_reduce_scatter_base`（支持 2/4/8 卡）。
+
+## 长上下文切分与流水线：PP 与 CP（Ring / Ulysses / DCP / PCP）
+
+当序列长度推到 64K、128K 甚至更长时，单卡连一条请求的激活和 KV Cache 都塞不进，TP 又不能无限放大（否则头数不够切、延迟也炸），就需要再引入两个并行维度：
+
+- **流水线并行（Pipeline Parallelism, PP）**：按网络层数把 0–29 层放节点 A、30–59 层放节点 B，节点间只需点对点传激活值，非常适合跨机低带宽扩展；代价是在推理时流水线气泡会拉长单请求首字延迟（TTFT），通常配合多 micro-batch 才能填满。
+- **上下文并行（Context Parallelism, CP）**：沿着序列维度把同一条超长序列拆到多张卡上，共同维护同一段历史的注意力与 KV Cache。经典实现主要有两类：**Ring Attention** 让各卡轮流沿着环传递 KV 分块并用 Online Softmax 增量合并；**Ulysses（DeepSpeed-Ulysses）** 则是先用一次 `All-to-All` 把切分轴从「序列长度」换成「注意力头」，算完本地完整序列的几个头后，再用一次 `All-to-All` 换回。
+
+而在推理引擎 `vllm` 与 `vllm-ascend` 的源码里，CP 进一步被严格拆成了 **Prefill CP（PCP）** 与 **Decode CP（DCP）**：
+
+- **PCP（Prefill Context Parallel）**：在 Prefill 阶段把长 prompt 的 Query 和新生成的 KV 切分到 `get_pcp_group()` 域内并行计算。
+- **DCP（Decode Context Parallel）**：在 Decode 阶段，新生成的 Query 只有 1 个 token，切序列没有意义；此时真正占满显存与访存带宽的是历史 KV Cache。DCP 把同一条请求的历史 KV 按 `cp_kv_cache_interleave_size` 交错切分存放在 `DCP` 域各卡上（`vllm/distributed/parallel_state.py` 第 2296–2314 行构造跨 `PCP × TP` 的排序组），各卡各自对本地分片做注意力，输出部分和与 log-sum-exp（`lse`），再用 `vllm/v1/attention/ops/dcp.py` 中的 `CorrectAttnCPOutKernel` 按全局 `lse` 权重重缩放合并。
+- 值得一提的是硬件演进带来的策略收缩：在 `vllm_ascend/attention/context_parallel/attention_cp.py`（第 118–165 行）注释中明确记录，对于 GQA 模型的昇腾 DCP 支持正在按 RFC #21305 逐步下线淘汰，而在昇腾上长序列上下文切分主力转向了 **MLA / SFA 架构下的 CP 与 PCP**。
+
+## 为什么大模型集群放弃纯大 TP，转向 Attention DP + MoE EP
+
+这是近两年大模型推理系统架构最关键的一次转折。假设手里有 1 个 8 卡节点，跑一个带 GQA 或 MLA 的大型 MoE 模型，对比两种全节点并行方案：
+
+![纯 TP=8 与 Attention DP=8 + MoE EP=8 混合架构及通信域对比](./diagrams/02-dp-ep-hybrid-arch.excalidraw '图 2：纯 TP=8 的 KV 冗余痛点与 Attention DP=8 + MoE EP=8 混合并行及昇腾局部域拆分对照')
+
+### 1. 纯 TP=8 下的两重物理浪费
+
+- **KV Cache 跨卡重复膨胀**：GQA 模型往往只有 4 或 8 个 KV 头；到了 DeepSeek 的 MLA 架构，所有注意力头甚至共享同 **1 份** 低秩潜在向量 $c_t^{KV}$。当 TP 度超过 KV 头数时（例如 `n_kv_heads = 4` 跑 `TP=8`，或者 `MLA` 跑 `TP=8`），系统别无选择，只能把同一份 KV Cache **完整复制到 2 张甚至全部 8 张卡的 HBM 上**。等价于 8 倍显存买 1 份可用 KV 容量！
+- **MoE 专家算子碎片化**：MoE 每层动辄 64 到 256 个专家，如果用 `TP=8` 把每个本来就很小的专家权重再切成 8 份，每次前向被激活的 token 切碎后矩阵乘维度退化成细长条，算访比急剧下降；同时每层还要忍受 Attention 和 MoE 后的 2 次全网 `AllReduce`。
+
+### 2. 混合架构：`Attention DP + MoE EP`
+
+把同一组 8 张（乃至 64 张）卡在不同网络阶段切换身份：
+
+- **Attention 阶段跑数据并行（DP）**：8 张卡各自独立接管不同的请求子集，各算各的上下文，**KV Cache 零重复存储**，整机并发容量瞬间恢复到 100%！同时因为每个 DP 副本独立吞吐请求，还可以各自把全局 Batch 攒大。
+- **MoE 阶段切为专家并行（EP）**：利用一次 `All-to-All`（Dispatch），把来自所有 DP 卡的 token 按路由器选择发到持有对应专家完整权重的卡上——每张卡只需存放 $1/\text{EP}$ 的专家，矩阵乘维度不再被切碎，算完后再用一次 `All-to-All`（Combine）按原路送回各自的 Attention DP 卡。
+
+### 3. 源码里的通信域切分：`vllm` vs `vllm-ascend` 细分域
+
+在 `vllm/distributed/parallel_state.py`（第 2195–2418 行）中，`initialize_model_parallel` 用一张多维网格 `ExternalDP × DP × PP × PCP × TP` 初始化所有 `GroupCoordinator` 对象：创建 `_TP`、`_DCP`、`_PCP`、`_PP`、`_DP`，并把整个跨机 `DP * PCP * TP` 展平建成 `_EP` 专家并行组。
+
+而打开 `vllm_ascend/distributed/parallel_state.py`（第 62–283 行），`init_ascend_model_parallel` 远不止这些基础组——它为了压榨异构拓扑与避开通信瓶颈，额外切出了多张**精细局部通信域**（并用 `ReplicatedGroup` 规避不必要的 `hcclCommInitRootInfoConfig` 初始化开销）：
+
+- **`_MC2`（`get_mc2_group`）**：覆盖 `DP * PCP * TP`，专用于将算子与通信融合为一体的昇腾 MC2 大规模通算融合核（第 3 章主角）。
+- **`_OTP`（`get_otp_group`）**、**`_MLP_TP`（`get_mlp_tp_group`）**、**`_LMTP`（`get_lmhead_tp_group`）**、**`_EMBED_TP`**：即便整体采取 `Attention DP + MoE EP`，在 `O_proj`、稠密共享 MLP、词表 Embedding 或 `LM Head` 等特定子模块上，往往仍希望跨若干 DP rank 临时组成更小粒度的局部 TP 组。例如在 `vllm_ascend/attention/dsa_v1.py`（第 2240–2324 行）中，`OTP` 组配合静态缓冲区在 `all_to_all_single` 与 `reduce_scatter_tensor` 间流转；在 `ops/vocab_parallel_embedding.py`（第 557–572 行）中，`LM Head` 侧通过 `all_gather` 与 `lmhead_all_to_all` 跨局部域均衡输出词表算力。
+- **`_P_TP`（`get_p_tp_group`）与 `_KVPP`**：服务于下面要讲的异构 PD 分离架构——当 Prefill 集群和 Decode 集群使用了不同 TP 切分比（`pd_tp_ratio` / `pd_head_ratio`）时，靠 `_P_TP` 对齐 KV 传输句柄与分片映射。
+
+## PD 分离架构（Prefill-Decode Disaggregation）与跨机 KV 传输
+
+即使解决了单实例内部的并行切分，线上服务依然面临一对无法调和的资源矛盾：
+
+- **Prefill 是算力密集型（Compute-Bound）**：一次吃进数千个 prompt token，主要诉求是打满 Tensor Core / Cube，压低首字时间（TTFT）。
+- **Decode 是访存密集型（Memory-Bandwidth-Bound）**：每步只推 1 个新 token，主要诉求是稳住每 token 间隔（TPOT）避免毛刺。
+
+如果混在同一张卡上调度（哪怕开了 Chunked Prefill），一个突发的 32K 长文本 Prefill chunk 依然会把同批里正在平稳吐字的 Decode 请求拉高数倍 TPOT 尾延迟；同时两者最优的并行策略也不同（Prefill 偏好适度 TP/PP 降 TTFT，Decode 偏好大 DP+EP 扩并发和保 HBM 带宽）。**PD 分离**把 Prefill 集群（P 节点）与 Decode 集群（D 节点）物理拆开，各自独立扩缩容，P 算完首个 token 后把整条请求的 KV Cache 通过高速网络直接运给 D 接管。
+
+![Prefill-Decode 分离与逐层异步 KV 传输（NIXL vs Mooncake / PA_NZ）](./diagrams/02-pd-disagg-kv-runtime.excalidraw '图 3：PD 分离实例间基于 NIXL 与 MooncakeLayerwise / PA_NZ 的跨机 KV Cache 流水传输')
+
+### 跨机 KV 传输账本：为什么说 MLA 拯救了 PD 分离
+
+以 61 层 BF16 模型、序列长度 8192 为例算一笔硬账：
+如果一个 GQA 模型还有 32 个 KV 头（每头 128 维，含 K 和 V），单 token 就要搬运 `32 × 128 × 2 × 61 × 2 B = 976 KB`，8192 长度的一条请求高达 **7808 MiB（7.62 GiB）**——在 400 Gbps（按 `40 GB/s` 有效吞吐算）RDMA 网络下，传一条请求就要 **204.68 ms**，极易把网卡打满成瓶颈。
+
+换成 DeepSeek 风格的多头潜在注意力（MLA），每层只需传压缩潜向量与解耦旋转位置维度（`dc=512 + dr=64`），单 token 降到 **`68.62 KB`**，8192 长度整条请求仅 **549.0 MiB**，压缩率高达 **14.2 倍**，同等网络下传输总时间直接压到 **14.39 ms**！而且如果采用**逐层异步边算边传**，单层传输仅 **0.236 ms**，完全可以被后续层的矩阵计算窗口掩盖掉。
+
+### 源码对比：`vllm` (`NIXL` / `Mooncake`) vs `vllm-ascend` (`PA_NZ` / `Layerwise` / `MemFabric`)
+
+在 `vllm/distributed/kv_transfer/kv_connector/v1/base.py` 中，`KVConnectorBase_V1` 定义了调度器与工作进程的标准生命周期钩子：`start_load_kv`、`wait_for_layer_load`、`save_kv_layer`、`wait_for_save`：
+
+1. **vLLM CUDA 侧（`NIXL` 与 `MooncakeConnector`）**：
+   - `nixl/connector.py`（第 79–191 行）利用 `KVCacheAccess.REGISTERS | EXPORTS_FABRIC` 把显存块注册给 UCX 传输后端（机内走 `cuda_ipc`、跨机走 RDMA），支持 P-push 与 D-pull（`pull_worker.py`）双向编排，GQA 布局采用 `"LBHNC"`。
+   - `mooncake/mooncake_connector.py`（第 880–985 行）则主打 P 侧主动推送，通过 `TransferEngine` 调用 `batch_transfer_sync_write` 并把相邻 PagedAttention block ID 合并成 `_contiguous_runs`，把零散小页拼成连续 RDMA 大写请求来打满带宽。
+2. **vLLM-Ascend 侧（`PA_NZ` 异构布局转换、逐层流水与 `MemFabric`）**：
+   - **格式鸿沟（`ND` → `PA_NZ`）**：昇腾 NPU 在 Decode 侧为了贴合 Cube 矩阵分形访存（例如 `mla_v1.py` 中标注的 `"BSND_NBSD"` / `PA_NZ` 5D NZ 格式），与 Prefill 输出的常规连续布局并不相同。因此在 `vllm_ascend/distributed/kv_transfer/kv_p2p/mooncake_connector.py`（第 1161–1185 与 1359–1415 行）中，当 `enable_kv_nz` 开启时，连接器会调用 `reformat_kv_cache` 与 `torch_npu.npu_gather_pa_kv_cache` / `transpose_kv_cache_by_block` 完成格式重排。
+   - **逐层边算边传（`MooncakeLayerwiseConnector`）**：在 `mooncake_layerwise_connector.py`（第 1884–2055 行）中，Prefill 每算完一层就触发 `save_kv_layer`——切换到独立的 `resharding_stream` 完成 `trans_nd_to_nz` 转换后，立刻投递到后台 `kv_send_layer_thread` 队列逐层发送。当第 61 层算完时，前 60 层的 KV 早已飞在路上甚至落入 Decode 池，把网络延迟几乎彻底掩盖。另外若是走全局集中式 KV 池（`kv_pool/ascend_store/ascend_store_connector.py` 第 117–143 行），启用 `use_layerwise` 时会强制图编译模式降级为 `PIECEWISE` 以兼容层间插入异步传输钩子。
+   - **传输底座自动适配（`GlobalMemfabricTE`）**：在 `vllm_ascend/distributed/kv_transfer/utils/memfabric_transfer_engine.py`（第 20–25 与 63–218 行）中，传输引擎按昇腾芯片代数自动切换物理指令——在 A3（910C）超节点域内选用 `TransDataOpType.SDMA` 或 `DEVICE_RDMA`，而面向下一代 950PR / 950DT 平台则自动切换到 `DEVICE_URMA`。
+
+## 最小可运行实验：`toy.py`
+
+运行 `02-parallelism-and-disaggregation/toy.py`，用纯 NumPy 在 `seed=42` 下验证两件事：第一，单卡全量 `GEMM + RMSNorm`、2 卡 Megatron TP（`ColumnParallel + RowParallel + AllReduce`）以及 2 卡 TP+SP（`ReduceScatter + 本地半片 RMSNorm + AllGather`）三者在数值上逐位等价（误差达双精度机器极限），同时检查 SP 把 `RMSNorm` 激活行数砍半而总通信字节数严格相等；第二，核算 61 层、8192 长度下 GQA-32、GQA-4 与 MLA 在纯 `TP=8` 下的 KV Cache 复制倍率与 `40 GB/s` 有效吞吐下的 PD 传输耗时。
+
+```bash
+uv run --with numpy python -I src/content/posts/distributed/02-parallelism-and-disaggregation/toy.py
+```
+
+实测完整输出如下：
+
+```text
+=== TP vs TP+SP Numerical & Byte Equivalence ===
+max|TP - Ref|   = 2.22e-16
+max|SP - Ref|   = 2.22e-16
+Norm activation rows/rank: TP=8, SP=4 (comm=256B == AR)
+
+=== Pure TP=8 KV Replication & PD Transfer (61 layers, seq=8192, 40GB/s) ===
+  GQA-32 (32 kv_heads x 128 x 2)  : 976.00 KB/tok | req= 7808.0 MiB | TP=8 rep=1x (7.62 GiB) | PD tx=204.68 ms
+  GQA-4  ( 4 kv_heads x 128 x 2)  : 122.00 KB/tok | req=  976.0 MiB | TP=8 rep=2x (1.91 GiB) | PD tx=25.59 ms
+  MLA    (dc=512 + dr=64)         :  68.62 KB/tok | req=  549.0 MiB | TP=8 rep=8x (4.29 GiB) | PD tx=14.39 ms
+  -> MLA GQA-32 compression ratio = 14.2x
+  -> Per-layer MLA KV push = 0.236 ms (overlapped across 61 layers)
+
+OK 02
+```
+
+数字一目了然：MLA 单卡单请求的 KV Cache 从 GQA-32 的 `7.62 GiB` 压缩到仅 `549.0 MiB`（`14.2x`），PD 跨机直传只需 `14.39 ms`（逐层推送更只有 `0.236 ms/层`）；可一旦硬套纯 `TP=8`，单份 KV 被迫复制到 8 张卡上，整机瞬间膨胀回 **`4.29 GiB`**——这正是推理系统不惜重写调度器与通信域，也要全面走向 **`Attention DP + MoE EP + PD 分离`** 的直接原因。
+
+## 延伸与下一章导读
+
+把单层切分、注意力 DP 与 PD 跨机拆分铺平之后，混合架构里还剩下最后一块也是最棘手的硬骨头：当 Attention DP 与 MoE EP 之间每层都要经历一次 `Dispatch All-to-All` 和一次 `Combine All-to-All` 时，**离散动态路由造成的热点倾斜、`All-to-All` 核函数尾延迟，如何与本地计算完全重叠消除？**
+
+下一章将直击通算重叠与内核融合的最前沿实战：[03 MoE 跨卡通信与通算融合](../03-moe-comm-and-overlap/)。
