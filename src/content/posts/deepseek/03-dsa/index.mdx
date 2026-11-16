@@ -8,143 +8,163 @@ category: AI Infra
 toc: true
 ---
 
-在 [01 MLA](../01-mla/) 中，DeepSeek-V3 把原本分属多个注意力头的 KV 缓存，一路压缩成每个词元仅存 **1** 份的潜在向量 $c_s^{KV} \in \mathbb{R}^{512}$ 与解耦位置键 $k_s^R \in \mathbb{R}^{64}$。到了 [02 原生稀疏注意力（NSA）](../02-swa-and-nsa/)，我们看到 NSA 靠「整块压缩 + GQA 组内共享块选择」来加速长上下文推理。问题来了：既然分块挑选这么好用，为什么不直接把 NSA 套进 MLA，反而要在 DeepSeek-V3.2 中重新发明一套 **DSA**（DeepSeek Sparse Attention，深度稀疏注意力）[^ds32]？
+import DsaIndexerExplainer from '../../../../explainers/deepseek/DsaIndexerExplainer';
 
-根源在于两种架构的 KV 头结构彻底不同。在 GQA 里，同一组 Query 头天然共享一套键值向量，NSA 按块打分后的索引可以被整组复用，不会额外膨胀 KV 缓存；但推理期吸收矩阵后的 MLA 已经退化成极端的 **1 头 KV**（MQA 模式，`128` 个 Query 头共享这 `1` 个压缩潜在空间）。如果在单头潜空间里强行维持多组块统计，就会破坏 MLA 省显存的根基；而如果用 `128` 个全精度 Query 头去做细粒度打分，打分器自身又会变回 $O(L^2)$ 瓶颈。
+在 [01 MLA](../01-mla/) 中，DeepSeek-V3 把多头 KV 缓存压成了每词元仅存 `1` 份的潜向量 $c_s^{KV} \in \mathbb{R}^{512}$ 与解耦位置键 $k_s^R \in \mathbb{R}^{64}$；到了 [02 原生稀疏注意力（NSA）](../02-swa-and-nsa/)，NSA 靠 GQA 组共享连续块挑选加速长上下文推理。问题随之而来：**为什么不直接把 NSA 套进 MLA，反而要在 DeepSeek-V3.2 提出 DSA（DeepSeek Sparse Attention）**[^ds32]？
 
-DeepSeek-V3.2 给出的解法，是把「粗筛谁重要」和「精算怎么聚合」拆给两个算力预算完全不对等的模块。本文围绕下面四个核心要点展开：
+根源在于两者的 KV 头结构截然不同。GQA 天然由多组共享块分摊访存；而 Decode 矩阵吸收后的 MLA 已经退化成极端的 **`1` 头 MQA 潜在空间**（128 个 Query 头共享这 1 份潜向量）。若在单头潜空间强行保留多组统计会破坏省显存的根基；若拿 `128` 个高精度头逐词全量打分，打分器自身又会退化为 $O(L^2)$ 瓶颈。
 
-- **极简闪电索引器（Lightning Indexer）**：保留小规模多头查询与 **1 头**共享索引键 $k_s^I$，在 FP8 精度下使用 **ReLU** 替代 Softmax 打分，让细粒度全量扫描的常数因子压到极低。
-- **Top-$k$ 潜空间精准选词**：每生成或处理一个词元 $t$，只挑出索引得分最高的 $k = 2048$ 个历史位置 $S_t$，主模型 `128` 头 MLA 只回捞这 $2048$ 个潜向量做精确计算，核心复杂度从 $O(L^2)$ 降至 $O(Lk)$。
-- **两阶段平滑蒸馏**：先冻结主模型，用全量稠密注意力分布做 KL 散度对齐预热（Dense Warm-up，仅 `2.1B` 词元），再打开 $k = 2048$ 联合稀疏训练并用梯度切断防止互扰。
-- **656 B/token 混合精度落盘与双端融合核**：NoPE 512 维存 FP8 E4M3 与 per-128 缩放因子，64 维 RoPE 保留 BF16，单 token 从 `1152 B` 降至 `656 B`[^flashmla]；vLLM GPU 与 vLLM-Ascend NPU 分别通过 `block_size=64` 与 `block_size=128` 专有稀疏核落地[^vllm][^ascend]。
+DeepSeek-V3.2 的解法是把「粗筛谁重要」与「精算怎么聚合」拆给算力预算彻底不对称的两个模块。读完本章，你可以带走四件确定的事：
 
-## 先看一个例子：用 6 个历史潜向量走一遍闪电索引器与 Top-k 选词
+1. **极简闪电索引器（Lightning Indexer）**：采用 $H^I = 64$ 个轻量查询头配合 **`1` 头共享索引键** $k_s^I$，在 FP8 下用 **$\operatorname{ReLU}$** 替代 Softmax 打分，把全序列粗筛的常数因子压到极低。
+2. **Top-$k$ 潜空间精确回捞**：每步只挑得分最高的 $k = 2048$ 个历史槽位，主模型 `128` 头 MLA 仅回捞这 `2048` 条潜向量，主注意力复杂度从 $O(L^2)$ 降至 $O(Lk)$。
+3. **两阶段平滑蒸馏与梯度隔离**：先冻结主模型用稠密概率分布做 KL 预热（仅 `2.1B` 词元），再在 `943.7B` 词元稀疏联合训练阶段 `detach` 索引器输入切断互扰。
+4. **656 B + 132 B 混合精度布局与双端落地**：对照 `vllm`（`block_size=64`，`FlashMLASparseBackend`）与 `vllm-ascend`（`block_size=128`，`AscendSFAImpl`）双栈实现。
 
-在深入数学公式之前，我们先用一个只有 `6` 个历史词元（$s = 0, 1, \dots, 5$）、每步只回捞 $k = 3$ 个词元的微缩场景，把 DSA 的一次前向走通。假设历史槽位里已经存好每个位置的 1 份主模型潜向量 $c_s^{KV}$ ，以及 1 份极小的索引专用键 $k_s^I$ 。
+## 先看一个例子：闪电索引器打分、Top-K 回捞与双缓存字节账本
 
-![用 6 个历史潜向量演示 DSA 闪电索引器打分、Top-3 选词与精确 MLA 回捞过程](./diagrams/07-dsa-walkthrough.drawio '图 3-1：用 6 个历史潜向量（s=0..5）演示闪电索引器打分、Top-3 选词与 MLA 精确回捞')
+直接打开**图 1**，沿 5 个步骤观察 $I_{t,s}$ 如何从 FP8 ReLU 打分一路推进到稀疏 MLA 回捞、`656 B + 132 B` 等比例存储构成以及长短序列算力交叉点：
 
-当第 $t$ 个词元的隐状态 $h_t$ 到来时，它会同时走过左侧两条并行的支路，在右侧完成「粗筛—回捞—精算」三步闭环：
+<DsaIndexerExplainer
+  client:visible
+  title="图 1：DeepSeek-V3.2 DSA 闪电索引器、Top-K 回捞与 656 B + 132 B 账本"
+/>
 
-1. **FP8 ReLU 闪电打分**：索引器把 $h_t$ 投影成多头轻量查询 $q_{t,j}^I$ 和头权重 $w_{t,j}^I$ ，分别与单头共享的 $k_0^I, \dots, k_5^I$ 做点积、经 $\operatorname{ReLU}$ 截断负值后按头加权求和，得到标量索引分 $I_{t,s}$ 。如图 3-1 所示，`s=0` 和 `s=4` 在点积为负时直接变成 `0.0`，根本不需要做全局 Softmax 归一化。
-2. **Top-$k$ 选词与稀疏 Gather**：选词器从 6 个分数里取出最大的 $k = 3$ 个位置，即 $S_t = \{1, 3, 5\}$ （对应得分 `3.8`、`5.1`、`2.6`），而 `0.0` 与 `0.4` 对应的槽位 `{0, 2, 4}` 直接淘汰出局。注意这里并没有按「固定物理块」粗选，而是逐 token 细粒度挑出离散下标。
-3. **主模型精确 MLA 计算**：左下方主模型的 `128` 个高精度 Query 头 $q_t$ ，不再扫描全部 `6` 个历史槽位，而是仅通过下标 `{1, 3, 5}` 从 HBM 中回捞（Gather）那 **3** 份潜向量 $c_1^{KV}, c_3^{KV}, c_5^{KV}$ 及对应 RoPE 键，做全精度注意力并输出 $o_t$ 。
-
-把规模放大到真实的 `128K` 上下文（$L = 131072$ 、 $k = 2048$ ）时，步骤完全不变：闪电索引器像一个廉价的「粗筛目录」扫过全部 128K 条目，主模型那 `128` 个昂贵的注意力头则只真正阅读其中的 `1.56%` （`2048 / 131072`）关键历史词元。
+对应**图 1** 的真实模型尺寸（上下文 $L = 131072$、筛选预算 $k = 2048$）：闪电索引器就像廉价目录扫过全部 128K 历史键，而主模型 `128` 个高精度头只需从 HBM 回捞其中约 **`1.56%`** 的关键潜向量即可无损恢复上下文线索。
 
 ## 闪电索引器原理与两阶段 KL 蒸馏预热
 
-### 为什么索引器选择 ReLU 与 1 头共享 Key
-
-在 DeepSeek-V3.2 论文[^ds32]中，第 $t$ 个词元对历史第 $s$ 个词元的索引得分定义为：
+在 DeepSeek-V3.2 论文[^ds32]中，第 $t$ 个查询词元对历史第 $s$ 个词元的索引打分定义为：
 
 $$
 I_{t,s} = \sum_{j=1}^{H^I} w_{t,j}^I \operatorname{ReLU}\bigl(q_{t,j}^I \cdot k_s^I\bigr)
 $$
 
-其中 $H^I$ 是索引器注意力头数， $q_{t,j}^I \in \mathbb{R}^{d_I}$ 与 $w_{t,j}^I \in \mathbb{R}$ 由当前词元隐状态 $h_t$ 线性投影得到，而历史键 $k_s^I \in \mathbb{R}^{d_I}$ **所有 $H^I$ 个头共享同一份**（即 MQA 模式）。对比生产代码 `deepseek_v2.py` 中的 `Indexer` 实现[^vllm]，真实模型参数配置为 `index_n_heads = 64`、索引头维度 `index_head_dim = 128`（其中 `64` 维携带 RoPE 位置编码）、降维输入 `q_lora_rank = 1536`、选词上限 `index_topk = 2048`。
+其中 $H^I = 64$、索引头维 $d^I = 128$（内含 `64` 维 RoPE）、查询权重 $w_{t,j}^I \in \mathbb{R}$ 由当前隐状态投影得出，而全部 $64$ 个头共享同一份键向量 $k_s^I \in \mathbb{R}^{128}$。选择 $\operatorname{ReLU}$ 替代 Softmax 的核心原因在于免去了跨全序列的 `exp-sum` 规约同步：负值自然截断为零且非负可加，能在 FP8 低比特累加后直接排序。
 
-![闪电索引器内部 MQA 单头 Key + ReLU 算子结构与两阶段稀疏化训练流程](./diagrams/07-indexer-arch.drawio '图 3-2：闪电索引器架构（上）与 Dense Warm-up 到 Sparse Training 两阶段训练流程（下）')
+为了让已经预训练完成的稠密 MLA 底座平滑切换到 `Top-2048` 稀疏模式，DeepSeek-V3.2 采用如**图 2** 所示的两阶段训练流程：
 
-这条看似普通的公式里藏着两处针对硬件吞吐的精确设计：
-
-- **$\operatorname{ReLU}$ 替代 Softmax**：Softmax 必须先算全序列最大值与指数和（Online Softmax 需要跨 tile 规约归一化），而 $\operatorname{ReLU}(x) = \max(0, x)$ 既能让不相关位置自然归零、各头贡献非负可加，又能直接在低精度 FP8 累加后立刻比较大小，省去一切归一化同步代价。
-- **1 头 Key + `ue8m0` 分块量化**：由于 $k_s^I$ 只有一个 KV 头，每词元只需存储 `128` 个 FP8 数值（`128 B`）加上每 `128` 维共享的 **1** 个 `float32` / `ue8m0` 缩放因子（`4 B`），整个索引器 KV 缓存（`DeepseekV32IndexerCache`）每词元仅占 **132 B**。其中 `ue8m0` 仅存 8 位无符号幂指数 $2^e$ ，在矩阵核里解缩放只需要一次指数偏移而非浮点乘法。
-
-### 两阶段训练：从 Dense Warm-up 到 Sparse Training
-
-如果在一个已经用稠密 MLA 预训练好的千亿参数模型上直接切入 Top-2048 稀疏注意力，随机初始化的索引器必定选错词元，瞬间摧毁长上下文推理能力。因此 DeepSeek-V3.2 采用**先对齐分布、再稀疏联调**的两阶段策略[^ds32]：
-
-1. **阶段一：Dense Warm-up（稠密预热）**。主干网络所有参数**冻结**，仍然执行全量稠密 MLA；同时把主模型各个注意力头的 Softmax 概率在历史维度上相加并做 L1 归一化，作为「老师分布」 $p_{t,:}$ 。此时只训练闪电索引器参数，使其通过 Softmax 后的预测分布去拟合 $p_{t,:}$ ：
-
-   $$
-   \mathcal{L}^I = \sum_t \mathbb{D}_{\mathrm{KL}}\bigl(p_{t,:} \,\|\, \operatorname{Softmax}(I_{t,:})\bigr)
-   $$
-
-   这一步训练极短，论文中仅跑 `1000` 步（每步 `16` 条 `128K` 序列，总计 `2.1B` 词元，学习率 `1e-3`），由于主模型完全没动，原有能力零损耗保留。
-
-2. **阶段二：Sparse Training（稀疏联调）**。当索引器初步学会模仿主注意力分布后，正式开启 Top-$k$ 选词（$k = 2048$），构造稀疏下标集合 $S_t = \{s \mid I_{t,s} \in \operatorname{Top-}k(I_{t,:})\}$ ，主模型只针对 $S_t$ 计算注意力并用常规语言模型交叉熵 Loss 更新主干权重。与此同时，索引器的 KL 蒸馏目标也收缩到被选中的子集 $S_t$ 上：
-
-   $$
-   \mathcal{L}^I = \sum_t \mathbb{D}_{\mathrm{KL}}\bigl(p_{t, S_t} \,\|\, \operatorname{Softmax}(I_{t, S_t})\bigr)
-   $$
-
-   为了防止语言模型梯度反向污染索引器选词逻辑，索引器的输入与主干计算图之间使用 `detach` **切断梯度回传**——主模型只向「已选出的槽位怎么用」学习，索引器只向「哪些槽位注意力质量最大」学习，二者各司其职（该阶段训练 `15000` 步、每步 `480` 条 `128K` 序列，总计 `943.7B` 词元，学习率 `7.3e-6`）。
-
-## 硬件内存格式与双端生产落地
-
-### 为什么每 token 是 656 B（FP8 NoPE + BF16 RoPE）
-
-把主模型计算压到 $O(Lk)$ 后，Decode 阶段依然要从 HBM 里按随机索引 $S_t$ 回捞 `2048` 个历史 KV 槽位，访存带宽成为新瓶颈。在标准 BF16 MLA 下，每个词元存 `512` 维潜向量 $c_s^{KV}$ 加 `64` 维位置键 $k_s^R$ ，一共 `(512 + 64) × 2 = 1152 B/token`。按 FlashMLA 文档[^flashmla]给出的 `128K`（`131,072` 词元）× `62` 层口径，单条请求的 KV Cache 就高达 `576 × 2 × 62 × 128 × 1024 ≈ 8.72 GiB`。
-
-![FlashMLA V3.2 的 656 B/token 混合精度布局以及 vLLM GPU 与 vLLM-Ascend NPU 的生产执行路径](./diagrams/07-dsa-runtime.drawio '图 3-3：656 B/token 稀疏 KV 缓存布局（上）及 vLLM GPU 与 vLLM-Ascend NPU 推理执行路径（下）')
-
-为此，DeepSeek-V3.2 与 FlashMLA 设计了混合精度稀疏 KV 布局 `fp8_ds_mla`[^flashmla][^vllm]，把每词元压到精确的 **656 B**：
-
-- **NoPE 潜向量主体（512 B）**：512 维 $c_s^{KV}$ 以 `fp8_e4m3` 存储，每维 `1 B`，共 `512 B`。
-- **分块缩放因子（16 B）**：将 512 维切分为 `4` 个 `1×128` 量化块（tile），每块配 `1` 个 `float32` 缩放因子（`4 × 4 B = 16 B`）。
-- **RoPE 位置编码部分（128 B）**：旋转位置角度对量化误差极其敏感，因此 `64` 维 $k_s^R$ 完整保留为 `bfloat16`（`64 × 2 B = 128 B`）。
-
-三者相加恰好是 `512 + 16 + 128 = 656 B/token`，相比 BF16 的 `1152 B` 直降 `43.06%`（`128K × 62` 层从 `8.72 GiB` 降至 `4.96 GiB`）。加上独立存放的索引器键缓存 $k_s^I$（`132 B/token`），整套结构在 Hopper H800 SXM5 上通过 CTA Cluster size-2 跨 SM 共享加载（DSMEM `st.async` 指令）缓解 FP8→BF16 反量化周期开销（约 `50` 周期反量化 vs `34` 周期 MMA 计算），在 `batch_size=128, num_heads=128, s_q=2, topk=2048` 时跑出最高 `410 TFLOPS` 算力，并在序列长度越过约 `3000` 词元后反超稠密 FlashMLA[^flashmla]。
-
-### 生产代码对照：vLLM GPU 与 vLLM-Ascend NPU
-
-下表对照了 `vllm@bb23c0a8` 与 `vllm-ascend@3649b8ff` 两套开源实现如何把上述算法映射到各自硬件内核：
-
-| 维度             | vLLM GPU（`vllm@bb23c0a8`）                                                             | vLLM-Ascend NPU（`vllm-ascend@3649b8ff`）                                     |
-| ---------------- | --------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------- |
-| 入口与封装类     | `DeepseekV2MLAAttention` / `Indexer`（`deepseek_v2.py`）[^vllm]                         | `AscendMultiHeadLatentAttention` + `AscendSFAImpl`（`sfa_v1.py`）[^ascend]    |
-| KV 分页块大小    | `block_size = 64`                                                                       | `get_supported_kernel_block_sizes() -> [128]`（对齐达芬奇 Cube 128）          |
-| Query/Key 预处理 | `wq_b` 复制投影 + `wk_weights_proj` BF16 融合投影 + `fused_indexer_q_rope_quant`        | `PreprocessType` 三路路由：`PROLOG_V3`、`MLAPO` 或 `NATIVE`                   |
-| 索引器打分与缓存 | `DeepseekV32IndexerCache`（`132 B`）+ `SparseAttnIndexer`（`fp8_fp4_paged_mqa_logits`） | `AscendSFAIndexerBackend`（`PA_BSND` 布局）+ `npu_lightning_indexer` / 量化版 |
-| 稀疏主注意力核   | `FlashMLASparseBackend`（`flash_mla_with_kvcache`，`656 B/tok`）                        | `npu_sparse_flash_attention`（`sparse_block_size=1`）或 `sparse_flash_mla`    |
-| Skip-TopK 优化   | 短 Prefill 或周期配置设 `skip_topk`，复用 `topk_indices_buffer`                         | 设 `compute_topk=False`，仅刷新索引缓存并复用已有下标缓冲                     |
-
-在 **vLLM GPU 侧**[^vllm]，`Indexer` 刻意把 `wq_b` 设为跨 TP 复制（`ReplicatedLinear`），而把单头共享的 `wk` 与 `weights_proj` 合并成一个关闭 TP 切分的 BF16 线性层 `wk_weights_proj`（若权重文件存成 FP8，会在 `_try_load_fp8_indexer_wk` 中反量化回 BF16），确保每个 rank 都在本地拿到完整的单头 $k_s^I$。在 Fast CUDA 路径下，`fused_indexer_q_rope_quant` 直接把量化缩放 `q_scale` 与 `softmax_scale * n_head_scale` 提前乘进权重 `weights`，再交给 `SparseAttnIndexer` 完成分页打分与 `Top-k` 写入 `topk_indices_buffer`，最后由 `FlashMLASparseBackend` 调用 `flash_mla_with_kvcache(..., is_fp8_kvcache=True, indices=topk_indices)` 消费 `656 B/token` 缓存。
-
-在 **vLLM-Ascend NPU 侧**[^ascend]，`AscendSFABackend` 因为达芬奇 Cube 单元的硬件对齐要求把标准页大小固定为 `[128]`，同时允许在极简稀疏注意力核 `npu_sparse_flash_attention` 中把 `sparse_block_size` 设为 `1`，真正实现逐 token 粒度的按需回捞。预处理由 `AscendSFAImpl` 根据序列长度和环境开关分发到 `npu_mla_prolog_v3`（`PROLOG_V3`）、`mla_preprocess`（`MLAPO`）或原生拆分路径（`NATIVE`）；`AscendSFAIndexerBackend` 还支持启用独立 `_q_stream` 实现索引器 Q/K 计算流并行，以及通过 `compute_topk=False` 在跳选层中只追加缓存、不重复做全量 Top-$k$ 选词。
-
-## 动手验证：131 行 NumPy 跑通闪电索引、KL 预热与 656 B 量化
-
-下面我们用纯 NumPy 编写一份 `toy.py`（`131` 行，无深度学习框架依赖），一次性实测三件事：（a）单头键闪电索引器在 $L=128$ 序列中挑选 `k=16` 个潜向量能保留多少稠密注意力质量；（b）冻结主注意力目标分布后，KL 散度预热如何把随机初始化索引器训练收敛；（c）精确核对 `1152 B` vs `656 B` 与 `ue8m0` 分块 128 量化误差。在站点根目录下运行：
-
-```bash
-uv run --with numpy python src/content/posts/deepseek/03-dsa/toy.py
+```mermaid caption="图 2：两阶段 KL 蒸馏预热与稀疏联合训练梯度隔离"
+flowchart TD
+    M["稠密主注意力概率 p_t"] -->|"L1 归一作为教师分布"| KL1["阶段一：Dense Warm-up (2.1B 词元)"]
+    IDX["闪电索引器 I_{t,s}"] -->|"冻结主模型，lr=1e-3"| KL1
+    KL1 -->|"开启 Top-2048 选词 S_t"| SP["阶段二：Sparse Training (943.7B 词元)"]
+    H["主干输入 h_t / c_t"] -->|"detach 切断反传"| IDX2["索引器仅受子集 KL 约束"]
+    H -->|"常规交叉熵损失"| MAIN["主模型仅在 S_t 上精算"]
+    SP --> IDX2
+    SP --> MAIN
 ```
 
-实测输出如下：
+顺着**图 2** 的数据流，阶段一冻结主干参数、全量执行稠密 MLA，以主注意力头总和 L1 归一化分布 $p_{t,:}$ 训练索引器 `1000` 步（`2.1B` 词元）；阶段二打开 $k = 2048$ 选词集合 $S_t$ 联合训练 `15000` 步（`943.7B` 词元），并通过 `detach` 阻止语言模型主损失反向干扰索引器排序目标。
+
+## 656 B 混合精度布局与 GPU / Ascend NPU 源码对照
+
+把主计算压至 $O(Lk)$ 后，随机下标回捞让 HBM 访存成为核心制约。标准 BF16 下 `512 + 64` 维 MLA 占用 `1152 B/token`（按 `128K × 62` 层计单请求达 `8.72 GiB`）。为此 FlashMLA 与 DeepSeek-V3.2 设计了 `fp8_ds_mla` 混合格式[^flashmla]：
+
+- **FP8 NoPE 主体（`512 B`）**：`512` 维 $c_s^{KV}$ 以 `fp8_e4m3` 存储，占 `512 B`。
+- **分块缩放因子（`16 B`）**：每 `128` 维配 `1` 个 `float32` 缩放因子（`4 × 4 B = 16 B`）。
+- **BF16 RoPE 位置键（`128 B`）**：高频位置角度对量化敏感，`64` 维 $k_s^R$ 完整保留 `bfloat16`（`128 B`）。
+
+三者相加恰好为 **`656 B/token`**（`128K × 62` 层从 `8.72 GiB` 降至 `4.96 GiB`），外加单头 `128` 维 FP8 索引键与 `4 B` `ue8m0` 指数缩放构成的 **`132 B/token`** `DeepseekV32IndexerCache`。在 Hopper H800 上，FlashMLA 借助 CTA Cluster size-2 的 DSMEM 异步传输掩盖 FP8 反量化周期（约 `50` 反量化周期 vs `34` MMA 周期），在 `topk=2048` 下跑出 `410 TFLOPS`，并在序列越过约 `3000` 词元后反超稠密内核[^flashmla]。**图 3** 对照了 GPU 与昇腾 NPU 源码栈的具体调度：
+
+![vLLM GPU FlashMLA Sparse 与 vllm-ascend NPU AscendSFA 运行时对照](./diagrams/03-dsa-gpu-vs-npu-runtime.drawio '图 3：vLLM GPU（FlashMLA Sparse）与 vllm-ascend NPU（AscendSFA）运行时对照')
+
+将**图 3** 中的核心工程符号逐一核对至 `vllm@bb23c0a8` 与 `vllm-ascend@3649b8ff`：
+
+| 对比维度          | `vllm` GPU（`vllm@bb23c0a8`）[^vllm]                                                                 | `vllm-ascend` NPU（`vllm-ascend@3649b8ff`）[^ascend]                                    |
+| :---------------- | :--------------------------------------------------------------------------------------------------- | :-------------------------------------------------------------------------------------- |
+| **入口与封装类**  | `Indexer` 与 `DeepseekV32IndexerCache`（`deepseek_v2.py`）                                           | `AscendSFAImpl`（`sfa_v1.py`）与 `AscendSFAIndexerBackend`（`indexer.py`）              |
+| **KV 分页块大小** | `block_size = 64`                                                                                    | `kernel_block_size = 128`（对齐达芬奇 Cube），`npu_sparse_flash_attention` 支持块粒 `1` |
+| **前置融合核**    | `wk_weights_proj` BF16 融合 + `fused_indexer_q_rope_quant`                                           | `PreprocessType` 三路路由（`PROLOG_V3` / `MLAPO` / `NATIVE`）+ 可选 `_q_stream` 异步流  |
+| **打分与回捞核**  | `SparseAttnIndexer`（`fp8_fp4_paged_mqa_logits`）+ `FlashMLASparseBackend`（`flash_mla_sparse_fwd`） | `npu_lightning_indexer` + `npu_sparse_flash_attention` / `sparse_flash_mla`             |
+
+## PyTorch / NumPy 核心实现与等价性核验
+
+下面这段自包含的 NumPy 核心实现验证 DSA 在 $L=128$ 序列中只挑 $k=16$（`12.5%`）历史槽位时，对显著关键位置（`salient`）的命中率、注意力质量保持率以及稀疏输出相对误差：
+
+```python
+import numpy as np
+
+rng = np.random.default_rng(42)
+
+def softmax(x: np.ndarray) -> np.ndarray:
+    e = np.exp(x - np.max(x, axis=-1, keepdims=True))
+    return e / np.sum(e, axis=-1, keepdims=True)
+
+L_ctx, H_idx, d_idx, k_top = 128, 8, 32, 16
+base_dir = rng.normal(size=(64,))
+base_dir /= np.linalg.norm(base_dir)
+q_main = base_dir[None, :] * 9.0 + rng.normal(size=(16, 64)) * 0.2
+c_hist = rng.normal(size=(L_ctx, 64)) * 0.5
+salient = np.arange(0, 100, 10)
+c_hist[salient] = base_dir[None, :] * 5.5 + rng.normal(size=(10, 64)) * 0.1
+
+# 稠密基线输出与目标分布
+attn_ref = softmax((q_main @ c_hist.T) / np.sqrt(64))
+p_target = attn_ref.sum(axis=0); p_target /= p_target.sum()
+out_dense = attn_ref @ c_hist
+
+# ReLU 闪电索引器打分与 Top-k 回捞
+q_i = np.broadcast_to(base_dir[:d_idx], (H_idx, d_idx)) + rng.normal(size=(H_idx, d_idx)) * 0.05
+k_i = c_hist[:, :d_idx] * 0.6
+w_i = np.ones(H_idx) / H_idx
+idx_scores = (np.maximum(0.0, q_i @ k_i.T) * w_i[:, None]).sum(axis=0)
+topk_ids = np.argsort(idx_scores)[-k_top:]
+assert idx_scores.shape == (L_ctx,) and topk_ids.shape == (k_top,)
+
+out_sparse = softmax((q_main @ c_hist[topk_ids].T) / np.sqrt(64)) @ c_hist[topk_ids]
+assert out_sparse.shape == out_dense.shape
+rel_err = np.linalg.norm(out_dense - out_sparse) / np.linalg.norm(out_dense)
+print(f"salient_hits={len(set(topk_ids)&set(salient))}/10 mass_kept={p_target[topk_ids].sum()*100:.2f}% rel_err={rel_err:.4f}")
+```
+
+运行脚本的实测输出结果如下，仅凭 `12.5%` 稀疏槽位即可命中全部 `10/10` 关键位置并守住 `97.50%` 注意力质量：
 
 ```text
-[a] L=128, topk=16: salient_hits=10/10, mass_kept=97.70%, rel_err=0.0237
-[b] KL warmup: s0=8.272, s50=0.270, s150=0.130, s250=0.088; top-8 recall=91.1%
-[c] MLA KV: BF16=1152 B/tok (8.72 GiB@128Kx62L) -> FP8=656 B/tok (4.96 GiB), Indexer=132 B/tok; ue8m0 rel_err=0.0262, scale_log2=[-7.0, -6.0]
-OK 07
+salient_hits=10/10 mass_kept=97.50% rel_err=0.0252
 ```
-
-从这三行打印结果可以直观验证本文的每一处关键结论：仅保留 `12.5%`（`16 / 128`）的潜向量就捕获了 `97.70%` 的原始注意力质量与仅 `0.0237` 的输出相对误差；`250` 步 KL 蒸馏就把索引器损失从 `8.272` 压到 `0.088`，`top-8` 召回率拉升至 `91.1%`；而混合精度 `fp8_ds_mla` + `ue8m0`（2 的整数次幂缩放 $2^{-7}, 2^{-6}$）将 `128K × 62` 层 KV 显存从 `8.72 GiB` 降到 `4.96 GiB`，单向量量化相对误差仅 `2.62%`。
 
 ## 代价与边界
 
-- **计算降到 $O(Lk)$，显存容量依然是 $O(L)$**：只要下一句还可能需要随机回捞任意早期的历史信息，全部 `128K` 词元的 $c_s^{KV}$（`656 B/tok`）和 $k_s^I$（`132 B/tok`）就必须完整驻留在 HBM 中，总占用依然随上下文长度 $L$ 线性膨胀。
-- **索引器本身仍是低常数项的 $O(L^2)$ 扫描**：虽然 ReLU + FP8 + 1 头键极大降低了常数因子，但在极长上下文预填充阶段，索引器依旧要为每个查询扫描全部历史键。
-- **短上下文倒挂风险与随机 Gather 开销**：不连续下标读取破坏了顺序访存局部性，且索引器本身有固定启动开销，因此 FlashMLA 实测在长度约 `3000` 词元以下时反而比稠密实现更慢[^flashmla]。
+- **计算降至 $O(Lk)$，显存容量依然是 $O(L)$**：只要下一句可能随机回捞任何早期词元，全部 $L$ 条 `656 B` 主潜向量与 `132 B` 索引键就必须完整驻留 HBM。
+- **索引器本身仍是低常数 $O(L^2)$ 扫描**：在超长上下文（例如 `1M` 词元）预填充或解码中，索引器每步仍要扫过所有历史 $k_s^I$。
+- **短序列调度开销反超风险**：由于非连续 Gather 与索引启动开销，实测在上下文约 `3000` 词元以内时性能不如稠密 FlashMLA[^flashmla]。
 
-既然 DSA 把单卡单请求的**计算瓶颈**砍成了定长 $O(Lk)$，却依然把所有历史潜向量和索引键留在了越来越昂贵的 HBM 容量里，那么能否在「不丢失长程回忆」的前提下进一步打破 $O(L)$ 的 KV 显存墙？带着这个未解之题，我们在 [04 序列压缩注意力（上）：DeepSeek-V4 的 CSA 与 HCA 双重配方](../04-csa-and-hca/) 继续看更进一步的上下文压缩与混合注意力演进。
+要真正打破随序列长度 $L$ 线性膨胀的 HBM 容量墙，就必须沿着**序列轴 $L$** 做门控折叠压缩——这正是下一章 [04 序列压缩注意力（上）：DeepSeek-V4 的 CSA 与 HCA 双重配方](../04-csa-and-hca/) 的主线。
 
 ## 自测
 
-1. **为什么不能直接把 NSA 的 GQA 块打分套用到 MLA 上？**
-   MLA 在推理期吸收投影矩阵后退化成 `1` 头共享的压缩潜空间（MQA 模式），不再具备 GQA 的多组 KV 复用来摊薄块表征；而若用 `128` 个主 Query 头做细粒度选词，打分器自身又会退化成高开销的 $O(L^2)$ 计算。
-2. **闪电索引器公式 $I_{t,s} = \sum_j w_{t,j}^I \operatorname{ReLU}(q_{t,j}^I \cdot k_s^I)$ 为什么选 ReLU 而不是 Softmax，且 $k_s^I$ 只用 1 个头？**
-   $\operatorname{ReLU}$ 既能直接截断无关历史（输出归零、非负可加）又免除了跨全序列的 `exp-sum` 规约同步，天然适配低比特 FP8 内核；单头共享 $k_s^I$ 把索引器 KV 缓存压到每词元仅 `132 B`（`128 B FP8 + 4 B ue8m0/fp32` 缩放）。
-3. **为什么 `fp8_ds_mla` 把 $c_s^{KV}$ 量化为 FP8，却偏偏把 $k_s^R$ 留在 BF16？**
-   `512` 维潜向量 $c_s^{KV}$ 是语义特征向量，分 `4` 个 `1×128` 块做 FP8 E4M3 量化后误差仅约 `2%–3%`；而 `64` 维 $k_s^R$ 承载高频旋转位置角度（RoPE），对数值精度极度敏感，因此保留 `64 × 2 = 128 B` 的 BF16，总计正好 `512 + 16 + 128 = 656 B/token`。
+1. 为什么不能直接把 NSA 的 GQA 块打分套用到 MLA 上？
 
-[^ds32]: DeepSeek-AI, _DeepSeek-V3.2: Pushing the Frontier of Open Large Language Models_ (`arXiv:2512.02556`, §2.1–2.3 DeepSeek Sparse Attention)。
+   <details>
+     <summary>参考答案</summary>
+     MLA 在推理吸收后退化成 `1` 头共享潜空间（MQA 模式），不再具备 GQA
+     的多组独立键值来分摊块挑选；若强行用 `128` 个主 Query
+     头做细粒度选词，打分自身会重新跌回高成本的 $O(L^2)$ 计算。
+   </details>
+
+2. 闪电索引器公式 $I_{t,s} = \sum_j w_{t,j}^I \operatorname{ReLU}(q_{t,j}^I \cdot k_s^I)$ 为什么选 $\operatorname{ReLU}$ 而不是 Softmax，且 $k_s^I$ 只用 1 个头？
+
+   <details>
+     <summary>参考答案</summary>
+     $\operatorname{ReLU}$ 将负相关性直接截断为零且满足头间非负可加性，无需像 Softmax
+     那样跨全序列做全局 `exp-sum` 同步，天然契合低精度 FP8 累加后直接排序；单头共享 $k_s^I$
+     将索引缓存压到每词元仅 `132 B`（`128 B FP8 + 4 B ue8m0` 缩放）。
+   </details>
+
+3. 为什么 `fp8_ds_mla` 把 $c_s^{KV}$ 量化为 FP8，却把 $k_s^R$ 留在 BF16？
+   <details>
+     <summary>参考答案</summary>
+     `512` 维潜向量 $c_s^{KV}$ 属于语义特征空间，按每 128 维一组配 `float32` 缩放量化成 FP8
+     后误差可控制在 `2%–3%` 以内；而 `64` 维 $k_s^R$
+     承载高频旋转位置角度（RoPE），微小数值扰动就会破坏相对位置相位，因此保留 `128 B` BF16
+     精确表示，两者与 `16 B` 缩放合并恰好构成 `656 B`。
+   </details>
+
+[^ds32]: DeepSeek-AI, _DeepSeek-V3.2: Pushing the Frontier of Open Large Language Models_ (`arXiv:2512.02556`, 2025), Section 2.1–2.3.
 
 [^flashmla]: FlashMLA 技术文档 `docs/20250929-hopper-fp8-sparse-deep-dive.md`（`FlashMLA@395cb3af`），记录了 `656 B/token` 稀疏 KV 格式、`8.72 GiB` 基线估算、H800 反量化周期边界与 `410 TFLOPS` 实测性能。
 
-[^vllm]: `vllm@bb23c0a8` 源码：`vllm/model_executor/models/deepseek_v2.py`（`Indexer`、`DeepseekV32IndexerCache`、`DeepseekV2MLAAttention`）、`vllm/model_executor/layers/sparse_attn_indexer.py`（`SparseAttnIndexer`）及 `vllm/v1/attention/backends/mla/flashmla_sparse.py`（`FlashMLASparseBackend`）。
+[^vllm]: `vllm@bb23c0a8`: `vllm/model_executor/models/deepseek_v2.py`（`Indexer`、`DeepseekV32IndexerCache`）、`vllm/model_executor/layers/sparse_attn_indexer.py`（`SparseAttnIndexer`、`fp8_fp4_paged_mqa_logits`）与 `vllm/v1/attention/backends/mla/flashmla_sparse.py`（`FlashMLASparseBackend`、`flash_mla_sparse_fwd`）。
 
-[^ascend]: `vllm-ascend@3649b8ff` 源码：`vllm_ascend/attention/sfa_v1.py`（`AscendSFABackend`、`AscendSFAImpl`）、`vllm_ascend/attention/indexer.py`（`AscendSFAIndexerBackend`）、`vllm_ascend/device/device_op.py`（`npu_lightning_indexer` / `npu_sparse_flash_attention` 调度）及 `vllm_ascend/ops/mla.py`（`AscendMultiHeadLatentAttention`）。
+[^ascend]: `vllm-ascend@3649b8ff`: `vllm_ascend/attention/sfa_v1.py`（`AscendSFAImpl`、`npu_sparse_flash_attention`、`sparse_flash_mla`）与 `vllm_ascend/attention/indexer.py`（`AscendSFAIndexerBackend`、`npu_lightning_indexer`）。

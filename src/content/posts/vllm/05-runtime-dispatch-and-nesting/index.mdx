@@ -2,208 +2,107 @@
 title: '05 运行时模式分发与嵌套包装：从 BatchExecutionDescriptor 到 DP 模式降级'
 description: '解析 vLLM 启动期 CUDAGraphMode 自动降级、两层 FULL/PIECEWISE 嵌套包装与 NONE 透传不变量，以及 BatchExecutionDescriptor 与 DP 全组同步重分派。'
 pubDate: 2026-10-30
+draft: false
 series: { id: vllm, order: 6 }
-category: AI Infra
 tags: [vLLM, CUDA Graph, torch.compile, Scheduler]
-toc: true
 ---
 
-[上一篇](../04-cuda-graph-and-boundaries/)交代了 CUDA Graph 的四条硬边界：静态显存地址、静态张量形状、禁止图内主机同步，以及图内捕获态与通信语义约束。
+import DpDispatchConsensusExplainer from '../../../../explainers/vllm/DpDispatchConsensusExplainer';
 
-可在真实的连续批处理（Continuous Batching）服务里，调度器每一帧吐出的 Batch 都在剧烈变脸——这一步还是纯 Decode 小批，下一步就塞进一个 Chunked Prefill 请求，再下一步突发进来一条 4096 Token 的超长 Prompt。同时，FlashAttention 3、[FlashMLA](../../deepseek/01-mla/) 与[投机采样（MTP / DSpark）](../../deepseek/09-mtp-and-dspark/)对计算图一致性的容忍度各不相同。
+经过前四章，我们已经集齐了所有底座积木：PagedAttention 块表、异步输出、无 Guard 的 `split_graph` 编译与遵守四大边界的静态图。然而一旦把模型摆到真实线上流量里，新的调度矛盾马上出现：**线上每一轮迭代的 Batch 构成都在剧烈变化**。
 
-vLLM 没有逼迫用户在性能与稳定性之间一刀切，而是搭了一套**“启动期木桶协商 + 两层嵌套图包装 + 步级 O(1) 分发与跨卡共识降级”**的运行时架构。
+这一步可能全是单 token Decode，下一步就塞进了 Chunked Prefill，在 MoE 数据并行（DP）下甚至可能卡 0 只有 4 个 Decode token 而卡 1 正承载 19 个混排 Prefill token。引擎必须在单模型实例里无痛兼容多套图模式，并在微秒级完成全集群一致性对齐。
 
-读完本篇你会带走：
+## 多卡 DP 运行时模式分歧与防死锁共识
 
-1. **五种 `CUDAGraphMode` 与启动期自动降级逻辑**：为什么一个包含单层低能力后端的混合模型，或者在部分注意力后端上开启投机采样，会在启动期悄无声息地把 `FULL` 降成 `PIECEWISE`。
-2. **四步实操推演**：看清同一个 `FULL_AND_PIECEWISE` 引擎如何将纯 Decode、混合批、超长批与异构 DP 负载精准送入不同执行分支。
-3. **两层嵌套包装与三大核心不变量**：外层 `ModelCudaGraphManager` 捕获 `FULL` 图时如何借助 `NONE` 让内层 `CUDAGraphWrapper` 静默透传、为何必须先捕获 `PIECEWISE` 再捕获 `FULL` 以复用 `global_graph_pool`，以及 DBO 为何唯独拒绝 `PIECEWISE`。
-4. **MRV2 源码映射实情**：理清已重构移除的 `cudagraph_dispatcher.py` 与现行 `CudaGraphManager.dispatch`、`dispatch_cg_and_sync_dp` 之间的真实调用链。
+如果卡 0 本地判定 `FULL(B=4)` 并通过整图重放推进到 MoE Expert All-to-All，而卡 1 本地只能走 `PIECEWISE(T=20)` 还在慢吞吞跑 Eager Attention，两条流传入集合通信的张量形状 `(4, H)` 与 `(20, H)` 就会当场错配，直接卡死整个集群。
 
-## 先看一个例子：同一个引擎的四种调度步
+**图 1** 推演了 `vllm/v1/worker/gpu/dp_utils.py` 中 `dispatch_cg_and_sync_dp` 如何彻底根除这种死锁隐患[^1]。
 
-在进入具体步态之前，先明确 vLLM 在 `vllm/config/compilation.py` 中定义的五种 `CUDAGraphMode`[^cg-mode]：
+<DpDispatchConsensusExplainer client:visible title="图 1：多卡 DP 运行时模式对齐与防死锁共识推演" />
 
-| 运行模式             | 枚举值              | 纯统一 Decode 行为          | 混合批 / 非统一批行为       | 典型适用场景                             |
-| :------------------- | :------------------ | :-------------------------- | :-------------------------- | :--------------------------------------- |
-| `NONE`               | `0`                 | 不入图                      | 不入图                      | 调试、超限回退、特定分布式通信后端       |
-| `PIECEWISE`          | `1`                 | 按 `splitting_ops` 分段入图 | 按 `splitting_ops` 分段入图 | 含动态控制流或不支持整图捕获的后端       |
-| `FULL`               | `2`                 | 整模型单图捕获重放          | 整模型单图捕获重放          | 仅支持完整图捕获的极少数纯 `ALWAYS` 后端 |
-| `FULL_DECODE_ONLY`   | `(FULL, NONE)`      | 整模型单图                  | 直接 Eager / 编译执行       | 关闭图切分、只想加速 Decode 且放弃混合图 |
-| `FULL_AND_PIECEWISE` | `(FULL, PIECEWISE)` | 整模型单图                  | 分段入图（注意力 Eager）    | vLLM V1 默认主力优化档位（`O2` / `O3`）  |
+如**图 1** 所示，卡 0 与卡 1 先在 CPU 侧把各自本地 `num_tokens`、`cg_mode`、`uniform_token_count` 与 `max_query_len` 等 7 项状态打成整型小张量，利用 `get_dp_group().cpu_all_reduce_()` 完成零 GPU 阻塞的跨卡广播汇总。
 
-注意到复合模式其实是一对 `(decode_mode, mixed_mode)` 元组，拆开之后每一路只可能是 `NONE (0)`、`PIECEWISE (1)` 或 `FULL (2)` 这三个有序整数——这个大小序在后面的多卡 DP 共识中会直接决定谁给谁让步。
+决策规则非常保守却极其可靠：**所有卡对图模式取枚举最小值 `min(cg_mode_across_dp)`**（即只要有一张卡只能跑 `PIECEWISE` 甚至 `NONE`，全体自动降级对齐），而**对批大小取最大值 `max(num_tokens_across_dp)`** 并一起查表入桶垫齐到 `(20, H)`，保证穿越 MoE All-to-All 时所有节点形状完全对称。
 
-现在假设我们启动了一台配置为 `FULL_AND_PIECEWISE` 的引擎，预捕获了两张桶表：
+## 三层嵌套包装与 NONE 透传不变量
 
-- **Decode 整图桶（`decode_sizes`）**：请求数 `[1, 2, 4, 8]`（单步单 token，即 `uniform_token_count = q = 1`，对应 `[1, 2, 4, 8]` 个 token）；
-- **混合 / Prefill 分段桶（`prefill_sizes`）**：token 数 `[1, 2, 4, 8, 16, 24, 32]`（最大捕获上限 `32`）。
+为了让同一份 Python 模型对象能在运行时一秒切换成 `FULL`、`PIECEWISE` 甚至完全 Eager（`NONE`），vLLM 在启动构图期将模型外包成了三层同心结构，分发逻辑见**图 2**。
 
-连续四个调度步打过来时，引擎每步的分发轨迹如下图：
-
-![四个调度步在单一 FULL_AND_PIECEWISE 引擎与两卡 DP 同步下的路由结果](./diagrams/05-dispatch-walkthrough.drawio '图 1：同一 FULL_AND_PIECEWISE 引擎面对纯 Decode、混合批、超大批与 DP 异构负载时的运行时分发与降级路径。')
-
-1. **Step A（纯 Decode 批）**：调度器凑出 `3` 个正在生成的请求，每条生成 `1` 个 token（`num_reqs=3`、`num_tokens=3`、`uniform_token_count=1`、`max_query_len=1`）。分发器先看统一 Decode 桶表 `_decode_descs[(1, 0, 1)]`，用向上整除数 `n = cdiv(3, 1) = 3` 直接索引到 `num_tokens = 4`、`cg_mode = FULL` 的描述符。外层直接调用 `run_fullgraph` 重放整模型图；内层分段包装器处于**不介入（`NONE` 透传语义）**状态。
-2. **Step B（混合 Chunked Prefill 批）**：`3` 个 Decode 加 `1` 个首轮 Prefill，共计 `num_reqs=4`、`num_tokens=19`。因为存在 Prefill，请求查询长度不再均匀（`uniform_token_count=None`），分发器跳过 Decode 表，去预展开好的 `_candidates[(19, 0)]` 里 O(1) 命中了 `num_tokens = 24` 的 `PIECEWISE` 桶。模型按正常调用进入执行，注意力保持 Eager 以处理变长序列，其余 RMSNorm、线性层、MLP 子模块分段重放。
-3. **Step C（超大单 Prefill 批）**：突然涌入 `num_tokens = 4096` 的超长上下文，远远超出最大捕获桶 `32`。`_candidates[(4096, 0)]` 查无此键，分发器立刻返回 `CUDAGraphMode.NONE`：外层直接调用原模型，内层所有分段包装器见上下文为 `NONE` 后全部直通让路，整步以纯 Eager / 编译内核跑完。
-4. **Step D（双卡 DP 异构负载）**：在 Data Parallel 部署下，Rank 0 本步正好是 Step A 的 `3` token 纯 Decode（想跑 `FULL (4)`），Rank 1 却是 Step B 的 `19` token 混合批（只想跑 `PIECEWISE (24)`）。若两张卡各自放飞自我，集合通信点（如 MoE EP All-to-All 或 DP 同步点）一边在静态图里等待、另一边走 Eager 分段执行，极易因张量形状或流顺序错位而死锁。因此协调器对 `cg_mode` 取全局最小值 `min(FULL=2, PIECEWISE=1) = PIECEWISE`，对 `num_tokens` 取最大值 `19` 并把不一致的 `uniform_token_count` 清空为 `None`，两张卡同时重新查表，统一降级对齐到 **`PIECEWISE (24)`**。
-
-## 启动期协商与两层嵌套包装
-
-运行时之所以能无缝切换 `FULL`、`PIECEWISE` 与 `NONE`，靠的是启动期先做过能力裁剪，并在运行图外搭起“外层整图 + 内层分段”的双重结构。
-
-![启动期能力协商、两层嵌套透传不变量与捕获池约束](./diagrams/05-nested-wrappers-arch.drawio '图 2：从启动期 AttentionCGSupport 协商降级，到运行期外层 FULL / 内层 PIECEWISE 嵌套透传与内存池次序约束。')
-
-### Attention 能力木桶效应与 SpecDec 降级陷阱
-
-在 GPU Worker 初始化阶段，模型并不会直接相信用户配置里的 `--cudagraph-mode`，而是要先收集所有注意力层与模型状态类的真实图支持等级 `AttentionCGSupport`[^attn-cg]：
-
-- **`ALWAYS (3)`**：无论是否变长或混合 Prefill/Decode，全批一律支持整模型 `FULL` 图捕获，如 FlashAttention 3/4（含 XPU）、Triton Attention 与 FlexAttention。
-- **`UNIFORM_BATCH (2)`**：只要当前步每条请求查询长度相等（支持 `q > 1`，含投机采样与部分定长批次）即可走 `FULL`，但混合变长批仍需退回分段或 Eager——如 FlashMLA、主动为了混合批性能回退的 FlashAttention 2，以及 GDN / Mamba / ShortConv 线性注意力变体。
-- **`UNIFORM_SINGLE_TOKEN_DECODE (1)`**：只允许每条请求恰好 `1` 个 query token 的纯 Decode 进入 `FULL` 图，代表有 CutlassMLA，以及未走原生 FA2 Decode 或 TRTLLM 路径的默认 FlashInfer。
-- **`NEVER (0)`**：完全禁止 `FULL` 图。
-
-关键在于，`init_attn_backend` 会跨模型里每一个 Attention 分组以及 `model_state.get_additional_cg_support()` 取**最小值**（`min`）。哪怕整张网络有 60 层支持 `ALWAYS`、只有 1 层混合线性注意力或 KV 路由算子仅上报了 `UNIFORM_SINGLE_TOKEN_DECODE`，整座引擎的能力天花板也会立刻被压到 `UNIFORM_SINGLE_TOKEN_DECODE`。
-
-拿到木桶短板后，`resolve_cudagraph_mode_and_sizes` 按顺序裁决[^cg-mode]：
-
-1. 若配置请求了 `mixed_mode == FULL`，而 `min_cg_support != ALWAYS`，系统会自动降级为 `FULL_AND_PIECEWISE`（若开启图切分）或 `FULL_DECODE_ONLY`。
-2. 若配置需要 `decode_mode == FULL`，但 `min_cg_support == NEVER`，**或者开启了投机采样（`uniform_decode_query_len > 1`）却撞上了只支持单 token 的 `UNIFORM_SINGLE_TOKEN_DECODE` 后端**，Decode 侧的 `FULL` 图会被整条削掉，直接降级为 **`PIECEWISE`**（未启用图切分时甚至沦为 `NONE`）。
-3. 此外，`set_splitting_ops_for_v1` 也会根据通信拓扑收口：当多卡 DP 启用 `deepep_high_throughput` all2all 后端时，直接把 `cudagraph_mode` 强制置为 `NONE`；而用户显式清空 `splitting_ops = []` 或开启未配合 Inductor 分区的注意力融合量化时，`FULL_AND_PIECEWISE` 会反向退成 `FULL`、`PIECEWISE` 则退成 `NONE`。
-
-### 两层嵌套包装与 `NONE` 透传不变量
-
-能力敲定之后，vLLM 实际上在同一个模型实例上叠了两层 CUDA Graph 包装：
-
-- **外层整模型管理器（`ModelCudaGraphManager`）**：位于 `vllm/v1/worker/gpu/cudagraph_utils.py`，直接管理整模型前向的 `FULL` 图对象、统一持久化的 `hidden_states` 输出缓冲区，以及所有预捕获形状描述符。
-- **内层编译分段包装（`CUDAGraphWrapper`）**：位于 `vllm/compilation/cuda_graph.py`。在 `torch.compile` 阶段，`VllmBackend` 会调用 `split_graph`，沿着 `splitting_ops`（主要是各版 Attention 算子，以及未启用 Inductor 分区时的 `unified_kv_cache_update` 与 `unified_mla_kv_cache_update`）把完整 FX 计算图拆成若干子模块，每个非切分密集子模块各包裹一层指定了 `runtime_mode = CUDAGraphMode.PIECEWISE` 的 `CUDAGraphWrapper`[^nested-wrap]（若启用 `use_inductor_graph_partition=True`，拆分点改由 Inductor 代码生成期通过 `set_customized_partition_wrappers` 注入，语义完全等价）。
-
-把两层套在一起后，立刻冒出一个尖锐问题：**外层打算捕获 `FULL` 图时，内部也会完整跑一遍模型，难道内层的 `CUDAGraphWrapper(PIECEWISE)` 不会在 `torch.cuda.graph` 捕获上下文里面再触发一次 `torch.cuda.graph` 嵌套捕获吗？**
-
-CUDA 驱动严格禁止图内嵌图。vLLM 用一个极其干净的**`NONE` 透传不变量**彻底绕开了死锁：
-
-1. 在 `CUDAGraphWrapper.__call__` 的最前端，有一条硬判断[^nested-wrap]：只要当前上下文的 `cudagraph_runtime_mode == CUDAGraphMode.NONE`，或者与包装器自身的 `self.runtime_mode` 不相等，包装器什么也不捕获、什么也不重放，直接一行 `return self.runnable(*args, **kwargs)` 原样透传给底层已编译函数！
-2. 于是外层 `CudaGraphManager.capture` 在录制 `FULL` 图时，**故意将上下文模式设为 `CUDAGraphMode.NONE`**，然后放心地在外层 `with torch.cuda.graph(...)` 块内执行一次模型前向。内层所有分段包装器一看到 `NONE` 就自觉隐身，把子模块算子干干净净地录进外层整张 `FULL` 图里。
-3. 等到了真实推理期：选中 `FULL` 时外层直接调用 `run_fullgraph` 重放，压根不踏进 `model()`；选中 `NONE` 时外层设置 `NONE` 后调用 `model()`，内层同样全线直通；唯有选中 `PIECEWISE` 时，上下文设为 `PIECEWISE`，内层与 `self.runtime_mode` 匹配，这才逐段激活捕获或重放。
-
-### 捕获次序、共享显存池与 DBO 独占约束
-
-除了透传规则，嵌套捕获还有两条容易忽视的工程铁律：
-
-- **必须先 `PIECEWISE` 后 `FULL`，且同模式内大桶优先**：在 `CudaGraphManager.capture` 中，源码先用 `CUDAGraphMode.NONE` 预热一次消除懒初始化分配，随后严格按照 `[CUDAGraphMode.PIECEWISE, CUDAGraphMode.FULL]` 的次序捕获；同时每个模式内部按 `num_tokens` 从大到小降序录制，且外层与内层所有分段共用同一份 `current_platform.get_global_graph_pool()`[^dispatch-mrv2]。这样做的核心考量在于显存复用：先录完宽的 `PIECEWISE` 桶和大尺寸桶，已经在共享池里开辟好了足够的私有工作空间，后续任何**宽度不超过最宽 `PIECEWISE` 图的 `FULL` 图与小桶**都能直接“白嫖”已分配好的显存块，避免反复向 CUDA 申请新物理页导致 OOM；此外，内层只有最后一个分段子模块开启 `weak_ref_output=True`，让最终输出允许安全释放或覆写而中间段引用维持稳态。
-- **DBO（Dual-Batch Overlap）只接受 `FULL` 图**：当开启双微批重叠以掩盖 MoE All-to-All 通信时，`vllm/config/vllm.py` 与 `cudagraph_utils.py` 明确将 `PIECEWISE` 列为不兼容组合并断言拦截[^dbo-cg]。只有 `cg_mode == CUDAGraphMode.FULL` 的纯均匀 Decode 描述符，才会在初始化时由 `_maybe_ubatch_twin` 配对生成双微批版本，并且多微批上下文里同样强制内层设为 `NONE`。一旦 DP 场景下某张卡分不到足够切分双微批的 token（`2 * min_tokens_across_dp < ubatch_desc.num_tokens`），或者批形态混合无法走 `FULL`，调度就宁可跳过入图，直接用 `ubatch_runner` 跑 Eager，也绝不进入 `PIECEWISE`。
-
-## 运行时分发引擎：从 MRV2 源码看透 BatchExecutionDescriptor
-
-> 如果你翻看旧版 vLLM V1 资料或仓库里尚未完全改写的早期设计文档[^dispatch-mrv2]，常常能检索到 `vllm/v1/cudagraph_dispatcher.py` 里的 `CudagraphDispatcher` 与 `vllm/v1/worker/gpu_model_runner.py`。而在当前版本（`bb23c0a`）重构后的 MRV2 GPU Worker 中，**这两个旧文件均已移除**：入图分发、捕获与重放已统一合并进 `vllm/v1/worker/gpu/cudagraph_utils.py` 的 `CudaGraphManager`，DP 模式同步独立成 `vllm/v1/worker/gpu/dp_utils.py`，顶层调度串接则全部落在 `vllm/v1/worker/gpu/model_runner.py` 的 `GPUModelRunner.execute_model`。
-
-把运行时一帧前向拆开，数据流严格遵循下面三段式路径：
-
-![MRV2 运行时分发、7 行张量 DP 同步与三路执行链](./diagrams/05-dp-dispatch-runtime.drawio '图 3：MRV2 架构下从 GPUModelRunner.execute_model 出发，经本地查表、CPU AllReduce DP 共识到三路前向分支的完整调用链。')
-
-### 1. 批特征提取与 `max_query_len` 的安全防护
-
-每次执行前，`gather_batch_req_state` 扫描当前 Batch 的请求表，算出真实 `num_reqs`、`num_tokens`、`has_prefill` 与 `max_query_len`[^dp-sync]。其中 `decode_graph_eligible` 决定本批是否具备走 Decode 整图的资格（通常要求没有未处理前缀的常规 Prefill）。紧接着有两个极其关键的边界防线：
-
-- **仅当 `decode_graph_eligible` 且 `num_tokens == max_query_len * num_reqs` 时**，`uniform_token_count` 才取 `max_query_len`，否则一概置为 `None`。
-- **当 `not decode_graph_eligible` 时，传入 `dispatch` 的 `max_query_len` 必须被显式抹成 `None`**（`model_runner.py:1871-1873`）。因为启用可变长 Decode 图捕获的某些后端仅靠 `max_query_len` 上限做兼容判定，如果不擦掉这个值，一条长度为 `2` 的短 Prefill 就可能浑水摸鱼匹配上可变长 Decode 的 `FULL` 图！
-
-### 2. O(1) 预展开桶表与 6 维 `_is_compatible` 校验
-
-`CudaGraphManager` 在初始化阶段就把热路径查表做成纯 O(1) 复杂度，运行期没有任何循环搜索桶大小：
-
-- **`_decode_descs[(q, num_loras, num_ubatches)]`**：按请求数稠密铺平的列表。捕获 `(n, q)` 对应 `num_tokens = n * q, num_reqs = n, uniform_token_count = q`。运行时只要 `uniform_token_count is not None`，直接计算 `n = cdiv(num_tokens, uniform_token_count)` 一步索引进该列表；若拿到结果，就把它排在候选列表最前面（即优先尝试 `FULL`）。**为什么用 `num_tokens` 除以 `q` 来查表，而不是直接用真实 `num_reqs`？** 因为经过后面多卡 DP 对齐之后，`num_tokens` 可能被统一填充放大，拿放大后的 `num_tokens` 反推桶位才能确保全组所有卡落进同一个捕获尺寸。
-- **`_candidates[(num_tokens, num_loras)]`**：按 `[上一档大小 + 1 .. 当前桶大小]` 稠密填充的字典，`FULL` 候选排在 `PIECEWISE` 候选前面，直接靠字典一次命中最小容得下当前 `num_tokens` 的捕获桶。
-
-随后分发器对候选列表逐一调用 `BatchExecutionDescriptor._is_compatible`，六项条件必须全数放行[^dispatch-mrv2]：
-
-1. `desc.uniform_token_count is None or desc.uniform_token_count == uniform_token_count`
-2. `desc.max_query_len is None or (max_query_len is not None and desc.max_query_len >= max_query_len)`
-3. `desc.num_reqs is None or desc.num_reqs >= num_reqs`
-4. `desc.num_tokens >= num_tokens`
-5. `desc.num_active_loras == num_active_loras`
-6. `desc.num_ubatches == num_ubatches`
-
-如果候选都过不了，或者 `num_tokens` 超出最大捕获桶键范围，就干净利落地返回 `BatchExecutionDescriptor(CUDAGraphMode.NONE, num_tokens, num_reqs)`。
-
-### 3. 多卡 DP 协调：7 行 CPU 张量达成全组降级共识
-
-当 `dp_size > 1` 时（数据并行拓扑见[分布式 02](../../distributed/02-parallelism-and-disaggregation/)），本地算出的 `desired_batch_desc` 只是一厢情愿的“本地最优解”。`dispatch_cg_and_sync_dp` 会调用 `sync_cudagraph_and_dp_padding` 构造一个形状为 `(7, dp_size)` 的 CPU `int32` 缓冲矩阵，每张卡仅向自己那列写入 7 个标志位（其余列清零），调用一次 `cpu_all_reduce_` 求和即可零 GPU 同步地让全部 rank 看到整张集群面板[^dp-sync]：
-
-| 张量行号 | 写入字段                           | 缺失哨兵值 | 全局共识裁决规则                                |
-| :------- | :--------------------------------- | :--------- | :---------------------------------------------- |
-| Row 0    | 本地 `num_tokens`                  | —          | 取全组 `max`，决定对齐填充后的共享 token 数     |
-| Row 1    | `desired_batch_desc.cg_mode.value` | —          | 取全组 `min`（`NONE=0 < PIECEWISE=1 < FULL=2`） |
-| Row 2    | `uniform_token_count`              | `0`        | 仅全组非零且完全相等时保留，否则清空为 `None`   |
-| Row 3    | `max_query_len`                    | `-1`       | 仅全组均非 `-1` 时取 `max`，否则置 `None`       |
-| Row 4    | `allow_ubatching`                  | `0`        | 全组按位与，判定是否统一允许 DBO                |
-| Row 5    | 本地 `num_reqs`                    | —          | 保留各自本地请求数，用于复核重分派              |
-| Row 6    | `allow_skip_drafts`                | `0`        | 全组共识是否跳过草稿前向                        |
-
-只要 `synced_cg_mode == NONE`，全组直接统一切到 Eager；否则每张卡以自己的 `num_reqs` 搭配全局共识后的 `(synced_num_tokens, synced_uniform_token_count, synced_max_query_len)` 重新调用一次 `cudagraph_manager.dispatch`，再把最终匹配的桶大小 `synced_desc.num_tokens` 写回全局长度数组，最后分三路进入执行[^dp-sync]：
-
-- `FULL` -> `self.cudagraph_manager.run_fullgraph(batch_desc)`（跳过 `set_forward_context` 直接整图重放）
-- `PIECEWISE` -> 进入 `set_forward_context(..., cudagraph_runtime_mode=PIECEWISE, batch_descriptor=...)`，调用 `run_pw_graph` 驱动分段图
-- `NONE` -> 进入 `set_forward_context(..., cudagraph_runtime_mode=NONE)`，直接跑裸模型前向或 `ubatch_runner`
-
-## 代码验证：用 NumPy 复刻分发器与 DP 降级不变量
-
-同目录的 `toy.py` 用不到 150 行标准库与 NumPy 完整复刻了上述三段核心机制：启动期 `resolve_cudagraph_mode` 对不同后端与投机采样的自动降级、与源码结构一致的 `BatchExecutionDescriptor` / `_decode_descs` / `_candidates` 查表与 6 维校验，以及基于 `(7, dp_size)` `int32` 矩阵求和的跨卡 `dispatch_cg_and_sync_dp` 共识和 200 步随机异构负载高压不变量测试。
-
-实际运行 `python -I toy.py` 的观测输出如下：
-
-```text
-Init: {'FA3': 'FULL', 'FlashMLA': 'FULL_AND_PIECEWISE', 'FI+SpecDec': 'PIECEWISE'}
-Step A decode(3): outer=FULL, bucket_tokens=4, inner=NONE
-Step B mixed(19): outer=PIECEWISE, bucket_tokens=24, inner=PIECEWISE
-Step C huge(4096): outer=NONE, bucket_tokens=4096, inner=NONE
-Step D DP sync: [('PIECEWISE', 24, 'PIECEWISE'), ('PIECEWISE', 24, 'PIECEWISE')]
-200-step DP dist: {'FULL': 48, 'PIECEWISE': 97, 'NONE': 55}
-OK 05
+```mermaid caption="图 2：CUDAGraphWrapper 与 TorchCompile 三层嵌套分发决策树"
+flowchart TD
+    IN["ForwardContext 传入"] --> F{"mode == FULL?"}
+    F -->|是| FR["外层 CUDAGraphWrapper<br/>整图重放"]
+    F -->|否| TC["透传进<br/>TorchCompileNoGuards"]
+    TC --> P{"mode == PIECEWISE?"}
+    P -->|是| PR["内层 PW 包裹<br/>submod_0 与 2"]
+    P -->|否| N["mode == NONE<br/>全部直通"]
+    PR --> AT["submod_1 Attention 直调 Eager"]
+    N --> AT
 ```
 
-从输出可以直接交叉印证前文的三个关键结论：
+这个设计的关键在于 **`CUDAGraphWrapper.__call__` 的严格透传契约**[^2]：
+当传入 `ForwardContext.cudagraph_runtime_mode` 既不是自己的 `self.runtime_mode`，或直接等于 `CUDAGraphMode.NONE` 时，包装器不做任何捕获或重放，直接把调用原样传给内层的 `self.runnable(*args, **kwargs)`。
 
-- **启动降级**：同样请求 `FULL` 或 `FULL_AND_PIECEWISE`，`FlashMLA`（`UNIFORM_BATCH`）自动回落到 `FULL_AND_PIECEWISE`，而 `FlashInfer` 单 token 后端叠加 `q_len=4` 的投机采样后被整条压缩成纯 `PIECEWISE`。
-- **内外层协作**：Step A 外层选用 `FULL` 时内层处于 `NONE` 透传；Step B 进入 `PIECEWISE` 时内外保持同步并命中 `bucket_tokens=24`；Step C 越界则双双退回 `NONE`。
-- **跨卡共识与压力不变式**：Step D 中原本各自想跑 `FULL(4)` 与 `PIECEWISE(24)` 的两张卡最终统一对齐到 `('PIECEWISE', 24, 'PIECEWISE')`；在随后 200 帧随机混合负载测试里，每一步双卡的最终模式和对齐桶数全部严格相等，且所有 `FULL` 帧的内层模式恒为 `NONE`。
+于是乎，当共识判决为 `FULL` 时，最外层拦截并直接整图 `replay()` 完事；判决为 `PIECEWISE` 时，外层透明放行，由内层的分段编译子节点各自触发对应的分段小图捕获/重放；若处于热身期或 `NONE` 模式，两层壳全部透传直抵底层原算子。
 
-## 代价与边界
+## 启动期 CUDAGraphMode 自动降级与查表机制
 
-这套运行时分级分发机制把 CUDA Graph 覆盖率做到了极限，但真实线上部署仍需清醒面对四个代价与硬边界：
+在模型真正开跑前，`CudaGraphManager` 会根据 Attention 后端的真实支持能力与硬件特征在启动期对用户配置做一次安全裁切，流程见**图 3**。
 
-1. **DP 同组的长尾模式拖累**：`min(cg_mode)` 和 `max(num_tokens)` 的共识法则意味着，哪怕 8 张 DP 卡里只有 1 张恰好塞进了 1 个超长 Chunked Prefill，其余 7 张正在稳定吐出纯 Decode 的卡也必须跟着降级到 `PIECEWISE` 或 `NONE`，并陪跑填充至最大 token 数。超大集群通常配合 PD 分离（Prefill-Decode Disaggregation），把异构请求从物理节点上彻底隔离开。
-2. **捕获桶密度、主机元数据与 KV 显存挤压**：桶档位设得越密，填充计算浪费越少，但每多一个桶就会额外固化一串内核捕获元数据，且持久输出缓冲 `hidden_states` 按全局最大捕获 token 数预分配，最终在 `profile_cudagraph_memory` 阶段直接挤压剩余可用于 KV Cache 的显存容量。
-3. **`UNIFORM_SINGLE_TOKEN_DECODE` 与 SpecDec 的静默回退陷阱**：在开启草稿解码（`q > 1`）时，若模型层或后端里混进了只支持单 token 的注意力实现（如 CutlassMLA 或部分非原生配置下的 FlashInfer），vLLM 不会报错中断，而是悄无声息地把 `decode_mode` 从 `FULL` 降成 `PIECEWISE`，小批 Decode 延迟会比预期明显偏高。
-4. **运行期动态重放失效与重新捕获门槛**：当模型包含 Mamba 等状态层时，`max_num_reqs` 不能超过其 KV 块数（否则启动即抛出 `ValueError`）；而一旦触发弹性 EP 扩缩容导致 MoE 工作区基址重构，图内固化指针全部失效，系统必须调用 `release_graphs()` 清空重录。
+```mermaid caption="图 3：启动期 AttentionCGSupport 自动降级与查表流程"
+flowchart TD
+    U["读取用户 CUDAGraphMode"] --> Q["查询 AttentionCGSupport 能力"]
+    Q --> S{"支持 FULL 整图捕获?"}
+    S -->|支持| C1["生成 FULL 与<br/>PW 描述符"]
+    S -->|仅支持均匀解码| C2["切为<br/>FULL_DECODE_ONLY"]
+    S -->|仅支持混合| C3["降级为<br/>PIECEWISE 模式"]
+    C1 --> T["构建 O1 查找表 _decode_descs"]
+    C2 --> T
+    C3 --> T
+    T --> D["运行时 dispatch O1 命中"]
+```
 
----
+在 `vllm/config/compilation.py` 中，`CUDAGraphMode` 枚举甚至把混合双模式定义成元组：`FULL_DECODE_ONLY = (FULL, NONE)` 与 `FULL_AND_PIECEWISE = (FULL, PIECEWISE)`[^3]。运行时 `CudaGraphManager.dispatch()` 则事先把不同长度、LoRA 激活数与微批数摊平在 `_decode_descs` 与 `_candidates` 字典中，线上只需一步索引即取回命中的 `BatchExecutionDescriptor`[^4]。
 
-至此，我们已经把 GPU 侧 NVIDIA CUDA Graph 从启动期能力协商、两层嵌套包装、O(1) 运行时分发到多卡 DP 模式对齐的整条架构拼合完毕。但当同一套 vLLM V1（MRV2）推理框架迁移到华为昇腾 NPU 上时，事情立刻变得微妙起来：`vllm-ascend` 里不仅要在硬件流约束下改造出 `AclGraphManager` 与 `ModelAclGraphManager`，还必须同时面对图捕获（ACL Graph）与昇腾图编译器（NPU Graph / CANN GE）两条性质迥异的技术路线——为什么同样一套 `BatchExecutionDescriptor` 模型在昇腾侧会长出截然不同的限制与调度策略？请看[下一篇：昇腾 ACL Graph 与 NPU Graph](../06-ascend-aclgraph-and-npugraph/)。
+## PyTorch DP 模式共识实现与源码对照
 
-## 自测
+下面这段自包含的 PyTorch 验证代码还原了 `dp_utils.py` 中双卡不同负载下通过全归约达成一致、避免 MoE All-to-All 形状错配的完整决策算法：
 
-1. 当外层 `ModelCudaGraphManager` 准备捕获一张 `FULL` CUDA Graph 时，它为什么要把上下文里的 `cudagraph_runtime_mode` 设成 `NONE` 而不是 `FULL`？
+```python
+import torch
 
-> **参考要点**：内层 `torch.compile` 分段子模块外包裹着 `CUDAGraphWrapper(..., runtime_mode=PIECEWISE)`，其入口约定只要发现当前上下文为 `NONE`（或与自身不匹配）就直接透传原始算子而不做图捕获。如果外层在 `with torch.cuda.graph(...)` 内执行时让内层误触捕获，就会违反 CUDA 禁止图内嵌图的限制；传入 `NONE` 正好让内层透明融进外层整张 `FULL` 图中。
+# CUDAGraphMode 枚举映射: NONE=0, PIECEWISE=1, FULL=2
+rank_tokens = torch.tensor([4, 19], dtype=torch.int64)
+rank_modes = torch.tensor([2, 1], dtype=torch.int64)   # Rank0=FULL(2), Rank1=PIECEWISE(1)
+rank_qlen = torch.tensor([1, -1], dtype=torch.int64)   # Rank1 混排非均匀解码 -> -1
 
-2. 在 `FULL_AND_PIECEWISE` 配置下，为什么两条单步 token 为 `1` 的纯 Decode 请求如果和一条刚进来的 `Chunked Prefill` 拼成同一个 19-token 批，系统不仅切去 `PIECEWISE`，还会强制把传给 `dispatch` 的 `max_query_len` 清空为 `None`？
+# 模拟 cpu_all_reduce_ 汇总后按保守原则对齐
+synced_mode = int(rank_modes.min().item())              # 取枚举最小 -> PIECEWISE(1)
+synced_max_tokens = int(rank_tokens.max().item())       # 取 token 最大 -> 19
+capture_buckets = [4, 8, 16, 20, 32]
+bucket_tokens = next(b for b in capture_buckets if b >= synced_max_tokens)
+uniform_qlen = None if torch.any(rank_qlen == -1).item() else int(rank_qlen.max().item())
 
-> **参考要点**：存在未处理完的 Prefill 时 `decode_graph_eligible` 为 `False`，此时批内查询长度并不均匀（`uniform_token_count=None`），因此跳过 `_decode_descs` 而匹配 `_candidates[19]`（对应 `PIECEWISE (24)`）。显式把 `max_query_len` 清成 `None`，则是为了防止支持可变长 Decode 图捕获的后端仅凭长度阈值把一个短 Prefill 误判匹配进 Decode 专属的 `FULL` 图中。
+assert synced_mode == 1 and bucket_tokens == 20 and uniform_qlen is None
+print(f"synced_mode=PIECEWISE({synced_mode}), bucket_tokens={bucket_tokens}, qlen={uniform_qlen}")
+```
 
-3. 假设 DP 组内 Rank 0 收到 3 个纯 Decode 请求（本地选出 `FULL` 桶 `4`），Rank 1 收到 19 个 token 的混合批（本地选出 `PIECEWISE` 桶 `24`），经过 `dispatch_cg_and_sync_dp` 同步后，两张卡最终会各自执行什么模式与多少 token 的图？如果 Rank 1 收到的不是 19 个 token，而是 4096 个 token 呢？
+运行输出严格验证：
+`synced_mode=PIECEWISE(1), bucket_tokens=20, qlen=None`。
 
-> **参考要点**：当 Rank 1 为 `19` token（`PIECEWISE`）时，`min(FULL=2, PIECEWISE=1) = PIECEWISE`、`max(3, 19) = 19` 且 `uniform_token_count` 因不一致被清空为 `None`，两张卡重新分发后双双对齐到 `PIECEWISE (24)`；若 Rank 1 为 `4096` token 并溢出最大捕获桶回到 `NONE (0)`，则 `min(2, 0) = NONE`，全组统一切换为纯 Eager `NONE`（并把同步 `num_tokens` 对齐到 `4096`）来跑这一步。
+| 调度与包装层面     | NVIDIA GPU（`vllm` `bb23c0a8`）                            | 华为昇腾 NPU（`vllm-ascend` `3649b8ff`）                 |
+| ------------------ | ---------------------------------------------------------- | -------------------------------------------------------- |
+| 图模式状态机与描述 | `CUDAGraphMode` & `BatchExecutionDescriptor`[^3][^4]       | 直接复用相同枚举与 `BatchExecutionDescriptor`            |
+| 两层嵌套静态图外壳 | `CUDAGraphWrapper`[^2] + `TorchCompileWithNoGuardsWrapper` | `ACLGraphWrapper` 严格遵守相同 `NONE` 透传契约           |
+| 多卡 DP 对齐共识   | `dispatch_cg_and_sync_dp` 走 `cpu_all_reduce_`[^1]         | 复用 `dispatch_cg_and_sync_dp` 与 `_graph_relay` DP 对齐 |
 
-[^cg-mode]: `CUDAGraphMode` 枚举、`set_splitting_ops_for_v1` 与启动期降级函数 `resolve_cudagraph_mode_and_sizes` 定义于 vLLM (`bb23c0a`) 源码 `vllm/config/compilation.py`（L129-186、L1322-1438、L1536-1685）。
+至此，GPU 侧 CUDA Graph 从启动协商、嵌套包装、O(1) 查表到多卡防死锁的全栈路径已经彻底打通。下一章 [第 6 章：昇腾 ACLGraph 与 npugraph_ex](../06-ascend-aclgraph-and-npugraph/)，我们把镜头切向华为昇腾 NPU，拆解 CANN 硬件约束下如何演化出独具特色的 `ACLGraphWrapper`、`UpdatableGraph` 与 `npugraph_ex` 双引擎体系。
 
-[^attn-cg]: `AttentionCGSupport` 与 `max_decode_query_len` 定义于 `vllm/v1/attention/backend.py`（L567-600）；跨层聚合取最小值见 `vllm/v1/worker/gpu/attn_utils.py`（L200-339）与 `vllm/v1/worker/gpu/model_runner.py`（L729-730）；各后端声明见 `flash_attn.py`（L593-597）、`flashinfer.py`（L1309-1352）、`triton_attn.py`（L97）、`mla/flashmla.py`（L110）及 `mla/cutlass_mla.py`（L33-35）。
+[^1]: `vllm/v1/worker/gpu/dp_utils.py`（`bb23c0a8`），`dispatch_cg_and_sync_dp` 与 `sync_cudagraph_and_dp_padding` 借助 `cpu_all_reduce_` 对齐多卡模式与填充上限。
 
-[^nested-wrap]: 分段编译切分逻辑与 `CUDAGraphWrapper` 运行时透传检查分别见 `vllm/compilation/backends.py`（L580-799、L1186-1237）、`vllm/compilation/decorators.py`（L772-826）与 `vllm/compilation/cuda_graph.py`（L234-358）。
+[^2]: `vllm/compilation/cuda_graph.py`（`bb23c0a8`），`CUDAGraphWrapper.__call__` 在 `NONE` 或模式不匹配时直接透传底层函数。
 
-[^dispatch-mrv2]: MRV2 架构下的 `BatchExecutionDescriptor._is_compatible`、`CudaGraphManager.dispatch`、`ModelCudaGraphManager.capture`（含 `PIECEWISE` 先于 `FULL` 的录制序与共享内存池）和 `run_fullgraph` 均定义于 `vllm/v1/worker/gpu/cudagraph_utils.py`（L74-142、L289-618、L662-867）；历史设计文档 `docs/design/cuda_graphs.md`（L69）仍提及已重构移除的 `CudagraphDispatcher`。
+[^3]: `vllm/config/compilation.py`（`bb23c0a8`），`CUDAGraphMode` 定义 `NONE`/`PIECEWISE`/`FULL`/`FULL_DECODE_ONLY`/`FULL_AND_PIECEWISE`。
 
-[^dp-sync]: 多卡 DP 协调 `dispatch_cg_and_sync_dp` 与 7 行 `int32` 同步张量实现见 `vllm/v1/worker/gpu/dp_utils.py`（L49-353）；`GPUModelRunner.execute_model` 执行分流与 `max_query_len=None` 防护见 `vllm/v1/worker/gpu/model_runner.py`（L1376-1456、L1871-1873、L2129-2177）。
-
-[^dbo-cg]: DBO（Dual-Batch Overlap）不支持 `PIECEWISE` CUDA Graph 的显式拦截与微批孪生规则见 `vllm/config/vllm.py`（L3430-3432）、`vllm/v1/worker/gpu/cudagraph_utils.py`（L192、L262-287、L791-794）、`vllm/v1/worker/gpu/dp_utils.py`（L147-160）及 `vllm/v1/worker/gpu/ubatch_utils.py`（L454）。
+[^4]: `vllm/v1/worker/gpu/cudagraph_utils.py`（`bb23c0a8`），`CudaGraphManager` 在启动期预建 `_decode_descs` 与 `_candidates` O(1) 分发索引。

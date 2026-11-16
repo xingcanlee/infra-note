@@ -8,6 +8,10 @@ category: AI Infra
 toc: true
 ---
 
+import CausalAttentionExplainer from '../../../../explainers/foundations/CausalAttentionExplainer';
+import RopeRotationExplainer from '../../../../explainers/foundations/RopeRotationExplainer';
+import YarnSpectrumExplainer from '../../../../explainers/foundations/YarnSpectrumExplainer';
+
 上一篇里的 RMSNorm 与 SwiGLU 全部是**逐词元独立计算**：把「猫 坐在 垫 上」四个字打乱成「上 垫 坐在 猫」，第 3 号向量独自穿过前馈网络后依然产出完全一样的结果。语言模型如果只靠线性层与门控前馈，本质上还停留在「词袋」阶段——词元之间没有任何上下文交换。
 
 **自注意力（Self-Attention）**负责打通横向信息流，让当前词元按内容相关性去加权读取历史词元；而 **旋转位置编码（RoPE）** 则用一把极其精巧的二维几何尺子，把「绝对位置」悄无声息地折叠进点积里的「相对距离」。到了长上下文场景，再由 **YaRN** 把高、中、低频通道分层拉长，防止视野一翻倍就失焦。
@@ -19,15 +23,18 @@ toc: true
 - RoPE 怎样靠二维旋转让点积只依赖相对距离 $n - m$？`rotate_neox`、`rotate_gptj` 与 DeepSeek-V4 的尾切片各有何工程差异？
 - 为什么朴素线性插值（PI）会糊掉近邻词序，而 YaRN 用分频斜坡掩码与 `mscale` 就能平稳外推到 `128K`？
 
-## 先看一个例子：4 个词元如何通过 Q/K/V 检索并旋转角度
+## 先看一个例子：4 个词元如何通过 Q/K/V 检索
 
 把注意力想象成一次图书检索：每个词元同时生成三个向量——自己正在找什么的**查询（Query, $Q$）**、自己身上挂着供别人匹配的**索引标签（Key, $K$）**，以及匹配成功后真正被搬运走的信息内容**值（Value, $V$）**。
 
-我们来看一句 4 个词元的话：`["猫", "坐在", "垫", "上"]`（位置索引 $t = 0, 1, 2, 3$），取单头特征维度 `d_k = 4`（此时缩放因子 $\sqrt{d_k} = \sqrt{4} = 2$，口算极简）。四个词元的特征切片已经备好，比如末尾位置 $t=3$（「上」）的查询是 `[1, 0, 1, 1]`，各位置的值向量 $V$ 是 `[1, 0, 0.5, 0]`、`[0, 1, 0, 0.5]`、`[0.5, 0.5, 1, 0]` 与 `[0, 0, 0.5, 1]`。
+我们来看一句 4 个词元的话：`["猫", "坐在", "垫", "上"]`（位置索引 $t = 0, 1, 2, 3$），取单头特征维度 `d_k = 4`（此时缩放因子 $\sqrt{d_k} = \sqrt{4} = 2$，口算极简）。点击图 1 的单步控制条，观察 `QK^T` 打分如何被因果掩码拦截并在归一化后汇聚为上下文输出。
 
-![4 个词元经过缩放点积、上三角因果掩码、Softmax 与 V 加权聚合的单头因果注意力数值流](./diagrams/02-attention-walkthrough.drawio '图 1：["猫", "坐在", "垫", "上"] 在 d_k=4 下的单头因果注意力数值流，严格阻止第 t 个词元偷看 t+1 及之后的未来')
+<CausalAttentionExplainer
+  client:visible
+  title="图 1：4 词元因果自注意力缩放、上三角掩码与加权聚合数值演进"
+/>
 
-逐行追踪最后两个位置（$t=2$ 与 $t=3$）的数值变化：
+逐行追踪图 1 最后两个位置（$t=2$ 与 $t=3$）的数值变化：
 
 1. **缩放打分（$S = QK^T / \sqrt{4}$）**：第 $t=2$ 行（「垫」）原本和四个位置的点积除以 2 之后是 `[0.5, 1.0, 0.5, 1.0]`——注意最后一个 `1.0` 来自未来的 $t=3$（「上」），如果直接算权重就会偷看答案！
 2. **因果掩码（$+ M_{\text{triu}}$）**：生成式模型只能看自己及左侧历史，因此在计算 Softmax 之前，先把行号小于列号（严格上三角）的所有未来位置加上 $-\infty$。于是 $t=2$ 行的分数变成 `[0.5, 1.0, 0.5, -inf]`。
@@ -59,13 +66,11 @@ $$
 
 当头维度从玩具例子的 `4` 放大到主流模型的 `64` 或 `128` 时，未缩放点积的典型幅度会膨胀到 $\pm\sqrt{64} = \pm 8$ 甚至更大。Softmax 对极端大数极度敏感：一旦某个位置领先几分，指数函数就会把概率权重压成近似 `[1.0, 0.0, 0.0, ...]` 的尖刺，导致其余位置梯度接近零而难以更新。乘以 $1/\sqrt{d_k}$ 恰好把输入 Softmax 的方差拉回稳定的 `1.0`（在 vLLM 的 `DeepseekAttention` 中对应 `self.scaling = self.head_dim**-0.5`[^vllm_dsv2_attn]）。
 
-**多头（Multi-Head）的直觉**：如果全句只用一套 $Q/K$ 打分，就像整间图书馆只允许按「书名拼音」排一次序，很难同时兼顾「主谓呼应」「指代消解」和「标点匹配」。多头把 $d_{\text{model}}$ 拆成 $H$ 组独立的 `[T, d_k]` 子空间并行做注意力和加权求和，最后再把 $H$ 份结果沿着最后一维拼回 `[T, H * d_k]` 并乘一次输出投影 $W_O$——相当于让 2 位（或 128 位）专注不同角度的检索员各找各的，最后汇总成一句话。
+**多头（Multi-Head）的直觉**：如果全句只用一套 $Q/K$ 打分，就像整间图书馆只允许按「书名拼音」排一次序，很难同时兼顾「主谓呼应」「指代消解」和「标点匹配」。多头把 $d_{\text{model}}$ 拆成 $H$ 组独立的 `[T, d_k]` 子空间并行做注意力和加权求和，最后再把 $H$ 份结果沿着最后一维拼回 `[T, H * d_k]` 并乘一次输出投影 $W_O$——相当于让多位专注不同角度的检索员各找各的，最后汇总成一句话。
 
 ## 旋转位置编码（RoPE）：用二维旋转把绝对坐标写成相对偏移
 
 纯粹的自注意力虽然能交换上下文，但依然是**置换等变**的：同时把 $Q, K, V$ 的行按相同顺序打乱，输出也只是跟着打乱，模型分不清谁紧贴谁。要注入词序，Su 等人在 2021 年提出了 **RoPE（Rotary Position Embedding）**[^su2021]：不再把位置向量直接**加**到词向量上，而是按词元位置 $m$ 对 $Q$ 和 $K$ 做**正交旋转**。
-
-![RoPE 的二维旋转相对偏移恒等式与三种生产内存配对布局：rotate_neox、rotate_gptj 以及 DeepSeek-V4 尾切片](./diagrams/02-rope-arch.drawio '图 2：RoPE 的几何相对不变性（上）与主流推理引擎中的三种张量通道配对方式（下）')
 
 先看二维平面上的单对坐标 $(x_0, x_1)$：位置为 $m$ 的词元转过角度 $m\theta_i$，旋转矩阵 $R_{\theta_i, m}$ 与 $d$ 维整体旋转频率 $\theta_i$ 定义为：
 
@@ -79,99 +84,116 @@ $$
 (R_{\theta, m} q)^T (R_{\theta, n} k) = q^T R_{\theta, m}^T R_{\theta, n} k = q^T R_{\theta, n - m} k
 $$
 
-把公式按 `d_rope = 8` 走一遍算术验证：设 $\text{base} = 10000$，最快的第 0 对通道 $\theta_0 = 1.0\;\text{rad/token}$（每挪动 1 个词就转约 `57.3°`，对紧邻字序极其敏锐）；最慢的末端通道 $\theta_3 = 10000^{-6/8} = 0.001\;\text{rad/token}$（跨几百个词才慢慢转动，擅长编码远距离主题衔接）。无论你把同一段话放在第 `m=2, n=5` 还是整体后移 17 格到 `m=19, n=22`，只要间距 $n - m = 3$ 保持不变，两者点积算出来分毫不差（在后文 `toy.py` 中同为 `-0.412753`）。
+图 2 用交互圆盘与多频率热力图把这一不变性可视化：无论词对位于句首 `(m=2, n=5)` 还是整体后移至 `(m=19, n=22)`，只要间距不变，夹角与点积便严丝合缝。同时可以看到最快通道 $\theta_0 = 1.0\;\text{rad/token}$ 捕捉近邻词序，最慢通道 $\theta_3 = 0.001\;\text{rad/token}$ 承载远距离依赖。
 
-生产代码里真正容易踩坑的，不是三角函数公式，而是**哪两个通道配成一对二维平面**（见图 2 下半部）：
+<RopeRotationExplainer client:visible title="图 2：RoPE 二维旋转相对不变性与多通道角频率衰减机制" />
+
+生产代码里真正容易踩坑的，不是三角函数公式，而是**哪两个通道配成一对二维平面**：
 
 - **NeoX 跨半段配对（`rotate_neox`）**：vLLM 默认路线[^vllm_rope_common]，把第 `i` 维与第 `i + d/2` 维配成对（如 `(x_0, x_4)`），用 `[-x_{d/2:}, x_{:d/2}]` 就能向量化算出正交旋转，不打散连续访存对齐。
-- **GPT-J / DeepSeek-V3 相邻交错配对（`rotate_gptj`）**：相邻偶奇维 `(x_{2i}, x_{2i+1})` 直接配成复数实部和虚部[^vllm_rope_common][^ds_rope]，DeepSeek-V3 参考代码直接用 `torch.view_as_complex` 做复数乘法实现。只要初始化加载权重时按索引置换矩阵 $P$ 重排一次 `Q/K` 投影行，两种写法数值**逐位严格等价**（`max diff = 0.00e+00`）。
-- **DeepSeek-V4 尾切片与可逆旋转**：vLLM 标准层只切片前 `rotary_dim` 维（`:rotary_dim`）旋转[^vllm_rope_base]；但 `DeepseekV4ScalingRotaryEmbedding` 把不旋转的语义维度放在前头，专门切片**末尾** `rotary_dim` 通道做旋转（偏移量 `rope_dim_offset = head_size - rotary_dim`），同时全程保留 `float32` 正余弦表、支持 `key=None` 单输入，并额外提供 `inverse=True` 对 `sin` 取反把向量旋回原坐标[^vllm_dsv4_rope]。在模型配置入口 `build_deepseek_v4_rope` 中，还会按注意力分支拆分策略：全注意力 `"main"` 分支走 YaRN，局部滑动窗口 `"compress"` 分支固定回退 `factor=1.0` 普通 RoPE，且显式关闭 `mscale` 缩放[^vllm_dsv4_builder]。
+- **GPT-J / DeepSeek-V3 相邻交错配对（`rotate_gptj`）**：相邻偶奇维 `(x_{2i}, x_{2i+1})` 直接配成复数实部和虚部[^vllm_rope_common][^ds_rope]，DeepSeek-V3 参考代码直接用 `torch.view_as_complex` 做复数乘法实现。只要初始化加载权重时按索引置换重排一次 `Q/K` 投影行，两种写法数值**逐位等价**。
+- **DeepSeek-V4 尾切片与可逆旋转**：vLLM 标准层只切片前 `rotary_dim` 维（`:rotary_dim`）旋转[^vllm_rope_base]；但 `DeepseekV4ScalingRotaryEmbedding` 把不旋转的语义维度放在前头，专门切片**末尾** `rotary_dim` 通道做旋转（偏移量 `rope_dim_offset = head_size - rotary_dim`），同时全程保留 `float32` 正余弦表、支持 `key=None` 单输入，并额外提供 `inverse=True` 对 `sin` 取反把向量旋回原坐标[^vllm_dsv4_rope]。在模型配置入口 `build_deepseek_v4_rope` 中，全注意力 `"main"` 分支走 YaRN，局部滑动窗口 `"compress"` 分支固定回退 `factor=1.0` 普通 RoPE 且显式关闭 `mscale`[^vllm_dsv4_builder]。
 
 ## 长上下文外推与 YaRN：为什么不能把频率一刀切
 
-如果模型训练时只见过最大长度 $L = 4096$，推理硬塞进 `32K` 或 `128K` 文本，低频端会出现训练期从未见过的夹角，注意力瞬间崩溃。怎么把 $L$ 温和撑大 $s$ 倍（如 DeepSeek-V3 从 `4K` 分阶段外推到 `128K` 时取缩放因子 $s = 40$[^ds2412_yarn]）？历史上有两条过渡方案和最终的 **YaRN**：
+如果模型训练时只见过最大长度 $L = 4096$，推理硬塞进 `32K` 或 `128K` 文本，低频端会出现训练期从未见过的夹角，注意力瞬间崩溃。怎么把 $L$ 温和撑大 $s$ 倍（如 DeepSeek-V3 从 `4K` 外推到 `128K` 时取缩放因子 $s = 40$[^ds2412_yarn]）？历史上有两条过渡方案和最终的 **YaRN**：
 
 1. **线性位置插值（PI）**：把所有位置压缩为 $m / s$（等效所有频率同乘 $1/s$）。缺陷是连原本转得很快的高频近邻通道也被除以 40，相邻两个字的夹角变得紧挨在一起、局部词序变糊。
-2. **NTK-Aware 缩放**：按比例抬高公式里的基数 $\text{base}$，让高频尽量少动、低频大幅拉慢。问题在于各维度缩放仍被单调公式死锁，边界维度往往微调不足。
+2. **NTK-Aware 缩放**：按比例抬高公式里的基数 $\text{base}$，让高频少动、低频拉慢，但各维度缩放仍被单调公式死锁，边界维度往往微调不足。
 3. **YaRN（Yet another RoPE extensioN）**：Peng 等人在 2023 年直接按「在训练长度 $L$ 内转了多少整圈」来精确划分频段[^peng2023]。
 
-![YaRN 三频段线性斜坡混合器与注意力温度 mscale 在 DeepSeek-V3 中的落地链路](./diagrams/02-yarn-runtime.drawio '图 3：YaRN 按每维在训练长度 L 内的旋转周期数划分高/中/低三个频段，并在推理阶段配合 mscale 平方修正注意力温度')
-
-设第 $i$ 对通道的波长为 $\lambda_i = 2\pi / \theta_i = 2\pi \cdot \text{base}^{2i/d}$，它在原训练窗口 $L$ 内完整转过的圈数为 $r_i = L / \lambda_i$。设高频阈值 $\beta_{\text{fast}} = 32$、低频阈值 $\beta_{\text{slow}} = 1$，先用斜坡函数算出插值权重 $\text{ramp}_i \in [0, 1]$，取反得到外推保留系数 $\text{extrap}_i = 1 - \text{ramp}_i$，最终有效频率为[^vllm_rope_yarn]：
+设第 $i$ 对通道的波长为 $\lambda_i = 2\pi / \theta_i = 2\pi \cdot \text{base}^{2i/d}$，它在原训练窗口 $L$ 内完整转过的圈数为 $r_i = L / \lambda_i$。设高频阈值 $\beta_{\text{fast}} = 32$、低频阈值 $\beta_{\text{slow}} = 1$，算出斜坡掩码与外推保留系数 $\text{extrap}_i = 1 - \text{ramp}_i$，最终有效频率与温度补偿为[^vllm_rope_yarn]：
 
 $$
 \theta'_i = (1 - \text{extrap}_i) \cdot \frac{\theta_i}{s} + \text{extrap}_i \cdot \theta_i, \qquad \text{mscale} = 0.1 \ln(s) + 1.0
 $$
 
-直观对照图 3 三条路径看数值边界（以 DeepSeek-V3 旋转维度 `64`、$L=4096$、$s=40$ 为例）：
+图 3 交互式对比了 PI 统一压缩与 YaRN 三频段斜坡划分，以及 GPU 与昇腾端侧查表缓存差异：
 
-- **高频短波段（低维索引 `i`，圈数 $> 32$）**：在 4K 训练窗内已来回转过三十多圈，早就被训练得极其充分。令 $\text{extrap}_0 = 1.0$，完全保留原始频率 $\theta_i$，紧邻词元的高精度相位一分不动。
-- **中频斜坡过渡区（圈数介于 `1` 与 `32` 之间）**：通过 `yarn_linear_ramp_mask` 在 `low` 到 `high` 维索引之间线性插值，避免频谱在交界处突变跳变。
-- **低频长波段（高维索引 `i`，圈数 $< 1$）**：连完整一圈都没转完过的长波长维度直接执行安全线性插值 $\theta_i / s$（$\text{extrap}_{-1} = 0.0$），平稳撑开全局视野。
-- **温度补偿 `mscale`**：拉长序列并改频谱后，点积方差与注意力熵会轻微发散。YaRN 用 $\text{mscale} = 0.1\ln(s) + 1$ 重新收紧温度；当 $s = 40$ 时算出 `mscale = 1.3689`，于是 DeepSeek-V3 在多头潜在注意力 `MLA`（详见[系列三 DeepSeek 01：MLA](../../deepseek/01-mla/)）初始化中把注意力缩放因数额外乘以 `mscale * mscale = 1.8739`，相当于只修正 $q \cdot k$ 温度而不用真正修改 $Q$ 和 $K$ 向量本身[^ds_mla_scale]。
+<YarnSpectrumExplainer
+  client:visible
+  title="图 3：YaRN NTK-by-parts 三频段斜坡混合器、mscale 修正与双后端缓存布局"
+/>
 
-## 动手实验：`toy.py` 数值验证全链路
+对照图 3 三条频段看数值边界（以 `rotary_dim=64`、$L=4096$、$s=40$ 为例）：
 
-纯 NumPy 脚本 `toy.py` 用不到 120 行代码将以上推导全部跑通一遍数值断言：4 词元因果自注意力追踪、修改未来词元 `t=3` 对 `t=0..2` 的零干扰检查、`d_k = 64` 下实测方差收敛至 `1.0`、RoPE 相对距离不变性与 NeoX/GPT-J 零误差置换等价、DeepSeek-V4 尾切片可逆往返，以及 YaRN 斜坡单调性与 `mscale^2 = 1.8739`。
+- **高频短波段（`i <= 10`，圈数 $> 32$）**：在 4K 训练窗内已来回转过三十多圈，早就被训练得极其充分。令 $\text{extrap}_0 = 1.0$，完全保留原始频率 $\theta_i$，紧邻词元的相位分辨力一分不动。
+- **中频斜坡过渡区（`10 < i < 23`，圈数介于 `1` 与 `32` 之间）**：通过 `yarn_linear_ramp_mask` 在高频与低频之间线性过渡，避免频谱在交界处突变跳变。
+- **低频长波段（`i >= 23`，圈数 $< 1$）**：连完整一圈都没转完过的长波长维度直接执行安全线性插值 $\theta_i / s$（$\text{extrap} = 0.0$），平稳撑开全局视野。
+- **温度补偿 `mscale`**：拉长序列并改频谱后，点积方差与注意力熵会轻微发散。YaRN 用 $\text{mscale} = 0.1\ln(s) + 1$ 收紧温度；当 $s = 40$ 时算出 `mscale = 1.3689`，DeepSeek-V3 在 `MLA` 初始化中把注意力缩放因数额外乘以 `mscale * mscale = 1.8739`（详见[系列三 DeepSeek 01：MLA](../../deepseek/01-mla/)），相当于只修正 $q \cdot k$ 温度而不用修改 $Q$ 和 $K$ 向量本身[^ds_mla_scale]。
 
-关键的 RoPE 双布局与逆旋转核心代码片如下：
+## NumPy 核心实现与双硬件源码对照
+
+下面的独立 NumPy 脚本同时复现图 1 的 4 词元因果注意力权重与输出、图 2 的 RoPE 相对距离严格不变性，以及图 3 的 `mscale^2 = 1.8739` 温度系数：
 
 ```python
-def rope_neox(x: np.ndarray, pos: np.ndarray, freqs: np.ndarray, inverse: bool = False) -> np.ndarray:
-    angles = pos[:, None] * freqs[None, :]
-    cos = np.concatenate([np.cos(angles), np.cos(angles)], axis=-1)
-    sin = np.concatenate([np.sin(angles), np.sin(angles)], axis=-1)
-    if inverse:
-        sin = -sin
+import math
+import numpy as np
+
+Q = np.array([[1.0, 0.5, 0, 0], [0.5, 1.0, 0.5, 0], [0.5, 1.0, 0.5, 1.0], [1.0, 0.5, 0.5, 1.0]])
+K = 2.0 * np.eye(4)
+V = np.array([[1.0, 0, 0.5, 0], [0, 1.0, 0, 0.5], [0.5, 0.5, 1.0, 0], [0, 0, 0.5, 1.0]])
+S = (Q @ K.T) / math.sqrt(4) + np.triu(np.full((4, 4), -np.inf), k=1)
+P = np.exp(S - np.max(S, axis=-1, keepdims=True))
+P /= np.sum(P, axis=-1, keepdims=True)
+O = P @ V
+assert O.shape == (4, 4) and np.allclose(P.sum(axis=-1), 1.0)
+print("t=2 weights:", np.round(P[2], 4), "-> O_2:", np.round(O[2], 4))
+print("t=3 weights:", np.round(P[3], 4), "-> O_3:", np.round(O[3], 4))
+
+def rope_neox(x, pos, freqs):
+    ang = pos[:, None] * freqs[None, :]
+    cos = np.concatenate([np.cos(ang), np.cos(ang)], axis=-1)
+    sin = np.concatenate([np.sin(ang), np.sin(ang)], axis=-1)
     d2 = x.shape[-1] // 2
-    x_rot = np.concatenate([-x[..., d2:], x[..., :d2]], axis=-1)
-    return x * cos + x_rot * sin
+    return x * cos + np.concatenate([-x[..., d2:], x[..., :d2]], axis=-1) * sin
+
+freqs = 10000.0 ** (-np.arange(0, 8, 2) / 8)
+q_b = np.array([[1.2, -0.4, 0.8, 0.3, -0.6, 1.1, 0.2, -0.5]])
+k_b = np.array([[-0.5, 0.9, 0.4, -1.1, 0.7, 0.2, -0.8, 0.6]])
+d1 = float((rope_neox(q_b, np.array([2]), freqs) * rope_neox(k_b, np.array([5]), freqs)).sum())
+d2 = float((rope_neox(q_b, np.array([19]), freqs) * rope_neox(k_b, np.array([22]), freqs)).sum())
+assert abs(d1 - d2) < 1e-12
+print(f"RoPE dot(2,5)={d1:.6f} == dot(19,22)={d2:.6f}, mscale^2={(0.1 * math.log(40.0) + 1.0) ** 2:.4f}")
 ```
 
-执行 `uv run toy.py` 后，终端立即打出如下确定性验证账本：
+实测打印：
 
 ```text
-=== Worked Causal Attention (H0, d_k=4) ===
-t=0 (猫 ) weights=[1. 0. 0. 0.] -> out=[1.  0.  0.5 0. ]
-t=1 (坐在) weights=[0.5 0.5 0.  0. ] -> out=[0.5  0.5  0.25 0.25]
-t=2 (垫 ) weights=[0.2741 0.4519 0.2741 0.    ] -> out=[0.4111 0.5889 0.4111 0.2259]
-t=3 (上 ) weights=[0.3112 0.1888 0.1888 0.3112] -> out=[0.4056 0.2832 0.5    0.4056]
-
-=== Dot-Product Variance (d_k=64) ===
-Var(q.k)=63.40, Var(q.k/sqrt(d_k))=0.9905
-
-=== RoPE Checks ===
-dot(m=2,n=5)=-0.412753 == dot(m=19,n=22)=-0.412753
-max|NeoX->perm - GPT-J|=0.00e+00
-max|DS-V4 tail inverse - orig|=4.44e-16
-
-=== YaRN Ramp (dim=64, s=40) ===
-extrap_mask[0]=1.00 (high freq) ... extrap_mask[-1]=0.00 (low freq)
-mscale=1.3689, softmax_scale_mul=mscale^2=1.8739
-
-OK 02
+t=2 weights: [0.2741 0.4519 0.2741 0.    ] -> O_2: [0.4111 0.5889 0.4111 0.2259]
+t=3 weights: [0.3112 0.1888 0.1888 0.3112] -> O_3: [0.4056 0.2832 0.5    0.4056]
+RoPE dot(2,5)=0.668685 == dot(19,22)=0.668685, mscale^2=1.8739
 ```
 
-## 生产代码落地：`vLLM` 与 `vllm-ascend` 对照
+在生产代码中，`vLLM` GPU 与 `vllm-ascend` 围绕频率表生成与融合算子路由形成了清晰分工[^vllm_rope_yarn][^ascend_rope]：
 
-在真实大模型推理框架中，RoPE 几乎是**最考验显存布局与片上 SRAM（UB）切分细节的算子之一**。下表归纳了 DeepSeek-V3 参考代码、`vLLM` GPU 底座与 `vllm-ascend` 昇腾底座的关键映射：
+```python
+# vllm/model_executor/layers/rotary_embedding/yarn_scaling_rope.py:67-84 (vllm@bb23c0a8)
+inv_freq_mask = 1 - yarn_linear_ramp_mask(
+    low, high, self.rotary_dim // 2, dtype=torch.float
+)
+inv_freq = inv_freq_interpolation * (1 - inv_freq_mask) + inv_freq_extrapolation * inv_freq_mask
+cos = freqs.cos() * self.mscale
+sin = freqs.sin() * self.mscale
 
-| 机制模块                       | DeepSeek-V3 参考代码（`9b4e9788`）                                         | `vLLM` GPU 实现（`bb23c0a8`）                                                                                                                                                                                   | `vllm-ascend` 昇腾实现（`3649b8ff`）                                                                                                                                                                                                                      | 关键工程差异                                                             |
-| :----------------------------- | :------------------------------------------------------------------------- | :-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | :-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | :----------------------------------------------------------------------- |
-| **标准 / YaRN RoPE 计算**      | `precompute_freqs_cis` 与复数乘法 `apply_rotary_emb`（`model.py:297-393`） | `RotaryEmbeddingBase` 与 `YaRNScalingRotaryEmbedding` 预缓存 `cos_sin_cache` 并调 CUDA / FlashInfer 融合核（`base.py:80-252`, `yarn_scaling_rope.py:51-85`）                                                    | `AscendRotaryEmbedding` 与 `AscendYaRNRotaryEmbedding` 调度 `torch_npu.npu_rotary_embedding` 与 `npu_rotary_mul`（`ops/rotary_embedding.py:303-426,769-813`）                                                                                             | 昇腾按 `HardwareCapability.FUSED_ROTARY_MUL_INTERLEAVE` 分发融合交错算子 |
-| **DeepSeek 交错 layout 适配**  | 原生按相邻偶奇配对（GPT-J 风格）                                           | `DeepseekScalingRotaryEmbedding` 在 `ApplyRotaryEmb` 设 `interleaved = not is_neox_style`（`common.py:234`, `deepseek_scaling_rope.py:26-222`）                                                                 | `AscendDeepseekScalingRotaryEmbedding` 先转置成 `(d//2, 2)` 再调 `is_neox_style=True` 的 `npu_rotary_embedding`（`ops/rotary_embedding.py:473-644`）                                                                                                      | 昇腾融合核原语偏好 NeoX 布局，借轻量重排复用高速算子                     |
-| **DeepSeek-V4 尾切片与逆旋转** | —                                                                          | `DeepseekV4ScalingRotaryEmbedding` 切片 `query[..., -rotary_dim:]`，维护 `fp32` 缓存与 `inverse=True`（`deepseek_scaling_rope.py:224-337`）；由 `build_deepseek_v4_rope` 禁用 `mscale`（`common/rope.py:1-53`） | 通用分支或 Triton NPU RoPE 核动态调度                                                                                                                                                                                                                     | 尾切片要求精确传入 `rope_dim_offset = head_size - rotary_dim`            |
-| **片上 UB 限制与睡眠模式**     | 无专门内存分块考虑                                                         | 直接进 CUDA Register 与 SMEM                                                                                                                                                                                    | Triton 核 `_compute_rope_block_size_head` 按 `192 KB` UB 估算 `8`（NeoX）或 `10`（非 NeoX）个驻留张量上限；`_record_cos_and_sin_cache_interleaved` 按非持久化缓冲区避开 RFC #16558 睡眠重载问题（`triton/rope.py:58-160`, `rotary_embedding.py:175-217`） | 昇腾显式 `192 KB` UB 容量决定单次头部通道与批大小分块                    |
+# vllm_ascend/ops/rotary_embedding.py:357-368 (vllm-ascend@3649b8ff, 昇腾 NPU 路由)
+rope_args = (positions, query, key, self.cos_sin_cache, self.head_size, self.rotary_dim, is_neox_style)
+if out_dtype is None:
+    return torch.ops.vllm.npu_rotary_embedding(*rope_args)
+return torch.ops.vllm.npu_rotary_embedding(*rope_args, out_dtype=out_dtype)
+```
 
-进一步对比两条硬件后端的工程细节[^ascend_rope]，能看出两家运行时设计思路的分野：
-
-- **图捕获与表查找优化**：NVIDIA 端 `RotaryEmbedding.forward_cuda` 直接按位置索引传入 FlashInfer 或 CUDA 原地旋转核；而昇腾端 `get_cos_and_sin_mla`（`ops/rotary_embedding.py:95-152`）会构造连续交错的 `_cos_sin_flat` 以避免 `aclnnIndex` 在运行时物化整张频率表，并把 `_cos_mla` / `_sin_mla` 写入固定显存地址以保证 `ACL Graph` 重放地址稳定。
-- **片上缓冲预算与精度布局**：CUDA 线程把单个元素放进寄存器即可完成乘加；昇腾 Triton RoPE 核必须按 `0.5 * 192 KB` 的 `UB` 预算显式裁剪 `block_size` 与 `head_dim`，避免同时驻留 `8~10` 个 FP32 中间张量时溢出片上暂存区。
+| 机制模块                       | DeepSeek-V3 参考代码（`9b4e9788`）                                         | `vLLM` GPU 实现（`bb23c0a8`）                                                                                                  | `vllm-ascend` 昇腾实现（`3649b8ff`）                                                                                                          | 关键工程差异                                                             |
+| :----------------------------- | :------------------------------------------------------------------------- | :----------------------------------------------------------------------------------------------------------------------------- | :-------------------------------------------------------------------------------------------------------------------------------------------- | :----------------------------------------------------------------------- |
+| **标准 / YaRN RoPE 计算**      | `precompute_freqs_cis` 与复数乘法 `apply_rotary_emb`（`model.py:297-393`） | `RotaryEmbeddingBase` 与 `YaRNScalingRotaryEmbedding` 预缓存 `cos_sin_cache` 并调 CUDA / FlashInfer 融合核（`base.py:80-252`） | `AscendRotaryEmbedding` 与 `AscendYaRNRotaryEmbedding` 调度 `torch_npu.npu_rotary_embedding` 与 `npu_rotary_mul`（`rotary_embedding.py:303`） | 昇腾按 `HardwareCapability.FUSED_ROTARY_MUL_INTERLEAVE` 分发融合交错算子 |
+| **DeepSeek 交错 layout 适配**  | 原生按相邻偶奇配对（GPT-J 风格）                                           | `DeepseekScalingRotaryEmbedding` 在 `ApplyRotaryEmb` 设 `interleaved = not is_neox_style`（`common.py:234`）                   | `AscendDeepseekScalingRotaryEmbedding` 先转置成 `(d//2, 2)` 再调 `is_neox_style=True` 的 `npu_rotary_embedding`（`473-644`）                  | 昇腾融合核原语偏好 NeoX 布局，借轻量重排复用高速算子                     |
+| **DeepSeek-V4 尾切片与逆旋转** | —                                                                          | `DeepseekV4ScalingRotaryEmbedding` 切片 `query[..., -rotary_dim:]`，维护 `fp32` 缓存与 `inverse=True`（`224-337`）             | 通用分支或 Triton NPU RoPE 核动态调度                                                                                                         | 尾切片要求精确传入 `rope_dim_offset = head_size - rotary_dim`            |
+| **片上 UB 限制与表查优化**     | 无专门内存分块考虑                                                         | 直接进 CUDA Register 与 SMEM                                                                                                   | Triton 核 `_compute_rope_block_size_head` 按 `192 KB` UB 估算 `8~10` 个张量上限；`get_cos_and_sin_mla` 预建 `_cos_sin_flat` 适配 ACL Graph    | 昇腾显式 `192 KB` UB 容量决定单次头部通道与批大小分块                    |
 
 ## 代价与边界
 
 1. **标准自注意力的显存与算力随序列长 $T$ 二次方膨胀**：虽然这里只推导了 4 词元算术，但完整 $QK^T$ 矩阵占 `O(T^2)` 计算与中间存储；到了工业级解码阶段，如果每次生成新词都重复重算所有历史 $K$ 和 $V$，带宽成本会彻底失控——这也是为什么要引入 **KV Cache**。
-2. **YaRN 的无感外推存在倍增与领域边界**：经验表明，在原长 `4K` 模型上借助 YaRN 做短期微调可将窗口平滑扩展至 `32K` 到 `128K`，但若未经继续预训练直接零样本硬拉几十倍，或者在局部精确检索密集的代码任务中 `s` 过大导致中频阶段混叠，精度仍会出现回落；而 DeepSeek-V4 在滑动窗口分支故意设 `factor=1.0` 不缩放，正是为了隔离局部窗口与全局窗口的失真。
+2. **YaRN 的无感外推存在倍增与领域边界**：经验表明，在原长 `4K` 模型上借助 YaRN 做短期微调可将窗口平滑扩展至 `32K` 到 `128K`，但若未经继续预训练直接零样本硬拉几十倍，或者在局部精确检索密集的代码任务中 `s` 过大导致中频混叠，精度仍会出现回落；而 DeepSeek-V4 在滑动窗口分支故意设 `factor=1.0` 不缩放，正是为了隔离局部窗口与全局窗口的失真。
 3. **跨框架迁移必须核对 RoPE 配对规范与切片位置**：把训练权重搬运到推理引擎时，哪怕三角公式写得完全正确，只要搞反 `is_neox_style`（前/后半段 vs 奇/偶相邻）或切片位置（头切片 `:rotary_dim` vs 尾切片 `-rotary_dim:`），模型的困惑度（PPL）就会立刻炸裂成乱码。
 
 ## 下一章预告
@@ -187,7 +209,7 @@ OK 02
 3. 假设你手里有一份按 `rotate_neox` 配对训练出的权重矩阵 `W_q` 与 `W_k`，现在你想直接跑在只支持 `rotate_gptj`（相邻偶奇配对）的推理内核上而不重新训练，该如何无损转换权重？
 4. 对照图 3 中 YaRN 的三个频段，如果把外推尺度 $s = 40$ 全量套用到最高频的 `i = 0` 维度（等价于最基础的线性插值 PI），`1` 个词元与 `2` 个词元之间的相对相位差会缩小成原来的几分之一？为什么这会损伤近邻词序？
 5. 在 `DeepseekV4ScalingRotaryEmbedding` 里，为什么需要显式支持 `inverse=True`（即对 `sin` 取反），而普通推理单向加位置却不需要？提示：思考某些需要把带位置键向量还原或做跨段位置重对齐的张量变换需求。
-6. **动手实验**：打开同目录下的 `toy.py`，把第 3 步 `dot(m, n)` 测试里的 `inv_freqs` 换成 `inv_yarn`（并传入 $s=40$ 的 YaRN 缩放频率），保持相对距离 $n - m = 3$ 不变再测试 `m=2` 和 `m=50000` 的点积。你会发现相对不变性依然严格成立吗？再对比前后两种频率下 `dot(m=0, n=1)` 与 `dot(m=0, n=2)` 的衰减区分度有何变化？
+6. **动手推演**：将上文代码中的 `freqs` 替换为 $s=40$ 的 YaRN 混合频率表，保持相对距离 $n - m = 3$ 不变测试 `m=2, n=5` 与 `m=50000, n=50003` 的点积。思考为何即使经过分频缩放，任意两位置点积对相对位移 $n - m$ 的平移不变性依然严格成立？
 
 [^ds_causal]: DeepSeek-AI, [DeepSeek-V3 Inference `model.py`](https://github.com/deepseek-ai/DeepSeek-V3/blob/9b4e9788/inference/model.py#L789)（`torch.full(..., float("-inf")).triu_(1)` 构造严格上三角因果掩码）。
 
@@ -207,7 +229,7 @@ OK 02
 
 [^vllm_dsv4_builder]: vLLM Project, [`models/deepseek_v41/common/rope.py`](https://github.com/vllm-project/vllm/blob/bb23c0a8/vllm/models/deepseek_v41/common/rope.py#L1-L53)（`build_deepseek_v4_rope` 分别构造 `"main"` 与 `"compress"` 旋转参数并固定 `mscale=0`、`is_neox_style=False`）。
 
-[^ds2412_yarn]: DeepSeek-AI, [DeepSeek-V3 Technical Report](https://arxiv.org/abs/2412.19437)（2024, `arXiv:2412.19437` §4.3 记载从 `4K → 32K → 128K` 的 YaRN 长上下文扩展超参 $s=40,\,\alpha=1,\,\beta=32$）。
+[^ds2412_yarn]: DeepSeek-AI, [DeepSeek-V3 Technical Report](https://arxiv.org/abs/2412.19437)（2024, `arXiv:2412.19437` §4.3 记载从 `4K -> 32K -> 128K` 的 YaRN 长上下文扩展超参 $s=40,\,\alpha=1,\,\beta=32$）。
 
 [^peng2023]: Bowen Peng et al., [YaRN: Efficient Context Window Extension of Large Language Models](https://arxiv.org/abs/2309.00071)（2023, `arXiv:2309.00071` §3.2 NTK-by-parts 分频斜坡与式 (14)–(15) 温度补偿）。
 

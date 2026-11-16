@@ -1,6 +1,6 @@
 ---
 title: '01 异构硬件底座与单层前向：从词元、Roofline 到 NVIDIA SM 与昇腾 AI Core'
-description: '面向零基础读者拆解大模型单层前向（Embedding、RMSNorm、SwiGLU 与 Logits）；深入对比 NVIDIA GPU SM 与华为昇腾 DaVinci AI Core 微架构及 PrivateUse1 分派，并用 Roofline 模型解释 Prefill 与 Decode 瓶颈。'
+description: '面向零基础读者拆解大模型单层前向（RMSNorm、GQA QKV、SwiGLU 与残差）；深入对比 NVIDIA GPU SM 与华为昇腾 DaVinci AI Core 微架构及 PrivateUse1 分派，并用 Roofline 模型解释 Prefill 与 Decode 瓶颈。'
 series: { id: foundations, order: 2 }
 pubDate: 2026-11-15
 tags: [Roofline, NVIDIA, Ascend, Transformer, vLLM]
@@ -8,21 +8,23 @@ category: AI Infra
 toc: true
 ---
 
+import ForwardPassExplainer from '../../../../explainers/foundations/ForwardPassExplainer';
+import RooflineExplainer from '../../../../explainers/foundations/RooflineExplainer';
+
 大模型推理在代码里看似只有一连串线性层与激活函数，但部署到真实加速卡上时，真正决定延迟与吞吐的往往不是公式复杂度，而是数据如何在 **HBM 显存、片上暂存器与计算单元** 之间往返搬运。如果看不清硬件到底在等数据还是在全力乘法，后续的注意力融合、KV 压缩与低比特量化全都会失去判断标准。
 
-本章从零起点出发，先用一条 4 维向量走通一次不含注意力的单层前向推理，算清每个算子的形状、FLOPs 与字节数；再并排解剖 **NVIDIA GPU SM** 与 **华为昇腾 DaVinci AI Core** 两套微架构及软件分派链路；最后用 **Roofline 模型** 钉死全站最核心的认知：为什么 `Prefill` 是算力受限，而 `Decode` 每次吐 1 个词元会狠狠撞上带宽墙。
+本章从零起点出发，先用张量剖面走通一次完整解码器层前向计算，算清每个算子的形状、FLOPs 与字节流量；再并排解剖 **NVIDIA GPU SM** 与 **华为昇腾 DaVinci AI Core** 两套微架构及软件分派链路；最后用 **Roofline 模型** 钉死全站最核心的认知：为什么 `Prefill` 是算力受限，而 `Decode` 每次吐 1 个词元会狠狠撞上带宽墙。
 
-## 先看一个 4 维词元的前向例子
+## 先看一个解码器层前向张量剖面
 
-在写通用公式之前，先把隐藏维度压到 $d=4$、前馈中间维压到 $d_{\text{ff}}=6$、词表大小设为 $V=8$。假设当前只处理 1 个词元（`token_id = 3`），通过词表查找表 $E \in \mathbb{R}^{8 \times 4}$ 取出它的隐藏向量：
+在写通用公式之前，先抓一个便于逐像素对齐的小批次张量：`[B=2, S=4, D=8]`（两个并发请求、每条 4 个词元、隐藏维 8），配合 2:1 GQA 投影（$D_{kv}=4$）和 SwiGLU 门控前馈（$D_{\text{ff}}=16$）。从单个词元的视角看，取一条 4 维向量 $x = [2.0, -1.0, 2.0, 0.0]$ 时，每一步经历的算子属性完全一致（见图 1 交互步骤演进）。
 
-$$
-x = E[3] = [2.0,\ -1.0,\ 2.0,\ 0.0]
-$$
+<ForwardPassExplainer
+  client:visible
+  title="图 1：解码器单层前向张量形状、算子分类与字节流量分布（[B=2, S=4, D=8]）"
+/>
 
-在主流现代大模型（如 Llama、Qwen、DeepSeek）中，一个前馈解码块围绕 `x` 依次做三件事，最后经输出头映射回词表打分：
-
-![单层前向数据流：4 维输入向量经过 RMSNorm 缩放、SwiGLU 双分支投影与逐元素门控、Down 投影与残差相加，最后经 LM Head 输出词表 Logits](./diagrams/01-forward-walkthrough.excalidraw)
+顺着图 1 的 5 个步骤拆解现代大模型（如 Llama、Qwen、DeepSeek）的逐层算子：
 
 **第一步：RMSNorm 均方根归一化**。为了防止深层残差不断累加导致数值发散，先计算向量各分量的均方根 `rms(x)`，再做比例缩放而不减去均值：
 
@@ -32,47 +34,47 @@ $$
 
 取缩放权重 $\gamma = [1, 1, 1, 1]$，归一化结果为 $\hat{x} = x / 1.5 \approx [1.3333,\ -0.6667,\ 1.3333,\ 0.0]$。把 $x$ 整体放大 1000 倍，$\hat{x}$ 依然保持完全一致——这种尺度不变性让后续乘法拥有稳定的输入分布。
 
-**第二步：SwiGLU 门控前馈网络（FFN）**。经典 Transformer 的两层 FFN 只有升维和降维两个矩阵，而现代大模型普遍把升维拆成 `Gate` 与 `Up` 两条并行分支，形状均为 $4 \to 6$：
+**第二步：QKV 线性投影与因果注意力**。图 1 第 2–3 步展示了 $\hat{X}$ 经过 $W_Q, W_K, W_V$ 投影为 $Q [2,4,8]$ 与半宽 $K, V [2,4,4]$，再做上下文交换后经 $W_O$ 加回残差 $X_{\text{mid}}$（这部分交互细节将在下一章单独拆开）。在 `[B=2, S=4, D=8]` 的 8-token 剖面上，仅 QKV 投影就贡献了 `2,048 FLOPs`，注意力点积与输出投影各占 `1,024 FLOPs`。
+
+**第三步：SwiGLU 门控前馈网络（FFN）与残差**。经典 Transformer 只有升维和降维两个矩阵，现代大模型普遍把升维拆成 `Gate` 与 `Up` 两条并行分支，在图 1 中把宽度从 8 扩张到 16：
 
 $$
-g = \text{SiLU}(\hat{x} W_{\text{gate}}), \qquad u = \hat{x} W_{\text{up}}, \qquad h = g \odot u \in \mathbb{R}^6
+g = \text{SiLU}(\hat{x} W_{\text{gate}}), \qquad u = \hat{x} W_{\text{up}}, \qquad h = g \odot u \in \mathbb{R}^{D_{\text{ff}}}
 $$
 
-其中 $\text{SiLU}(z) = z \cdot \sigma(z)$ 是平滑门控函数，$\odot$ 表示逐元素乘法。随后 `Down` 矩阵 $W_{\text{down}} \in \mathbb{R}^{6 \times 4}$ 把特征压回 4 维，并与入口处的原始输入做残差相加：$y = x + h W_{\text{down}}$。注意这个残差加法的数学形态：因为前馈网络用了 3 个权重矩阵，若要与经典两矩阵 `4d` 扩展（参数量 $2 \cdot d \cdot 4d = 8d^2$）保持总参数持平，中间维度通常按 $\frac{2}{3} \cdot 4d = \frac{8}{3}d$ 取值并向上对齐硬件块粒度。例如当 $d=4096$ 时，$d_{\text{ff}}=11008$，总参数量 `3 * 4096 * 11008 = 135,266,304`，与传统两层 `134,217,728` 的比值恰好为 `1.008x`。
-
-**第三步：LM Head 词表打分（Logits）**。当全部网络层结束后，输出向量 $y$ 经 `LM Head` 投影矩阵 $W_{\text{vocab}} \in \mathbb{R}^{V \times d}$ 生成长度为 $V$ 的未归一化分数 $\text{logits} = y W_{\text{vocab}}^\top$，再做 Softmax 选出下一个最可能的词元。
+其中 $\text{SiLU}(z) = z \cdot \sigma(z)$ 是平滑门控函数，$\odot$ 表示逐元素乘法。随后 `Down` 矩阵 $W_{\text{down}}$ 将维度压回 $D$，再执行残差相加。因为用了 3 个权重矩阵，若要与经典两矩阵 `4d` 扩展（参数量 $2 \cdot d \cdot 4d = 8d^2$）保持总参数持平，中间维度通常取 $\frac{8}{3}d$ 并对齐硬件块粒度（例如 $d=4096$ 时取 $d_{\text{ff}}=11008$，参数比约 `1.008x`）。最终出口的 `LM Head` 再将末层隐藏状态映射回词表 logits。
 
 把算子分成**两类物理属性截然不同的工作**，你立刻就能摸到硬件优化的门道：
 
-- **矩阵乘（GEMM）算子**（`Gate`、`Up`、`Down`、`LM Head`）：计算量大且高度规则，适合大吞吐矩阵引擎批处理。若批量为 $M$ 个词元，形状 $(M, K) \times (K, N)$ 的浮点运算量固定为 $2MNK$（每次乘加记 2 次 FLOPs）。
-- **逐元素 / 规约（Vector / Elementwise）算子**（`RMSNorm`、`SiLU`、`g ⊙ u`、`Residual +x`）：每个数只算几次加减或指数，必须读取完整张量并写回，几乎纯由内存带宽决定速度。
+- **矩阵乘（GEMM）算子**（`QKV`、`O`、`Gate`、`Up`、`Down`、`LM Head`）：计算量大且高度规则，适合大吞吐矩阵引擎批处理。形状 $(M, K) \times (K, N)$ 的浮点运算量固定为 $2MNK$（每次乘加记 2 次 FLOPs），在图 1 的 8-token 剖面中 FFN 独占了 `6,144` 次（`60%`）运算。
+- **逐元素与规约（Vector / Elementwise）算子**（`RMSNorm`、`SiLU`、`g ⊙ u`、`Residual +x`）：每个数只算几次加减或指数，却必须读写完整张量，几乎纯由内存带宽决定速度。
 
 在 vLLM 代码库中，通用算子正对应上述分层抽象：`RMSNorm` 与 `SiluAndMul` 均继承自 `CustomOp`[^vllm-customop]，由运行时根据平台类型选择 CUDA 实现或插件提供的硬件核函数[^vllm-norms]。
 
 ## NVIDIA GPU SM 与昇腾 DaVinci AI Core 微架构对照
 
-上面这两类完全不同性格的计算与访存工作，落在 **NVIDIA GPU** 和 **华为昇腾 NPU** 上时，面对的是两套设计哲学迥异的硬件硅片。把这两者的核内组件并排看清，后面所有内核优化才不会沦为黑盒玄学。
+上面这两类完全不同性格的计算与访存工作，落在 **NVIDIA GPU** 和 **华为昇腾 NPU** 上时，面对的是两套设计哲学迥异的硬件硅片。图 2 将两者的核内数据通路与存储层级并排对照，看清这些组件才能真正理解后续算子优化的出发点。
 
-![双硬件微架构对照：左列 NVIDIA GPU SM 通过 Tensor Core、CUDA Core/MUFU、硬件 Cache/SMEM 与 TMA 协作；右列昇腾 AI Core 把 Cube、Vector 与 Scalar 解耦成显式三级流水线，经 L1/L0/UB 暂存区与 MTE 引擎读写 FRACTAL_NZ 张量](./diagrams/01-sm-vs-aicore-arch.excalidraw)
+![双硬件微架构对照：左列 NVIDIA GPU SM 依托 Tensor Core、CUDA Core/MUFU、SMEM 与 TMA 协作；右列昇腾 AI Core 把 Cube 与 Vector 解耦成异步流水线，经 L1/L0/UB 与 MTE 引擎读写 FRACTAL_NZ 张量](./diagrams/01-gpu-vs-npu-arch.drawio '图 2：NVIDIA GPU SM 与华为昇腾 DaVinci AI Core 微架构及片上存储通路对照')
 
 ### NVIDIA GPU SM：硬件缓存协同与 TMA 流式搬运
 
-一颗 NVIDIA 现代 GPU 由数十至上百个 **流式多处理器（SM）** 组成。面向 Transformer 推理，单个 SM 内有四大角色各司其职：
+一颗 NVIDIA 现代 GPU 由数十至上百个 **流式多处理器（SM）** 组成。面向 Transformer 推理，单个 SM 内有四大角色各司其职（见图 2 左泳道）：
 
-- **Tensor Core（矩阵引擎）**：专门处理小块稠密矩阵乘累加（Ampere 为同步 `MMA`，Hopper 引入异步 `WGMMA`），单个时钟周期能咽下整片矩阵乘。`Gate`、`Up`、`Down` 等线性层全靠它打吞吐。
-- **CUDA Core 与 MUFU（标量 / 特殊函数单元）**：负责向量加减、整数地址计算以及 `exp`、`rsqrt`、`sigmoid` 等非线性超越函数（MUFU）。`RMSNorm` 的平方根倒数与 `SiLU` 的指数运算都在这里完成。
-- **Register File、Shared Memory（SMEM）与 L1/L2 Cache**：每个线程拥有高速寄存器组；同一个线程块内的线程通过几十到两百 KB 级的片上 `SMEM` 共享分块数据；硬件管理的 `L1/L2 Cache` 会自动缓存高命中地址，降低编程心智负担。
-- **TMA（Tensor Memory Accelerator）与通用 ND 布局**：从 Hopper 架构开始，专用异步拷贝引擎 TMA 可按多维张量描述符直接把片外 HBM 数据整块异步拉入 `SMEM` 并同步屏障，线程不再需要手算地址循环搬运。主流 PyTorch/CUDA 算子默认按常规行主序多维布局（ND）组织张量，只需满足 16 字节等基本步长对齐即可。
+- **Tensor Core（矩阵引擎）**：专门处理小块稠密矩阵乘累加（Ampere 为同步 `MMA`，Hopper 引入异步 `WGMMA`），单个时钟周期能咽下整片矩阵乘。线性投影与注意力核心乘法全靠它打吞吐。
+- **CUDA Core 与 MUFU（标量与特殊函数单元）**：负责向量加减、整数地址计算以及 `exp`、`rsqrt`、`sigmoid` 等非线性超越函数。`RMSNorm` 的平方根倒数与 `SiLU` 的指数运算都在这里完成。
+- **Register File、Shared Memory（SMEM）与 L1/L2 Cache**：每个线程拥有高速寄存器组；同一线程块内线程通过片上 `SMEM` 共享分块数据；硬件管理的 `L1/L2 Cache` 会自动缓存高命中地址，降低编程心智负担。
+- **TMA（Tensor Memory Accelerator）与通用 ND 布局**：从 Hopper 架构开始，专用异步拷贝引擎 TMA 可按多维描述符把 HBM 数据整块异步拉入 `SMEM`。PyTorch/CUDA 算子默认采用行主序 `ND` 布局，满足 16 字节对齐即可高效访存。
 
 ### 昇腾 DaVinci AI Core：显式三流水线、片上暂存区与 FRACTAL_NZ 分形排布
 
-与 GPU 由硬件 Cache 兜底的 SIMT 线程束不同，华为昇腾（如 910B/A2、910C/A3 与新一代 A5）采用高度结构化的 **DaVinci AI Core**，把控制、矩阵与向量拆成三条**物理独立、异步并行**的执行流水线：
+与 GPU 由硬件 Cache 兜底的 SIMT 线程束不同，华为昇腾（如 910B/A2、910C/A3 与新一代 A5）采用高度结构化的 **DaVinci AI Core**（见图 2 右泳道），把控制、矩阵与向量拆成三条**物理独立、异步并行**的执行流水线：
 
-- **Cube Unit（16×16×16 矩阵核）**：面向 FP16/BF16 等半精度输入，单次固定吞吐 $16 \times 16 \times 16$ 的三维分形矩阵乘。它只听指令队列调遣，专注极致的矩阵算力密度。
-- **Vector Unit 与 Scalar Unit（向量与标量核）**：`Vector Unit` 是超长宽向量引擎，专吃 `RMSNorm`、`SiLU`、逐元素乘法与 Softmax 等操作；`Scalar Unit` 充当总调度员，按核内标量指令解码循环与同步事件，向 Cube、Vector 与搬运引擎派发任务。
-- **显式片上暂存器（Scratchpad Memory），无硬件通用 Cache**：昇腾片上存储器不由硬件透明缓存控制，而是需要内核开发者（Ascend C / Triton）显式编排数据路径：权重与输入矩阵先经 **L1 Buffer**，再送入 Cube 专属的 **L0A / L0B** 缓冲，累加结果停留在 **L0C**；而 Vector 单元的输入输出几乎全落在本地 **Unified Buffer（UB）** 中[^ascend-ub]。在 910B（A2）与 910C（A3）上，每核 `UB` 的默认容量为 `192 KB`（310P 为 `128 KB`）[^ascend-ub]。这意味着任何融合算子一旦在片上同时存活过多中间 FP32 张量，就会直接撞上 `UB` 容量天花板。
-- **MTE1 / MTE2 / MTE3 异步 DMA 引擎**：数据在各级存储之间移动全由专用内存传输引擎完成——`MTE2` 负责从 HBM 拉入片上 `L1` 或 `UB`，`MTE1` 把 `L1` 切片喂给 `L0A/L0B`，`MTE3` 则把计算产物搬回或转存。因为 Cube、Vector 与 MTE 各自拥有独立硬件队列，优秀的昇腾算子可以让 **Cube 算当前分块矩阵乘的同时，Vector 算上一块的激活，MTE2 预取下一块的权重**，这就是经典的 **CV 并行（Cube-Vector Overlap）**。
-- **FRACTAL_NZ 分形排布**：为了匹配 `Cube Unit` 对 `16×16` 连续块读取的胃口，昇腾常在模型权重加载完成后将其从普通连续多维布局 `ACL_FORMAT_FRACTAL_ND = 2` 转置分块成 `ACL_FORMAT_FRACTAL_NZ = 29`[^ascend-nz]。在 `FRACTAL_NZ` 下，原本跨步读取的一整块 $(K, N)$ 矩阵会被重排成若干连续存放的 $16 \times 16$（FP16/BF16）小分形子块（内部行内紧致相邻，硬件只需顺序突发读取，无需多次跨行寻址）。代价是若某些维度不是 16 的倍数，必须向 16 对齐补零。
+- **Cube Unit（16×16×16 矩阵核）**：面向半精度及量化输入，单次固定吞吐 $16 \times 16 \times 16$ 的分形矩阵乘，专注极致的矩阵算力密度。
+- **Vector Unit 与 Scalar Unit（向量与标量核）**：`Vector Unit` 专吃 `RMSNorm`、`SiLU` 与 Softmax；`Scalar Unit` 充当总调度员，按核内标量指令解码循环与同步事件，向 Cube、Vector 与搬运引擎派发任务。
+- **显式片上暂存器（Scratchpad Memory）**：昇腾片上存储器不由硬件透明缓存控制，内核必须显式编排数据路径：输入先经 **L1 Buffer**，再送入 Cube 专属 **L0A / L0B** 缓冲，累加停留在 **L0C**；Vector 单元输入输出几乎全落在 **Unified Buffer（UB）** 中[^ascend-ub]。910B 与 910C 上每核 `UB` 默认 `192 KB`（310P 为 `128 KB`）[^ascend-ub]，融合算子若同时存活过多 FP32 张量就会触顶溢出。
+- **MTE1 / MTE2 / MTE3 异步 DMA 引擎**：`MTE2` 负责从 HBM 拉入片上 `L1` 或 `UB`，`MTE1` 把 `L1` 切片喂给 `L0A/L0B`，`MTE3` 写回产物。由于三者队列独立，优秀内核可实现 **Cube 算当前块的同时，Vector 算上一块激活，MTE2 预取下一块权重**——即 **CV 并行**。
+- **FRACTAL_NZ 分形排布**：为匹配 `Cube Unit` 对 `16×16` 连续块的读取习惯，昇腾常在权重加载期把普通布局 `ACL_FORMAT_FRACTAL_ND = 2` 转为分形布局 `ACL_FORMAT_FRACTAL_NZ = 29`[^ascend-nz]。非 16 倍数维度必须向 16 补零对齐。
 
 | 硬件维度           | NVIDIA GPU SM（Ampere / Hopper / Blackwell） | 昇腾 DaVinci AI Core（910B / 910C / A5）    | 工程直接影响                                     |
 | :----------------- | :------------------------------------------- | :------------------------------------------ | :----------------------------------------------- |
@@ -84,13 +86,6 @@ $$
 | **典型张量排布**   | 通用行/列主序 `ND`                           | 权重转 `FRACTAL_NZ (29)`，A5 亦支持双态输入 | 异构插件须在权重加载期完成格式转换               |
 | **PyTorch 接入键** | 原生 `CUDA` 分发键 -> `forward_cuda`         | `PrivateUse1`（`OOT`）-> `forward_oot`      | 上层模型代码零改动即可跨端路由                   |
 
-### 软件分派实战：`CustomOp` 如何把同一个模型路由到 CUDA 与 CANN
-
-明白了硬件差异，再看软件栈如何做到「同一套模型代码跑两家硬件」：
-
-1. **vLLM 注册通用算子**：在 `vllm/model_executor/custom_op.py` 中，`RMSNorm` 与 `SiluAndMul` 等基类通过 `@CustomOp.register(...)` 注册。构造实例时，`CustomOp.__new__` 会检查是否存在外部插件覆盖；调用 `dispatch_forward()` 时，若当前处于原生 CUDA 环境则走到 `forward_cuda`（直接调 `_C.silu_and_mul` 与 CUDA Norm 核），若检测到出树平台（`current_platform.is_out_of_tree()`），则自动转入 `forward_oot`[^vllm-customop][^vllm-norms]。
-2. **vllm-ascend 接管 `PrivateUse1`**：`NPUPlatform` 把 PyTorch 分发键设为 `dispatch_key = "PrivateUse1"`，标记自己为 `PlatformEnum.OOT`[^ascend-platform]；随后 `register_ascend_customop` 把 `RMSNorm` 替换为 `AscendRMSNorm`、把 `SiluAndMul` 替换为 `AscendSiluAndMul`[^ascend-reg]。进入 `forward_oot` 后，它们分别调用 `torch_npu.npu_rms_norm` / `npu_add_rms_norm` 与 `torch_npu.npu_swiglu` 落地到底层 CANN 与 Ascend C 算子[^ascend-ops]。至于图中静态捕捉（减少 Python 发射碎片），vLLM 使用 CUDA Graph，而 `NPUPlatform` 则对应挂接 `ACLGraphWrapper`[^ascend-platform]。
-
 ## Roofline 模型与 Prefill / Decode 两副面孔
 
 把前面算子里的浮点运算量与显存读写量串成一根比率，就能画出现代大模型推理最重要的标尺——**算术强度（Arithmetic Intensity）**：
@@ -99,69 +94,86 @@ $$
 I = \frac{\text{FLOPs}}{\text{Bytes}} \quad (\text{单位：FLOPs / Byte})
 $$
 
-任给一张加速卡，它有两个只由芯片物理决定的硬上限：峰值矩阵算力 $P_{\text{peak}}$（单位 TFLOPS）与高带宽显存读写带宽 $BW_{\text{HBM}}$（单位 TB/s）。二者相交处的平衡点称作**拐点算术强度（Ridge Point）**：
-
-$$
-I^* = \frac{P_{\text{peak}}}{BW_{\text{HBM}}}
-$$
-
-于是任意算子的理论实测上限性能满足 **Roofline 公式**：
+任给一张加速卡，它有两个物理硬上限：峰值矩阵算力 $P_{\text{peak}}$（TFLOPS）与显存读写带宽 $BW_{\text{HBM}}$（TB/s）。二者相交处称作**拐点算术强度（Ridge Point）**：$I^* = P_{\text{peak}} / BW_{\text{HBM}}$。于是算子性能上限满足：
 
 $$
 P_{\text{attained}} = \min\!\left(P_{\text{peak}},\ I \cdot BW_{\text{HBM}}\right)
 $$
 
-以 DeepSeek FlashMLA 技术报告实测校验过的 **NVIDIA H800 SXM5**（BF16 峰值 `990 TFLOPS`，HBM3 带宽 `3.35 TB/s`）为例[^flashmla-doc]，其硬件拐点为 $I^* = 990 / 3.35 \approx 295.5\ \text{FLOPs/Byte}$（考虑实际功耗降频到 ~`865 TFLOPS` 时约为 `258 FLOPs/Byte`）。而对于各代昇腾 AI Core，虽然具体 SKU 的 `Cube` 算力与 HBM 通道数不同、拐点 $I^*$ 也随硬件代数而异（下文 `toy.py` 将用 `320 TFLOPS / 1.60 TB/s` 作为示例剖面算给你看），但**只要 $I < I^*$ 就卡在 HBM 带宽墙上、$I \ge I^*$ 才进入算力墙区间**的物理法则完全一致。
+以 DeepSeek FlashMLA 实测校准的 **NVIDIA H800 SXM5**（BF16 峰值 `990 TFLOPS`，HBM3 带宽 `3.35 TB/s`）[^flashmla-doc]与 **昇腾示例剖面**（`320 TFLOPS` / `1.60 TB/s`）为标尺，图 3 交互式演示了同一套 `d=4096, d_ff=11008` SwiGLU FFN 在不同批量下的位移与昇腾 CV 流水重叠效果。
 
-![Roofline 分界与双平台运行时路由：Decode (M=1) 算术强度远低于拐点 I* 而卡在 HBM 带宽墙；Prefill (M=2048) 复用权重跃过 I* 打满算力墙；两类请求经 CustomOp.dispatch_forward() 分别路由到 CUDA 与 PrivateUse1 OOT 后端](./diagrams/01-roofline-regimes-runtime.excalidraw)
+<RooflineExplainer
+  client:visible
+  title="图 3：双硬件对数 Roofline 拐点、Decode/Prefill 状态迁移与 Cube/Vector 重叠"
+/>
 
-现在把同一个 `d=4096, d_ff=11008` 的单层 SwiGLU FFN 分别放入 **Decode** 与 **Prefill** 两个阶段算账（BF16 每元素占 2 字节，权重共 `258 MiB`）：
+顺着图 3 读出三条关键规律（BF16 每元素占 2 字节，三矩阵权重共 `258 MiB`）：
 
-- **Decode 阶段（批量词元数 $M=1$）**：为了计算区区 1 个词元，GPU/NPU 依然必须把整整 `258 MiB` 的三个权重矩阵从 HBM 读进核心，做完 $2 \times 1 \times 3 \times 4096 \times 11008$ 次乘加。每个权重元素读出来**只参与 1 次乘加**（2 FLOPs / 2 Bytes = **1.00 FLOP/Byte**）。在 H800 上算力利用率仅有 `3.35 / 990 = 0.3%`，超过 `99%` 的时间芯片计算单元都在空转等 HBM 送数。
-- **Prefill 阶段（输入序列 $M=2048$）**：同一份 `258 MiB` 权重从 HBM 读出后驻留在片上 `SMEM` 或 `L1/L0`，连续复用在全部 2048 个输入词元上。总算术强度一举飙升到约 `1046 FLOPs/Byte`，远跨过拐点 $I^*$，直接把 `Tensor Core` 与 `Cube Unit` 打满。
+- **Decode 阶段（$M=1$）**：为生成 1 个词元依然要读取全量 `258 MiB` 权重，每读 2 字节只做 2 次乘加，$I = 1.00\;\text{FLOP/B}$。H800 上算力利用率仅有 `3.35 / 990 = 0.3%`（910B 示例仅 `0.5%`），计算单元几乎完全在等 HBM 送数。
+- **中等批大小（$M=64$）**：权重被 64 个词元分摊，算术强度升至 `62.86 FLOP/B`（H800 达 `210.6 TFLOPS`，仅 21.3% 峰值），依然死死停在拐点 `295.5` 左侧的带宽斜坡上。
+- **Prefill 阶段（$M=4096$）**：权重在片上充分复用，算术强度越至 `1893.85 FLOP/B`，稳稳跨过双硬件拐点进入水平算力上限区；若进一步启用昇腾异步 **CV（Cube + Vector）双流水重叠**[^ascend-prefill]，可把 Vector 激活延迟藏进 Cube 矩阵乘窗口内，进一步压缩分块耗时。
 
-更进一步，针对昇腾 DaVinci 微架构的 **CV（Cube + Vector）双流水线重叠**：在一个包含 `GEMM`（Cube 耗时 $t_{\text{cube}}$）与紧随其后的 `RMSNorm/SiLU`（Vector 耗时 $t_{\text{vec}}$）的分块循环中，如果串行等待总耗时为 $t_{\text{cube}} + t_{\text{vec}}$；当开启异步双流水让两个引擎分别处理相邻分块时，总耗时收敛到 $\max(t_{\text{cube}}, t_{\text{vec}})$。只要算子拆分粒度合适，Vector 阶段的非线性开销几乎可以被完全藏在 Cube 矩阵乘背后[^ascend-prefill]。
+## NumPy 核心实现与双硬件源码对照
 
-## 动手运行 `toy.py` 数值验证
+下面给出独立可运行的 NumPy 核心实现，验证图 1 的 `[B=2, S=4, D=8]` 前向张量形状与图 3 的 SwiGLU 双平台 Roofline 数值；本地可用 `uv run --with numpy python` 直接运行复现：
 
-下面用纯 Python + NumPy 编写的一百余行验证脚本，完整复现前文 4 维单层前向、SwiGLU 参数等价性与 Roofline 双平台数值测算，同时验证昇腾 `CV` 流水重叠收益与 `FRACTAL_NZ` 16 对齐补零比例。本地可直接执行：
+```python
+import numpy as np
 
-```bash
-uv run --with numpy python src/content/posts/foundations/01-hardware-and-roofline/toy.py
+rng = np.random.default_rng(7)
+B, S, D, D_kv, D_ff = 2, 4, 8, 4, 16
+X = rng.normal(0.0, 1.0, (B, S, D))
+X_norm = X / np.sqrt(np.mean(X**2, axis=-1, keepdims=True) + 1e-6)
+Q = X_norm @ rng.normal(0.0, 0.2, (D, D))
+K = X_norm @ rng.normal(0.0, 0.2, (D, D_kv))
+V = X_norm @ rng.normal(0.0, 0.2, (D, D_kv))
+W_gate, W_up = rng.normal(0.0, 0.2, (D, D_ff)), rng.normal(0.0, 0.2, (D, D_ff))
+W_down = rng.normal(0.0, 0.2, (D_ff, D))
+gate = X_norm @ W_gate
+silu_gate = gate / (1.0 + np.exp(-gate))
+Y = X + (silu_gate * (X_norm @ W_up)) @ W_down
+assert Q.shape == (2, 4, 8) and K.shape == (2, 4, 4) and Y.shape == (2, 4, 8)
+
+wt_bytes = 3 * 4096 * 11008 * 2
+for M in (1, 64, 4096):
+    flops = 2 * M * 3 * 4096 * 11008
+    bytes_io = wt_bytes + M * (4 * 4096 + 2 * 11008) * 2
+    ai = flops / bytes_io
+    print(f"M={M:4d}: AI={ai:7.2f} FLOP/B | H800={min(990.0, ai * 3.35):6.2f} TF | 910B={min(320.0, ai * 1.60):6.2f} TF")
 ```
 
-实测输出如下：
+实测输出与图 3 完全吻合：
 
 ```text
-=== 1. 4D Single-Token Forward Walkthrough ===
-token_id=3 x=[2.0, -1.0, 2.0, 0.0]
-rms=1.500000 x_hat=[1.3333, -0.6667, 1.3333, 0.0]
-swiglu h(6D)=[0.0005, -0.0438, -0.1832, -0.0397, -0.1391, -0.0166]
-residual y=[2.0429, -0.9958, 1.979, 0.0471]
-logits top_token=3 prob=0.9982
-
-=== 2. SwiGLU Roofline (d=4096, d_ff=11008, BF16) ===
-param_parity: classic_4d=134,217,728 swiglu=135,266,304 ratio=1.008x
-
-[H800-SXM5(BF16)] peak=990.0 TFLOPS, HBM=3.35 TB/s, ridge I*=295.5 FLOP/B
-  Decode  M=1   : I=   1.00 FLOP/B ->   3.35 TFLOPS (  0.3%) [memory-bound]
-  Batch   M=64  : I=  62.14 FLOP/B -> 208.17 TFLOPS ( 21.0%) [memory-bound]
-  Prefill M=2048: I=1046.30 FLOP/B -> 990.00 TFLOPS (100.0%) [compute-bound]
-
-[NPU-Sample(BF16)] peak=320.0 TFLOPS, HBM=1.60 TB/s, ridge I*=200.0 FLOP/B
-  Decode  M=1   : I=   1.00 FLOP/B ->   1.60 TFLOPS (  0.5%) [memory-bound]
-  Batch   M=64  : I=  62.14 FLOP/B ->  99.43 TFLOPS ( 31.1%) [memory-bound]
-  Prefill M=2048: I=1046.30 FLOP/B -> 320.00 TFLOPS (100.0%) [compute-bound]
-
-=== 3. Ascend Cube+Vector Overlap & FRACTAL_NZ ===
-serial=27.0us vs cv_overlap=18.0us -> speedup=1.50x
-FRACTAL_NZ align(16): dim=4096 -> padded=4096 overhead=0.00%
-FRACTAL_NZ align(16): dim=520 -> padded=528 overhead=1.54%
-
-OK 01
+M=   1: AI=   1.00 FLOP/B | H800=  3.35 TF | 910B=  1.60 TF
+M=  64: AI=  62.86 FLOP/B | H800=210.57 TF | 910B=100.57 TF
+M=4096: AI=1893.85 FLOP/B | H800=990.00 TF | 910B=320.00 TF
 ```
 
-注意两个直观的数字：第一，`M=64` 看似已经做了批处理，但在 `3.35 TB/s` 下依然只有 `21.0%` 算力利用率，说明在没有 Attention 缓存和权重压缩前，小批量解码仍死死卡在访存侧；第二，若某个模型中间维度或词表切片不是 `16` 的倍数（如 `520`），转成 `FRACTAL_NZ` 会引入 `1.54%` 补零代价，工程里总是尽量按 `16` 或 `64/256` 对齐模型维度。
+在生产推理引擎中，同一套模型通过 `CustomOp` 按运行时平台自动分派到 NVIDIA CUDA 与昇腾 CANN 核函数[^vllm-customop][^ascend-platform][^ascend-reg][^ascend-ops]：
+
+```python
+# vllm/model_executor/custom_op.py:194-205 (vllm@bb23c0a8)
+if current_platform.is_rocm():
+    return self.forward_hip
+elif current_platform.is_out_of_tree():
+    return self.forward_oot
+else:
+    return self.forward_cuda
+
+# vllm/model_executor/layers/activation.py:146-151 (NVIDIA GPU SwiGLU)
+def forward_cuda(self, x: torch.Tensor) -> torch.Tensor:
+    d = x.shape[-1] // 2
+    out = torch.empty(x.shape[:-1] + (d,), dtype=x.dtype, device=x.device)
+    self.op(out, x)  # torch.ops._C.silu_and_mul
+    return out
+
+# vllm_ascend/ops/activation.py:37-40 (vllm-ascend@3649b8ff, 昇腾 NPU SwiGLU)
+class AscendSiluAndMul(SiluAndMul):
+    def forward_oot(self, x: torch.Tensor) -> torch.Tensor:
+        out = torch_npu.npu_swiglu(x)
+        return out
+```
 
 ## 代价与工程边界
 
@@ -169,7 +181,7 @@ OK 01
 
 - **理论带宽不等于实际有效带宽**：标称 `3.35 TB/s` 反映的是连续大块读写；当张量切得过于细碎（例如未合并的跨步索引或小批量 GEMV），实测有效带宽可能掉到标称值的 60% 以下，同时未捕获算子图时每次 Python Kernel Launch 还会额外叠加微秒级调度间隙（这正是两家都强依赖 `CUDA Graph` 与 `ACL Graph` 的原因）。
 - **昇腾分形排布与片上 `UB` 的双重硬约束**：910B/A2 与 910C/A3 系列在推理加载期偏向用 `WeightLayoutPolicy` 把权重转为 `FRACTAL_NZ`，到 A5 才在硬件层面进一步扩展了对混合布局及 `FP8/MXFP4` 权重的原生支持[^ascend-hw]；另一方面，每核 `192 KB` `UB` 意味着在写融合 Triton/Ascend C 内核时必须严格限制中间活张量个数与分块宽度[^ascend-ub]。
-- **纯 FFN 只是热身，真正的长序列炸弹在 Attention**：本节还没加入词元之间的交互。一旦序列长度 $s_k$ 拉长到数万，不仅要做两两相似度矩阵，还要把历史 Key 和 Value 缓存在显存里并在每步解码全部重读一遍——那才是真正把 HBM 空间与带宽烧穿的主力。
+- **纯 FFN 只是热身，真正的长序列炸弹在 Attention**：本节还没展开长序列词元交互与缓存复用。一旦序列长度拉长到数万，不仅要做两两相似度矩阵，还要把历史 Key 和 Value 缓存在显存里并在每步解码全部重读一遍——那才是真正把 HBM 空间与带宽烧穿的主力。
 
 ## 自测与跨章衔接
 
@@ -184,12 +196,12 @@ OK 01
 
 </details>
 
-**自测 2**：如果用 `toy.py` 做一次小改造：把 `d=4096, d_ff=11008` 固定不变，试算出需要把批大小 $M$ 拉到多大，H800 SXM5 的 SwiGLU FFN 才刚好跨过 `295.5 FLOPs/Byte` 拐点？（提示：试代入 $M=320$ 或 $M=350$ 观察算术强度变化。）
+**自测 2**：代入上文 `d=4096, d_ff=11008` 的 SwiGLU Roofline 公式，估算需要把批大小 $M$ 拉到多大，H800 SXM5 才能跨过 `295.5 FLOPs/Byte` 拐点？
 
 <details>
 <summary>参考答案</summary>
 
-在 `toy.py` 的未融合账本公式下，当权重字节数固定为 `258 MiB` 时，需大约 $M \approx 340 \sim 350$ 个词元同时分摊一次权重读取，算术强度才能越过 `295.5 FLOPs/Byte`。也就是说，当连续批处理并发不足三百词元时，FFN 在 H800 上本质上仍是靠 HBM 带宽而不是 Tensor Core 峰值跑速度。
+按公式 $I(M) = \frac{2M \cdot 3 d d_{\text{ff}}}{2 \cdot 3 d d_{\text{ff}} + 2M(4d + 2d_{\text{ff}})} = 295.5$ 求解，权重字节固定为 `270,532,608 B`，每增加 1 个词元仅叠加 `76,784 B` 激活读写。解得临界批量 $M \approx 323$ 个词元，也就是说当连续批处理并发不足三百余词元时，FFN 在 H800 上本质上仍是靠 HBM 带宽而不是 Tensor Core 峰值跑速度。
 
 </details>
 
@@ -197,7 +209,7 @@ OK 01
 
 [^vllm-customop]: `vllm@bb23c0a8` `vllm/model_executor/custom_op.py:102-205, 311-356`：`CustomOp` 通过 `__new__` 读取 `op_registry_oot` 并在 `dispatch_forward` 中按 `is_out_of_tree()` 切换 `forward_cuda` 与 `forward_oot`。
 
-[^vllm-norms]: `vllm@bb23c0a8` `vllm/model_executor/layers/layernorm.py:38-120` 与 `activation.py:115-151`：`RMSNorm` 与 `SiluAndMul` 的通用注册与 CUDA 路由实现。
+[^vllm-norms]: `vllm@bb23c0a8` `vllm/model_executor/layers/layernorm.py:39-120` 与 `activation.py:116-151`：`RMSNorm` 与 `SiluAndMul` 的通用注册与 CUDA 路由实现。
 
 [^ascend-ub]: `vllm-ascend@3649b8ff` `vllm_ascend/ops/triton/triton_utils.py`：`DEFAULT_UB_SIZE_BYTES = 192 * 1024`（A2/910B 与 A3/910C 为 192 KB，310P 为 128 KB）。
 
@@ -207,7 +219,7 @@ OK 01
 
 [^ascend-reg]: `vllm-ascend@3649b8ff` `vllm_ascend/utils.py:846-981`：`register_ascend_customop` 将 `RMSNorm`、`SiluAndMul` 等统一注册覆盖为 Ascend OOT 实现。
 
-[^ascend-ops]: `vllm-ascend@3649b8ff` `vllm_ascend/ops/layernorm.py:81-105` 与 `activation.py:37-40`：`AscendRMSNorm.forward_oot` 与 `AscendSiluAndMul.forward_oot` 调用 `torch_npu.npu_rms_norm` 与 `npu_swiglu`。
+[^ascend-ops]: `vllm-ascend@3649b8ff` `vllm_ascend/ops/layernorm.py:47-95` 与 `activation.py:37-40`：`AscendRMSNorm.forward_oot` 与 `AscendSiluAndMul.forward_oot` 调用 `npu_add_rms_norm_bias` 与 `npu_swiglu`。
 
 [^flashmla-doc]: `FlashMLA@395cb3af` `docs/20250422-new-kernel-deep-dive.md:13`：NVIDIA H800 SXM5 标称 `3.35 TB/s` 带宽与 `990 TFlops` 峰值（降频场景约 `865 TFlops`）。
 

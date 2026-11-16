@@ -16,17 +16,6 @@ const SERIES_EXPECTED = [
 
 type SeriesId = (typeof SERIES_EXPECTED)[number]['id'];
 
-const EXCALIDRAW_POSTS = new Set<string>([
-  'foundations',
-  'foundations/01-hardware-and-roofline',
-  'foundations/05-quantization',
-  'distributed',
-  'distributed/01-interconnects-and-collectives',
-  'distributed/02-parallelism-and-disaggregation',
-  'distributed/03-moe-comm-and-overlap',
-  'deepseek',
-]);
-
 interface SeriesMeta {
   id: string;
   order: number;
@@ -155,52 +144,87 @@ describe('infra-note content integrity', () => {
     expect(orderedByUpdated).toEqual(['foundations', 'distributed', 'deepseek', 'vllm']);
   });
 
-  it('has zero legacy explainer remnants or .md/.mdx sibling conflicts', () => {
-    expect(existsSync(join(SRC, 'explainers'))).toBe(false);
-    expect(existsSync(join(ROOT, 'design', 'explainer-kit.md'))).toBe(false);
-    expect(existsSync(join(ROOT, 'design', 'citations-inventory.md'))).toBe(false);
+  it('uses shared explainers kit without hardcoded hex, gradients, or shadows', () => {
+    const explainersDir = join(SRC, 'explainers');
+    expect(existsSync(join(explainersDir, 'kit', 'index.ts'))).toBe(true);
+    expect(existsSync(join(ROOT, 'scripts', 'verify_toys.py'))).toBe(false);
 
-    for (const file of listAllFiles(SRC)) {
-      if (file === resolve(SRC, 'content.test.ts')) continue;
-      if (/\.(ts|tsx|astro|md|mdx)$/.test(file)) {
-        const text = readFileSync(file, 'utf8');
-        expect(text, `Unexpected explainer import in ${file}`).not.toMatch(
-          /@?\/?explainers\/|explainer-kit/,
-        );
-      }
+    for (const file of listAllFiles(explainersDir)) {
+      if (file.includes('__tests__') || !/\.(ts|tsx)$/.test(file)) continue;
+      const text = readFileSync(file, 'utf8');
+      expect(text, `Hardcoded hex color found in ${file}`).not.toMatch(/#[0-9a-fA-F]{3,8}\b/);
+      expect(text, `SVG gradient found in ${file}`).not.toMatch(/<linearGradient|<radialGradient/);
+      expect(text, `Drop shadow found in ${file}`).not.toMatch(/drop-shadow|feDropShadow/);
     }
   });
 
-  it('provides <=150-line toy.py and consistent rendered diagrams per post', () => {
+  it('removes legacy toy.py scripts and verifies 4-way visual routing + GPU/NPU code coverage', () => {
     const chapterPosts = allPosts.filter((p) => p.series.order >= 2);
     expect(chapterPosts).toHaveLength(25);
 
+    const aboutText = readFileSync(join(PAGES, 'about.md'), 'utf8');
+    expect(aboutText).not.toMatch(/\btoy\.py\b|verify_toys/);
+
     for (const post of allPosts) {
       const isIndex = post.series.order === 1;
-      if (!isIndex) {
-        const toyPath = join(post.dir, 'toy.py');
-        expect(existsSync(toyPath), `Missing toy.py in ${post.slug}`).toBe(true);
-        const toyLines = readFileSync(toyPath, 'utf8').trimEnd().split(/\r?\n/);
-        expect(toyLines.length, `toy.py > 150 lines in ${post.slug}`).toBeLessThanOrEqual(150);
+      expect(
+        existsSync(join(post.dir, 'toy.py')),
+        `Legacy toy.py still exists in ${post.slug}`,
+      ).toBe(false);
+      expect(post.raw, `Legacy toy.py reference in ${post.slug}`).not.toMatch(/\btoy\.py\b/);
+
+      const mermaidCount = (post.raw.match(/^```mermaid\b/gm) ?? []).length;
+      const staticDiagramMatches = [
+        ...post.raw.matchAll(/!\[[^\]]*\]\(\.\/diagrams\/[^)\s]+(?:\s+(['"])(.*?)\1)?\)/g),
+      ];
+      for (const m of staticDiagramMatches) {
+        expect(m[2] ?? '', `Missing "图 ..." title on static diagram in ${post.slug}`).toMatch(
+          /^图\s*\d+：/,
+        );
+      }
+      const explainerCount = (post.raw.match(/<[A-Z]\w*Explainer\b/g) ?? []).length;
+      const visualCount = mermaidCount + staticDiagramMatches.length + explainerCount;
+
+      if (isIndex) {
+        expect(visualCount, `Expected >= 1 visual in ${post.slug}`).toBeGreaterThanOrEqual(1);
+      } else {
+        expect(visualCount, `Expected >= 3 visuals in ${post.slug}`).toBeGreaterThanOrEqual(3);
+        const hasInteractiveOrSpecial =
+          explainerCount >= 1 || post.slug === 'vllm/03-torch-compile-and-piecewise';
+        expect(
+          hasInteractiveOrSpecial,
+          `Expected interactive <*Explainer> or routed flow in ${post.slug}`,
+        ).toBe(true);
+        expect(post.raw, `Expected python implementation fence in ${post.slug}`).toMatch(
+          /^```python\b/m,
+        );
+        expect(post.raw, `Expected vllm (GPU) coverage in ${post.slug}`).toMatch(/\bvllm\b/i);
+        expect(post.raw, `Expected vllm-ascend/torch_npu (NPU) coverage in ${post.slug}`).toMatch(
+          /vllm[-_]ascend|torch_npu/i,
+        );
       }
 
       const diagDir = join(post.dir, 'diagrams');
-      expect(existsSync(diagDir), `Missing diagrams/ in ${post.slug}`).toBe(true);
-      const entries = readdirSync(diagDir);
-      const drawios = entries.filter((f) => f.endsWith('.drawio'));
-      const excalidraws = entries.filter((f) => f.endsWith('.excalidraw'));
+      if (existsSync(diagDir)) {
+        const entries = readdirSync(diagDir);
+        const sources = entries.filter((f) => f.endsWith('.drawio') || f.endsWith('.excalidraw'));
+        const svgs = entries.filter((f) => f.endsWith('.wisp.svg'));
 
-      if (EXCALIDRAW_POSTS.has(post.slug)) {
-        expect(drawios, `Expected Excalidraw-only in ${post.slug}`).toHaveLength(0);
-        expect(excalidraws.length).toBeGreaterThanOrEqual(isIndex ? 1 : 3);
-      } else {
-        expect(excalidraws, `Expected drawio-only in ${post.slug}`).toHaveLength(0);
-        expect(drawios.length).toBeGreaterThanOrEqual(isIndex ? 1 : 3);
-      }
-
-      for (const src of [...drawios, ...excalidraws]) {
-        const svg = src.replace(/\.(drawio|excalidraw)$/, '.wisp.svg');
-        expect(existsSync(join(diagDir, svg)), `Missing built ${svg} in ${post.slug}`).toBe(true);
+        for (const src of sources) {
+          const svg = src.replace(/\.(drawio|excalidraw)$/, '.wisp.svg');
+          expect(existsSync(join(diagDir, svg)), `Missing built ${svg} in ${post.slug}`).toBe(true);
+          expect(
+            post.raw.includes(`./diagrams/${src}`),
+            `Orphan diagram ${src} not referenced in ${post.slug}`,
+          ).toBe(true);
+        }
+        for (const svg of svgs) {
+          const base = svg.replace(/\.wisp\.svg$/, '');
+          const hasSrc =
+            existsSync(join(diagDir, `${base}.drawio`)) ||
+            existsSync(join(diagDir, `${base}.excalidraw`));
+          expect(hasSrc, `Orphan SVG ${svg} without source in ${post.slug}`).toBe(true);
+        }
       }
     }
   });
@@ -240,9 +264,24 @@ describe('infra-note content integrity', () => {
       expect(doc.body, `Local file:// link found in ${doc.file}`).not.toContain('file://');
       expect(doc.body, `Unsupported LaTeX delimiter in ${doc.file}`).not.toMatch(/\\[()[\]]/);
 
-      for (const imp of doc.raw.matchAll(/^import\s+\w+\s+from\s+['"](\.[^'"]+)['"]/gm)) {
-        const assetPath = resolve(doc.dir, imp[1]);
-        expect(existsSync(assetPath), `Missing imported asset ${imp[1]} in ${doc.file}`).toBe(true);
+      for (const imp of doc.raw.matchAll(/^import\s+[\s\S]*?\s+from\s+['"]([^'"]+)['"]/gm)) {
+        const spec = imp[1];
+        if (!spec.startsWith('.') && !spec.startsWith('@/')) continue;
+        const basePath = spec.startsWith('@/')
+          ? resolve(SRC, spec.slice(2))
+          : resolve(doc.dir, spec);
+        const candidates = [
+          basePath,
+          `${basePath}.tsx`,
+          `${basePath}.ts`,
+          `${basePath}.astro`,
+          join(basePath, 'index.tsx'),
+          join(basePath, 'index.ts'),
+        ];
+        expect(
+          candidates.some((c) => existsSync(c)),
+          `Missing imported asset ${spec} in ${doc.file}`,
+        ).toBe(true);
       }
 
       const linkRe =

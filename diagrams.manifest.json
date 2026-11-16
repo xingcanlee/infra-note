@@ -2,220 +2,88 @@
   "version": 1,
   "generator": "wisp-diagram@1",
   "entries": {
-    "src/content/posts/deepseek/01-mla/diagrams/04-absorb-walkthrough.drawio": {
-      "source": "sha256-83e0b4a8579533209d8e8730b109393eeeb4ca4c3abae6df5aaff6d36b996cd9",
+    "src/content/posts/deepseek/01-mla/diagrams/01-mla-arch.drawio": {
+      "source": "sha256-f3a5b9743fc745f4431edc15584b9d480efc5582e1a712f6edeee83ab6fd6912",
       "style": "clean",
       "exporter": "drawio-cli",
       "embedFonts": false,
       "outputs": {
-        "src/content/posts/deepseek/01-mla/diagrams/04-absorb-walkthrough.wisp.svg": "sha256-206508d1fc027926d7c928e4b4b3c962126a104bfcd0c2fb5eaafe9b8aa8cf23"
+        "src/content/posts/deepseek/01-mla/diagrams/01-mla-arch.wisp.svg": "sha256-c989f310b71ce9040bc1800db778ce960f72018242f97e7f571f40cb0784fb94"
       },
       "pages": [
-        "MLA 矩阵吸收数值示例"
+        "01-mla-arch"
       ]
     },
-    "src/content/posts/deepseek/01-mla/diagrams/04-mla-arch.drawio": {
-      "source": "sha256-e4104f0bcf0cd4a43ffa15e022b75d8fe4112cbe799c0154de899582d217cdc7",
+    "src/content/posts/deepseek/01-mla/diagrams/01-mla-gpu-vs-npu-runtime.drawio": {
+      "source": "sha256-18442e33a6a04b5d75df457ab0f34e8072b4bee259bc9090836638120b405025",
       "style": "clean",
       "exporter": "drawio-cli",
       "embedFonts": false,
       "outputs": {
-        "src/content/posts/deepseek/01-mla/diagrams/04-mla-arch.wisp.svg": "sha256-e964983a2fede0008df554777f37de689f48a59228377117f742195def646778"
+        "src/content/posts/deepseek/01-mla/diagrams/01-mla-gpu-vs-npu-runtime.wisp.svg": "sha256-e94c43a11cf97d89c0d0c9f82a74649285580e91ffe51076698f53d68bbfafa0"
       },
       "pages": [
-        "MLA 解耦 RoPE 与双路径切换架构"
+        "01-mla-runtime"
       ]
     },
-    "src/content/posts/deepseek/01-mla/diagrams/04-mla-runtime.drawio": {
-      "source": "sha256-02125f9f265e0accf79a6a61b1a8e94610896e14a80841e7c5ec14136866cebe",
+    "src/content/posts/deepseek/02-swa-and-nsa/diagrams/02-nsa-gqa-tile-arch.drawio": {
+      "source": "sha256-4a3d3683ab35f442b69085f48adf0f8423262615969efc3101be9fe9d57785e5",
       "style": "clean",
       "exporter": "drawio-cli",
       "embedFonts": false,
       "outputs": {
-        "src/content/posts/deepseek/01-mla/diagrams/04-mla-runtime.wisp.svg": "sha256-82d2d46dc68fbbee3baa8f42ca871ed93d31c7c04bb09c6a8784ff9a3ace15e7"
+        "src/content/posts/deepseek/02-swa-and-nsa/diagrams/02-nsa-gqa-tile-arch.wisp.svg": "sha256-ed7e418103a086cc03f5ebcfc41673f896746eb2361712bcfa9c6ed43e1e46ab"
       },
       "pages": [
-        "MLA 生产双后端分发与内核路径"
+        "02-nsa-gqa-tile"
       ]
     },
-    "src/content/posts/deepseek/02-swa-and-nsa/diagrams/06-nsa-arch.drawio": {
-      "source": "sha256-63d8b50757462bd129a3f00f25131a596c19addf34b45f8976101860e4752e0e",
+    "src/content/posts/deepseek/03-dsa/diagrams/03-dsa-gpu-vs-npu-runtime.drawio": {
+      "source": "sha256-6ba94d40ac554df55caeea0e8972b6295a67344697af2dc7ba8adc65a55adc96",
       "style": "clean",
       "exporter": "drawio-cli",
       "embedFonts": false,
       "outputs": {
-        "src/content/posts/deepseek/02-swa-and-nsa/diagrams/06-nsa-arch.wisp.svg": "sha256-adef82192b58f2040c545771149dccdfcad31ca76a3e5e24cf541052acc189e7"
+        "src/content/posts/deepseek/03-dsa/diagrams/03-dsa-gpu-vs-npu-runtime.wisp.svg": "sha256-8bad294f29d03ea3eed19becc6a9158916f77df7ca640889281f380acca395f7"
       },
       "pages": [
-        "NSA 三分支原生可训练稀疏注意力与 GQA 组共享选块架构"
+        "03-dsa-runtime"
       ]
     },
-    "src/content/posts/deepseek/02-swa-and-nsa/diagrams/06-nsa-sram-runtime.drawio": {
-      "source": "sha256-0c60c7b5679c7b3f1b0c7f1cb39ccec5981a2904e8ad6ed0f552a402f0099982",
+    "src/content/posts/deepseek/04-csa-and-hca/diagrams/04-csa-hca-arch.drawio": {
+      "source": "sha256-4e66ca8decabef566d43cef29ec31c9ba6174157640ccf79878a4acc0e8e74fb",
       "style": "clean",
       "exporter": "drawio-cli",
       "embedFonts": false,
       "outputs": {
-        "src/content/posts/deepseek/02-swa-and-nsa/diagrams/06-nsa-sram-runtime.wisp.svg": "sha256-3ad28d96c725f614c0a9857f938d7fbc040f5505d73b1d4dd7d7383bb616ee16"
+        "src/content/posts/deepseek/04-csa-and-hca/diagrams/04-csa-hca-arch.wisp.svg": "sha256-3d78fe4b4c144bf16cf80ac38e6bdcb3ff04bf05385fa94124f1964f439142f6"
       },
       "pages": [
-        "NSA GQA组中心SRAM调度对比与vLLM/Ascend生产演进坐标"
+        "04-csa-hca"
       ]
     },
-    "src/content/posts/deepseek/02-swa-and-nsa/diagrams/06-sink-walkthrough.drawio": {
-      "source": "sha256-63ad7c67bc3b997eb5b3e5c37607f6fe4fb6a00ddc0502584719565f3b8c28d5",
+    "src/content/posts/deepseek/05-csa2-and-ced/diagrams/05-ced-prefix-arch.drawio": {
+      "source": "sha256-49138db97b96a7f4977937dbe6730ef44342cd84ca7afa586375697814a67696",
       "style": "clean",
       "exporter": "drawio-cli",
       "embedFonts": false,
       "outputs": {
-        "src/content/posts/deepseek/02-swa-and-nsa/diagrams/06-sink-walkthrough.wisp.svg": "sha256-38d98590e882c1facb5a38cf46368d02accda0eaf8c49fd4d2e909ac6e838dc7"
+        "src/content/posts/deepseek/05-csa2-and-ced/diagrams/05-ced-prefix-arch.wisp.svg": "sha256-146d650dfd9de447686697ed0cc2e7b2e8f68182b2dbdbb5536feed15628d2d6"
       },
       "pages": [
-        "8词元实例：滑窗丢弃Sink与中段遗忘的Softmax演进"
+        "05-ced-prefix"
       ]
     },
-    "src/content/posts/deepseek/03-dsa/diagrams/07-dsa-runtime.drawio": {
-      "source": "sha256-6c3d679cbefedeb7c4cfa177c2635be468c51332960944fecd0fefca39a5bf54",
+    "src/content/posts/deepseek/06-moe/diagrams/06-deepseekmoe-arch.drawio": {
+      "source": "sha256-dd6cadf97ccbf72fa6732dc1abc0100321cd9b0491ac460d5825d52a220a6cab",
       "style": "clean",
       "exporter": "drawio-cli",
       "embedFonts": false,
       "outputs": {
-        "src/content/posts/deepseek/03-dsa/diagrams/07-dsa-runtime.wisp.svg": "sha256-37d40c8558dec8ab7ab723a469f85f5af8c1e46b215b8e9b816ca7f320dfdc94"
+        "src/content/posts/deepseek/06-moe/diagrams/06-deepseekmoe-arch.wisp.svg": "sha256-615181294a9f12767ec0623beb0a749b7f10d8ef81646197680460554cbf3678"
       },
       "pages": [
-        "DSA 656B Layout and Production Runtime"
-      ]
-    },
-    "src/content/posts/deepseek/03-dsa/diagrams/07-dsa-walkthrough.drawio": {
-      "source": "sha256-d59abe98866b4eb2b6e4dd8808223ad97230077302d920b8bb05262e49e104dc",
-      "style": "clean",
-      "exporter": "drawio-cli",
-      "embedFonts": false,
-      "outputs": {
-        "src/content/posts/deepseek/03-dsa/diagrams/07-dsa-walkthrough.wisp.svg": "sha256-5cf8215ad4ed417419b9477e456438d370fa94a69b2c8a1cae90aeb2569291ce"
-      },
-      "pages": [
-        "DSA 6-Token Walkthrough"
-      ]
-    },
-    "src/content/posts/deepseek/03-dsa/diagrams/07-indexer-arch.drawio": {
-      "source": "sha256-ccf936c6b41843aa1501c28a9382b6117f12df45a38ef3aae9d37d71c0667026",
-      "style": "clean",
-      "exporter": "drawio-cli",
-      "embedFonts": false,
-      "outputs": {
-        "src/content/posts/deepseek/03-dsa/diagrams/07-indexer-arch.wisp.svg": "sha256-b79241150da08fa745a06d4f0052347533fcdf17f9f3cb2bbffb0906114c9a34"
-      },
-      "pages": [
-        "Lightning Indexer Architecture and Warmup"
-      ]
-    },
-    "src/content/posts/deepseek/04-csa-and-hca/diagrams/08-csa-hca-arch.drawio": {
-      "source": "sha256-06be27485c6498372fe2a173975100a677b0cb3a7993e15101feb960d9c3ea1d",
-      "style": "clean",
-      "exporter": "drawio-cli",
-      "embedFonts": false,
-      "outputs": {
-        "src/content/posts/deepseek/04-csa-and-hca/diagrams/08-csa-hca-arch.wisp.svg": "sha256-68bc5a5d2fd22dab297605a28d4cb7ea714020e4ac64c897b2c3f488ee373b84"
-      },
-      "pages": [
-        "DeepSeek-V4 CSA vs HCA and Dual RoPE"
-      ]
-    },
-    "src/content/posts/deepseek/04-csa-and-hca/diagrams/08-csa-runtime.drawio": {
-      "source": "sha256-9c95123df824b0adcccf5701abd0ca3371b3fae5938ee0765a9c462ead80125b",
-      "style": "clean",
-      "exporter": "drawio-cli",
-      "embedFonts": false,
-      "outputs": {
-        "src/content/posts/deepseek/04-csa-and-hca/diagrams/08-csa-runtime.wisp.svg": "sha256-4a9dc754a6aaabb852453d65466fb9e3ea4a8f45d24f374d85a56e86ecd53190"
-      },
-      "pages": [
-        "vLLM vs vllm-ascend Compressor Runtime"
-      ]
-    },
-    "src/content/posts/deepseek/04-csa-and-hca/diagrams/08-csa-walkthrough.drawio": {
-      "source": "sha256-5117885ef6ab513b3452cbc6842998db94e6e99700ea213c8ce4e4b19569fc58",
-      "style": "clean",
-      "exporter": "drawio-cli",
-      "embedFonts": false,
-      "outputs": {
-        "src/content/posts/deepseek/04-csa-and-hca/diagrams/08-csa-walkthrough.wisp.svg": "sha256-be86ab74ebbd171c6562e05d8547bb474c3b6bfde32ca269356b547298468bc0"
-      },
-      "pages": [
-        "Sequence Folding Walkthrough"
-      ]
-    },
-    "src/content/posts/deepseek/05-csa2-and-ced/diagrams/09-ced-runtime.drawio": {
-      "source": "sha256-73e213b3ebb081dbfa848eb87a9eca31bf9a78b2afad1ac48a5009c15a3dfcac",
-      "style": "clean",
-      "exporter": "drawio-cli",
-      "embedFonts": false,
-      "outputs": {
-        "src/content/posts/deepseek/05-csa2-and-ced/diagrams/09-ced-runtime.wisp.svg": "sha256-1e43c313b9ce5762701e2f16a723b978147f4243c0cf225946345b0d06cd8e62"
-      },
-      "pages": [
-        "CED 编码解码分离与 SWA 有界重放运行时架构"
-      ]
-    },
-    "src/content/posts/deepseek/05-csa2-and-ced/diagrams/09-csa2-walkthrough.drawio": {
-      "source": "sha256-08cf74ea64d44ebd795649b78972206c3bb18b2c97effa623d902f916fa6a373",
-      "style": "clean",
-      "exporter": "drawio-cli",
-      "embedFonts": false,
-      "outputs": {
-        "src/content/posts/deepseek/05-csa2-and-ced/diagrams/09-csa2-walkthrough.wisp.svg": "sha256-45e5f80e8bd5451cd201db712bb66243d1120a2b909018f376c8366eea12df9f"
-      },
-      "pages": [
-        "CSA2 三种模式与两级分层稀疏索引示例"
-      ]
-    },
-    "src/content/posts/deepseek/05-csa2-and-ced/diagrams/09-hierarchical-mxfp4-arch.drawio": {
-      "source": "sha256-8ec2ecc0e867817a5305184516a6e8f80c3e139c6600909af5584b858bdda825",
-      "style": "clean",
-      "exporter": "drawio-cli",
-      "embedFonts": false,
-      "outputs": {
-        "src/content/posts/deepseek/05-csa2-and-ced/diagrams/09-hierarchical-mxfp4-arch.wisp.svg": "sha256-fc9a1390c32c47daf6470476e7026c27bfb31c1db652fb55571fd742694c7f6d"
-      },
-      "pages": [
-        "CSA2 三维压缩与 890B MXFP4 账本拆解"
-      ]
-    },
-    "src/content/posts/deepseek/06-moe/diagrams/10-ep-runtime.drawio": {
-      "source": "sha256-7de0482f9e52effbe545b0caacab07c6c5b67a27bbda069f39f1018294a5f226",
-      "style": "clean",
-      "exporter": "drawio-cli",
-      "embedFonts": false,
-      "outputs": {
-        "src/content/posts/deepseek/06-moe/diagrams/10-ep-runtime.wisp.svg": "sha256-3f7f41413e6a157cd46304975fa706bc3e220e45bd010e975a9418f73b6289e7"
-      },
-      "pages": [
-        "EP Runtime Execution: vLLM DeepEP vs vllm-ascend MC2"
-      ]
-    },
-    "src/content/posts/deepseek/06-moe/diagrams/10-moe-arch.drawio": {
-      "source": "sha256-fcd4937e8f90ea4c1a8a0cde812ca219f28ee4d1cd72c88521dab40b68f6e530",
-      "style": "clean",
-      "exporter": "drawio-cli",
-      "embedFonts": false,
-      "outputs": {
-        "src/content/posts/deepseek/06-moe/diagrams/10-moe-arch.wisp.svg": "sha256-6aeb89eaa12bee22cb2b076eb93844ec68c62794e81f6a16c0cd0e40b6047841"
-      },
-      "pages": [
-        "DeepSeekMoE Algorithm Evolution: V2 to V3 to V4"
-      ]
-    },
-    "src/content/posts/deepseek/06-moe/diagrams/10-moe-walkthrough.drawio": {
-      "source": "sha256-5295248db557ca32f19846264046ae71876b86ed318f53258860c98fa18c1d0f",
-      "style": "clean",
-      "exporter": "drawio-cli",
-      "embedFonts": false,
-      "outputs": {
-        "src/content/posts/deepseek/06-moe/diagrams/10-moe-walkthrough.wisp.svg": "sha256-b9eb6f2bd16f449c2ef2a71c074ebbf19ddd91430a7dfd9606908478100c6dfc"
-      },
-      "pages": [
-        "MoE Walkthrough: 4 Tokens to 8 Routed + 1 Shared Expert"
+        "deepseekmoe-arch"
       ]
     },
     "src/content/posts/deepseek/07-engram/diagrams/11-engram-arch.drawio": {
@@ -230,16 +98,16 @@
         "Engram 模块原理：静态查表与上下文门控融合"
       ]
     },
-    "src/content/posts/deepseek/07-engram/diagrams/11-engram-conv.drawio": {
-      "source": "sha256-7a85ac46e0970c0703b43bcff50b653d518478dbd9ae6b67e574bc9a59e56c27",
+    "src/content/posts/deepseek/07-engram/diagrams/11-engram-dist-lookup.drawio": {
+      "source": "sha256-051665cff917686b7437cca7b8b80ed12245346f6f78258866712e35cc15c1c2",
       "style": "clean",
       "exporter": "drawio-cli",
       "embedFonts": false,
       "outputs": {
-        "src/content/posts/deepseek/07-engram/diagrams/11-engram-conv.wisp.svg": "sha256-75a8588fc143c2364e9831c32c11cfb1d1d7f07cd0be8f2ce87f44b2fa11bad4"
+        "src/content/posts/deepseek/07-engram/diagrams/11-engram-dist-lookup.wisp.svg": "sha256-33e55c3447af87893721839795513ad74b71b6cfc86185a8275a8e62897b1a8d"
       },
       "pages": [
-        "膨胀因果短卷积 ShortConv：跨词组无重叠拼装与零初始化恒等"
+        "engram-dist-lookup"
       ]
     },
     "src/content/posts/deepseek/07-engram/diagrams/11-engram-hash.drawio": {
@@ -255,683 +123,246 @@
       ]
     },
     "src/content/posts/deepseek/07-engram/diagrams/11-engram-layer.drawio": {
-      "source": "sha256-cdda6ff38d367eb30a1a459c06f6d042adb5d786920a3e26b3fa07cf7cac0d05",
+      "source": "sha256-76609016ee6b6f93655098c01542224b300946c201e0454b69657888aae10db4",
       "style": "clean",
       "exporter": "drawio-cli",
       "embedFonts": false,
       "outputs": {
-        "src/content/posts/deepseek/07-engram/diagrams/11-engram-layer.wisp.svg": "sha256-9374e86e0fe87812d5f38b9c17712bf67a29a1a937ec69e54581fd4630845744"
+        "src/content/posts/deepseek/07-engram/diagrams/11-engram-layer.wisp.svg": "sha256-757f5895f7388162d7d289b2496e448589c6dc0c307b341b1ad3ab8ea8ae7dd6"
       },
       "pages": [
-        "V4.1 解码层注入位置与 mHC 四分支融合"
+        "engram-layer"
       ]
     },
     "src/content/posts/deepseek/07-engram/diagrams/11-engram-runtime.drawio": {
-      "source": "sha256-6162ecce5d2924c38038bec78ac3a74480592943ca7cf82329d6c13f85aac15c",
+      "source": "sha256-d29a775c9ca42fd915b79c044e1110e675da3d6a5d97266d8fda6d8b61fc033f",
       "style": "clean",
       "exporter": "drawio-cli",
       "embedFonts": false,
       "outputs": {
-        "src/content/posts/deepseek/07-engram/diagrams/11-engram-runtime.page-2.wisp.svg": "sha256-cf46a1d9496acd82e4a92721552c9d380e2b23e5dcfe98b73886213f0cef5dc1",
-        "src/content/posts/deepseek/07-engram/diagrams/11-engram-runtime.wisp.svg": "sha256-2e1e6fd302924b4b62fe3daf18cc6a9ecbe0feea6c600cc400c36bcf3489b978"
+        "src/content/posts/deepseek/07-engram/diagrams/11-engram-runtime.wisp.svg": "sha256-1695aa5d7f4581703e1e0db99be2477d380f393a1fffdaa336e2702ee9b8bb66"
       },
       "pages": [
-        "跨层预取与多流重叠",
-        "单步查表与分布式交换"
+        "engram-runtime-prefetch"
       ]
     },
-    "src/content/posts/deepseek/07-engram/diagrams/11-engram-walkthrough.drawio": {
-      "source": "sha256-cf6a28444c2c9286084d8d10c8bee8a1c2273afd965b6846775999747df3b4bb",
-      "style": "clean",
-      "exporter": "drawio-cli",
-      "embedFonts": false,
-      "outputs": {
-        "src/content/posts/deepseek/07-engram/diagrams/11-engram-walkthrough.wisp.svg": "sha256-11d620ef2e604d7c26233dcbcb28b7129fa7d4d4008fc097c28cf6281d055ddc"
-      },
-      "pages": [
-        "端到端实例：两句同后缀输入走完 Engram 全流程"
-      ]
-    },
-    "src/content/posts/deepseek/08-mhc/diagrams/12-mhc-arch.drawio": {
-      "source": "sha256-0d8e2e0c5597b4795b9b396511ce8935c6bfe62cbd6c77346493fcd49b817de8",
-      "style": "clean",
-      "exporter": "drawio-cli",
-      "embedFonts": false,
-      "outputs": {
-        "src/content/posts/deepseek/08-mhc/diagrams/12-mhc-arch.wisp.svg": "sha256-2773f2738584b5160c11beef0ff4945fccb414aa9b135168092a16e5b988b3de"
-      },
-      "pages": [
-        "Birkhoff 流形约束与 mHC 架构"
-      ]
-    },
-    "src/content/posts/deepseek/08-mhc/diagrams/12-mhc-runtime.drawio": {
-      "source": "sha256-f95c73e0925c0aefd91cbb56a3031e036d92f48257a04d2f6b0e39b3888760ee",
-      "style": "clean",
-      "exporter": "drawio-cli",
-      "embedFonts": false,
-      "outputs": {
-        "src/content/posts/deepseek/08-mhc/diagrams/12-mhc-runtime.wisp.svg": "sha256-3df03ed80610077a438c64b7a316c023c7abe1f168be4584fec122ba5f96cad3"
-      },
-      "pages": [
-        "V4.1 Single-Pass Mega-mHC 与生产融合"
-      ]
-    },
-    "src/content/posts/deepseek/08-mhc/diagrams/12-mhc-walkthrough.drawio": {
-      "source": "sha256-2e1b72ebadef01e946db337c242063394760bde7dd82ee5bf576aa68ed17d818",
-      "style": "clean",
-      "exporter": "drawio-cli",
-      "embedFonts": false,
-      "outputs": {
-        "src/content/posts/deepseek/08-mhc/diagrams/12-mhc-walkthrough.wisp.svg": "sha256-b7812ec11fcc218065a56dcb13f9b1ba46c9897be1d2c5f29bc16a42f3585d9a"
-      },
-      "pages": [
-        "mHC 20层连乘数值推演"
-      ]
-    },
-    "src/content/posts/deepseek/09-mtp-and-dspark/diagrams/13-mtp-dspark-arch.drawio": {
-      "source": "sha256-d2fc238cafab7d72b744b9b93d33e330d550e749e5a9968063fa84b407d094c2",
-      "style": "clean",
-      "exporter": "drawio-cli",
-      "embedFonts": false,
-      "outputs": {
-        "src/content/posts/deepseek/09-mtp-and-dspark/diagrams/13-mtp-dspark-arch.wisp.svg": "sha256-78639fddd5e7638229d4bdae68bd5e6322f342419107628cfe7efad91f5cc606"
-      },
-      "pages": [
-        "DeepSeek-V3 因果串联 MTP 与 V4.1 DSpark 半自回归架构对比"
-      ]
-    },
-    "src/content/posts/deepseek/09-mtp-and-dspark/diagrams/13-specdec-runtime.drawio": {
-      "source": "sha256-02874fb7296b9335cfd1535f6230edcf2e306db90ae937f905975564bbc432b7",
-      "style": "clean",
-      "exporter": "drawio-cli",
-      "embedFonts": false,
-      "outputs": {
-        "src/content/posts/deepseek/09-mtp-and-dspark/diagrams/13-specdec-runtime.wisp.svg": "sha256-f25a6afd0df3b944047d80cf777039415e74ea5de47b99faddc725ad6842f659"
-      },
-      "pages": [
-        "vLLM MRV2 与昇腾 V2 推测解码生产运行时对比"
-      ]
-    },
-    "src/content/posts/deepseek/09-mtp-and-dspark/diagrams/13-specdec-walkthrough.drawio": {
-      "source": "sha256-234828a61d0c3295689b666e158c832ed873643f8d6d911105fb46a24732cf35",
-      "style": "clean",
-      "exporter": "drawio-cli",
-      "embedFonts": false,
-      "outputs": {
-        "src/content/posts/deepseek/09-mtp-and-dspark/diagrams/13-specdec-walkthrough.wisp.svg": "sha256-38b9689dc9ca67df315ae9c89e2117d199fbeb09d361d509f730a00ee1dc8526"
-      },
-      "pages": [
-        "投机采样 3 词表无损验证演练"
-      ]
-    },
-    "src/content/posts/deepseek/10-architecture-synthesis/diagrams/14-cluster-dbo-runtime.drawio": {
-      "source": "sha256-0b9ab13c03bc05aec3fc676af668f09982d687b9d1892ed5aa11dba0cc866aff",
-      "style": "clean",
-      "exporter": "drawio-cli",
-      "embedFonts": false,
-      "outputs": {
-        "src/content/posts/deepseek/10-architecture-synthesis/diagrams/14-cluster-dbo-runtime.wisp.svg": "sha256-ebb7f1743f7350d1a52580af50ad0ef1e07d7495179c6ae3f9db33da51107f2a"
-      },
-      "pages": [
-        "PD 分离集群拓扑与双批重叠 DBO 执行时序"
-      ]
-    },
-    "src/content/posts/deepseek/10-architecture-synthesis/diagrams/14-evolution-arch.drawio": {
-      "source": "sha256-e0f88bdbb73643698fe913cf7cd93da876494f949a0384b8715b868453def02e",
-      "style": "clean",
-      "exporter": "drawio-cli",
-      "embedFonts": false,
-      "outputs": {
-        "src/content/posts/deepseek/10-architecture-synthesis/diagrams/14-evolution-arch.wisp.svg": "sha256-0c4c35e86058a859ea166d6b013f71a5b89a58ee71eea1a85c7e5b5392a39452"
-      },
-      "pages": [
-        "DeepSeek-V2 到 V4.1 五代架构演进图谱"
-      ]
-    },
-    "src/content/posts/deepseek/10-architecture-synthesis/diagrams/14-v41-step-walkthrough.drawio": {
-      "source": "sha256-76ae01f0eeea391859f14a0d5f83dd58cf29d27a0897c266092081d5ea54a240",
-      "style": "clean",
-      "exporter": "drawio-cli",
-      "embedFonts": false,
-      "outputs": {
-        "src/content/posts/deepseek/10-architecture-synthesis/diagrams/14-v41-step-walkthrough.wisp.svg": "sha256-1a69b2db553a643b51c162989ddb3f4d15ed01c044af2d064234b4b996903880"
-      },
-      "pages": [
-        "DeepSeek-V4.1 单层全链路前向步进"
-      ]
-    },
-    "src/content/posts/deepseek/diagrams/00-deepseek-roadmap.excalidraw": {
-      "source": "sha256-67951b481a2b5db807c2cd301512a2a8ffa29ee09800b148b35387822ddff86e",
+    "src/content/posts/deepseek/07-engram/diagrams/11-shortconv-dilation.excalidraw": {
+      "source": "sha256-38f073eab7596f1380ebc95761d8d7897e2580cbdc3b51132f55da2821dbc01d",
       "style": "hand",
       "exporter": "excalidraw-playwright",
       "embedFonts": false,
       "outputs": {
-        "src/content/posts/deepseek/diagrams/00-deepseek-roadmap.wisp.svg": "sha256-8a7e74e8fa68a51e54b96918bdecde7a01b11ced61ff8a9c9fb0b86cf8b3a920"
+        "src/content/posts/deepseek/07-engram/diagrams/11-shortconv-dilation.wisp.svg": "sha256-c954d5c6c1a2a46d1bc84c3aff0d4f636251f6716e93add08d5b920ca2ee4cc3"
       }
     },
-    "src/content/posts/distributed/01-interconnects-and-collectives/diagrams/01-collectives-walkthrough.excalidraw": {
-      "source": "sha256-e7814fb9d69e5615f6885aba87c7b7235615b65fc02e7fae7181e3f04023142d",
-      "style": "hand",
-      "exporter": "excalidraw-playwright",
-      "embedFonts": false,
-      "outputs": {
-        "src/content/posts/distributed/01-interconnects-and-collectives/diagrams/01-collectives-walkthrough.wisp.svg": "sha256-247e92185750d9a71bc64695760b2f32376cab258537c1e6929c2eba6238b352"
-      }
-    },
-    "src/content/posts/distributed/01-interconnects-and-collectives/diagrams/01-nccl-vs-hccl-runtime.excalidraw": {
-      "source": "sha256-5023e2712ad18dc27fd46aaddb59cbcd0ad1c96d3a56fc27061910c085e2c587",
-      "style": "hand",
-      "exporter": "excalidraw-playwright",
-      "embedFonts": false,
-      "outputs": {
-        "src/content/posts/distributed/01-interconnects-and-collectives/diagrams/01-nccl-vs-hccl-runtime.wisp.svg": "sha256-f69f385039a5ebad6bec5ee6b1441326615e40f4e5e65252a0d38f313f428598"
-      }
-    },
-    "src/content/posts/distributed/01-interconnects-and-collectives/diagrams/01-nvlink-vs-hccs-arch.excalidraw": {
-      "source": "sha256-9601488d4438b070391b341ce295e22967ec65473a6af29957240f732d5b52dc",
-      "style": "hand",
-      "exporter": "excalidraw-playwright",
-      "embedFonts": false,
-      "outputs": {
-        "src/content/posts/distributed/01-interconnects-and-collectives/diagrams/01-nvlink-vs-hccs-arch.wisp.svg": "sha256-e39e0e89a4b04ffd1b6b4bfa0bf362563d29f2e46346b2818e6643db1c4f1a2e"
-      }
-    },
-    "src/content/posts/distributed/02-parallelism-and-disaggregation/diagrams/02-dp-ep-hybrid-arch.excalidraw": {
-      "source": "sha256-a2f6f1049e45381087bb2a4d09d816e4d4a278ee50c1cbf40b51b87a0223d110",
-      "style": "hand",
-      "exporter": "excalidraw-playwright",
-      "embedFonts": false,
-      "outputs": {
-        "src/content/posts/distributed/02-parallelism-and-disaggregation/diagrams/02-dp-ep-hybrid-arch.wisp.svg": "sha256-44d702f9bfa0e8019653fbe81c4a6d43c063f1265a89154ad1a68371eb70b70b"
-      }
-    },
-    "src/content/posts/distributed/02-parallelism-and-disaggregation/diagrams/02-pd-disagg-kv-runtime.excalidraw": {
-      "source": "sha256-058bddcc86ae0a84c3ab177afbc4d73173e1d64183b9b9ee4e4e2c58387d9236",
-      "style": "hand",
-      "exporter": "excalidraw-playwright",
-      "embedFonts": false,
-      "outputs": {
-        "src/content/posts/distributed/02-parallelism-and-disaggregation/diagrams/02-pd-disagg-kv-runtime.wisp.svg": "sha256-0e29acfca30f9aaad0b47e861f0ac204cc5a5851060437e65635c30ab6d0893a"
-      }
-    },
-    "src/content/posts/distributed/02-parallelism-and-disaggregation/diagrams/02-tp-sp-walkthrough.excalidraw": {
-      "source": "sha256-a72b6bc5c1d5a05b9e817eeb9e567a8c194640a79547d114e1a4f53ad70064fa",
-      "style": "hand",
-      "exporter": "excalidraw-playwright",
-      "embedFonts": false,
-      "outputs": {
-        "src/content/posts/distributed/02-parallelism-and-disaggregation/diagrams/02-tp-sp-walkthrough.wisp.svg": "sha256-8eae850b9059fce7e6d65eeec9cdb1abe47970bca782357f8c239b8b0193eae1"
-      }
-    },
-    "src/content/posts/distributed/03-moe-comm-and-overlap/diagrams/03-dbo-overlap-runtime.excalidraw": {
-      "source": "sha256-49b1d784cfed5eaba860c1a2382bfd731d8bf1ebf703118d01c499001a91fe6c",
-      "style": "hand",
-      "exporter": "excalidraw-playwright",
-      "embedFonts": false,
-      "outputs": {
-        "src/content/posts/distributed/03-moe-comm-and-overlap/diagrams/03-dbo-overlap-runtime.wisp.svg": "sha256-5eb8e2377f1bd0fed711e8514499917cdf9cdb1fa04a35063670538b65d690da"
-      }
-    },
-    "src/content/posts/distributed/03-moe-comm-and-overlap/diagrams/03-deepep-vs-mc2-arch.excalidraw": {
-      "source": "sha256-4cbfb95ff0c73dc49bd7571983924ee17d27e4ed93abf58aefbe7ec337ef4396",
-      "style": "hand",
-      "exporter": "excalidraw-playwright",
-      "embedFonts": false,
-      "outputs": {
-        "src/content/posts/distributed/03-moe-comm-and-overlap/diagrams/03-deepep-vs-mc2-arch.wisp.svg": "sha256-28e72611a7fd93d1be2f3ab37f46759f10e3633a004d306af6e9a815a04edee9"
-      }
-    },
-    "src/content/posts/distributed/03-moe-comm-and-overlap/diagrams/03-ep-dispatch-walkthrough.excalidraw": {
-      "source": "sha256-1ce3cf416af7e465f10ef3a40b94258212e021944345ff709515ee4805617eae",
-      "style": "hand",
-      "exporter": "excalidraw-playwright",
-      "embedFonts": false,
-      "outputs": {
-        "src/content/posts/distributed/03-moe-comm-and-overlap/diagrams/03-ep-dispatch-walkthrough.wisp.svg": "sha256-759d65f004433c2391c7a69a533280b793a16c3db82de323d76e1b5647921894"
-      }
-    },
-    "src/content/posts/distributed/diagrams/00-distributed-roadmap.excalidraw": {
-      "source": "sha256-04e79e9e1e53ac4705443764502ad1dda77e918760fd3420a3479bd2ec9eec5a",
-      "style": "hand",
-      "exporter": "excalidraw-playwright",
-      "embedFonts": false,
-      "outputs": {
-        "src/content/posts/distributed/diagrams/00-distributed-roadmap.wisp.svg": "sha256-3c35915fcef4a752f0a696fca1abe405589b6bb56be9277665f5b495958a9316"
-      }
-    },
-    "src/content/posts/foundations/01-hardware-and-roofline/diagrams/01-forward-walkthrough.excalidraw": {
-      "source": "sha256-88a17fa1e6d476c660e51ca4710557768d9b33e64a42b549864629ba8c6e7ad4",
-      "style": "hand",
-      "exporter": "excalidraw-playwright",
-      "embedFonts": false,
-      "outputs": {
-        "src/content/posts/foundations/01-hardware-and-roofline/diagrams/01-forward-walkthrough.wisp.svg": "sha256-4f74f5f423b69dfcb4a9989a373093063ef30b4e59b3f98ce8eafd9b5c5ff9cd"
-      }
-    },
-    "src/content/posts/foundations/01-hardware-and-roofline/diagrams/01-roofline-regimes-runtime.excalidraw": {
-      "source": "sha256-ec7e234a586ae48e7c9e5e80a54219bf5086c6721b6f08cc1a55b764df567b04",
-      "style": "hand",
-      "exporter": "excalidraw-playwright",
-      "embedFonts": false,
-      "outputs": {
-        "src/content/posts/foundations/01-hardware-and-roofline/diagrams/01-roofline-regimes-runtime.wisp.svg": "sha256-7aae3a1f8b204a3c83e0d2dd4d8dba9faea0529fa5dff1927a2e90ec487c1d37"
-      }
-    },
-    "src/content/posts/foundations/01-hardware-and-roofline/diagrams/01-sm-vs-aicore-arch.excalidraw": {
-      "source": "sha256-524efa89ab7fd8570c97caba5f9ac5b6759a5e5f1386353882b37224b259513b",
-      "style": "hand",
-      "exporter": "excalidraw-playwright",
-      "embedFonts": false,
-      "outputs": {
-        "src/content/posts/foundations/01-hardware-and-roofline/diagrams/01-sm-vs-aicore-arch.wisp.svg": "sha256-ce540d95d1d320c49e3327743b4475dbf30ba85ad32353f6218c252433cbf440"
-      }
-    },
-    "src/content/posts/foundations/02-attention-and-rope/diagrams/02-attention-walkthrough.drawio": {
-      "source": "sha256-35ce933566a5343fba6618f71b6f2b8567b611dc0cffb91ebb26cd9683b2d5fd",
+    "src/content/posts/deepseek/08-mhc/diagrams/08-mhc-bus-arch.drawio": {
+      "source": "sha256-62982425a6368a9eb8d1cf6c4adcb92e2fcd73208533d46d407c8e4372ccaf2a",
       "style": "clean",
       "exporter": "drawio-cli",
       "embedFonts": false,
       "outputs": {
-        "src/content/posts/foundations/02-attention-and-rope/diagrams/02-attention-walkthrough.wisp.svg": "sha256-294de996e75afede2eec04947261e93b6bba6f359b57d6e77f0d0d9f5a9a1706"
+        "src/content/posts/deepseek/08-mhc/diagrams/08-mhc-bus-arch.wisp.svg": "sha256-6690aa86e102a536232cdf5449d7fe485f9c4b532624f006eac7faf546d8636b"
       },
       "pages": [
-        "02-attention-walkthrough"
+        "mhc-bus-arch"
       ]
     },
-    "src/content/posts/foundations/02-attention-and-rope/diagrams/02-rope-arch.drawio": {
-      "source": "sha256-69a646622bf507b72f7d664c6c5cdca72f8b27d9d5b324bb05a808d3f1c434c8",
+    "src/content/posts/deepseek/09-mtp-and-dspark/diagrams/09-mtp-vllm-runtime.drawio": {
+      "source": "sha256-7fe094d56a9453b7effd85de0ff6add2de45f01660d22bff0f1494d33c60085d",
       "style": "clean",
       "exporter": "drawio-cli",
       "embedFonts": false,
       "outputs": {
-        "src/content/posts/foundations/02-attention-and-rope/diagrams/02-rope-arch.wisp.svg": "sha256-403c411c6731f8a0fb65b0ce06b1804dd4d7ad36ba088dd760e4056b0e83755f"
+        "src/content/posts/deepseek/09-mtp-and-dspark/diagrams/09-mtp-vllm-runtime.wisp.svg": "sha256-d9bc6db432a16c5504464de8192419b15024a86cb99ec0705b4249b232bc52c2"
       },
       "pages": [
-        "02-rope-arch"
+        "mtp-vllm-runtime"
       ]
     },
-    "src/content/posts/foundations/02-attention-and-rope/diagrams/02-yarn-runtime.drawio": {
-      "source": "sha256-7b3675ebfecf1b68a8de68225d7c9f53a0c8073bb7f4da0e228202bb6221fc56",
+    "src/content/posts/deepseek/10-architecture-synthesis/diagrams/10-five-gen-ledger.drawio": {
+      "source": "sha256-658ce1d770f33de50a3866730afee5dd4bbad3cedf1d34015558b951073a4249",
       "style": "clean",
       "exporter": "drawio-cli",
       "embedFonts": false,
       "outputs": {
-        "src/content/posts/foundations/02-attention-and-rope/diagrams/02-yarn-runtime.wisp.svg": "sha256-0e94ce2d479e045ce3504baec20268efa0092484e2fdddcb7b0240e0560de9d5"
+        "src/content/posts/deepseek/10-architecture-synthesis/diagrams/10-five-gen-ledger.wisp.svg": "sha256-2eddbd5aae78a7c5da4cec0b55641d86a789095b4767e7afd065c6dda601ee10"
       },
       "pages": [
-        "02-yarn-runtime"
+        "five-gen-ledger"
       ]
     },
-    "src/content/posts/foundations/03-kv-cache-and-gqa/diagrams/03-kv-runtime.drawio": {
-      "source": "sha256-d7b7dbe29d0114411e9d187cbd49446cd3948fef6842facebf34661184c639d1",
+    "src/content/posts/distributed/01-interconnects-and-collectives/diagrams/01-nvlink-vs-hccs-arch.drawio": {
+      "source": "sha256-0cb78b63cb89a2eef2f8a18029c5cd16305111e9bdd1c0d0bd0786d287fa30c9",
       "style": "clean",
       "exporter": "drawio-cli",
       "embedFonts": false,
       "outputs": {
-        "src/content/posts/foundations/03-kv-cache-and-gqa/diagrams/03-kv-runtime.wisp.svg": "sha256-2ac1c7e3d2910265f7005aa0e3ab81d4e2aa7ab8e0d505d20e11d74b38bf0473"
+        "src/content/posts/distributed/01-interconnects-and-collectives/diagrams/01-nvlink-vs-hccs-arch.wisp.svg": "sha256-3811f9ba23d033306c6efb1b1544a38defa241bb0aa5df5cc72e504a1e4501a8"
       },
       "pages": [
-        "KV Cache 生产写入与读取路径"
+        "NVLink vs HCCS"
       ]
     },
-    "src/content/posts/foundations/03-kv-cache-and-gqa/diagrams/03-kvcache-walkthrough.drawio": {
-      "source": "sha256-ac401080d4cd0d7493f729e42c94ba8f078c1f634457718f7cddf82c859b0bcf",
+    "src/content/posts/distributed/02-parallelism-and-disaggregation/diagrams/02-pd-disaggregation-arch.drawio": {
+      "source": "sha256-54caca21a139d51ff5bb1fa9e1d490361ae8f7793b3872ec364b3284ea162d1d",
       "style": "clean",
       "exporter": "drawio-cli",
       "embedFonts": false,
       "outputs": {
-        "src/content/posts/foundations/03-kv-cache-and-gqa/diagrams/03-kvcache-walkthrough.wisp.svg": "sha256-5d7b0284aa740981fd0cee429782cfc8f633f133d686a0ca083ffbd31d024111"
+        "src/content/posts/distributed/02-parallelism-and-disaggregation/diagrams/02-pd-disaggregation-arch.wisp.svg": "sha256-db8c28b860f0f014cfdb8b1732090a42a53030a37ac67cfd3e23468a1d7f0327"
       },
       "pages": [
-        "KV Cache 三步生成对比"
+        "PD Disaggregation"
+      ]
+    },
+    "src/content/posts/distributed/02-parallelism-and-disaggregation/diagrams/02-tp-sp-sharding.drawio": {
+      "source": "sha256-a7f89c359eac8ce93746f084fc30656426165dc588c46c01b189d9341d1bf753",
+      "style": "clean",
+      "exporter": "drawio-cli",
+      "embedFonts": false,
+      "outputs": {
+        "src/content/posts/distributed/02-parallelism-and-disaggregation/diagrams/02-tp-sp-sharding.wisp.svg": "sha256-980bbeada14c32fb394e4682819d315c0841ac4bf6d6e640a12202d1864924bb"
+      },
+      "pages": [
+        "TP SP CP Sharding"
+      ]
+    },
+    "src/content/posts/distributed/03-moe-comm-and-overlap/diagrams/03-deepep-vs-mc2-arch.drawio": {
+      "source": "sha256-0657f0a7dd344fd6c079f56dd15bd1e7a53ff0406437f24344f3cb307e857d81",
+      "style": "clean",
+      "exporter": "drawio-cli",
+      "embedFonts": false,
+      "outputs": {
+        "src/content/posts/distributed/03-moe-comm-and-overlap/diagrams/03-deepep-vs-mc2-arch.wisp.svg": "sha256-ed2a3f672211ea67b68bf891a919416c2ec755bf970212c7d6ab33aab96a9ceb"
+      },
+      "pages": [
+        "DeepEP vs MC2"
+      ]
+    },
+    "src/content/posts/foundations/01-hardware-and-roofline/diagrams/01-gpu-vs-npu-arch.drawio": {
+      "source": "sha256-a9c5f534707bc8d03d3e917a5cef81d0219f40547ec715456f2d310dab88340c",
+      "style": "clean",
+      "exporter": "drawio-cli",
+      "embedFonts": false,
+      "outputs": {
+        "src/content/posts/foundations/01-hardware-and-roofline/diagrams/01-gpu-vs-npu-arch.wisp.svg": "sha256-8cf27bf4a2dff2d42dc3ea9ee4b0da75658d3893e11857ae0363062f53454136"
+      },
+      "pages": [
+        "NVIDIA SM vs Ascend AI Core"
+      ]
+    },
+    "src/content/posts/foundations/03-kv-cache-and-gqa/diagrams/03-gpu-vs-npu-kv-layout.drawio": {
+      "source": "sha256-3b8111f892c2ba09c6946080df8c600bae1afbcc77041d6ad16ec4bef73f1a94",
+      "style": "clean",
+      "exporter": "drawio-cli",
+      "embedFonts": false,
+      "outputs": {
+        "src/content/posts/foundations/03-kv-cache-and-gqa/diagrams/03-gpu-vs-npu-kv-layout.wisp.svg": "sha256-fce32da00ab3878101b6c1293c177204c09253dc1bd488fff15adbed04215db7"
+      },
+      "pages": [
+        "GPU ND vs Ascend PA_NZ KV Layout"
       ]
     },
     "src/content/posts/foundations/03-kv-cache-and-gqa/diagrams/03-mqa-gqa-arch.drawio": {
-      "source": "sha256-1035326431073928fda73b96365b8840013c676220b53aadc89ccef765c91bc9",
+      "source": "sha256-6aaa9f3a40a001659b004dd010bc24b2ce9b1ad8c0f1cd5d38814f486e0e8b8c",
       "style": "clean",
       "exporter": "drawio-cli",
       "embedFonts": false,
       "outputs": {
-        "src/content/posts/foundations/03-kv-cache-and-gqa/diagrams/03-mqa-gqa-arch.wisp.svg": "sha256-cf7ced19a33e5193f9253fa92ddea602b32e12828185e1c63daed79198ba103a"
+        "src/content/posts/foundations/03-kv-cache-and-gqa/diagrams/03-mqa-gqa-arch.wisp.svg": "sha256-e555079c0fe1f932debdb9c7f7f98ed75590d113a3134d60a5837e050ea8d955"
       },
       "pages": [
-        "MHA 与 GQA 与 MQA 头共享结构对比"
+        "MHA GQA MQA Proportional KV"
       ]
     },
-    "src/content/posts/foundations/04-flash-attention/diagrams/05-fa-evolution-arch.drawio": {
-      "source": "sha256-c3ada5194f22b5fd05a0fa1d7a33b4812539ac8e605bf2e6624af4504ee82dbf",
+    "src/content/posts/foundations/04-flash-attention/diagrams/04-sram-tiling-arch.drawio": {
+      "source": "sha256-6f71b84332b39c71f206d52c28b35625267597364ff8b1c34f1b23ba859da7c8",
       "style": "clean",
       "exporter": "drawio-cli",
       "embedFonts": false,
       "outputs": {
-        "src/content/posts/foundations/04-flash-attention/diagrams/05-fa-evolution-arch.wisp.svg": "sha256-cd2e5910dc4c2398b6b7dc41abe66baccb552e2c45cdf61d80f704c74556c4ca"
+        "src/content/posts/foundations/04-flash-attention/diagrams/04-sram-tiling-arch.wisp.svg": "sha256-5d63ca4f7b79f72e5ca624a2130954b6284c92463c3b22a8a7a73becaa6311ff"
       },
       "pages": [
-        "FlashAttention-2 到 FA-4 硬件瓶颈迁移与软硬协同演进"
+        "SRAM Tiling Architecture"
       ]
     },
-    "src/content/posts/foundations/04-flash-attention/diagrams/05-flashmla-runtime.drawio": {
-      "source": "sha256-81a09d2e49dba8150f7ef16ab2597db86d90ae67fd33fe1c8d76676ca43acf8b",
-      "style": "clean",
-      "exporter": "drawio-cli",
-      "embedFonts": false,
-      "outputs": {
-        "src/content/posts/foundations/04-flash-attention/diagrams/05-flashmla-runtime.wisp.svg": "sha256-2d94502e8879255f60e5c1e5c43f7a7cdceb5bacc0cbfebe77e3bdefdb4d8302"
-      },
-      "pages": [
-        "FlashMLA 解码调度：Split-KV 分区、9 路 TMA 与 Seesaw 双 Warpgroup"
-      ]
-    },
-    "src/content/posts/foundations/04-flash-attention/diagrams/05-online-softmax-walkthrough.drawio": {
-      "source": "sha256-15c5240182ddbbed6ada30ebc7ed4c3e9331818a25b9ca87fc0ae8057bd33136",
-      "style": "clean",
-      "exporter": "drawio-cli",
-      "embedFonts": false,
-      "outputs": {
-        "src/content/posts/foundations/04-flash-attention/diagrams/05-online-softmax-walkthrough.wisp.svg": "sha256-4b3c0cd749593e637ee434df704921c4f8a6a7c7b01083b133e691657dea1aff"
-      },
-      "pages": [
-        "手算实例：两块 B_c=2 瓦片完成在线 Softmax 与重缩放"
-      ]
-    },
-    "src/content/posts/foundations/05-quantization/diagrams/05-finegrained-quant-arch.excalidraw": {
-      "source": "sha256-2fc2ec786eaae5de717dc944e8878670f3e8f8650c2fd62760104370fd51b290",
+    "src/content/posts/foundations/05-quantization/diagrams/05-bitformats-contrast.excalidraw": {
+      "source": "sha256-130d2f4c121de5be0c67ed0bbd9ef3dcf7869d90fae17eb013b81ae2d760d65c",
       "style": "hand",
       "exporter": "excalidraw-playwright",
       "embedFonts": false,
       "outputs": {
-        "src/content/posts/foundations/05-quantization/diagrams/05-finegrained-quant-arch.wisp.svg": "sha256-7744b13435fe6d387cd6f95168ead555f7fd237700e42c0b069ce86ed57c2e82"
+        "src/content/posts/foundations/05-quantization/diagrams/05-bitformats-contrast.wisp.svg": "sha256-4b246dbcebb25bac269d20edf336643b9bffcc7d02147327d2ac5ff238b26cc0"
       }
     },
-    "src/content/posts/foundations/05-quantization/diagrams/05-nv-vs-ascend-quant-runtime.excalidraw": {
-      "source": "sha256-0aa4a738b5df51cdae356b444f5c59e4ddbd35ad90086c7d82461fab2eb1cac5",
+    "src/content/posts/vllm/01-paged-attention-and-scheduler/diagrams/01-v1-scheduler-arch.drawio": {
+      "source": "sha256-fad8103fa6fe122141534361bf491bf27cebb29cc6aa0fced5841c28b7f1434f",
+      "style": "clean",
+      "exporter": "drawio-cli",
+      "embedFonts": false,
+      "outputs": {
+        "src/content/posts/vllm/01-paged-attention-and-scheduler/diagrams/01-v1-scheduler-arch.wisp.svg": "sha256-bb335499026f203b1738df6df95d823f1964a60648ef4eff4b7784be7a66f7b4"
+      },
+      "pages": [
+        "V1 Scheduler Arch"
+      ]
+    },
+    "src/content/posts/vllm/02-async-execution-and-launch-wall/diagrams/02-async-output-arch.drawio": {
+      "source": "sha256-25ba375e81289855227d668c25a65c9264fdf5fce9ad39ce924c3eb2b998b6c7",
+      "style": "clean",
+      "exporter": "drawio-cli",
+      "embedFonts": false,
+      "outputs": {
+        "src/content/posts/vllm/02-async-execution-and-launch-wall/diagrams/02-async-output-arch.wisp.svg": "sha256-da62da75621190b887e31af33a2ef872d71894d570f0e5698eb47b038651895c"
+      },
+      "pages": [
+        "AsyncOutput Arch"
+      ]
+    },
+    "src/content/posts/vllm/03-torch-compile-and-piecewise/diagrams/03-fx-split-graph.drawio": {
+      "source": "sha256-f97136f5bd5a27e685b789374b1e033c7ffe35d9429948a33d8df94b30f3dd79",
+      "style": "clean",
+      "exporter": "drawio-cli",
+      "embedFonts": false,
+      "outputs": {
+        "src/content/posts/vllm/03-torch-compile-and-piecewise/diagrams/03-fx-split-graph.wisp.svg": "sha256-f4395ff59a2b99251ef5889046db604d767f717a0711a5c3c5275707b1c705b7"
+      },
+      "pages": [
+        "FX Split Graph"
+      ]
+    },
+    "src/content/posts/vllm/03-torch-compile-and-piecewise/diagrams/03-inductor-vs-ascend-compile.drawio": {
+      "source": "sha256-5d00a62b2cfcc68e131b9b09008a80651e504dd22fbf08f0909e4237bdb8af0c",
+      "style": "clean",
+      "exporter": "drawio-cli",
+      "embedFonts": false,
+      "outputs": {
+        "src/content/posts/vllm/03-torch-compile-and-piecewise/diagrams/03-inductor-vs-ascend-compile.wisp.svg": "sha256-0a65d7eb426a2f61443594a71fe3b43a4720d1239c931cd7ebceefa16ced70eb"
+      },
+      "pages": [
+        "Inductor vs AscendCompiler"
+      ]
+    },
+    "src/content/posts/vllm/04-cuda-graph-and-boundaries/diagrams/04-four-boundaries-cards.excalidraw": {
+      "source": "sha256-9106c151771ae989f9b50fd3136096ef9cd5cecf16c2b263dda4781ab9ac6d19",
       "style": "hand",
       "exporter": "excalidraw-playwright",
       "embedFonts": false,
       "outputs": {
-        "src/content/posts/foundations/05-quantization/diagrams/05-nv-vs-ascend-quant-runtime.wisp.svg": "sha256-c49a3308b43a9f5e68f912efd1145f29a0f1723fcda15b16b97c7af2443980de"
+        "src/content/posts/vllm/04-cuda-graph-and-boundaries/diagrams/04-four-boundaries-cards.wisp.svg": "sha256-5323a2dac281c0e1936d6a3608e5bb7da3e854294e7ac6736409d8b66791b2d6"
       }
     },
-    "src/content/posts/foundations/05-quantization/diagrams/05-quant-formats-walkthrough.excalidraw": {
-      "source": "sha256-15d6044bc7fd98753dbbb79675d457fc47082df86a9a9b4812cae95a04a05b1d",
-      "style": "hand",
-      "exporter": "excalidraw-playwright",
-      "embedFonts": false,
-      "outputs": {
-        "src/content/posts/foundations/05-quantization/diagrams/05-quant-formats-walkthrough.wisp.svg": "sha256-ca4633e6941f76755bf0cc77340867421374ddd26299ca61b20f86ece8940ab2"
-      }
-    },
-    "src/content/posts/foundations/diagrams/00-foundations-roadmap.excalidraw": {
-      "source": "sha256-59b9322fd655366fc6eae1fedfa7438681fe3c4ad0fef616f46c0f67403b00d9",
-      "style": "hand",
-      "exporter": "excalidraw-playwright",
-      "embedFonts": false,
-      "outputs": {
-        "src/content/posts/foundations/diagrams/00-foundations-roadmap.wisp.svg": "sha256-d222e834e528fba4345732aa321f3518a475676ef63237799ece1f967f2b6775"
-      }
-    },
-    "src/content/posts/vllm/01-paged-attention-and-scheduler/diagrams/01-paged-attention-arch.drawio": {
-      "source": "sha256-823d5962aa959f6de48f17a3a13b340eee71f873c7421ce4f8d1c480e40c73c8",
+    "src/content/posts/vllm/06-ascend-aclgraph-and-npugraph/diagrams/06-aclgraph-vs-npugraph-arch.drawio": {
+      "source": "sha256-f5d5de2b3601e3cfc0e911764b9a195482ac3531742978aad5331edb7b519254",
       "style": "clean",
       "exporter": "drawio-cli",
       "embedFonts": false,
       "outputs": {
-        "src/content/posts/vllm/01-paged-attention-and-scheduler/diagrams/01-paged-attention-arch.wisp.svg": "sha256-fde8cada280f76bf64f266f94f6499ed6a9384db261bfbefeb6679ee95d789c9"
+        "src/content/posts/vllm/06-ascend-aclgraph-and-npugraph/diagrams/06-aclgraph-vs-npugraph-arch.wisp.svg": "sha256-71511616eb014bad3a9c8c14b849457db3d60e1e04fcd7097b1a5bc8385447cb"
       },
       "pages": [
-        "PagedAttention and Prefix Caching Architecture"
-      ]
-    },
-    "src/content/posts/vllm/01-paged-attention-and-scheduler/diagrams/01-paged-scheduler-walkthrough.drawio": {
-      "source": "sha256-71ed20aa1cc1d35fe8ddd1fdbc711ba8077efbfdf712b2ed4269d7b987a7ca41",
-      "style": "clean",
-      "exporter": "drawio-cli",
-      "embedFonts": false,
-      "outputs": {
-        "src/content/posts/vllm/01-paged-attention-and-scheduler/diagrams/01-paged-scheduler-walkthrough.wisp.svg": "sha256-a4035550cc2b1fe160554c1c454922743f5756210b6dd426b48412128ac54daa"
-      },
-      "pages": [
-        "Paged Scheduler Walkthrough"
-      ]
-    },
-    "src/content/posts/vllm/01-paged-attention-and-scheduler/diagrams/01-scheduler-runner-runtime.drawio": {
-      "source": "sha256-5ec1db32c37d29b742d1c2bf47676b4de024786b16be855b73ee4b3efbff19e6",
-      "style": "clean",
-      "exporter": "drawio-cli",
-      "embedFonts": false,
-      "outputs": {
-        "src/content/posts/vllm/01-paged-attention-and-scheduler/diagrams/01-scheduler-runner-runtime.wisp.svg": "sha256-ab4d7e493958fc26dcb79d38fdb303fb8f71f5411a91e1b232b94d9611fe9610"
-      },
-      "pages": [
-        "vLLM vs vllm-ascend Scheduler to Runner Runtime"
-      ]
-    },
-    "src/content/posts/vllm/02-async-execution-and-launch-wall/diagrams/02-async-queue-walkthrough.drawio": {
-      "source": "sha256-9798b3bd0e7926707f8a5c8e69079d66322269f4fe8fbcef3f4d5892da647317",
-      "style": "clean",
-      "exporter": "drawio-cli",
-      "embedFonts": false,
-      "outputs": {
-        "src/content/posts/vllm/02-async-execution-and-launch-wall/diagrams/02-async-queue-walkthrough.wisp.svg": "sha256-e0e4cb3cbfcde37486b3399eb63e19a671a471c7a966fef96bfd05156b4e7c70"
-      },
-      "pages": [
-        "Async Queue and Launch Wall Walkthrough"
-      ]
-    },
-    "src/content/posts/vllm/02-async-execution-and-launch-wall/diagrams/02-async-step-runtime.drawio": {
-      "source": "sha256-fdd765a6727e2bf5bcba899a1fb49d2d6bc5f54ad9d24cb8a9a1c6463ef8b8ef",
-      "style": "clean",
-      "exporter": "drawio-cli",
-      "embedFonts": false,
-      "outputs": {
-        "src/content/posts/vllm/02-async-execution-and-launch-wall/diagrams/02-async-step-runtime.wisp.svg": "sha256-7c6164e3e092eaf5126b3e096cde158f1edcf9a5903d15fe5d669c9fa7bd54a7"
-      },
-      "pages": [
-        "Async Scheduling Runtime in vLLM and vllm-ascend"
-      ]
-    },
-    "src/content/posts/vllm/02-async-execution-and-launch-wall/diagrams/02-launch-wall-arch.drawio": {
-      "source": "sha256-ff7dc7ebce77f9e2cfab0822ff44a164356d94284dac3f3de46dfa78d9377d25",
-      "style": "clean",
-      "exporter": "drawio-cli",
-      "embedFonts": false,
-      "outputs": {
-        "src/content/posts/vllm/02-async-execution-and-launch-wall/diagrams/02-launch-wall-arch.wisp.svg": "sha256-e6f5cf874e7900fca24dcb28d64e1d77cd4d48e31bce1e26c8d16578b20bdfbc"
-      },
-      "pages": [
-        "PyTorch Launch Stack and Two Orthogonally Addressed Overheads"
-      ]
-    },
-    "src/content/posts/vllm/03-torch-compile-and-piecewise/diagrams/03-compile-stack-arch.drawio": {
-      "source": "sha256-51759dca9ea41bf2c428ec692791528fedde7ed0533e4cd3101f01138b8b07ad",
-      "style": "clean",
-      "exporter": "drawio-cli",
-      "embedFonts": false,
-      "outputs": {
-        "src/content/posts/vllm/03-torch-compile-and-piecewise/diagrams/03-compile-stack-arch.wisp.svg": "sha256-7e0647c45c2d4b91065738e98dec7d653084243b9bd2bbd6ec2f165ed54ddb3a"
-      },
-      "pages": [
-        "compile-stack-arch"
-      ]
-    },
-    "src/content/posts/vllm/03-torch-compile-and-piecewise/diagrams/03-piecewise-compile-runtime.drawio": {
-      "source": "sha256-a5e9279763cb4b7f010e7a679bd447ab7901f4a696b3289c006afd160ee4d235",
-      "style": "clean",
-      "exporter": "drawio-cli",
-      "embedFonts": false,
-      "outputs": {
-        "src/content/posts/vllm/03-torch-compile-and-piecewise/diagrams/03-piecewise-compile-runtime.wisp.svg": "sha256-7225fdd3c4e87de2cf440aa5eb6c1abfd63649abe58cf7f407edbcad9ee6081a"
-      },
-      "pages": [
-        "piecewise-compile-runtime"
-      ]
-    },
-    "src/content/posts/vllm/03-torch-compile-and-piecewise/diagrams/03-split-graph-walkthrough.drawio": {
-      "source": "sha256-bc6672a471d6d2c953f68a5bd1bef7f13d44eef874f4874a6b3cfdce972149ee",
-      "style": "clean",
-      "exporter": "drawio-cli",
-      "embedFonts": false,
-      "outputs": {
-        "src/content/posts/vllm/03-torch-compile-and-piecewise/diagrams/03-split-graph-walkthrough.wisp.svg": "sha256-3afdf7f83972d9ddd37f2f128f6036c520d6b9d444b054e25237a194db2e9ae5"
-      },
-      "pages": [
-        "split-graph-walkthrough"
-      ]
-    },
-    "src/content/posts/vllm/04-cuda-graph-and-boundaries/diagrams/04-capture-replay-walkthrough.drawio": {
-      "source": "sha256-338f1abc7bb2057ecf2f7018012ccf0187987b7f9aa8e4eac16ad4626079be34",
-      "style": "clean",
-      "exporter": "drawio-cli",
-      "embedFonts": false,
-      "outputs": {
-        "src/content/posts/vllm/04-cuda-graph-and-boundaries/diagrams/04-capture-replay-walkthrough.wisp.svg": "sha256-ce014d8d84287826e1315fe9dca9da406b6905adec9b89c6c380f9eb860189dd"
-      },
-      "pages": [
-        "capture-replay-walkthrough"
-      ]
-    },
-    "src/content/posts/vllm/04-cuda-graph-and-boundaries/diagrams/04-four-boundaries-arch.drawio": {
-      "source": "sha256-b93ff39afd84358b8531725552f3c1872f5c616e4384cba4b0ccf7bc07aca253",
-      "style": "clean",
-      "exporter": "drawio-cli",
-      "embedFonts": false,
-      "outputs": {
-        "src/content/posts/vllm/04-cuda-graph-and-boundaries/diagrams/04-four-boundaries-arch.wisp.svg": "sha256-e7e7fae9fab156602e2d7e1378b7b2a2cdf2c67dcee60d33c8394b1ad77c185b"
-      },
-      "pages": [
-        "four-boundaries-arch"
-      ]
-    },
-    "src/content/posts/vllm/04-cuda-graph-and-boundaries/diagrams/04-pool-comm-runtime.drawio": {
-      "source": "sha256-7ba2d68bfbb08974a8d40e2bda6539e80dde4ad5bca0c45be6b9a0b835f3c79d",
-      "style": "clean",
-      "exporter": "drawio-cli",
-      "embedFonts": false,
-      "outputs": {
-        "src/content/posts/vllm/04-cuda-graph-and-boundaries/diagrams/04-pool-comm-runtime.wisp.svg": "sha256-c30c4547d56d2fdce69cac5d9ec8b17061095f92a5227cc569ce99e114aa2563"
-      },
-      "pages": [
-        "pool-comm-runtime"
-      ]
-    },
-    "src/content/posts/vllm/05-runtime-dispatch-and-nesting/diagrams/05-dispatch-walkthrough.drawio": {
-      "source": "sha256-98b3a74642ac63223964151f7fedc71444fa118a9c49bbd1863ba8f971635f7b",
-      "style": "clean",
-      "exporter": "drawio-cli",
-      "embedFonts": false,
-      "outputs": {
-        "src/content/posts/vllm/05-runtime-dispatch-and-nesting/diagrams/05-dispatch-walkthrough.wisp.svg": "sha256-255a20132e41d5924ae5c21c7193496463e6ca42f0d04963035dbc7c85c0ad44"
-      },
-      "pages": [
-        "Four-Step Dispatch Walkthrough"
-      ]
-    },
-    "src/content/posts/vllm/05-runtime-dispatch-and-nesting/diagrams/05-dp-dispatch-runtime.drawio": {
-      "source": "sha256-3a3d5e5827dc5846c9dea85db1f660d286c28889af906d1cd2e4866ee3006f50",
-      "style": "clean",
-      "exporter": "drawio-cli",
-      "embedFonts": false,
-      "outputs": {
-        "src/content/posts/vllm/05-runtime-dispatch-and-nesting/diagrams/05-dp-dispatch-runtime.wisp.svg": "sha256-e0c2b8446e11c4635c53bc972d4c9de6cf5a43eacc858e18cb8cec3877da459f"
-      },
-      "pages": [
-        "MRV2 Runtime Dispatch and DP Sync"
-      ]
-    },
-    "src/content/posts/vllm/05-runtime-dispatch-and-nesting/diagrams/05-nested-wrappers-arch.drawio": {
-      "source": "sha256-99d36bdffc1371e4186cf2575a5141d80f077f24dcc8d6942fa8ead39b00b082",
-      "style": "clean",
-      "exporter": "drawio-cli",
-      "embedFonts": false,
-      "outputs": {
-        "src/content/posts/vllm/05-runtime-dispatch-and-nesting/diagrams/05-nested-wrappers-arch.wisp.svg": "sha256-122e6a4c367207102b19bd9fe3a7d7e402566e53b58bfcb6dd9c9af78d57c776"
-      },
-      "pages": [
-        "Init Negotiation and Nested Wrappers"
-      ]
-    },
-    "src/content/posts/vllm/06-ascend-aclgraph-and-npugraph/diagrams/06-aclgraph-walkthrough.drawio": {
-      "source": "sha256-f61df32c6331fc434379743ab915c9c9fabefcc37a8c8138977b209bde01a7cd",
-      "style": "clean",
-      "exporter": "drawio-cli",
-      "embedFonts": false,
-      "outputs": {
-        "src/content/posts/vllm/06-ascend-aclgraph-and-npugraph/diagrams/06-aclgraph-walkthrough.wisp.svg": "sha256-806ab4211c4c6501654b878410e7061ea95c6c34227dd88ddc7d3fce40e188a0"
-      },
-      "pages": [
-        "Page-1"
-      ]
-    },
-    "src/content/posts/vllm/06-ascend-aclgraph-and-npugraph/diagrams/06-cuda-vs-aclgraph-runtime.drawio": {
-      "source": "sha256-abc04a31c7dd3003ae50bd0d7ec5802a2bff97727445849e3afa014f69c9a840",
-      "style": "clean",
-      "exporter": "drawio-cli",
-      "embedFonts": false,
-      "outputs": {
-        "src/content/posts/vllm/06-ascend-aclgraph-and-npugraph/diagrams/06-cuda-vs-aclgraph-runtime.wisp.svg": "sha256-3972cabfe24db42c50e3bcc8d18d2f1c9a9f810d81e31fa31d387cb4335de68a"
-      },
-      "pages": [
-        "Page-1"
-      ]
-    },
-    "src/content/posts/vllm/06-ascend-aclgraph-and-npugraph/diagrams/06-npugraph-arch.drawio": {
-      "source": "sha256-6df7907fd50d0ad190addf06895302b3f90f2f2c8ba12d5c56424be865aab345",
-      "style": "clean",
-      "exporter": "drawio-cli",
-      "embedFonts": false,
-      "outputs": {
-        "src/content/posts/vllm/06-ascend-aclgraph-and-npugraph/diagrams/06-npugraph-arch.wisp.svg": "sha256-b13d81c94da1e6976bc9ecbc826bdd0969fce3c9a1d34fce3dd34260a94dce2e"
-      },
-      "pages": [
-        "Page-1"
-      ]
-    },
-    "src/content/posts/vllm/07-profiling-and-debugging/diagrams/07-debug-decision-arch.drawio": {
-      "source": "sha256-d850767ccd06deaafd9b868ae1346b6a1d910b319a23cde8b5215e6044f09691",
-      "style": "clean",
-      "exporter": "drawio-cli",
-      "embedFonts": false,
-      "outputs": {
-        "src/content/posts/vllm/07-profiling-and-debugging/diagrams/07-debug-decision-arch.wisp.svg": "sha256-fcf15f19fdae0b64dd369b705effddd1cb95fccb4f5f186f6ed65b6175afc07e"
-      },
-      "pages": [
-        "Page-1"
-      ]
-    },
-    "src/content/posts/vllm/07-profiling-and-debugging/diagrams/07-debug-tooling-runtime.drawio": {
-      "source": "sha256-ba31cec228a270ba96bbb0585f99dc1ad5df38950cd0e08272d584e3990124a3",
-      "style": "clean",
-      "exporter": "drawio-cli",
-      "embedFonts": false,
-      "outputs": {
-        "src/content/posts/vllm/07-profiling-and-debugging/diagrams/07-debug-tooling-runtime.wisp.svg": "sha256-51a59e4e2e8b5f4b251fedfa98e16955da4417ea45d88d65fe920d5a2693d9d0"
-      },
-      "pages": [
-        "Page-1"
-      ]
-    },
-    "src/content/posts/vllm/07-profiling-and-debugging/diagrams/07-profiler-signatures-walkthrough.drawio": {
-      "source": "sha256-01ed7e4f8e500f4415aad16ac975bd1df4b300dc0cdcff5a16fe5b8239e5b8ad",
-      "style": "clean",
-      "exporter": "drawio-cli",
-      "embedFonts": false,
-      "outputs": {
-        "src/content/posts/vllm/07-profiling-and-debugging/diagrams/07-profiler-signatures-walkthrough.wisp.svg": "sha256-69335a6ce57260c4b5415cc1a0912d767cf0a2429f175f412bb6f0c74d0c3326"
-      },
-      "pages": [
-        "Page-1"
-      ]
-    },
-    "src/content/posts/vllm/diagrams/00-vllm-roadmap.drawio": {
-      "source": "sha256-52488da3efce5b0cb2d9368663d84762d07abc49a5dd7413f17ecab9361b7495",
-      "style": "clean",
-      "exporter": "drawio-cli",
-      "embedFonts": false,
-      "outputs": {
-        "src/content/posts/vllm/diagrams/00-vllm-roadmap.wisp.svg": "sha256-5070b9928c15186c3992d7c2286b6770daae8f5e24cf6ddd46da2ade6782520f"
-      },
-      "pages": [
-        "vLLM 与昇腾推理引擎架构与排障路线图"
+        "ACLGraph vs npugraph_ex"
       ]
     }
   }

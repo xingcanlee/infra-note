@@ -1,212 +1,196 @@
 ---
-title: '01 硬件互连拓扑与集合通信：从 α-β 模型、Ring/Tree 到 NVLink/NCCL 与 HCCS/HCCL'
-description: '零基础拆解多卡推理的跨卡通信底层：4 卡集合通信数值手算、α-β 延迟带宽模型与 Ring/Tree 拐点、NVLink/NVSwitch/SHARP/IBGDA vs 昇腾 HCCS/UB/RoCE/SDMA，以及 vLLM 与 vLLM-Ascend 通信栈源码对照。'
-pubDate: 2026-11-14
+title: '01 多卡互连、集合通信与 NVIDIA / 昇腾通信栈'
+description: '从 α-β 延迟带宽模型与 Ring/Tree 集合通信出发，厘清机内/超节点 Scale-Up 与跨机 Scale-Out 物理层级，对比 vLLM CudaCommunicator 与昇腾 NPUCommunicator / HCCL AIV 调度源码。'
 series: { id: distributed, order: 2 }
-tags: [Distributed, NCCL, HCCL, NVLink, HCCS, vLLM, Ascend]
+pubDate: 2026-11-14
+tags: [Collectives, NVLink, HCCS, NCCL, HCCL, SymmMem, NVIDIA, Ascend]
 category: AI Infra
 toc: true
 ---
 
-把模型拆到 8 张甚至几百张卡上之后，算力不再是唯一瓶颈，**数据在芯片之间挪动的代价**往往决定了推理延迟的上限。这一章从单卡 HBM 容量墙出发，用 4 卡手算与 $\alpha\text{-}\beta$ 解析模型建立直觉，再分别对照 NVIDIA 与华为昇腾的硬件互连与软件通信栈实现。
+import RingCollectivesExplainer from '../../../../explainers/distributed/RingCollectivesExplainer';
 
-## 为什么单卡容不下，拆开后又要比通信速度
+当权重、激活或长序列 KV Cache 跨越单卡显存墙之后，推理时延就不再只由 Tensor Core 或 DaVinci AI Core 的算力屋顶线决定，而受制于跨卡与跨机链路上的**集合通信（Collectives）**开销。
 
-大模型推理同时消耗两块 HBM 空间：静态的**模型权重**，以及随着请求并发数与序列长度动态膨胀的 **KV Cache**。以 70B 稠密模型为例，仅 BF16 权重就要占用约 140 GB 显存；而对 671B 参数量的 MoE 模型，权重更在 600 GB 以上——无论哪一张单卡（64 GB / 80 GB HBM）都无法独自装下[^hbm-roofline]。
+本章从单条点对点传输的 $\alpha\text{-}\beta$ 耗时模型切入，先用 4 卡状态机拆解 Ring AllReduce 的真实分片流转，再沿着 NVIDIA 与华为昇腾的物理互连层级（Scale-Up 对照 Scale-Out），追入 `vllm` 与 `vllm-ascend` 的集合通信分发源码。
 
-一旦把一层矩阵乘法拆到多张卡上算，每层结束时就必须把各卡算出的部分结果汇总，才能继续下一层的 `RMSNorm` 或激活函数。问题是：**Prefill** 阶段一批输入成千上万个 token，通信包大小往往在几 MB 到几十 MB 之间；**Decode** 阶段每步每请求只推 1 个新 token，激活值往往只有几 KB 到几十 KB。同一个集合通信库，面对大小相差上千倍的消息，必须跑在截然不同的物理通路和算法上。
+## α-β 通信模型与 Ring / Tree 集合通信拆解
 
-[^hbm-roofline]: 单卡 HBM 容量与算访比拐点的基础推导见 [系列一：推理与异构硬件基础](../../foundations/)。
-
-## 从 4 卡手算看懂所有集合通信原语
-
-在看复杂硬件和通信库之前，先用 4 张卡（Rank 0 到 Rank 3）各自持有一个长度为 4 的一维整数向量，把分布式推理中最常用的六类集合通信操作（Collective Operations）彻底算清。
-
-设初始时 4 张卡本地分别存放 4 个元素的向量 $\mathbf{x}^{(r)} \in \mathbb{Z}^4$：
+在工程估算跨卡传输耗时的时候，一次发送 $S$ 字节消息的墙钟时间通常写成经典两项和：
 
 $$
-\mathbf{x}^{(0)} = [1, 2, 0, 4], \quad
-\mathbf{x}^{(1)} = [3, 1, 2, 0], \quad
-\mathbf{x}^{(2)} = [0, 4, 1, 2], \quad
-\mathbf{x}^{(3)} = [2, 1, 3, 2]
+T(S) = \alpha + \beta \cdot S
 $$
 
-这组输入包含所有原语需要的信息：
+其中 $\alpha$ 代表单跳控制面建链、内核发射与协议握手固定时延（通常在几微秒到数十微秒之间），而 $\beta = 1 / BW$ 是链路带宽倒数，代表每增加 1 字节载荷带来的传输代价。
 
-1. **Broadcast（广播）**：选定源卡（例如 Rank 0），把它的整份向量 $\mathbf{x}^{(0)} = [1, 2, 0, 4]$ 原封不动复制到所有卡上。完成后每张卡都拿到 $[1, 2, 0, 4]$。常用于把全局超参、词表或路由偏移同步给所有进程。
-2. **Scatter 与 Gather（发散与收集）**：`Scatter` 从 Rank 0 出发，把 $[1, 2, 0, 4]$ 切开，第 $r$ 卡只分得第 $r$ 个元素（Rank 0 留 $1$、Rank 1 得 $2$、Rank 2 得 $0$、Rank 3 得 $4$）；`Gather` 则是逆操作，Rank 0 把 4 张卡手里各自的元素按顺序拼回 $[1, 2, 0, 4]$。
-3. **ReduceScatter（规约发散）**：先按位置对所有卡求逐元素和——第 0 位之和为 $1+3+0+2=6$，第 1 位之和为 $2+1+4+1=8$，第 2 位之和为 $0+2+1+3=6$，第 3 位之和为 $4+0+2+2=8$——再把全局和向量 $[6, 8, 6, 8]$ **切分**给各卡：Rank 0 只保留索引 0（得 $[6, \cdot, \cdot, \cdot]$），Rank 1 只保留索引 1（得 $[\cdot, 8, \cdot, \cdot]$），依此类推。
-4. **AllGather（全收集）**：紧接在 `ReduceScatter` 之后，每张卡把自己手里那 $1/4$ 的完整分片发给其他所有卡拼接，最终 Rank 0 到 Rank 3 全部拿到完整结果 $[6, 8, 6, 8]$。
-5. **AllReduce（全规约）**：目标是在每张卡上都得到全局求和向量 $[6, 8, 6, 8]$。从代数上，它**严格等价于先做一次 `ReduceScatter`，再做一次 `AllGather`**。
-6. **All-to-All（全互换）**：矩阵转置操作。Rank $r$ 把自己的第 $j$ 号元素发给 Rank $j$，最终 Rank $j$ 收集到所有卡发来的第 $j$ 号元素：例如 Rank 0 收到 $[1, 3, 0, 2]$（4 张卡原来的第 0 列），Rank 2 收到 $[0, 2, 1, 3]$（第 2 列）。MoE 模型里把不同 token 路由到不同卡上的专家，正是 `All-to-All`。
+从这组公式立刻能看出 LLM 推理里两类截然不同的压力区：Decode 单步只有几十 KB 小消息，瓶颈几乎被 $\alpha$ 跳数完全吞没；而大 Batch Prefill 动辄一次规约数十 MB 激活，吞吐则由每张卡真正吃满的有效带宽 $\beta$ 决定。
 
-![4 卡集合通信数值演练：ReduceScatter 与 AllGather 拼合 AllReduce](./diagrams/01-collectives-walkthrough.excalidraw '图 1：4 卡上 ReduceScatter 与 AllGather 逐步拼合出完整 AllReduce 的数值过程')
+对于最核心的 `AllReduce`（全局求和操作），直接写死 `ReduceScatter + AllGather` 两阶段拆分能同时解释为什么 Ring 算法在大消息上接近理论满带宽：
 
-## α-β 延迟带宽模型与 Ring / Tree 拐点
+1. **ReduceScatter 阶段（$P-1$ 步）**：先把每张卡长为 $S$ 的向量切成 $P$ 份，每步各卡沿环发送 $S/P$ 字节到下一跳并原地累加；经 $P-1$ 步后，第 $r$ 张卡恰好握有一个完整规约分片。
+2. **AllGather 阶段（$P-1$ 步）**：每张卡把刚算完的那个完整分片继续顺时针传递 $P-1$ 步并直接覆写目标槽位，最终全组都集齐完整的全局求和向量。
 
-为什么大消息和小消息不能用同一种算法传？因为跨卡通信耗时遵循经典的 $\alpha\text{-}\beta$ 线性模型（Hockney 模型）。把一跳点对点发送 $m$ 字节的耗时记为：
+<RingCollectivesExplainer
+  client:visible
+  title="图 1：4 卡 Ring AllReduce（ReduceScatter + AllGather）分步推演"
+/>
 
-$$
-T_{\text{p2p}}(m) = \alpha + m \cdot \beta = \alpha + \frac{m}{B}
-$$
-
-其中 $\alpha$ 是**固定启动与传输延迟**（含内核调度、握手、PCIe/交换机转发与协议栈开销，单位通常为微秒），$B = 1/\beta$ 是**单向有效链路带宽**（单位 GB/s），$m$ 是该跳发送的字节数。设参与通信共有 $P$ 张卡、每张卡待归约张量总大小为 $S$ 字节：
-
-### Ring 算法：把大张量切成 $P$ 份流水走环
-
-把 $P$ 张卡连成单向逻辑环，并把长为 $S$ 字节的张量均匀切成 $P$ 份，每份大小为 $S/P$：
-
-- **第一阶段（Ring ReduceScatter）**：每卡沿着环向前传递 $P-1$ 步，每步只发 1 个分片 $S/P$ 字节并顺手把收到的分片加到本地对应位置。经过 $P-1$ 步后，每卡都拥有自己负责的 $1/P$ 完整求和分片。耗时为 $(P-1)\alpha + \frac{P-1}{P}\frac{S}{B}$。
-- **第二阶段（Ring AllGather）**：再走 $P-1$ 步环传，每卡把自己手里已算好的 $S/P$ 分片沿环转发，直至所有卡集齐全部 $P$ 份。耗时同样为 $(P-1)\alpha + \frac{P-1}{P}\frac{S}{B}$。
-
-两阶段相加，Ring AllReduce 总时间为：
+配合图 1 追踪 4 张卡上的初始向量 `[1,2,0,4]`、`[3,1,2,0]`、`[0,4,1,2]`、`[2,1,3,2]`，可以看到总共经历 $2(P-1)=6$ 跳之后，每张卡都精确收敛到 `[6, 8, 6, 8]`。汇总其总延迟：
 
 $$
-T_{\text{Ring}}(S) = 2(P - 1)\alpha + 2 \cdot \frac{P - 1}{P} \cdot \frac{S}{B}
+T_{\text{Ring}}(P, S) = 2(P - 1)\alpha + 2\frac{P - 1}{P} S \beta
 $$
 
-注意两项截然不同的趋势：带宽项因子 $2\frac{P-1}{P} < 2$ 是一个与 $P$ 几乎无关的常数，对链路带宽利用率已接近理论极限；**但延迟项系数是 $2(P-1)$**，当 $P=8$ 时要吃满 14 倍的 $\alpha$ 延迟，小消息下延迟墙极为惨烈。
-
-### Tree / 分层规约：把延迟项从 $O(P)$ 压到 $O(\log_2 P)$
-
-若改用二叉树做规约与广播（先逐层向上归约到根节点，再逐层向下广播），通信跳数深度立刻从 $2(P-1)$ 降到 $2\log_2 P$（$P=8$ 时仅 6 步而非 14 步）。对于最朴素的整包树传算法（每步传完整 $S$ 字节）：
+作为对照，如果改走二叉树 `Tree AllReduce`（先向上规约到根节点再向下广播），通信延迟变为：
 
 $$
-T_{\text{NaiveTree}}(S) = 2(\log_2 P)\,\alpha + 2(\log_2 P)\,\frac{S}{B}
+T_{\text{Tree}}(P, S) = 2(\log_2 P)\alpha + 2(\log_2 P) S \beta
 $$
 
-令 $T_{\text{NaiveTree}}(S^*) = T_{\text{Ring}}(S^*)$，立刻解出两条直线的交叉拐点 $S^*$：
+两者取舍极其清晰：当消息极小（$S \to 0$）且卡数较多时，Tree 的跳数 $\log_2 P$ 远小于 $P-1$，可显著压低 $\alpha$ 开销；而一旦消息变大，Ring 的每卡单向收发总量趋近 $2S$（带宽利用率高达 $(P-1)/P$），把需要反复经过根节点发送全量数据的 Tree 甩在身后。
 
-$$
-S^* = \frac{P - 1 - \log_2 P}{\log_2 P - \frac{P - 1}{P}} \cdot \alpha B
-$$
+## 物理互连层级：Scale-Up 超节点与 Scale-Out 集群面
 
-小于 $S^*$ 时，延迟主导（$\alpha$ 墙），跳数更少的 Tree 明显更快；大于 $S^*$ 时，带宽主导（$\beta$ 墙），单步只传 $S/P$ 的 Ring 胜出。顺便一提，如果底层互连本身是无阻塞全交叉开关，**Recursive Halving-Doubling（Rabenseifner 算法）** 既保持 $2\log_2 P \cdot \alpha$ 跳数，又逐步对半切分消息，使带宽项回到 $2\frac{P-1}{P}\frac{S}{B}$；实际中 NCCL 的 **Double Binary Tree** 则把张量切片流水塞进两棵互补二叉树，在多机域里兼顾低跳数与高带宽。
+算法公式里的 $\alpha$ 与 $\beta$ 最终都锚定在硬件拓扑上。读硬件拓扑图时，最关键的一条准则是不混淆 **Scale-Up 垂直高带宽共享域** 与 **Scale-Out 水平跨机参数网络** 的先后层级，如图 2 所示：
 
-### Decode 的极端情况：One-Shot P2P 直读旁路
+![NVIDIA 与华为昇腾 Scale-Up vs Scale-Out 分层互联对比](./diagrams/01-nvlink-vs-hccs-arch.drawio '图 2：NVIDIA GPU 与昇腾 NPU 分层物理互联栈（Scale-Up vs Scale-Out）')
 
-当张量并行下的 Decode 每步只归约几十 KB 时，即使 6 跳 Tree 还是嫌慢——最好只用 **1 次同步门铃**。在单机全互连域内，**One-Shot P2P / 协同内核（如 `CustomAllreduce` 或 NVLS 多播）** 让每张卡直接通过共享虚拟地址或 IPC 句柄读取其他 $P-1$ 张卡上的输入缓冲区、在 SM 寄存器里原地求和，再一次性写出结果。通信延迟压到单次核函数启动 $\alpha_{\text{p2p}}$，但因为每张卡都要读取 $(P-1)S$ 字节的数据，总流量随 $P$ 线性放大：
+自上而下对照图 2 中的三层物理结构，双栈设计哲学差异一目了然：
 
-$$
-T_{\text{OneShot}}(S) \approx \alpha_{\text{p2p}} + (P - 1)\frac{S}{B_{\text{p2p}}}
-$$
+- **Tier 1 · 卡内计算与片上存储**：NVIDIA 侧以 Tensor Core 搭配高带宽 HBM3e 与异步 DMA/TMA；华为昇腾以 DaVinci AI Core（Cube 矩阵与 Vector 向量核分离）搭配 HBM、片上 Unified Buffer（UB）以及专职搬运的 SDMA 引擎。
+- **Tier 2 · Scale-Up 高速域（机内直连 + 超节点扩展）**：这是单算子张量并行（TP）与高频同步的命脉。NVIDIA 在机内用 NVLink 4/5 配合 NVSwitch 全交叉交换（支持硬件网内规约 NVLS SHARP），并在机柜级以 **GB200 NVL72（MNNVL）** 将 72 张卡拉进统一 NVLink 内存域；昇腾则在 Ascend 910B（A2）提供全连接 HCCS 环与 SDMA 零拷贝直写，并在 910C（A3）/ **CloudMatrix 384** 超节点中通过 **Unified Bus（UB）统一总线**把百卡级 NPU 纳进统一内存编址对等池。
+- **Tier 3 · Scale-Out 跨机集群网络**：当集群规模超出单一超节点（如多台 8 卡机通过参数面互联或跨 Pod 扩展），流量才下沉到 `ConnectX-7/8` InfiniBand / RoCEv2 多轨网卡（支撑 GPUDirect RDMA 与 GPU 侧直接发射队列的 IBGDA），或在昇腾侧落到片上集成多轨 RoCE 网卡（配合 `DEVICE_RDMA` / `DEVICE_URMA` 协议栈）。
 
-于是它只在小包（几十 KB 到几百 KB）窗口绝对领先；张量一变大，就会被 Ring 或多播硬件反超。
+正因为 Scale-Up 与 Scale-Out 带宽往往相差一个数量级，工程实践中才会强求把 `TP` 严格锁死在机内或超节点 Scale-Up 域内，仅将点对点 KV 搬运或低频 `EP` / `DP` 同步推向 Scale-Out 网络。
 
-## NVIDIA 与华为昇腾的硬件互连架构对照
+## 运行时分发对照：vLLM `CudaCommunicator` vs 昇腾 `NPUCommunicator`
 
-公式里的 $\alpha$ 与 $B$ 不是抽象符号，而是直接长在主板、背板交换芯片和网卡设计里的物理特性。
+明确了物理链路后，集合通信在推理框架里并非永远直奔底层 `ncclAllReduce` 或 `HcclAllReduce`。为了吃干榨净 Scale-Up 域的微秒级低延迟并规避图捕获瓶颈，`vllm` 与 `vllm-ascend` 在运行时做了精细的后端级联调度（如图 3）。
 
-![NVIDIA 与华为昇腾硬件互连层级对照](./diagrams/01-nvlink-vs-hccs-arch.excalidraw '图 2：NVIDIA GPU 与华为昇腾 NPU 从片内互连到超节点扩展的物理拓扑对照')
-
-### NVIDIA 体系：NVLink + NVSwitch、SHARP 与 IBGDA
-
-1. **机内 PCIe vs NVLink + NVSwitch**：如果 8 张卡只挂在 PCIe Root Complex 树下，跨 CPU Socket 甚至过 PCIe Switch 会拉高 $\alpha$ 并引发链路争用——因此后文 `vllm` 的 `CustomAllreduce` 明确拒绝超过 2 张卡的纯 PCIe P2P。高端节点采用多代 **NVLink** 直接接入无阻塞 **NVSwitch Crossbar** 交换芯片，任意两卡之间单跳直达。
-2. **NVLS SHARP 在网计算**：Hopper（SM 9.0）与 Blackwell（SM 10.0）上的第四/五代 NVSwitch 内置 **SHARP（Scalable Hierarchical Aggregation and Reduction Protocol）硬件规约引擎**。GPU 只需向同一个多播地址写一次数据，NVSwitch 在交换芯片内部把 8 份输入直接加好再组播写回各卡，把全连接的流量乘数彻底压平。
-3. **跨机 MNNVL 与 GPUDirect / IBGDA**：Blackwell NVL72 机柜进一步把 NVSwitch 扩展到跨机箱铜缆背板，构成 **Multi-Node NVLink（MNNVL）** 大拓扑，使最多 72 颗 GPU 处于同一个共享显存域；再往外跨机柜走 InfiniBand（CX-7 / CX-8）时，**GPUDirect RDMA** 绕开主机内存直接读写 GPU HBM，而 **IBGDA（InfiniBand GPU Direct Async）** 更允许 GPU Kernel 自己敲网卡门铃发射 RDMA 请求，把原本 CPU 介入的微秒级代理延迟砍掉。
-
-### 华为昇腾体系：HCCS 全互连、910C 统一总线 UB 与片上 RoCEv2
-
-1. **910B 的 HCCS 全互连**：昇腾 910B（代号 A2）单节点 8 颗或 16 颗 NPU 依靠华为自研高带宽一致性互连协议 **HCCS（Huawei Cache Coherence System）** 构建节点内全互连拓扑。与早期受限于 PCIe 的方案不同，HCCS 原生承载高吞吐卡间直连，配合片上 DMA 搬运完成单机 TP 归约。
-2. **910C 与超节点 CloudMatrix 384 的统一总线 UB**：面向大规模集群的 910C（代号 A3）与整机柜超节点架构进一步把芯片间互连与跨板交换整合为 **统一总线 UB（Unified Bus）**，如 CloudMatrix 384 把 384 颗芯片纳入同一高速全对等交换域内，提供极高对等带宽并支持通过 **SDMA（System DMA）** 完成设备间零拷贝直写。
-3. **片上集成多口 RoCEv2**：昇腾处理器还在 SoC 片上直接集成多个高速 **RoCEv2** 网口与网络协议加速逻辑，Device 侧任务流可直接驱动片上网口向远端节点发射 RDMA/URMA 数据包，无需经过主机 CPU 和主板 PCIe Switch 绕行。
-
-## vLLM 与 vLLM-Ascend 通信栈源码对照
-
-硬件上的每一条路径，都在 `vllm` 和 `vllm-ascend` 的源码里写成了精确的分流规则。把两边通信封装类放在一起对比，能立刻看出软硬件协同的真实边界。
-
-![vLLM CudaCommunicator 与 vLLM-Ascend NPUCommunicator 通信分流](./diagrams/01-nccl-vs-hccl-runtime.excalidraw '图 3：vLLM 与 vLLM-Ascend 在 tp 通信组上的 AllReduce 调度与内存隔离机制对比')
-
-### vLLM 侧：四级分流、`CustomAllreduce` 与对称内存窗口
-
-在 `vllm/distributed/device_communicators/cuda_communicator.py` 中，`CudaCommunicator` 在初始化阶段会检查当前通信组名称：只有当 `unique_name.split(":")[0] == "tp"` 时，才激活高优先级低延迟旁路；随后初始化 `PyNcclCommunicator`、`SymmMemCommunicator` 以及 `CustomAllreduce`（另有负责 MoE 的 `all2all_manager`）。
-
-每次执行 `CudaCommunicator.all_reduce` 时，内部按严格优先级动态分流：
-
-1. **NCCL Symmetric Memory / NVLS 路径**：通过 `all_reduce_utils.py` 中的 `should_nccl_symm_mem_allreduce` 判断消息字节数是否落在加速区间，命中时直调 `torch.ops.vllm.all_reduce_symmetric_with_copy`。根据该文件记录的 8 卡实测配置（`NCCL_SYMM_MEM_ALL_REDUCE_CONFIG`），在 `2KB–16KB` 超小包区间借助多播拷贝减少同步延迟可达 `1.35x–1.48x` 加速，在 `128KB–1GB` 区间靠硬件规约带宽最高可达 `1.12x–6.14x`。另外，SP 场景下的 `all_gather` 与 `reduce_scatter` 也会在 `should_nccl_symm_mem_ag_rs()` 为真时改走 NVLS 对称内存。
-2. **Torch `SymmMemCommunicator`**：位于 `symm_mem.py`，在构造时通过 `torch_symm_mem.empty` 与 `rendezvous` 交换显存句柄，检查 `handle.multicast_ptr != 0` 且数据类型为 `bf16`；当 `world_size` 满足多播要求（如 SM 9.0 下的 4/6/8 卡）时调用 `torch.ops.symm_mem.multimem_all_reduce_`，否则退回 `two_shot_all_reduce_`。
-3. **`CustomAllreduce`（P2P IPC 读对端）**：位于 `custom_all_reduce.py`。它在初始化时先检查是否支持 MNNVL（SM 100 + 多播能力），否则检测全连接与 `_can_p2p`（超过 2 卡的纯 PCIe 拓扑直接关闭，避免过桥拥塞），并交换 IPC `meta_ptrs` 与 `buffer_ptrs`。`all_reduce_utils.py` 对 `CUSTOM_ALL_REDUCE_MAX_SIZES` 设了硬上限：例如 SM 9.0 的 8 卡只放到 `256 KB`（4 卡可放到 `32 MB`），SM 10.0 下 8 卡为 `1 MB`；实测显示 8 卡在 `32KB–64KB`、4 卡在 `32KB–256KB` 中段包大小上，`CustomAllreduce` 因完全免去了拷贝进对称缓冲区的开销，反超 PyNCCL-symm。
-4. **`PyNcclCommunicator` 与 CUDA Graph 兼容**：未命中上述旁路的张量（或超限大消息）落回 `PyNcclCommunicator`（底层调用 NCCL 的 Ring/Double Binary Tree），最后保底才是 `torch.distributed.all_reduce`。值得一提的是 `pynccl_allocator.py` 中的 `nccl_symm_mem_context`（要求 NCCL `>= 2.27.3` 与 PyTorch `>= 2.8.0a0`）：若在 CUDA Graph 捕获期间申请对称显存，必须先调用 `torch._C._cuda_endAllocateToPool` 暂停图内存池，调用 `ncclMemAlloc` 并通过 `register_comm_window_raw` 注册通讯窗口后再恢复，否则图捕获内存会与 NCCL 窗口指针冲突。
-
-### vLLM-Ascend 侧：为什么放弃 CustomAR，却为 910B 写量化通信？
-
-打开 `vllm_ascend/distributed/device_communicators/npu_communicator.py` 与同类目录，架构取舍与 CUDA 截然不同：
-
-- **没有 `CustomAllreduce`**：`NPUCommunicator` 显式置 `self.ca_comm = None` 与 `self.fi_pcie_ipc_ar_comm = None`，通用小中包通信统一交给绑定了显式 `aclrtStream` 的 `PyHcclCommunicator`（封装 `HCCLLibrary` 的 `hcclAllReduce`、`hcclBroadcast` 等 C 接口），或由第 3 章将拆解的 `MC2` 通算融合算子接管。
-- **`QuantizedAllReduce`（910B 专属带宽压缩）**：在 `quantized_all_reduce.py` 中，vLLM-Ascend 针对通信流量较大的场景，先通过 `vector_norm(ord=inf)` 与 FP32 `MAX` AllReduce 对齐全局最大值，再用 `npu_quantize` 把 `bf16` 压缩成 `int8`，将跨卡通信流量直接**减半**，做完 `int8` AllReduce 后再 `npu_anti_quant` 还原。为保证各卡 `int8` 求和不发生溢出截断，量化上限严格取 `max_q = 127 // world_size`（例如 8 卡下只用到 `-15..15`）。
-- **极其耐人寻味的硬件边界**：源码明确限定 `_VALID_DEVICE_TYPES = (AscendDeviceType.A2,)` 与 `_MAX_VALID_WORLD_SIZE = 8`，且默认 `min_numel = 16777216`（即 **32 MiB** `bf16`）。为什么不开启给 Decode 小包，甚至明确拒绝了 910C（A3）？源码注释给出了答案：量化/求极大值/反量化本身引入约 `0.5 ms` 的固定内核开销——在 4 卡 910B3 上实测，`16 MiB` 时总耗时反而 **慢了 13%**，`32 MiB` 才转为 **快 29%**，`64–128 MiB` 稳定 **快 37%**；而到了 A3（910C），其 `bf16` HCCS 原始带宽已经是 A2 的约 `2.6` 倍，固定量化开销在常规通信包下彻底得不偿失。
-- **静态 `HCCL_BUFFSIZE` 与 `MC2` 显存隔离陷阱**：不同于 NCCL 可在独立图池外动态注册对称窗口，HCCL 依赖各通信域预分配静态通信缓冲区。检查 `vllm_ascend/utils.py` 中的 `create_hccl_pg_options` 与 `get_hccl_config_for_pg_options` 可以看到，vLLM-Ascend 为每个子通信组单独设置 `hccl_buffer_size`（默认 `_DEFAULT_BUFFER_SIZE = 200 MB`，`dp` 组最低 `50 MB`，`dynamic_eplb` 组 `100 MB`），**但对 `"mc2"` 组显式返回 `None`**。原因是通算融合算子 `MC2` 直接读取环境变量 `HCCL_BUFFSIZE` 自己切分通信区，一旦混传 `pg_options` 就会导致设备侧通信内存错位崩溃；而开启大量冗余并行域又必须小心 `HCCL_BUFFSIZE` 乘法效应吃光可用 HBM。
-
-## 最小可运行实验：`toy.py`
-
-下面在 `01-interconnects-and-collectives/` 目录下运行 `toy.py`，用纯 NumPy 分别验证两件事：一是 4 卡 `Broadcast`、`Scatter`、`Gather`、真实环形模拟的 `ReduceScatter + AllGather == AllReduce` 以及 `All-to-All` 的严格数值守恒；二是在一组**用于教学对照的解析参数**下（注意区分于真实实测报告），计算 `NVLink-like`、`Ascend-910B-like`、`Ascend-910C-like(2.6x)` 与 `RDMA-400G` 四种典型链路下 Ring、朴素 Tree、One-Shot P2P 与带 `500 us` 固定量化税的 `QAR` 耗时，找出 $\alpha$ 与 $\beta$ 交叉拐点 $S^*$。
-
-```bash
-uv run --with numpy python -I src/content/posts/distributed/01-interconnects-and-collectives/toy.py
+```mermaid caption="图 3：vLLM GPU NCCL/SymmMem 与昇腾 HCCL/AIV 分发调度对比"
+flowchart TD
+    T["模型层 Tensor Parallel"] --> D["DeviceCommunicator 分发"]
+    D --> G1["CudaCommunicator 路径"]
+    D --> A1["NPUCommunicator 路径"]
+    G1 --> G2["NCCL SymmMem / QuickAR"]
+    G2 --> G3["CustomAllreduce<br/>NVLink 直写"]
+    G3 --> G4["PyNccl / torch.distributed"]
+    A1 --> A2["QuantizedAR<br/>(仅 A2 大消息)"]
+    A2 --> A3["PyHccl + HCCL AIV 直展"]
 ```
 
-实测完整输出如下：
+### NVIDIA GPU 侧多级短路策略
+
+跟踪 `vllm` 的 `CudaCommunicator.all_reduce`[^vllm-cuda-ar]，可以看到一条严谨的优先级瀑布流——每一层都在尝试抢占更低的 $\alpha$ 延迟或硬件级融合收益：
+
+```python
+# 源码节选：vllm/distributed/device_communicators/cuda_communicator.py (L389-465)
+if (
+    self.pynccl_comm is not None
+    and not use_fi_ar
+    and should_nccl_symm_mem_allreduce(self.pynccl_comm.world_size, input_)
+):
+    out = torch.ops.vllm.all_reduce_symmetric_with_copy(input_)
+    if out is not None:
+        return out
+# 依次尝试 QuickAllReduce / FlashInfer IPC-AR / AITER / CustomAllreduce
+ca_comm = self.ca_comm
+if ca_comm is not None and not ca_comm.disabled and ca_comm.should_custom_ar(input_):
+    return ca_comm.custom_all_reduce(input_)
+if symm_mem_comm is not None and symm_mem_comm.should_use_symm_mem(input_):
+    return symm_mem_comm.all_reduce(input_)
+return pynccl_comm.all_reduce(input_)
+```
+
+在 Decode 等小消息场景下，`CustomAllreduce` 或 PyTorch `SymmMem` / NCCL Symmetric Memory 直接利用 NVLink P2P 与多播硬件映射把数据写入对端寄存器级内存，避免传统标准 NCCL 核启动和主从握手带来的数十微秒 $\alpha$ 损耗；只有大消息或跨机组才顺位兜底到标准 `PyNcclCommunicator`。
+
+### 华为昇腾 NPU 侧量化折中与 `HCCL AIV` 模式
+
+反观 `vllm-ascend` 中的 `NPUCommunicator`[^vllm-npu-ar]：因为 NPU 上不走 CUDA 生态的 `CustomAllreduce` 或 FlashInfer IPC（源码显式置 `self.ca_comm = None` 与 `self.fi_pcie_ipc_ar_comm = None`），它的工程突破口落在三个独具特色的控制开关上：
+
+1. **分代决策的 `QuantizedAllReduce`**[^vllm-ascend-qar]：对于 **Ascend A2（910B）**，当 `world_size <= 8` 且单次 BF16 规约元素量超过默认 32 MiB 阈值时，会先把张量按通道全局绝对最大值量化成 INT8 再做集合通信；为了防止多卡累加溢出 `127`，每卡量化上限严格取 `max_q = 127 // world_size`（例如 8 卡时取 15，$8 \times 15 = 120 \le 127$）。而到了 **Ascend A3（910C）**，因为其 BF16 HCCS 带宽飙升至 A2 的约 2.6 倍，量化与 `amax` 同步的固定代价反超节省的传输时间，源码干脆直接限定 `_VALID_DEVICE_TYPES = (AscendDeviceType.A2,)` 拒绝在 A3 开启。
+2. **`HCCL_OP_EXPANSION_MODE="AIV"` 向量核直展**[^vllm-ascend-aiv]：在开启 ACLGraph 图模式捕获（如 MiniMax-M2 配置）时，`vllm-ascend` 会自动强制开启 `HCCL_OP_EXPANSION_MODE=AIV`，将通信搬运展开至 AI Vector 核执行以扩大静态图覆盖形态并降低调度抖动。
+3. **精细化 `HCCL_BUFFSIZE` 与 MC2 隔离**[^vllm-ascend-hccl-buf]：`get_hccl_config_for_pg_options` 会按 `"dp"`、`"dynamic_eplb"` 等通信组名精确配给 `hccl_buffer_size`；一旦识别到 `"mc2"` 组则刻意返回 `None`，以免细粒度 `pg_options` 打乱 CANN 核内通算融合算子的静态共享地址布局。
+
+```python
+# 源码节选：vllm_ascend/distributed/device_communicators/quantized_all_reduce.py (L75-103)
+_VALID_DEVICE_TYPES = (AscendDeviceType.A2,)
+_MAX_VALID_WORLD_SIZE = 8
+
+self.supported = self.world_size <= _MAX_VALID_WORLD_SIZE
+# 保证 TP 路整数相加绝对不超过 int8 上限 127
+self.max_q = 127 // self.world_size if self.supported else 0
+```
+
+## PyTorch / NumPy 核心实现与验证
+
+为了把 $\alpha\text{-}\beta$ 公式与 Ring AllReduce 的真实分片行为跑通，下面给出 35 行自洽 NumPy 实现：它精确复现图 1 中的 4 卡分片流转并断言全局数值等价，随后对比 8 卡单机在 Decode（16 KB）与 Prefill（64 MB）载荷下的 Ring 与 Tree 时延拐点。
+
+```python
+import numpy as np
+
+def ring_allreduce(x: np.ndarray) -> np.ndarray:
+    """4-rank Ring ReduceScatter + AllGather reference."""
+    p = x.shape[0]
+    buf = x.copy()
+    for step in range(p - 1):  # ReduceScatter
+        msg = {( (r + 1) % p, (r - step) % p ): buf[r, (r - step) % p].copy() for r in range(p)}
+        for (r, c), v in msg.items():
+            buf[r, c] += v
+    for step in range(p - 1):  # AllGather
+        msg = {( (r + 1) % p, (r + 1 - step) % p ): buf[r, (r + 1 - step) % p].copy() for r in range(p)}
+        for (r, c), v in msg.items():
+            buf[r, c] = v
+    return buf
+
+shards = np.array([[1, 2, 0, 4], [3, 1, 2, 0], [0, 4, 1, 2], [2, 1, 3, 2]])
+out = ring_allreduce(shards)
+assert out.shape == (4, 4) and np.array_equal(out, np.broadcast_to([6, 8, 6, 8], (4, 4)))
+
+p, alpha_us, bw_gbs = 8, 5.0, 400.0
+for tag, mb in [("Decode_16KB", 0.016), ("Prefill_64MB", 64.0)]:
+    s_bytes = mb * (1024 ** 2)
+    beta = 1.0 / (bw_gbs * 1e3)
+    t_ring = 2 * (p - 1) * alpha_us + 2 * (p - 1) / p * s_bytes * beta
+    t_tree = 2 * np.log2(p) * (alpha_us + s_bytes * beta)
+    print(f"{tag}: ring={t_ring:.2f}us, tree={t_tree:.2f}us")
+```
+
+使用 `uv run --with numpy python` 执行上述核心验证逻辑，观察输出结果：
 
 ```text
-=== 4-Rank Collectives Walkthrough ===
-Input:
-[[1 2 0 4]
- [3 1 2 0]
- [0 4 1 2]
- [2 1 3 2]]
-Broadcast(src=0) row 3: [1, 2, 0, 4]
-Scatter->Gather(src=0): [1, 2, 0, 4]
-ReduceScatter diagonal shards: [6, 8, 6, 8]
-AllGather -> AllReduce row 0:  [6, 8, 6, 8]
-All-to-All rank 0..3:
-[[1 3 0 2]
- [2 1 4 1]
- [0 2 1 3]
- [4 0 2 2]]
-
-=== NVLink-like (P=8, alpha=1.5us, B=450GB/s) ===
-    4 KB: Ring=    21.0us | Tree=     9.1us | P2P=     2.1us
-   64 KB: Ring=    21.3us | Tree=     9.9us | P2P=     3.5us
-  256 KB: Ring=    22.0us | Tree=    12.5us | P2P=     8.1us
-    4 MB: Ring=    37.3us | Tree=    64.9us | P2P=    99.9us
-   32 MB: Ring=   151.5us | Tree=   456.4us | P2P=   784.9us
-  256 MB: Ring=  1064.9us | Tree=  3588.1us | P2P=  6265.5us
-  -> Ring-vs-Tree crossover S* = 1240.8 KB
-
-=== Ascend-910B-like (P=8, alpha=3.0us, B=32GB/s) ===
-    4 KB: Ring=    42.2us | Tree=    18.8us | QAR=   542.1us(+1183.9%)
-   64 KB: Ring=    45.6us | Tree=    30.3us | QAR=   543.8us(+1092.9%)
-  256 KB: Ring=    56.3us | Tree=    67.2us | QAR=   549.2us(+874.8%)
-    4 MB: Ring=   271.4us | Tree=   804.4us | QAR=   656.7us(+142.0%)
-   32 MB: Ring=  1877.0us | Tree=  6309.5us | QAR=  1459.5us(-22.2%)
-  256 MB: Ring= 14722.1us | Tree= 50349.6us | QAR=  7882.0us(-46.5%)
-  -> Ring-vs-Tree crossover S* = 176.5 KB
-
-=== Ascend-910C-like(2.6x) (P=8, alpha=2.5us, B=83GB/s) ===
-    4 KB: Ring=    35.1us | Tree=    15.3us | QAR=   535.0us(+1424.9%)
-   64 KB: Ring=    36.4us | Tree=    19.7us | QAR=   535.7us(+1372.4%)
-  256 KB: Ring=    40.5us | Tree=    34.0us | QAR=   537.8us(+1226.9%)
-    4 MB: Ring=   123.4us | Tree=   318.2us | QAR=   579.2us(+369.3%)
-   32 MB: Ring=   742.5us | Tree=  2440.6us | QAR=   888.7us(+19.7%)
-  256 MB: Ring=  5694.8us | Tree= 19420.0us | QAR=  3364.9us(-40.9%)
-  -> Ring-vs-Tree crossover S* = 381.4 KB
-
-=== RDMA-400G (P=8, alpha=8.0us, B=50GB/s) ===
-    4 KB: Ring=   112.1us | Tree=    48.5us
-   64 KB: Ring=   114.3us | Tree=    55.9us
-  256 KB: Ring=   121.2us | Tree=    79.5us
-    4 MB: Ring=   258.8us | Tree=   551.3us
-   32 MB: Ring=  1286.4us | Tree=  4074.5us
-  256 MB: Ring=  9507.2us | Tree= 32260.3us
-  -> Ring-vs-Tree crossover S* = 735.3 KB
-
-OK 01
+Decode_16KB: ring=70.07us, tree=30.25us
+Prefill_64MB: ring=363.60us, tree=1036.63us
 ```
 
-读懂这几行输出，本章的两个工程核心就彻底落地了：第一，在 `NVLink-like` 的 `4 KB–256 KB` 区间，`P2P`（`2.1–8.1 us`）大幅碾压 `Ring`（`21.0–22.0 us`），到 `4 MB` 时反过来落后给 `Ring`（`99.9 us` vs `37.3 us`），这正是 `CustomAllreduce` 卡死 8 卡 `256 KB / 1 MB` 上限的原因；第二，在 `Ascend-910B-like` 下，直到 `32 MB` 时 `QAR` 才靠减半传输体积转正为 `-22.2%` 收益，而在带宽提升 `2.6` 倍的 `910C-like` 上，`32 MB` 时 `QAR` 仍然被固定量化税拖慢 `+19.7%`，完美解释了 `QuantizedAllReduce` 只开给 A2 且以 `32 MiB` 为门槛的源码逻辑。
+模型结果直观地印证了系统设计铁律：同一套 8 卡 400 GB/s 互连与 5 μs 单跳延迟下，16 KB 小包场景 Tree（`30.25 us`）比 Ring（`70.07 us`）快出一倍以上；但一旦载荷放大到 64 MB 激活，Ring（`363.60 us`）反过来将 Tree（`1036.63 us`）甩开近 3 倍。
 
-## 延伸与下一章导读
+## 工程边界与自测问题
 
-集合通信库解决了「已知两张卡之间要交换张量时，怎么搬最快」的问题，却还没有回答更高一层的问题：**模型权重、输入序列、KV Cache 和稀疏专家究竟该怎么切分，才能让跨卡交换的字节数和次数本身降到最低？**
+1. **小载荷 $\alpha$ 主导与通信组混配陷阱**：如果模型启用了跨机低速网卡却仍按大包公式拍脑袋上 Ring AllReduce，会白白付出 $2(P-1)\alpha$ 的控制面排队时间。
+2. **`QuantizedAllReduce` 的精度与硬件代际边界**：INT8 压缩只在大载荷受带宽卡脖子的 A2 上划算，且不能在 `world_size > 8` 的大组启用（否则 `max_q` 过小精度崩塌）。
 
-下一章进入并行拓扑与系统拆分的核心：[02 分布式并行与 PD 分离](../02-parallelism-and-disaggregation/)。
+**自测问题：为什么昇腾 `NPUCommunicator` 在创建 `"mc2"` 通信组时严禁传入非空的 `pg_options`，而在 Decode 小消息下 GPU 却要尽量绕开标准 NCCL 内核？**
+
+<details>
+<summary>参考答案</summary>
+
+1. 昇腾 MC2 算子底层依赖全局环境变量 `HCCL_BUFFSIZE` 直接划分核间共享内存偏移；如果在 `get_hccl_config_for_pg_options` 里额外传入细粒度 `hccl_buffer_size` 选项，会造成通信组与融合核内部预设地址边界错位，触发硬件同步异常。
+2. 在 GPU 上，Decode 阶段消息往往只有几 KB，如果每次都走标准 NCCL Kernel 启动与主从协调，仅软件发射与轮询延迟 $\alpha$ 就可能吃掉几十微秒，高于实际数据传输耗时；因此 `CudaCommunicator` 会短路到 `CustomAllreduce` 或 `SymmMem` 直接读写对端显存指针。
+
+</details>
+
+---
+
+搞清楚单步集合通信如何受限于 $\alpha\text{-}\beta$ 与物理拓扑之后，下一章我们顺着算子计算图往上走，拆解分布式推理的四维并行切分（TP / SP / CP / DP+EP），并直击 Prefill-Decode 分离池里的异步 KV 传输架构：[02 张量、序列、专家并行与 PD 分离架构](../02-parallelism-and-disaggregation/)。
+
+[^vllm-cuda-ar]: 见 `vllm@bb23c0a8`：`vllm/distributed/device_communicators/cuda_communicator.py` L389–465（`CudaCommunicator.all_reduce` 依次探测 NCCL SymmMem、QuickAR、FlashInfer IPC、CustomAllreduce 与 PyNccl）。
+
+[^vllm-npu-ar]: 见 `vllm-ascend@3649b8ff`：`vllm_ascend/distributed/device_communicators/npu_communicator.py` L46–90（`NPUCommunicator` 关闭 CUDA-only 的 `ca_comm` 并挂载 `QuantizedAllReduce`）。
+
+[^vllm-ascend-qar]: 见 `vllm-ascend@3649b8ff`：`vllm_ascend/distributed/device_communicators/quantized_all_reduce.py` L70–135（仅 A2 且 `world_size <= 8` 启用 INT8 规约，`max_q = 127 // world_size`，A3 因 2.6 倍 HCCS 带宽收益倒挂而禁用）。
+
+[^vllm-ascend-aiv]: 见 `vllm-ascend@3649b8ff`：`vllm_ascend/patch/__init__.py` L418–425（在 ACL Graph 图捕获配置校验时自动开启 `HCCL_OP_EXPANSION_MODE=AIV`）。
+
+[^vllm-ascend-hccl-buf]: 见 `vllm-ascend@3649b8ff`：`vllm_ascend/utils.py` L1252–1264（`get_hccl_config_for_pg_options` 对 `"mc2"` 组返回 `None`，为 `dp` 与 `dynamic_eplb` 组分配隔离的 `hccl_buffer_size`）。

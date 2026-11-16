@@ -8,183 +8,197 @@ category: AI Infra
 toc: true
 ---
 
-在[07 条件记忆（Engram）](../07-engram/)的源码解剖中，我们已经提前见过一对陌生算子 `mhc_post` 与 `mhc_pre`——它们把 Transformer 沿用了近十年的单条残差流，硬生生拆成了 **4 条并行支路**（`[T, 4, d]`）。
+import MhcSinkhornExplainer from '../../../../explainers/deepseek/MhcSinkhornExplainer';
 
-为什么要多此一举？标准残差 $\mathbf{x}_{l+1} = \mathbf{x}_l + \mathcal{F}(\mathbf{x}_l)$ 把所有历史层输出塞进同一条宽为 $C$ 的通道里；超连接（Hyper-Connections，HC）把它扩宽成 $n = 4$ 条通道（总宽 $4C$），允许各层用可学习矩阵自由交叉路由，精度立刻涨了一截。可一旦模型推到 27B、展开成 60 个子层，自由混合矩阵连乘会把前反向信号放大到 **`3000×` 以上**，训练在 12k 步附近直接发散[^mhc-paper]。
+在[07 条件记忆（Engram）](../07-engram/)的层边界里，我们已经见过了两条成对出现的算子 `mhc_post` 与 `mhc_pre`——它们把沿用近十年的单条残差流扩宽成了 **4 条并行支路**（`[T, 4, d]`）。
 
-**流形受限超连接（mHC）**给出了优雅的数学解与极致的硬件优化。读完本篇你能回答四件事：
+标准残差 $\mathbf{x}_{l+1} = \mathbf{x}_l + \mathcal{F}(\mathbf{x}_l)$ 把所有历史层输出压进同一条宽为 $d$ 的通道。超连接（Hyper-Connections，HC）把它扩宽为 $n = 4$ 条并列流（总带宽 $4d$），允许每层通过可学习矩阵互相交叉混合，显著拓宽表征容量。可当网络叠到 30 层以上，无约束矩阵连乘会把前反向信号振幅推爆到 **`3000×` 以上**，直接击穿训练稳定性[^mhc-paper]。
 
-1. 为什么扩宽残差流不加约束会在深层引发数千倍指数失控，而不是靠 `RMSNorm` 就能兜住；
-2. 什么是 **Birkhoff 双随机多面体**，为什么用 20 步 **Sinkhorn-Knopp** 把残差混合矩阵投回这个凸包后，连乘 60 层仍能保持前反向能量守恒；
-3. DeepSeek-V4.1 的 **Single-Pass mHC** 为什么把输入混合系数左移一位写成 $A_{l-1}$，从而在不改 Sinkhorn 迭代的前提下让融合内核 **`Mega-mHC`** 把激活显存访存砍半；
-4. 这套架构在 `vLLM`（commit `bb23c0a8`）[^mhc-vllm]与 `vllm-ascend`（commit `3649b8ff`）[^mhc-ascend]中分别怎样落地、融合与避坑。
+**流形受限超连接（Manifold-Constrained Hyper-Connections，mHC）**给出了既稳固又节省访存的方案。读完本篇你能回答三个关键问题：为什么无约束 HC 会在深层引发数千倍指数失控；Sinkhorn-Knopp 如何用交替归一化把混合矩阵锁进 Birkhoff 双随机凸包；以及 V4.1 的 Shifted Post-Pre（`Mega-mHC`）如何让 `n=4` 残差流的单层 HBM 流量直接减半。
 
-## 先看一个例子：用 2 个 4×4 矩阵连乘 20 层，看信号为什么会 3000 倍失控又被拉回 1.0
+## 先看一个例子：30 层矩阵连乘的信号爆炸与 Sinkhorn 驯服
 
-假设某一个 token 当前的 4 条残差分支刚起步，各支路幅值并不相等，但整体均值为 $1.00$：
+假设某 token 的 4 条并行残差分支在起点均值稳定，但每穿过一个子层都要乘上一次混合矩阵 $H_{\text{res}}^{(l)}$。如果不加任何流形约束，$H_{\text{res}}^{(l)}$ 里既有正负大权重、行和也不等于 1；经过 30 层 $\prod_l H_{\text{res}}^{(l)}$ 累积，复合增益极易突破三千倍。
 
-$$
-\mathbf{x}_0 = [1.20,\; 0.80,\; 1.40,\; 0.60]^\top, \qquad \text{均值} = 1.00
-$$
+在图 1 的 5 步交互推演中，可以完整追踪无约束矩阵发散、$t=0$ 指数正化、$t=1\text{–}4+$ 迭代投影到 Birkhoff 双随机多面体，以及 V4.1 `Mega-mHC` 把 HBM 读写从 `20d` 压到 `10d` 的全过程：
 
-为了对比直觉，我们先看两块看起来非常温和的 $4\times 4$ 残差混合矩阵 $H_1, H_2$——主对角线大约在 `1.12–1.18`，非对角线只有 `0.05–0.20`，每一行之和分别是 `[1.53, 1.47, 1.46, 1.46]` 与 `[1.55, 1.46, 1.51, 1.46]`，仅仅比恒等变换 `1.00` 多了不到 `0.55`。但只要交替连乘 10 轮（共 20 层，甚至先不加任何子层输出 $\mathcal{F}$），结果会立刻触目惊心（图 8-1）：
+<MhcSinkhornExplainer
+  client:visible
+  title="图 1：mHC Sinkhorn-Knopp 双随机投影与 Mega-mHC 单遍融合"
+/>
 
-![两路从同一个四分支向量出发对比 20 层连乘：左路无约束 HC 直接交替乘 H1 与 H2，到第 20 层数值蹿升至三千倍且前向 Amax 达 3121.9x；右路先经指数与 20 步 Sinkhorn-Knopp 投影成双随机矩阵 B1 与 B2，四支路充分混合而均值严格守恒 1.000，第 20 层复合 Amax 锁在 1.000x](./diagrams/12-mhc-walkthrough.drawio '图 8-1：4×4 混合矩阵连乘 20 层对比——无约束 HC（左）与 Sinkhorn 双随机投影 mHC（右）')
+从图 1 可以得出一条核心结构判断：**单纯在子层内部加 `RMSNorm` 救不了主干直连通路**，因为跨层梯度和激活的指数爆炸发生在 $H_{\text{res}}^{(l)}$ 组成的恒等跳连主干上。只有把 $H_{\text{res}}^{(l)}$ 本身约束进谱半径严格有界且对乘法封闭的凸集，信号才不会越滚越大。
 
-顺着图 8-1 对照两路数字：
+## 算法原理：Birkhoff 多面体、算子融合与边界切换
 
-- **左路（无约束 HC）**：第 1 层 `H_1 x_0 = [1.75, 1.29, 1.86, 1.06]`、第 2 层 `(H_2 H_1) x_0 = [2.57, 1.99, 2.62, 1.69]`，每跨过两层信号就翻两倍多；到第 20 层，四条分支直接蹿升至 **`[3146.7, 2702.6, 2800.1, 2657.0]`**——整条主干既被指数放大，反向传播梯度也以 **`3184.0×`** 同比例爆破。
-- **右路（Sinkhorn-Knopp mHC）**：对同一对矩阵取 $\exp$ 后做 20 步交替行/列归一化，投影成**每一行和、每一列和都精确等于 `1.000`** 且元素全部非负的双随机矩阵 $B_1, B_2$。第 1 层输出 `[1.063, 0.941, 1.123, 0.873]`，四支路之间实打实地交换了特征，但**均值分毫不差保持 `1.000`**；到第 20 层，复合矩阵 $(B_2 B_1)^{10}$ 依然双随机，四条分支平稳汇流为 `[1.000, 1.000, 1.000, 1.000]`，前反向 **Amax 增益严格等于 `1.000×`**。
-
-关键不在单层幅度「只偏了一点」，而在**乘法没有上界保护**时，微小偏差会沿着深度 $L$ 按指数放大（或坍缩至零）；只有把残差混合矩阵锁进**乘法封闭**的集合里，跨任意多层才不会跑偏。
-
-## Birkhoff 多面体与原始 mHC（arXiv:2512.24880）
-
-理解了连乘失控的根源，再把原始 mHC 论文[^mhc-paper]的数学构造与工程约束一次拆清（图 8-2）。
-
-![左侧上下两卡对比标准单流残差与无约束 HC 公式，并列出 Birkhoff 多面体的三项核心约束（双随机凸包、乘法封闭且谱范数至多为 1、非负输入输出防抵消）；右侧展开原始 mHC 单层计算图，包含 RMSNorm 展平预测与 20 步 Sinkhorn 投影、Pre 单流聚合、主干算子、Post 广播写回与双随机残差混合相加](./diagrams/12-mhc-arch.drawio '图 8-2：从标准残差、无约束 HC 到原始 mHC（arXiv:2512.24880）的流形受限架构')
-
-### 从符号出发：n 条残差流怎么连进 Transformer
-
-设单 token 隐层维度为 $C$，扩展倍率为 $n$（DeepSeek 默认 $n = 4$），则第 $l$ 层的残差状态不再是向量，而是矩阵 $\mathbf{x}_l \in \mathbb{R}^{n \times C}$。mHC 用三组**按 token 动态预测**的小型系数把 $n$ 条支路和主干算子 $\mathcal{F}_l$（注意力或 MoE）串起来：
+DeepSeek mHC 对三组动态映射施加正交约束（均由 4 流输入先归一化后投影生成）：
 
 $$
-\mathbf{x}_{l+1} = \mathcal{H}_l^{\mathrm{res}} \mathbf{x}_l + (\mathcal{H}_l^{\mathrm{post}})^\top \mathcal{F}_l(\mathcal{H}_l^{\mathrm{pre}} \mathbf{x}_l, \mathcal{W}_l)
+\mathbf{x}_{l+1} = H_{\text{res}, l}\, \mathbf{x}_l + H_{\text{post}, l}^\top \mathcal{F}\!\big(H_{\text{pre}, l}\, \mathbf{x}_l\big)
 $$
 
-其中三个映射各司其职：
+其中注入与汇聚向量 $H_{\text{pre}, l} = \sigma(\tilde{H}_{\text{pre}, l})$、$H_{\text{post}, l} = 2\sigma(\tilde{H}_{\text{post}, l})$ 保持非负防抵消。
 
-- **输入聚合 $\mathcal{H}_l^{\mathrm{pre}} \in \mathbb{R}^{1 \times n}$**：把 $n$ 条并行支路加权压缩为单流向量 $\hat{x}_l = \mathcal{H}_l^{\mathrm{pre}} \mathbf{x}_l \in \mathbb{R}^C$，喂给注意力或 MoE，避免主干矩阵计算量翻 $n$ 倍；
-- **输出写回 $\mathcal{H}_l^{\mathrm{post}} \in \mathbb{R}^{1 \times n}$**：将算子输出 $\mathcal{F}_l(\hat{x}_l) \in \mathbb{R}^C$ 按不同权重广播加回 $n$ 条支路；
-- **残差混合 $\mathcal{H}_l^{\mathrm{res}} \in \mathbb{R}^{n \times n}$**：让 $n$ 条支路在层边界两两交换信息（如果它是单位阵 $I_n$，就退化成 $n$ 条互不通信的平行线）。
-
-如果把上式沿第 $l$ 层到第 $L$ 层递归展开，输入 $\mathbf{x}_l$ 到达深层 $\mathbf{x}_L$ 的直通路径正好乘上了复合残差矩阵 $\prod_{i=1}^{L-l} \mathcal{H}_{L-i}^{\mathrm{res}}$。在原版 HC 里，论文用两个量化指标监控这条通路的稳定性：**复合前向最大绝对行和**与**反向最大绝对列和**（合称 **Amax Gain Magnitude**）。在 27B 模型（60 个子层）的实测中，无约束 HC 的 Amax 增益峰值冲到了 **`~3000`**，训练约 `12k` 步时梯度范数与损失同步剧烈尖峰[^mhc-paper]。即使注意力前有 `RMSNorm` 兜底归一化 $\hat{x}_l$，也管不住主干之外那条直连残差路径本身发生指数漂移或梯度坍塌。
-
-### 为什么偏偏选 Birkhoff 双随机多面体
-
-要恢复标准残差 $\mathbf{x}_{l+1} = \mathbf{x}_l + \dots$ 的恒等映射稳定性，同时保留支路间跨通道重组的能力，DeepSeek 把 $\mathcal{H}_l^{\mathrm{res}}$ 约束在 **Birkhoff 多面体（双随机矩阵流形）** $\mathcal{M}^{\mathrm{res}}$ 上：
+关键的流间混洗矩阵 $H_{\text{res}, l}$ 先取指数确保全正 $M^{(0)} = \exp(\tilde{H}_{\text{res}, l})$，再经过 $t = 1 \dots T$（实装常取 $4\text{–}20$ 步）Sinkhorn-Knopp 交替迭代：
 
 $$
-\mathcal{M}^{\mathrm{res}} = \left\{ \mathbf{H} \in \mathbb{R}^{n \times n} \;\middle|\; \mathbf{H}\mathbf{1}_n = \mathbf{1}_n,\;\; \mathbf{1}_n^\top \mathbf{H} = \mathbf{1}_n^\top,\;\; \mathbf{H} \ge 0 \right\}
+M^{(t)} = \mathcal{T}_r\!\Big(\mathcal{T}_c\big(M^{(t-1)}\big)\Big), \qquad \mathcal{T}_r(A)_{ij} = \frac{A_{ij}}{\sum_k A_{ik}}, \quad \mathcal{T}_c(A)_{ij} = \frac{A_{ij}}{\sum_k A_{kj}}
 $$
 
-这个集合同时送给深度学习四条极为珍贵的几何性质：
+迭代收敛后，$H_{\text{res}, l} \in \mathcal{B}_n$ 成为**双随机矩阵**（行和与列和均为 1）。Birkhoff 多面体对矩阵乘法天然封闭（两个双随机矩阵相乘依然是双随机矩阵），谱范数 $\le 1$，无论模型堆到 30 层还是上百层，复合增益严格收敛，前向能量与反向梯度守恒。
 
-1. **均值与梯度能量严格守恒**：行和等于 1 说明输出每条支路是输入各支路的凸组合，前向均值恒定；列和等于 1 说明反向梯度分配到各支路的总权重之和也为 1，不会在跨层回传中凭空倍增或消失。
-2. **乘法封闭性（Closure）**：任意两个双随机矩阵相乘，产物**依然是双随机矩阵**。这意味着无论网络叠 30 层还是 60 层，复合矩阵 $\prod \mathcal{H}_i^{\mathrm{res}}$ 永远留在流形内部，不可能滑向爆炸区。
-3. **非扩张与置换凸包（Birkhoff–von Neumann 定理）**：任何双随机矩阵都可以写成若干置换矩阵（Permutation Matrices）的凸组合，且谱范数满足 $\|\mathbf{H}\|_2 \le 1$，从根本上封死指数级放大。
-4. **配套的非负输入/输出约束**：如果 $\mathcal{H}^{\mathrm{pre}}$ 和 $\mathcal{H}^{\mathrm{post}}$ 允许正负号同时存在，同一条信号加进去又减出来照样会发生正负相消。mHC 因此规定 $\mathcal{H}_l^{\mathrm{pre}} = \sigma(\tilde{\mathcal{H}}_l^{\mathrm{pre}})$、$\mathcal{H}_l^{\mathrm{post}} = 2\sigma(\tilde{\mathcal{H}}_l^{\mathrm{post}})$，系数全程非负（其中 $2\sigma$ 的上界 2 来自多支路残差幅值校准）。
+图 2 将传统的单流残差与 `n=4` 的 mHC 多流残差总线摆在一起对比：
 
-### 20 步 Sinkhorn-Knopp 投影与原始系统代价
+![n=4 并行残差总线与传统单流残差架构对照](./diagrams/08-mhc-bus-arch.drawio '图 2：n=4 mHC 多流并行残差总线（H_pre / H_res / H_post）与 Shifted Post-Pre 融合架构')
 
-在实际前向中，先将 $\mathbf{x}_l$ 展平过一次 `RMSNorm`，通过线性投影与门控因子 $\alpha$ 算出未受限对数矩阵 $\tilde{\mathcal{H}}_l^{\mathrm{res}}$，再从正矩阵 $\mathbf{M}^{(0)} = \exp(\tilde{\mathcal{H}}_l^{\mathrm{res}})$ 出发，交替做 $t_{\max} = 20$ 轮列归一与行归一（**Sinkhorn-Knopp 算法**）：
+### 为什么需要 Shifted Post-Pre 与 Mega-mHC
 
-$$
-\mathbf{M}^{(t)} = \mathcal{T}_r\!\left(\mathcal{T}_c(\mathbf{M}^{(t-1)})\right), \qquad t = 1, \dots, 20
-$$
+扩宽为 4 条流带来的直接系统代价是激活访存膨胀 4 倍。如果把上一层的 `Post` 写回、当前层的 `Pre` 系数生成、混合坍缩与下层 `RMSNorm` 拆成分立内核，单子层要在 HBM 之间反复搬运 `~20d` 数据[^v41-flash]。
 
-由于 $n = 4$ 极小（仅 $4 \times 4 = 16$ 个标量！），20 步 Sinkhorn 几乎不消耗矩阵算力，在 27B 模型上直接把复合 Amax 增益峰值从 `~3000` 压回到 **`~1.6`** 以内[^mhc-paper]。
+DeepSeek-V4.1 通过**时移融合边界**（`mhc_shifted_post_pre`）把计算重组：只要两层之间不插 Engram 查表（非 L1、L14 边界），就将上一子层的 `post_mix` 写回、`res_mix` 更新、下一子层的系数生成及 `RMSNorm` 全部塞进单遍寄存器内核里，总 HBM 访存从 `20d` 直降一半到 `10d`。如图 3 所示，引擎仅在第 1 和第 14 层 Engram 注入边界才切回显式分立调用，确保静态门控能看到更新后的完整四流状态。
 
-> **工程细节点**：在 `vLLM` 的参考算子（`kernels/mhc/torch.py:35-39`）[^mhc-vllm]里，起始步骤直接把 $\mathbf{M}^{(0)}$ 的第一轮行归一融合进 `torch.softmax(comb, dim=-1) + hc_sinkhorn_eps`，随后再做列归一与余下 `sinkhorn_repeat - 1` 轮交替行/列归一——既防止极端指数值溢出，又少了一步手写行求和。
-
-不过，把残差宽成 $n = 4$ 条通道并不是免费的午餐。以原论文表 2 统计的单算子边界来看，标准残差只需 `2C` 读 / `C` 写，而未融合的原始 mHC 会膨胀到 `(5n+1)C + n^2 + 2n` 读 / `(3n+1)C + n^2 + 2n` 写；训练期还引入 $n$ 倍残差激活显存压力。论文[^mhc-paper]通过三件基础设施优化（融合 Sinkhorn/混合算子、基于 $L_r^* \approx \sqrt{nL/(n+2)}$ 的选择性重计算、以及 DualPipe 跨流水线阶段通信重叠），最终才把 27B 训练的端到端时间额外开销压到 **`6.7%`**。而到了在线推理阶段，这笔内存带宽账会变成决定生死的主矛盾。
-
-## DeepSeek-V4.1 演进：Single-Pass mHC、Mega-mHC 与融合内核
-
-在线推理（尤其小批量 Decode）是典型的 **Memory-Bandwidth Bound（受限于 HBM 带宽）**场景：加宽后的残差张量 `X_l` 尺寸是常规单流的 4 倍，如果每进出一个 Attention 或 MoE 算子都要反复把 `X_l` 从 HBM 搬进片上再写回，算力单元只能干等访存。
-
-在 DeepSeek-V4.1-Flash 技术报告（`arXiv:2609.19969` §2.4.1 式 (2)–(6)）[^v41-flash]中，团队非常诚实地指出：**即便维持 $n=4$ 与 20 步 Sinkhorn-Knopp 不变，原始 mHC 公式本身卡死了一道「层内串行依赖」**。
-
-### 为什么原始公式必须读三遍 HBM，而 V4.1 只移一个下标就能砍半
-
-把注意力或 MoE 边界的更新写成抽象递推（对应原论文中的 $\mathcal{H}^{\mathrm{pre}}=A_l,\ \mathcal{H}^{\mathrm{res}}=B_l,\ \mathcal{H}^{\mathrm{post}}=C_l$）：
-
-$$
-\text{原始 mHC（式 2）：}\quad X_{l+1} = B_l X_l + C_l \mathcal{F}_l(A_l X_l), \qquad (A_l, B_l, C_l) = \mathcal{H}(X_l)
-$$
-
-问题就出在括号里的 $A_l X_l$：为了算出传给 $\mathcal{F}_l$ 的混合单流输入，Kernel 1 必须先整遍读取 $X_l$ 并做跨隐藏维度的全局归约才能得到标量系数 $(A_l, B_l, C_l)$；全局归约全部算完前，谁也不知道 $A_l$ 是多少，于是 Kernel 2 被迫**第二次从 HBM 重新读入同一份 $X_l$** 来算 $A_l X_l$ 与预归一化；等 $\mathcal{F}_l$ 算完产出 $Y_l$，Kernel 3 还要**第三次读回 $X_l$** 做残差合流。三核 Multi-Pass 实现的总激活访存量高达 **`(4n + 4)d`**（当 $n=4$ 时为 **`20d`**，哪怕退而求其次做成两趟融合内核也仍需 `(3n + 2)d = 14d`）[^v41-flash]。
-
-DeepSeek-V4.1 的核心巧思叫 **Single-Pass mHC**（`arXiv:2609.19969` 式 (6)）：**把输入混合系数左移一个子块，改用上一步已经算好的 $A_{l-1}$**：
-
-$$
-\text{Single-Pass mHC（式 6）：}\quad X_{l+1} = B_l X_l + C_l \mathcal{F}_l(A_{l-1} X_l), \qquad (A_l, B_l, C_l) = \mathcal{H}(X_l)
-$$
-
-千万别小看这一步下标移动——在训练精度几乎零退化的前提下，它彻底打断了层边界的数据环依赖（图 8-3 上半部分）：
-
-![上半部分对比 Multi-Pass 与 V4.1 Single-Pass 激活访存：Multi-Pass 因层内依赖三次读盘达 20d；Single-Pass 改用上一步的 A_(l-1)，让 Mega-mHC 在分块融合核内一次读写完成更新、规范化量化与下次系数累加，压至下界 10d；下半部分展示标准边界走 mhc_shifted_post_pre 而 Engram 层拆为三步](./diagrams/12-mhc-runtime.drawio '图 8-3：V4.1 Single-Pass Mega-mHC 单遍读写（上）与 vLLM 生产层边界切换（下）')
-
-站在第 $l-1$ 步到第 $l$ 步的交界处，上一子块早就产出了 $Y_{l-1} = \mathcal{F}_{l-1}(\hat{X}_{l-1})$ 以及系数 $(A_{l-1}, B_{l-1}, C_{l-1})$。于是单核 **`Mega-mHC`** 按隐藏维度 $d$ 切 tile 在片上寄存器一口气做完三件事：
-
-1. **读一次** $(X_{l-1}, Y_{l-1})$（流量 $(n+1)d$），在寄存器里合出当前多分支状态 $X_l = B_{l-1} X_{l-1} + C_{l-1} Y_{l-1}$；
-2. 趁热直接用现成的 $A_{l-1}$ 计算 $A_{l-1} X_l$，把 `RMSNorm` 与 **FP8 量化**一并做掉；
-3. 同时沿隐藏维度累加出下一步预测 $\mathcal{H}(X_l)$ 所需的归一化平方和与投影分量，然后把新的 $X_l$ 与量化单流输入写回 HBM（流量 $(n+1)d$）。
-
-整趟边界**只读一遍、只写一遍**，激活访存量直接触及理论下界 **`(2n + 2)d`**（$n=4$ 时从 `20d` 降至 **`10d`**，HBM 流量整整砍半）[^v41-flash]。
-
-### 从论文到 vLLM 与 vllm-ascend 源码：两条落地路线
-
-把这套公式放进上游 `vLLM`（commit `bb23c0a8`）[^mhc-vllm]和昇腾 `vllm-ascend`（commit `3649b8ff`）[^mhc-ascend]源码，能看到硬件后端怎样围绕同一条数学约束做极致压缩：
-
-- **标准层边界融合核 `mhc_shifted_post_pre`（`vllm/models/deepseek_v41/nvidia/ops/mhc.py:216-359`）**：它对应 Single-Pass 公式在生产里的「跨层交接棒」——把**上一步的 `post` + TP 域 Lamport AllReduce + 下一步的 `pre`** 吞进同一套边界流水线。在 NVIDIA Blackwell SM100 架构且 `hidden_size % 1024 == 0, hc_mult == 4` 时（`mega_mhc.py:47-102`、`mhc_boundary.py`），算子用 CuTe DSL 把隐藏维拆成 16 片，靠 16-CTA cluster 内的分布式共享内存（DSMEM）高速推数，甚至将 BF16 高低拆分以 TF32 精度完成累加后接 DeepGEMM；非 SM100 卡则回退到 `TileLang` 融合核，AMD CDNA4 则在 `amd/mhc.py` 调用 AITER 的 `mhc_fused_post_pre_delayed_rms_norm_aiter`。
-- **小批量并发流重叠（`nvidia/ops/mhc.py:100-190`、`amd/mhc.py`）**：即便算子已经融合，20 步 Sinkhorn 仍然带来一小段标量串行延时。当 Decode 批量极小（NVIDIA 设阈值 `MHC_OVERLAP_MAX_TOKENS = 16`，ROCm CDNA4 设为 `128`）时，算子在额外辅助流上异步运行带延迟同步的 `mhc_pre_delayed_overlap`，并完整支持 `FULL` CUDA Graph 捕获。
-- **被 Engram 打断的特殊接缝（`nvidia/model.py:580-719`）**：模型刚入口（第 0 层前）用 Triton `hc_expand`（`ops/mhc.py:363-391`）把单流复制展开成 4 流，整网出口由 `hc_collapse_triton`（`model.py:1375-1396`）折叠回单流；而在挂了 Engram 的 **`layers.1` 与 `layers.14`** 入口，由于 Engram 必须在四分支状态 `[T, 4, d]` 上原位门控更新，模型层代码主动把跨层融合拆开：先 `AllReduce`，再调 `mhc_post_tilelang` 写出四流，执行 `self.engram(...)`，最后再用 `mhc_pre_delayed_tilelang` 重聚回单流。
-- **昇腾 `vllm-ascend@3649b8ff` 的当前代码结构**：要注意文档和代码演进的时间差——在该 commit 的 `vllm-ascend` 仓库里，**并没有**独立的 `ops/triton/mhc.py` 或 `models/deepseek_v41/mhc.py` 文件。DeepSeek-V4.1 的 20 步 Sinkhorn-Knopp 投影与延迟 `pre`/`post` 逻辑目前直接写在 `vllm_ascend/models/deepseek_v41/model.py:772-940, 1664-1739` 及运行时算子补丁 `patch/worker/patch_ascend_ops.py:115-204` 中；而独立抽取 NPU 可复用 mHC 原语的工作，正在隔壁 `models/glm5next/ops/mhc_ops.py:13-20` 逐步起步。
-
-## 动手跑一遍最小实现
-
-目录里的 `toy.py`（仅依赖标准库与 `numpy`，固定随机种子）复现了三件核心结论：① 30 层随机微扰 HC 与 20 步 Sinkhorn mHC 的 Amax 增益与谱范数对比；② 30 层动态系数预测下，标准 mHC 与 V4.1 Single-Pass（使用 $A_{l-1}$）各自保持 Birkhoff 双随机封闭性；③ $n=4$ 时三核 Multi-Pass、两趟 Mega-mHC 与 V4.1 Single-Pass Mega-mHC 的激活 HBM 访存对比。
-
-运行 `uv run src/content/posts/deepseek/08-mhc/toy.py` 的实际输出：
-
-```text
-① 4x4 混合矩阵连乘增益（前向/反向最大值）：
-   20 层连乘：无约束 HC =    511.44×  vs  mHC(sk=20) = 1.000000×
-   30 层连乘：无约束 HC =   5162.70×  vs  mHC(sk=20) = 1.000000×（谱范数 1.000000，双随机误差 2.66e-15）
-② 30 层端到端动态预测传播（标准 mHC vs V4.1 Single-Pass）：
-   单层最大双随机误差 = 7.83e-07，30 层复合积 Amax = 1.000000×
-   标准 mHC 输出 RMS = 1.1332，Single-Pass 输出 RMS = 1.1257（方向余弦相似度 0.9995）
-③ n=4 每层边界激活访存对比（Mega-mHC 融合）：
-   三核 Multi-Pass = 20d  |  两趟 Mega-mHC = 14d  |  V4.1 Single-Pass Mega-mHC = 10d（访存减半 2.0×）
-OK 12
+```mermaid caption="图 3：常规 Shifted Post-Pre 单遍融合路径与 Engram 层边界分离控制流"
+flowchart TD
+  PREV["上一子层输出 x"] --> CHECK{"下一层是否 Engram 边界"}
+  CHECK -->|"否：常规子层"| SHIFT["Shifted Post-Pre + RMSNorm 融合"]
+  CHECK -->|"是：L1 / L14"| POST["mhc_post 写回 4 流"]
+  POST --> ENG["Engram Gate 原位注入"]
+  ENG --> PRE["mhc_pre 坍缩进子层"]
+  SHIFT --> NEXT["进入 Attn / MoE 计算"]
+  PRE --> NEXT
 ```
 
-可以留意两点：在 30 层随机动态预测流里，改用 $A_{l-1}$ 的 Single-Pass 路径与原版 mHC 输出向量余弦相似度高达 `0.9995`，同时每层复合残差积的双随机误差稳定压在 $10^{-6}$ 量级以下。
+## 核心实现与 GPU / 昇腾源码对照
 
-## vLLM 与 vllm-ascend 生产对比
+下面给出独立 NumPy 核心实现，直接验证 30 层无约束 HC 与 20 步 Sinkhorn-Knopp 在 4 流残差矩阵连乘下的复合幅值差距与行/列和投影精度：
 
-| 对比维度               | 上游 `vLLM`（commit `bb23c0a8`）                                                                                                                                         | `vllm-ascend`（commit `3649b8ff`）                                                                                            |
-| ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------- |
-| **分支倍率与投影算法** | 默认 $n=4$，动态预测 $\mathcal{H}^{\mathrm{pre}}/\mathcal{H}^{\mathrm{post}}/\mathcal{H}^{\mathrm{res}}$，起始 `softmax` 后执行 20 步 Sinkhorn-Knopp（`torch.py:35-39`） | 同契约对齐：$n=4$ 与 20 步 Sinkhorn-Knopp，保证与同一份 DeepSeek-V4.1 checkpoint 数值等价（`deepseek_v41/model.py:827, 871`） |
-| **标准层边界融合**     | Single-Pass 跨层融合核 `mhc_shifted_post_pre`：TP AllReduce + `prev_post` + `next_pre` 一次过（`nvidia/ops/mhc.py:216-359`）                                             | 当前仍以模型前向串联融合算子与 CANN/Triton 补丁为主，无独立 `mega_mhc` DSMEM 边界核                                           |
-| **硬件特化加速**       | SM100 启用 DeepGEMM + CuTe 16-CTA cluster DSMEM (`mega_mhc.py`、`mhc_boundary.py`)；AMD CDNA4 接 AITER 融合核                                                            | 通过 `patch_ascend_ops.py:115-204` 接入 NPU 定制原语与 RMSNorm 融合，适配 ACLGraph 图捕获                                     |
-| **小批量延迟掩蔽**     | 辅助流异步重叠 `mhc_pre_delayed_overlap`（NVIDIA `T ≤ 16`，ROCm `T ≤ 128`），支持 `FULL` CUDA Graph                                                                      | 围绕 NPU 计算流调度与事件同步编排（`deepseek_v41/model.py:772-940`）                                                          |
-| **Engram 接缝处理**    | 第 1、14 层中断 `mhc_shifted_post_pre`，切为 `all_reduce -> mhc_post_tilelang -> engram -> mhc_pre`（`nvidia/model.py:626-649`）                                         | 同样在 Engram 注入点显式落盘四流给 `engram` 更新，再衔接上层 `mhc_pre`（与生产者预取流配合）                                  |
-| **代码模块组织**       | 分层抽象清晰：`layers/mhc.py`、`kernels/mhc/{torch,tilelang,flashinfer_mega}.py`、`nvidia/ops/`、`amd/mhc.py`                                                            | 尚未完全拆出独立 `triton/mhc.py` 与 `deepseek_v41/mhc.py`；主逻辑在内联 `model.py`，复用模块在 `glm5next/ops/mhc_ops.py` 起步 |
+```python
+import numpy as np
+
+
+def run_mhc_stability_check() -> None:
+    rng = np.random.default_rng(8)
+    n, L = 4, 30
+
+    # 1. 无约束 Hyper-Connections 30 层连乘
+    prod_raw = np.eye(n, dtype=np.float64)
+    for _ in range(L):
+        h_raw = rng.standard_normal((n, n)) * 0.8 + np.eye(n)
+        prod_raw = h_raw @ prod_raw
+    amax_raw = float(np.max(np.abs(prod_raw)))
+
+    # 2. mHC Sinkhorn-Knopp 投影到 Birkhoff 双随机流形
+    def sinkhorn(logits: np.ndarray, iters: int = 20, eps: float = 1e-12) -> np.ndarray:
+        m = np.exp(logits - logits.max())
+        for _ in range(iters):
+            m = m / (m.sum(axis=0, keepdims=True) + eps)
+            m = m / (m.sum(axis=1, keepdims=True) + eps)
+        return m
+
+    prod_mhc = np.eye(n, dtype=np.float64)
+    row_err = col_err = 0.0
+    for _ in range(L):
+        m = sinkhorn(rng.standard_normal((n, n)))
+        row_err = max(row_err, float(np.max(np.abs(m.sum(axis=1) - 1.0))))
+        col_err = max(col_err, float(np.max(np.abs(m.sum(axis=0) - 1.0))))
+        prod_mhc = m @ prod_mhc
+
+    amax_mhc = float(np.max(np.abs(prod_mhc)))
+    assert row_err < 1e-6 and col_err < 1e-3 and amax_mhc <= 1.05
+    print(
+        f"30L unconstrained_Amax={amax_raw:.1f}, "
+        f"mHC_Amax={amax_mhc:.4f}, row_err={row_err:.2e}, col_err={col_err:.2e}"
+    )
+
+
+if __name__ == "__main__":
+    run_mhc_stability_check()
+```
+
+本地执行输出如下：30 层无约束矩阵连乘绝对值飙升到 `15641070.4`，而经过 Sinkhorn-Knopp 双随机投影后稳稳压在 `0.2500`，行和、列和偏差全部收敛在 $10^{-5}$ 以下：
+
+```text
+30L unconstrained_Amax=15641070.4, mHC_Amax=0.2500, row_err=1.00e-12, col_err=7.36e-06
+```
+
+### NVIDIA GPU 实现路径（`vLLM` `Mega-mHC` & `CuTe Boundary`）
+
+在 `vLLM` 提交 `bb23c0a8` 中，通用抽象 `MHCPreOp` 位于 `vllm/model_executor/layers/mhc.py`[^mhc-vllm]，而在 V4.1 NVIDIA 专项优化栈里则分出两条核心融合算子：面向 SM100 的 DeepGEMM `mega_mhc` 内核（`vllm/models/deepseek_v41/nvidia/ops/mega_mhc.py:47-95`）与面向超小批量低延迟的 CuTe DSL 边界内核（`mhc_boundary.py:1025-1053`）：
+
+```python
+# vllm/models/deepseek_v41/nvidia/ops/mega_mhc.py:47-65
+def mhc_shifted_post_pre_deep_gemm(
+    x: torch.Tensor,
+    residual: torch.Tensor,
+    shifted_prev_mix: torch.Tensor,
+    post_mix: torch.Tensor,
+    comb_res_mix: torch.Tensor,
+    fn: torch.Tensor,
+    ...
+    rmsnorm_weight: torch.Tensor,
+    rmsnorm_eps: float,
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+    """Run DSV4.1 shifted post, next pre, and BF16 RMSNorm with Mega mHC."""
+```
+
+而在需要同时处理 MoE 延迟归约（`_all_reduce_mhc.finalize`）的场景下，`mhc_shifted_post_pre` 还会直接与 TP All-Reduce 合并执行，并在 CUDA Graph 外部或 `capture_aux` 开启时自动安全退回分立路径[^mhc-vllm]。
+
+### 华为昇腾 NPU 实现路径（`vllm-ascend` `npu_hc_pre_v3` & `npu_hc_post`）
+
+在 `vllm-ascend` 提交 `3649b8ff` 中，`DeepseekV41DecoderLayer` 直接挂载了由 CANN 自定义算子注册的 `torch.ops._C_ascend.npu_hc_pre_v3` 与 `torch.ops._C_ascend.npu_hc_post`[^mhc-ascend]：
+
+```python
+# vllm_ascend/models/deepseek_v41/model.py:863-882
+def hc_pre(self, x, hc_fn, hc_scale, hc_base, pre_mix=None):
+    return torch.ops._C_ascend.npu_hc_pre_v3(
+        x,
+        hc_fn,
+        hc_scale,
+        hc_base,
+        pre_mix,
+        hc_mult=self.hc_mult,
+        hc_sinkhorn_iters=self.hc_sinkhorn_iters,
+        norm_eps=self.norm_eps,
+        hc_eps=self.hc_eps,
+    )
+
+def hc_post(self, x, residual, post, comb):
+    return torch.ops._C_ascend.npu_hc_post(
+        x.unsqueeze(0),
+        residual.unsqueeze(0),
+        post.unsqueeze(0),
+        comb.unsqueeze(0),
+    ).squeeze(0)
+```
+
+在常规层的 `forward` 中，NPU 侧同样传递上一层的 `pre_mix` 到 `hc_pre` 完成融合，而在第 1、14 层 Engram 注入边界前先调 `hc_post` 把更新后的完整四流残差交还给 `AscendEngram` 门控模块。
+
+| 实现维度 | NVIDIA GPU（`vLLM` `bb23c0a8`）                   | 华为昇腾 NPU（`vllm-ascend` `3649b8ff`）              |
+| -------- | ------------------------------------------------- | ----------------------------------------------------- |
+| 核心算子 | `mega_mhc` / CuTe `MhcBoundaryKernel` / TileLang  | `torch.ops._C_ascend.npu_hc_pre_v3` + `npu_hc_post`   |
+| 融合边界 | `mhc_shifted_post_pre` 连带 `RMSNorm` 与 MoE 归约 | `pre_mix` 跨子层传递 + `DeviceOperator.rms_norm_cast` |
+| 激活形状 | `[T, 4, hidden_size]`（`hc_mult = 4`）            | `[T, 4, hidden_size]`（仅边界 expand/unsqueeze）      |
+| Sinkhorn | `sinkhorn_repeat` 寄存器展开（列先、行后）        | `hc_sinkhorn_iters` 算子内原地迭代                    |
 
 ## 代价与边界
 
-- **未融合时要付 $4\times$ 残差 HBM 带宽账**：把残差从 $C$ 扩到 $4C$ 是实打实的存储与访存膨胀。如果没有 Single-Pass 下标左移和 `Mega-mHC` 寄存器级分块融合（退回三核实现就是 `20d` 流量），$n=4$ 在小批量 Decode 下的 HBM 读写开销足以吃掉大部分架构收益。
-- **跨层融合依赖「边界干净」，Engram 等旁路会打断流水线**：`mhc_shifted_post_pre` 之所以能把上一层收尾和下一层开头揉进一个核，前提是两层之间没有其他操作碰 `[T, 4, d]` 状态。一旦像 V4.1 在 `layers.1` 和 `layers.14` 插入 `Engram`，边界就必须退回显式 `mhc_post -> engram -> mhc_pre`（另注：第 0 层 `hc_expand` 与末层 `hc_collapse` 同理单独处理）。
-- **极致融合内核高度绑定特定硬件微架构**：例如 DeepSeek 依托 SM100 16-CTA cluster DSMEM 与 `hidden_size % 1024 == 0, hc_mult == 4` 的硬性前提才能跑满 `Mega-mHC`；切换算力代际或硬件平台（如 AMD、昇腾 NPU）时，必须退回 TileLang、AITER 或平台定制算子，且小批量异步重叠阈值（`16` vs `128`）也无法通用。
-- **工程基准声明**：本文对 20/30 层稳定性、Single-Pass 数值轨迹与访存公式的验证均基于 `toy.py` 数值实验、两篇官方论文实测数据[^mhc-paper][^v41-flash]以及 `vLLM`/`vllm-ascend` 源码注释，未在本地真实 Blackwell 或昇腾硬件上实测端到端吞吐。
+- **残差显存占用的 4× 放大**：虽然单遍 `Mega-mHC` 把带宽压到了常规的 `10d`，但跨层驻留的残差张量仍然维持 `[B, 4, H]` 体积；在训练反向或长序列激活内存受限场景需要配套选择性重计算与流复用。
+- **Engram 边界打断单遍融合**：一旦进入配置了 `engram` 的层（如 L1、L14），必须显式拆开上一层的 `mhc_post` 与下一层的 `mhc_pre`，以防止 `Engram` 漏看本层刚写回的多流更新，从而在对应两层回吐少量额外 HBM 带宽。
+- **硬件对齐强约束**：无论是 SM100 上的 `is_mega_mhc_supported`（要求 `hidden_size % 1024 == 0` 且 `hc_mult == 4`），还是 `aiter` / CANN 自定义算子，都假定固定流数 $n=4$ 与整除维度；更改配置后会立刻回退到未融合参考核。
 
-到这里，我们已经把 DeepSeek 架构主线中最核心的三条进化分支全部拼齐：注意力侧用 MLA + DSA 压 KV Cache 与长上下文复杂度，计算与存储侧用 DeepSeekMoE + Engram 正交扩展知识容量，残差主干侧用 mHC 扩宽信息高速公路并在 V4.1 靠 Single-Pass 把硬件访存锁死在最低下界。接下来在[09 多词元预测与动态推测解码：从 DeepSeek-V3 MTP 到 DSpark](../09-mtp-and-dspark/)里，我们看多 Token 预测和分布式执行引擎怎样把这条通路再往前推进一步。
+解决了长距离跨层传播与通道宽度矛盾后，整个骨干解码计算流已经相当高效；接下来唯一限制自回归生成速度上限的，就是「每个词必须依次串行发射一次全卡扫描」的内存墙。下一篇[09 多词元预测与动态推测解码](../09-mtp-and-dspark/)将聚焦 V3 串联 MTP 与 V4.1 DSpark 如何突破单个 token 的时间瓶颈。
 
 ## 自测
 
-1. 为什么标准残差连接不需要 Sinkhorn-Knopp 投影，而把残差扩成 $n=4$ 条分支的无约束 HC 却会在 27B 深层训练中出现数千倍 Amax 增益与损失尖峰？只靠子层前的 `RMSNorm` 为什么救不了？
-2. 写出 Birkhoff 双随机多面体的三个代数条件，并解释「行和为 1」「列和为 1」「乘法封闭」分别对应前向传播、反向传播和深层叠加中的哪项物理直觉。
-3. 如果只约束 $\mathcal{H}^{\mathrm{res}}$ 双随机，却允许 $\mathcal{H}^{\mathrm{pre}}$ 和 $\mathcal{H}^{\mathrm{post}}$ 随意取负值，深层训练仍可能发生什么退化？
-4. DeepSeek-V4.1 的 **Single-Pass mHC** 是否用闭式矩阵替换了 20 步 Sinkhorn-Knopp？它真正修改了哪一个系数下标，为什么这一个改动就能把 `Mega-mHC` 的激活访存从 `(4n+4)d` 压到 `(2n+2)d`？
-5. 在 `vLLM` 生产代码里，为什么大部分层边界可以调用 `mhc_shifted_post_pre`，唯独 `layers.1` 与 `layers.14` 必须把它拆成 `mhc_post_tilelang` 与 `mhc_pre_delayed_tilelang`？
-6. **动手实验**：打开同目录下的 `toy.py`，把 `sk_iters = 20` 依次改成 `1`、`5`、`10`，观察第 30 层的最大单层双随机误差 `ds_error` 和复合 `Amax` 增益如何随迭代次数快速收敛；再试试把 `mhc_mats` 的矩阵幅度放大 10 倍，看 20 步 Sinkhorn 是否还足以收敛。
+1. 为什么在 4 流 Hyper-Connections 中只靠每层子层前的 `RMSNorm` 无法阻止深层信号发生 3000 倍级爆炸？
+2. Birkhoff 双随机多面体的两条核心线性约束是什么？为什么任意数量双随机矩阵相乘后依然落在该凸包内？
+3. 解释 V4.1 `mhc_shifted_post_pre_deep_gemm` 是如何在不改变数学结果的前提下把每子层 HBM 流量从 `20d` 砍到 `10d` 的；第 1、14 层为何必须打破该融合？
+4. 在上述 NumPy 验证脚本中，如果把 `sinkhorn` 的迭代步数从 `20` 降到 `4`，重新运行观察 `col_err` 与 `amax_mhc` 会出现什么量级的变化？
 
-[^mhc-paper]: Xie et al., _mHC: Manifold-Constrained Hyper-Connections_, [arXiv:2512.24880](https://arxiv.org/abs/2512.24880)（DeepSeek-AI，2025-12）。核心章节：§2–3（HC 公式、Amax Gain Magnitude 定义、27B `~3000` 增益尖峰与 `12k` 步训练崩溃）、§4 式 (6)–(9)（Birkhoff 多面体、`20` 步 Sinkhorn-Knopp、$\sigma$/$2\sigma$ 非负约束）、表 2（未融合激活读写账本）、图 7(b)（mHC 复合 Amax 降至 `~1.6`）与 §5（DualPipe 重叠、$L_r^* \approx \sqrt{nL/(n+2)}$ 选择性重计算与 `6.7%` 训练开销）。
+[^mhc-paper]: Xie et al., _mHC: Manifold-Constrained Hyper-Connections_, [arXiv:2512.24880](https://arxiv.org/abs/2512.24880)（2025-12），§2–4 分析 HC 3000x 增益崩溃、Birkhoff 双随机流形与 20 步 Sinkhorn-Knopp。
 
-[^v41-flash]: DeepSeek-AI, _DeepSeek-V4.1-Flash Technical Report_, [arXiv:2609.19969](https://arxiv.org/abs/2609.19969)。对应章节：§2.4.1 式 (2)–(6)（Multi-Pass `(4n+4)d`、两趟 `(3n+2)d` 与 Single-Pass $A_{l-1}$ 错位 + `Mega-mHC` `(2n+2)d` 下界）、§4.2.1（$n=4$ 与 `20` 步 Sinkhorn-Knopp 生产配置）。
+[^v41-flash]: DeepSeek-AI, _DeepSeek-V4.1-Flash Technical Report_, [arXiv:2609.19969](https://arxiv.org/abs/2609.19969)，§2.4.1 提出 Single-Pass `A_{l-1}` 错位时移与 `Mega-mHC` 带宽下界分析。
 
-[^mhc-vllm]: `vLLM`（commit `bb23c0a8`）：`vllm/model_executor/layers/mhc.py`（`MHCPreOp`、`MHCPreDelayedOp`、`MHCPostOp`、`MHCFusedPostPreOp`、`hc_expand`/`hc_contract`）、`vllm/model_executor/kernels/mhc/torch.py`（`softmax` 起步与 Sinkhorn 实现）、`vllm/models/deepseek_v41/nvidia/ops/{mhc.py,mega_mhc.py,mhc_boundary.py}`（`mhc_shifted_post_pre`、`MHC_OVERLAP_MAX_TOKENS=16`、SM100 16-CTA DSMEM 边界融合）、`vllm/models/deepseek_v41/amd/mhc.py` 及 `nvidia/model.py:539-719, 1307-1396`。
+[^mhc-vllm]: `vLLM` 仓库（commit `bb23c0a8`）：`vllm/model_executor/layers/mhc.py`、`vllm/models/deepseek_v41/nvidia/ops/{mhc.py,mega_mhc.py,mhc_boundary.py}` 与 `nvidia/model.py:539-719`。
 
-[^mhc-ascend]: `vllm-ascend`（commit `3649b8ff`）：`vllm_ascend/models/deepseek_v41/model.py:772-940, 1664-1739`（内联 20 步 Sinkhorn 与 pre/post 算子）、`vllm_ascend/patch/worker/patch_ascend_ops.py:115-204`（NPU 定制算子补丁）及 `vllm_ascend/models/glm5next/ops/mhc_ops.py:13-20`。
+[^mhc-ascend]: `vllm-ascend` 仓库（commit `3649b8ff`）：`vllm_ascend/models/deepseek_v41/model.py:772-940`（`DeepseekV41DecoderLayer`、`npu_hc_pre_v3`、`npu_hc_post`）。

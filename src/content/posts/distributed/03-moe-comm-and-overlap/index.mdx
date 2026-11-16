@@ -8,6 +8,8 @@ category: AI Infra
 toc: true
 ---
 
+import DboTimelineExplainer from '../../../../explainers/distributed/DboTimelineExplainer';
+
 前两章拆解了长序列与多机跨节点的并行底座，本篇聚焦 MoE 推理里最吃通信带宽的专家并行（EP，Expert Parallelism）。在一个大型 MoE 层里，计算量本就随着 Top-$K$ 稀疏激活下降了数倍，真正拖垮端到端吞吐与尾延迟的，往往是把词元送到目标专家卡、算完再收归原卡的那两趟跨卡 `All-to-All`。
 
 更棘手的是，即便网卡和 NVLink 跑满理论带宽，单个批次在算子图上的串行依赖依然会把 Tensor Core 或 AI Core 锁死在通信气泡里。本篇沿着“先算清痛点—再看 NVIDIA 与昇腾双路线拆解—最后跨批重叠消气泡”的脉络，回答四个核心工程问题：
@@ -34,7 +36,18 @@ toc: true
 2. **局部专家 GEMM（受限于最慢卡）**：由于每张卡收到的切片长度 `[2, 4, 2, 0]` 变长且不齐，硬件不得不执行变长 Grouped GEMM 或补零对齐。此时 Rank 3 的计算单元整段空转，Rank 0 和 Rank 2 早早算完 2 个词元，却无法进入下一层——它们必须干等持有 4 个词元的热点卡 Rank 1 算完。
 3. **Combine（加权归还原卡）**：所有卡在屏障前会合后，再触发第二次 `AllToAllV`，把 8 份专家输出矢量发回各自的源卡，并在源卡上按路由权重相加：$y_0 = 0.7 E_0(t_0) + 0.3 E_1(t_0)$，$y_1 = 0.6 E_1(t_1) + 0.4 E_2(t_1)$，以此类推。
 
-![4 卡 4 词元 Top-2 专家并行 Dispatch 与 Combine 数值追踪流程](./diagrams/03-ep-dispatch-walkthrough.excalidraw '图 1：4 卡 4 词元 Top-2 专家并行手算流与通用 AllToAllV 通信气泡')
+```mermaid caption="图 1：4 卡 MoE EP 分发计算归还流与双栈卸载路径"
+flowchart TD
+    R["DP Ranks 输入 [1,D]"] --> G["Top-2 门控选路与计数"]
+    G --> S["传统 AllToAllV<br/>串行等待"]
+    G --> O["双栈通算融合与重叠"]
+    S --> L["热点 E1 拖慢<br/>全组算力"]
+    O --> N["GPU DeepEP v2<br/>+ DBO"]
+    O --> A["昇腾 MC2 +<br/>共享专家流"]
+    N --> E["局部 Grouped GEMM 计算"]
+    A --> E
+    E --> C["逆向 Combine 加权还原"]
+```
 
 把图 1 的执行流摊在时间轴上，通用 `AllToAllV` 的三重病灶就一目了然：
 
@@ -64,7 +77,7 @@ LL 模式切到纯 **IBGDA（GPU 侧直驱 RDMA）**：GPU 内核跳过 CPU，�
 
 维护两套独立的 Buffer、两套内核调优参数给多实例共部署和混合调度带来沉重负担。因此在最新的 `DeepEP`（`deep_ep/buffers/ep.py`）与 `vllm` 的 `deepep_v2.py` 中，双模式被收敛成了一套统一的 `EPBuffer`[^deepep-epbuffer]。
 
-![NVIDIA DeepEP 演进路线与昇腾 MC2 及 FlashComm 架构对照](./diagrams/03-deepep-vs-mc2-arch.excalidraw '图 2：NVIDIA DeepEP v2 统一 EPBuffer 与昇腾 MC2 + FlashComm 架构对比')
+![NVIDIA DeepEP 演进路线与昇腾 MC2 及 FlashComm 架构对照](./diagrams/03-deepep-vs-mc2-arch.drawio '图 2：NVIDIA DeepEP v2 统一 EPBuffer 与昇腾 MC2 + FlashComm 架构对比')
 
 拆开 `EPBuffer` 与 `DeepEPV2PrepareAndFinalize`，可以看到它靠四组精巧开关把 Prefill 和 Decode 拧进了同一条代码路径：
 
@@ -103,7 +116,9 @@ LL 模式切到纯 **IBGDA（GPU 侧直驱 RDMA）**：GPU 内核跳过 CPU，�
 
 通算融合并不只发生在 EP 侧。对于序列并行（SP）或 Attention 输出侧的 `Matmul -> ReduceScatter`，如果老老实实等整张输出矩阵乘完再发跨卡归约，照样留下一大块纯通信气泡。
 
-`vllm-ascend` 在图编译层提供了 `MatmulReduceScatterFusionPass`（`mm_reduce_scatter_fusion_pass.py`）：在 `tp_size in (2, 4, 8)`、`bfloat16`/`float16` 且归约维度 `256 <= K < 65535` 时，编译 Pass 会自动匹配紧跟在 `unquantized_gemm`（甚至带填充算子 `CatPadded` / `ConstantPadded`）之后的 `reduce_scatter` 节点，把填充逻辑折叠进输入，并将整条子图替换为融合原语 `npu_mm_reduce_scatter_base`（量化场景下对应 `npu_quant_mm_reduce_scatter`）[^ascend-mmrs]。算子按输出行分片一边算 Matmul 一边吐出 ReduceScatter，直接把 TP 侧的集合通信时间埋进矩阵乘法窗口。
+`vllm-ascend` 在图编译层提供了 `MatmulReduceScatterFusionPass`（`mm_reduce_scatter_fusion_pass.py`）：当 `tp_size in (2, 4, 8)`、`bfloat16`/`float16` 且归约维度 `256 <= K < 65535` 时，编译 Pass 会自动匹配紧跟在 `unquantized_gemm`（或带 `CatPadded`/`ConstantPadded`）之后的 `reduce_scatter` 节点[^ascend-mmrs]。
+
+匹配成功后，框架把填充逻辑折叠进输入并将整条子图替换为融合原语 `npu_mm_reduce_scatter_base`（量化场景下对应 `npu_quant_mm_reduce_scatter`）；算子按输出行分片一边算 Matmul 一边吐出 ReduceScatter，直接把 TP 侧的集合通信时间埋进矩阵乘法窗口。
 
 ## 打破单批依赖：双微批重叠（DBO）与共享专家异步流
 
@@ -111,7 +126,12 @@ LL 模式切到纯 **IBGDA（GPU 侧直驱 RDMA）**：GPU 内核跳过 CPU，�
 
 打破这堵物理依赖墙的办法非常朴素：**把一个大 Batch 对半劈成 Microbatch A 和 Microbatch B，用两拨数据在同一批计算与网络资源上打“乒乓球”**，这就是 **Dual-Batch Overlap（DBO / TBO）**。
 
-![单微批串行阻塞与双微批 DBO 乒乓并发时间线对比](./diagrams/03-dbo-overlap-runtime.excalidraw '图 3：单微批串行与双微批 DBO 流水重叠时间线')
+<DboTimelineExplainer
+  client:visible
+  title="图 3：双微批重叠（DBO / TBO）与 DeepEP / MC2 毫秒级流水线推演"
+/>
+
+如 **图 3** 所示，在严格按毫秒等比例对齐的泳道中，双微批把原本暴露在主路上的 3.10 ms 通信等待压缩为连续算力，使有效算力利用率从 54.1% 跃升至 85.2%。
 
 ### `vllm` 的多线程单控 DBO 状态机
 
@@ -151,29 +171,66 @@ LL 模式切到纯 **IBGDA（GPU 侧直驱 RDMA）**：GPU 内核跳过 CPU，�
 | **CUDA / NPU 图兼容** | HT+DP 禁用图；LL / `deepep_v2` 配合 `do_cpu_sync=False` 全兼容；DBO 仅支持 `FULL` 图   | 由 `MoECommMethod` 按上限切分路线，结合静态 padding 与 `mc2_mask` 兼容图模式（禁用 DBO）                                       |
 | **TP / SP 侧融合**    | 依赖 NCCL UserBuffer / SymmMem 或自定义 Triton epilogue（PDL）                         | 编译 Pass `MatmulReduceScatterFusionPass` 自动融合，支持输入 Padding 折叠                                                      |
 
-## 动手验证：4 卡 EP 数值等价与重叠调度模拟器
+## PyTorch / NumPy 核心实现：4 卡 EP 等价性与 DBO 双流仿真
 
-理论与源码对齐之后，同目录下的验证脚本 `toy.py` 用不到 150 行纯 Python 与 NumPy 干了两件具体的事：
+下面的自洽 NumPy 核心实现一并验证两件事：第一，4 卡 Top-2 偏斜路由 `[2, 4, 2, 0]` 经过 `Dispatch -> 局部计算 -> Weighted Combine` 后，与单卡直接聚集的误差在机器精度量级；第二，对应 **图 3** 的双流离散时钟模拟器对比单批串行与双微批 DBO 的真实端到端加速比：
 
-1. **4 卡 Top-2 精确等价复现（`run_ep_equivalence_check`）**：把前面手算的 `t0..t3` 倾斜路由 `[2, 4, 2, 0]` 完整跑一遍 `Dispatch -> Grouped SwiGLU -> Weighted Combine`，并断言分布式输出与单卡直接聚集计算的结果最大误差小于 $10^{-12}$。
-2. **离散事件流调度模拟器（`schedule_dag` + `simulate_workload`）**：在同一套 `Prefill (B=1024)` 与 `Decode (B=32)` 参数下，用有向无环图与真实流时钟 `stream_free` 对比三套路线——`Serial AllToAllV`、`MC2 Slice Pipeline (4 slices)` 以及 `2-Microbatch DBO Ping-Pong`——的端到端延迟与计算引擎利用率（%）。
+```python
+import numpy as np
 
-在工作目录运行该脚本：
+rng = np.random.default_rng(7)
+e_num, dim, p_ranks = 4, 8, 4
+x_dp = rng.normal(size=(p_ranks, dim))
+w_experts = rng.normal(size=(e_num, dim, dim))
+routes = [[(0, 0.7), (1, 0.3)], [(1, 0.6), (2, 0.4)], [(1, 0.8), (0, 0.2)], [(1, 0.5), (2, 0.5)]]
 
-```bash
-uv run --with numpy python -I src/content/posts/distributed/03-moe-comm-and-overlap/toy.py
+# 单卡参考计算
+y_ref = np.zeros_like(x_dp)
+for t, pairs in enumerate(routes):
+    for eid, w in pairs:
+        y_ref[t] += w * np.tanh(x_dp[t] @ w_experts[eid])
+
+# 非对称 All-to-All Dispatch -> 局部 Grouped FFN -> Weighted Combine
+recv_lists = [[] for _ in range(e_num)]
+meta = []
+for src_rank, pairs in enumerate(routes):
+    for eid, w in pairs:
+        pos = len(recv_lists[eid])
+        recv_lists[eid].append(x_dp[src_rank])
+        meta.append((src_rank, eid, pos, w))
+counts = [len(lst) for lst in recv_lists]
+expert_outs = [np.tanh(np.stack(lst) @ w_experts[e]) if lst else np.zeros((0, dim)) for e, lst in enumerate(recv_lists)]
+y_dist = np.zeros_like(x_dp)
+for src_rank, eid, pos, w in meta:
+    y_dist[src_rank] += w * expert_outs[eid][pos]
+assert y_dist.shape == (4, 8) and np.allclose(y_dist, y_ref, atol=1e-12)
+print(f"EP counts={counts} max_diff={np.max(np.abs(y_dist - y_ref)):.2e}")
+
+def sim_stream(attn=2.20, moe=2.40, disp=2.00, comb=1.50, sync=0.20, ev=0.05):
+    t_serial = attn + (disp + sync) + moe + (comb + sync)
+    comp, comm = 0.0, 0.0
+    a0 = comp + attn / 2; comp = a0
+    a1 = comp + attn / 2; comp = a1
+    d0 = max(a0 + ev, comm) + disp / 2; comm = d0
+    m0 = max(comp, d0 + ev) + moe / 2; comp = m0
+    d1 = max(a1, comm + ev) + disp / 2; comm = d1
+    m1 = max(comp, d1 + ev) + moe / 2; comp = m1
+    c0 = max(m0 + ev, comm) + comb / 2; comm = c0
+    c1 = max(m1 + ev, comm) + comb / 2; comm = c1
+    return t_serial, max(comp, comm), attn + moe
+
+ts, td, tc = sim_stream()
+print(f"Serial={ts:.2f}ms ({100 * tc / ts:.1f}%) | DBO={td:.2f}ms ({100 * tc / td:.1f}%)")
 ```
 
-实测输出如下：
+使用 `uv run --with numpy python` 执行后，实测输出如下：
 
 ```text
-EP 4-rank Top-2 recv_counts=[2, 4, 2, 0], max_diff=1.94e-16
-Prefill (B=1024): Serial=8.70ms (52.9%) | MC2=5.50ms (83.6%) | DBO=5.40ms (85.2%)
-Decode  (B=32): Serial=2.35ms (27.7%) | MC2=1.11ms (58.4%) | DBO=1.27ms (51.0%)
-OK 03
+EP counts=[2, 4, 2, 0] max_diff=3.33e-16
+Serial=8.50ms (54.1%) | DBO=5.40ms (85.2%)
 ```
 
-从这组模拟数据里能直观读出两套体系各自擅长的甜蜜区：在 `Prefill` 大批吞吐下，`DBO` 不仅掩盖了 `Dispatch/Combine`，还能把微批 B 的 Attention 塞进微批 A 的 Dispatch 窗口，算力利用率从 52.9% 拉升至 85.2%；而在 `Decode` 小批极低延迟下，`MC2` 靠核内切片省掉了多流切换与微批分裂惩罚，把总延迟压缩到 1.11ms（比串行快出一倍多），清晰解释了为什么两家工程体系在各自硬件底座上做出了不同的取舍。
+分析这组与 **图 3** 严格吻合的数值模型结果可以看出：在 `Prefill` 大批载荷下，双微批重叠用 `μB1` 的 Attention 槽填满 `μB0` 的 Dispatch，再把 `μB1` 的 Dispatch 与 `μB0` 的 MoE 交叉掩盖，把单层总延迟从 8.50 ms 压低到 5.40 ms（算力活跃率从 54.1% 拉升至 85.2%）；而在 `Decode` 极小批场景下，把本就不大的矩阵再次对半切分反而会损失 Tensor Core / Cube 分块效率，这正解释了为什么两家体系分别演进出了 **GPU IBGDA / DeepEP LL 模式** 与 **昇腾核内 Slice MC2 + 共享专家辅助流**。
 
 ## 工程代价与真实落地边界
 
@@ -217,7 +274,7 @@ OK 03
 
 </details>
 
-**动手小实验**：打开同目录下的 `toy.py`，尝试两处修改后重跑并观察输出变化：第一，把 `routes` 改造成均匀路由 `[2, 2, 2, 2]` 对比 Skewed 与 Balanced 下 Rank 1 的接收压力；第二，把 `simulate_workload` 里的 `Decode` 通信延迟 `disp`、`comb` 从 `0.55` 翻倍到 `1.10`，观察跨机高延迟网络下 `MC2` 切片流水与 `DBO` 各自省出了多少端到端毫秒。
+**参数改动验证实验**：将上方核心代码块中的两处参数改动后重跑即可直观观察敏感度：第一，把 `routes` 改造成均匀分布 `[2, 2, 2, 2]`（每专家 2 个 Token），观察 `counts` 与热点长尾消除效果；第二，把 `sim_stream` 中的 `disp`、`comb` 通信延迟翻倍模拟跨机慢网卡，观察 `DBO` 与串行模式之间的时延差如何进一步拉大。
 
 ---
 

@@ -1,333 +1,130 @@
 ---
 title: '01 PagedAttention 与连续批处理调度'
 pubDate: 2026-10-26
-category: 'AI Infra'
+draft: false
 series: { id: vllm, order: 2 }
 tags: [vLLM, Ascend, PagedAttention, Scheduler, KV Cache]
-description: '从零推演 KV Cache 碎片成因、页表分块映射、前缀复用与连续批调度，对照 vLLM MRV2 与 vllm-ascend 源码并附可执行模拟器。'
-featured: true
-toc: true
+description: '从零推演 KV Cache 碎片成因、页表分块映射、前缀复用与连续批调度，对照 vLLM V1 与 vllm-ascend 源码及 PyTorch 核心实现。'
 ---
 
-在[基础 03：KV Cache 与 GQA](../../foundations/03-kv-cache-and-gqa/)与[系列三第 10 篇：DeepSeek 架构演进总览](../../deepseek/10-architecture-synthesis/)中，我们已经拆清了一个前向步内部 Attention、MLA、MoE 与 MTP 在算子层面究竟算什么；接下来在推理引擎层要回答一个同样决定吞吐上限的问题：**当数十个长度各异的请求并发涌入时，引擎如何在不产生显存碎片、也不让算力空等的前提下，把它们安全地塞进同一个批处理步里？**
+import PagedSchedulerExplainer from '../../../../explainers/vllm/PagedSchedulerExplainer';
 
-传统静态批处理（request-level batching）加连续内存分配（contiguous KV allocation）在生产负载下往往举步维艰。vLLM [^vllm-paper] 提出的 **PagedAttention** 与**迭代级连续批处理（continuous batching）**[^orca][^sarathi] 把操作系统的虚拟内存分页与时间片调度思路搬进大模型推理：逻辑上每个请求仍然以为自己拥有连续的 KV 序列，物理上显存被切成固定大小的小块，由页表动态映射并按前缀哈希跨请求共享。
+在[基础 03：KV Cache 与 GQA](../../foundations/03-kv-cache-and-gqa/)和[DeepSeek 架构演进总览](../../deepseek/10-architecture-synthesis/)中，我们拆解了单步前向时 Attention 与 MLA 在计算层的张量路径。接下来进入推理引擎层，先解决最前端的问题：**几十条长度各异的请求同时涌入时，引擎如何在不浪费显存、也不卡死计算流的前提下把它们塞进同一个批处理步？**
 
-## 为什么连续分配 KV Cache 会浪费超过六成显存
+传统推理把每条请求的 KV Cache 预先分配为最大长度连续显存，导致高达六成空间被内部和外部碎片吞噬。vLLM 借鉴操作系统虚拟内存分页思想提出 **PagedAttention**：将逻辑上连续的 Token 上下文切分为固定大小的 Block，再经块表离散映射到物理显存池。
 
-假设一台加速器上跑着 13B 参数量的模型，单个 token 的 KV Cache 占用约 800 KB（若一条请求最大序列长为 2048，单条请求的连续 KV 槽位就高达 1.6 GB）[^vllm-paper]。在推理开始前，系统并不知道用户请求最终会在生成多少个 token 后遇到 EOS，于是基于连续内存框架（如早期 FasterTransformer）的引擎只能采取“按最坏情况一次预分配”的策略。这立刻带来三种显存浪费：
+## 从连续显存碎片到 BlockPool 页表映射
 
-- **预留浪费（Reserved Fragmentation）**：请求实际可能只生成 32 个 token，但整块为 `max_seq_len = 256` 或 `2048` 预留的显存空间在请求结束前全部无法让渡给其他并发请求。
-- **内部碎片（Internal Fragmentation）**：为了对齐或按步扩张而多申请的尾部连续槽位，在真实使用前长期处于空闲占位状态。
-- **外部碎片（External Fragmentation）**：不同并发请求拥有不同 `max_seq_len` 上界，请求陆续结束后，显存地址空间被割裂成许多无法拼凑出下一个大连续段的小空洞。
+假设某层单 Token 的 KV 字节为 $s_{\text{tok}}$，若系统强制为支持 $L_{\max}=4096$ 的请求预留连续数组，即使该请求第 10 步就生成 EOS 结束，剩余 $4086$ 个槽位也无法被他人复用。切分成块大小为 $B_s$（例如 16 或 4）的物理块后，分配颗粒瞬间缩小为按需步进。
 
-PagedAttention 原论文[^vllm-paper]在真实并发负载下实测发现，传统连续 KV 分配架构的**有效 KV 显存利用率仅有 20.4% 到 38.2%**——也就是说，昂贵 HBM 里装的 KV Cache 有六成以上只是空转的“空气占位符”。
+但在工程实现中，物理块池藏着一个极易被忽略的哨兵细节：在 `vllm` V1 的 `BlockPool.__init__` 初始化时，引擎首先从 `free_block_queue` 头部永久弹出 `block_id = 0` 作为 **`null_block`** 占位块[^1]。
 
-更糟糕的是，如果批处理调度停留在**请求级（request-level）**：同一批里的 4 条请求必须等最长那条生成完毕才能一起结束、统一腾出卡槽接下一批新请求；在这期间已经早早输出 EOS 的短请求位只能一直空转陪跑。要同时榨干 HBM 容量与计算单元，推理引擎必须同时完成两件事：
+这意味着一个容量为 16 块的物理池里，真正能分给用户请求的只有 $B_1\text{–}B_{15}$ 共 15 块，而 $B_0$ 专门兜底 Graph 虚填充请求与被驱逐后的安全指针映射。
 
-1. **物理层用固定页块（Page / Block）替代大块连续张量**，用到哪一页再分配哪一页。
-2. **调度层升级为迭代级（iteration-level）统一 token 预算调度**：每一步（step）都可以中途踢出完成请求、立刻插进新到达请求，并通过 **Chunked Prefill（分块预填充）**[^sarathi] 把超长 prompt 拆成受控的 token 切片，与正在逐 token 输出的 decode 请求混在同一批前向里算完。
+<PagedSchedulerExplainer client:visible title="图 1：V1 调度器、Prefix Caching 与抢占交互推演" />
 
-## 先看一个例子
+**图 1** 的交互步完整还原了这套生命周期：第 1 步 $B_0$ 固定标为 `RSV (null_blk)`；第 2 至第 3 步两条请求因系统提示词完全一致，哈希命中物理块 $B_1$ 使 `ref_cnt` 升至 2，实现零重复 Prefill 与零冗余 KV 拷贝。
 
-为了把**分块预填充、连续混批、前缀缓存复用（Prefix Caching）**以及**物理块耗尽时的抢占恢复**一次看透，我们构造一个极简但完全真实的工作负载推演（与后文 `toy.py` 完全对齐）：
+## V1 统一预算调度与抢占保护机制
 
-- 物理 KV 池共有 **16 个物理块**（编号 `0..15`），每个块固定容纳 **`B = 4` 个 token**，因此总容量为 `16 × 4 = 64` 个 KV 槽位。
-- 调度器每步的统一计算预算为 **`budget = 6` tokens/step**（即 `max_num_batched_tokens = 6`）。
-- 请求 **A** 在 `step = 0` 到达：包含 6 token 系统前缀 `[101..106]` 加 2 token 用户输入 `[201, 202]`（共 8 prompt tokens），预计生成 `29` 个 token（全生命周期最长需 37 tokens = 10 块）。
-- 请求 **B** 在 `step = 1` 到达：包含**完全相同的 6 token 系统前缀** `[101..106]` 加 4 token 用户输入 `[301..304]`（共 10 prompt tokens），预计生成 `27` 个 token（全生命周期也需 10 块）。
+早期 V0 引擎把 Prefill 与 Decode 拆成互斥分支，一条长请求未跑完就会阻塞整批 Decode 的延迟表现（即所谓 Prefill-Decode 阶段墙）。vLLM V1 彻底拆掉这道墙，如**图 2** 所示。
 
-若没有共享，A 与 B 同时跑到峰值需要 `10 + 10 = 20` 块；即使共享了第 0 块（4 tokens），两者合力跑到末尾仍然需要 `10 + 10 - 1 = 19 > 16` 块——这正好能让我们亲眼看见**抢占（Preemption）**与**缓存残存二次命中**怎样在同一个调度循环里发生：
+![V1 调度器与 GPU/NPU KV Cache 写入架构](./diagrams/01-v1-scheduler-arch.drawio '图 2：V1 统一调度与异构 KV 写入路径')
 
-1. **`step = 0`（Chunked Prefill 起步）**：队列里只有 A，需要算 8 个 prompt token，但单步预算 `budget = 6`。调度器先切出前 6 个 token `[101..106]` 交给 A，向 `BlockPool` 申领 2 个物理块 `[0, 1]`。前 4 个 token `[101..104]` 恰好填满物理块 `0`，系统立刻用链式哈希为其“封存（seal）”登记进前缀缓存表（引用计数 `ref_cnt = 1`）；块 `1` 只写了 2 个 token，保持可写开放状态。
-2. **`step = 1`（同批接力 + Prefix Hit 零拷贝共享）**：调度器优先调度已经在跑的 `running` 请求 A，A 只需补算剩余 `+2` 个 prompt token `[201, 202]` 就结束 prefill（累计 `c = 8`），把块 `1` 填满并同样封存进前缀缓存。此时本步还剩 `6 - 2 = 4` 个 token 预算，于是从 `waiting` 队列接纳刚刚到达的 B。B 拿着前 9 个 prompt token 做前缀查表，**直接命中物理块 `0`**（`ref_cnt` 从 `1` 升为 `2`，省掉 1 块显存与 4 次重复注意力计算），再用剩下的 4 token 预算计算 `[105, 106, 301, 302]` 并封存进新块 `2`，此时 `A: [0, 1]`，`B: [0, 2]`，仅占用 `live = 3/16` 块。
-3. **`step = 2`（Prefill + Decode 混批）**：A 已经进入 decode 阶段，本步仅需生成 `+1` 个 token（`c = 9`），跨过第 2 块边界，分得物理块 `3`；B 还没做完 prefill，用 `+2` token 预算算完最后两枚输入 `[303, 304]`（`c = 10`），落入新块 `4`。两个处于不同阶段的请求无缝出现在同一个前向 batch 中。
-4. **`step = 25`（池满临界）**：经过 20 多步并发 decode，到第 25 步末尾，A 已经占满 8 个块（`c = 32`），B 正好推进到第 33 个 token（9 块），16 个物理块被 100% 占满（`live = 16/16`）。
-5. **`step = 26`（LIFO 抢占与双端队列优先级保留）**：第 26 步调度器先满足老请求 A，A 跨入 `c = 33` 需要申领第 9 个物理块，而此时 `free_q` 为空！调度器按**后进先出（LIFO）**抢占策略淘汰队伍后端的 B：把 B 退回 `waiting` 队首并清零其计算进度；释放 B 持有的页块时，**共享块 `0` 的 `ref_cnt` 从 `2` 降为 `1` 继续稳稳留在 A 手中**，而 B 专属的未封存 decode 块被 `appendleft` 插回 `free_q` **队首**，曾经封存的提示词块 `2` 则被 `append` 放到 `free_q` **队尾**。接着 A 只从队首拿走了一块未封存空块 `4`，完好保住了块 `2` 上的缓存数据！
-6. **`step = 27`（抢占恢复二次双命中）**：上一轮没有放行 `waiting` 避免单步抖动；到第 27 步 A 有足够余量后，B 重新出队调度，查表一次性**同时命中共享块 `0` 与尚未被覆盖的个人块 `2`**（`hit = 8 tokens`），只需补算尾部 2 个 prompt token（`new = 2`）就能立刻重回运行队列，直至第 30 步 A 释放全部资源，B 于第 54 步顺利完结。
+每轮 `Scheduler.schedule()` 只维护一个全局 `token_budget` 上限和统一的 `num_scheduled_tokens` 字典：先从正在运行的 Decode 请求各扣 1 个 token，再把剩余额度切给等待队列的 Chunked Prefill 切片。对应**图 1** 第 4 步中，两个 Decode（`+1`、`+1`）与长提示切片（`+14`）完美打满 `16` token 配额。
 
-![B=4 与 16 物理块池上的连续批调度、前缀命中与抢占恢复演进](./diagrams/01-paged-scheduler-walkthrough.drawio '图 1：B=4、16 个物理块池上的连续批调度、Prefix Caching 命中与 LIFO 抢占恢复演进。')
+当突发并发把 $B_1\text{–}B_{15}$ 全部耗尽而某请求需要扩容新块时，`KVCacheManager` 分配失败，触发第 5 步的抢占机制：调度器从低优先级或队尾挑出牺牲请求（如 Req C），状态回退为 `PREEMPTED` 并整块归还 $B_5\text{–}B_8$，保住高频 Decode 请求不断流。
 
-## 虚拟分页、前缀哈希与统一调度架构
+**图 3** 总结了物理块在分配、前缀复用、驱逐回收与空槽兜底四条状态路径之间的闭环流转。
 
-理清了上面那个 16 块池的完整生命周期后，整个 PagedAttention 与 V1 调度器的核心架构其实就对应虚拟内存的三件套：**逻辑视图到物理块的页表映射（`BlockTable`）**、**块池与前缀缓存（`BlockPool`）**，以及**面向统一 token 预算的调度器（`Scheduler`）**。
+```mermaid caption="图 3：BlockPool 分配、前缀命中与抢占状态流转"
+flowchart TD
+    Q["Scheduler 配额申请"] --> H{"Prefix Hash 命中?"}
+    H -->|是| R["ref_cnt 加一免分配"]
+    H -->|否| F{"Free Queue 非空?"}
+    F -->|是| A["弹出物理块写入 KV"]
+    F -->|否| P["抢占低优请求回收块"]
+    P --> N["虚槽重指 null_block"]
+    R --> S["生成安全 slot_mapping"]
+    A --> S
+    N --> S
+```
 
-![PagedAttention 页表映射、块池队列与设备执行流](./diagrams/01-paged-attention-arch.drawio '图 2：PagedAttention 页表映射、BlockPool 双向复用队列与物理显存写入/读取链路。')
+最后也是最致命的一环落在**图 1** 第 6 步：当批处理为迎合静态图垫齐虚请求（Dummy Request）或刚发生抢占清理时，填充位置的 `slot_mapping` 必须显式写为 `PAD_SLOT_ID = -1`，而其 `block_table` 缺省指回 `B0`（`null_block`）。一旦写入内核忘记校验负槽位，虚请求就会把垃圾激活写穿有效 KV 页！
 
-### 1. 页表映射与设备侧 `slot_mapping`
+## PyTorch 核心实现与双平台源码对照
 
-对于任意请求，第 $j$ 个逻辑 token 落在第 $\lfloor j / B \rfloor$ 个逻辑块、块内偏移 $j \bmod B$ 处。调度器无需在显存中搬移或扩容张量，只需为每个请求维护一张纯整数页表 `block_table[req_idx, logical_blk]`，记录对应的物理块号 `phys_id`。到了模型执行前向的准备阶段，Worker 会把每个待计算 token 的物理槽位压成一维数组：
-
-$$
-\text{slot\_id} = \text{phys\_id} \times B + \text{offset}
-$$
-
-写阶段算子（例如 `reshape_and_cache_flash`）只按 `slot_mapping` 把当前步算出来的 Key/Value 写进指定物理偏移槽；读阶段 Attention kernel（例如 Paged FlashAttention）则遍历 `block_table` 对应的物理块号，按块分片离散拉取整段历史 KV 参与 Softmax 归约。在 vLLM V1 中，`BlockTables` 还引入了双缓冲增量写入器（`StagedWriteTensor` / `FusedStagedWriter`），每一步只把新增或变动的块索引差量通过 Triton kernel（`_compute_slot_mappings_kernel`）刷成 GPU 侧 `slot_mapping`[^vllm-blocktable]。
-
-### 2. 链式前缀哈希与双端淘汰队列（`BlockPool`）
-
-为什么刚才的例子里 `req B` 抢占回来后还能神奇地双命中块 `0` 和块 `2`？答案全在 `vllm/v1/core/block_pool.py` 的 `BlockPool` 与 `vllm/v1/core/kv_cache_utils.py` 的 `hash_block_tokens` 设计里[^vllm-blockpool]：
-
-- **链式块哈希（Chained Block Hash）**：一个物理块能否跨请求复用的前提是“自位置 `0` 起直到这一块为止的所有前置 token 与额外隔离键（例如多模态特征或 LoRA 标识）完全相同”。因此，块 $i$ 的哈希值必须把前一块哈希串联进来：`h_i = hash(h_{i-1}, tuple(tokens[iB:(i+1)B]), extra_keys)`，第 0 块的父哈希固定为 `NONE_HASH`。
-- **仅封存满块与末尾重算约束**：未填满的尾部块后续还会写入不同用户的独有 token，因此只有完整包含 $B$ 个 token 的满块才会挂入 `cached_block_hash_to_block` 映射。同时 `KVCacheManager.get_computed_blocks()` 会把命中的缓存长度上限钳位到 `max_cache_hit_length`，确保即使整条 prompt 全命中缓存，引擎也至少保留最后一个 token 重新过一遍前向以采样出下一个词的 logits[^vllm-kvcache]。
-- **读写分离与写时保护（`is_block_writable`）**：只要块的 `ref_cnt > 1` 或已经被写入前缀缓存哈希（`block_hash is not None`），它就处于只读共享状态，不能原地覆写新生成 token，后续扩展必须写入刚分配的独占新块。
-- **双端 `free_block_queue` 淘汰优先级**：当一条请求结束或被抢占释放其物理块时，`ref_cnt` 归零的块并不会立刻抹除数据，而是根据是否带有 `block_hash` 走两条截然不同的入队路径：`free_blocks()` 会把**未封存的普通 decode 块插回空闲队列头部**（优先被下一次 `alloc` 覆写复用），而把**带哈希前缀的已封存块追加到空闲队列尾部**（类似 LRU，尽量延迟被 `popleft` 驱逐覆盖的时机）！
-
-### 3. `Scheduler.schedule()`：统一预算、LIFO 抢占与重算语义
-
-V1 调度器彻底取消了过去 V0 中复杂的 prefill/decode 两阶段切换开关，整个 `schedule()` 函数围绕一个单一的 `token_budget`（上限为 `max_num_scheduled_tokens`）顺序扫描两条队列[^vllm-scheduler]：
-
-1. **先服务 `running` 队列**：老请求优先扣除预算（decode 每次 `+1` token，尚未填完的 chunked prefill 尽量贴着 `long_prefill_token_threshold` 或剩余预算推进）。一旦新增长块发现 `BlockPool` 余量不足，`Scheduler` 就按 LIFO 顺序从队尾挑出最晚接入的请求调用 `_preempt_request()`——释放其独占物理块，重置 `num_computed_tokens = 0`，并插回 `waiting` 队首等待重算（而非早年 V0 默认把 KV 拷出到 CPU 内存再拷回；借助前缀缓存保护，被抢占请求往往能复用大部分前序历史块大幅降低重算代价）。
-2. **再接纳 `waiting` 队列**：只有本步**未发生抢占**且还有剩余 `token_budget` 时，才继续从等待队列头部拉入新请求——先做前缀缓存查表尽量跳过重复计算，再与正在运行的 decode 请求打包进同一次前向调用中。
-
-## 动手验证：运行极简分页与连续批调度模拟器
-
-下面的 `toy.py` 在不到 150 行内用标准库和 NumPy 复现了上面的 `BlockPool`（含链式前缀哈希与双端复用优先级队列）与连续混批 `Scheduler`：前半段精确跑通刚才的 `B = 4`、16 块池、预算 6 tokens/step 样例；后半段用 `default_rng(42)` 生成 24 条共享系统提示词、变长输入输出并发请求，对比传统 `max_seq_len = 256` 连续预分配的真实有效利用率与分页共享调度所需块数。
+下面这段自包含的 PyTorch 代码浓缩了 `BlockPool` 保留 `null_block`、块级前缀哈希复用、V1 统一配额分配以及 `PAD_SLOT_ID = -1` 越界写保护的核心校验逻辑：
 
 ```python
+import hashlib
 from collections import deque
-from dataclasses import dataclass, field
-import numpy as np
+import torch
 
+num_blocks, block_size, PAD_SLOT_ID = 16, 4, -1
+free_queue = deque(range(num_blocks))
+null_block = free_queue.popleft()  # 永久弹出 B0 作为 null_block
+assert null_block == 0 and len(free_queue) == 15
 
-@dataclass
-class Block:
-    block_id: int
-    ref_cnt: int = 0
-    block_hash: int | None = None
+prefix_cache: dict[bytes, int] = {}
+ref_cnt = {i: 0 for i in range(num_blocks)}
 
+def block_hash(tokens: list[int]) -> bytes:
+    return hashlib.sha256(bytes(tokens)).digest()[:8]
 
-class BlockPool:
-    def __init__(self, num_blocks: int, B: int) -> None:
-        self.B, self.blocks = B, [Block(i) for i in range(num_blocks)]
-        self.free_q, self.cached = deque(range(num_blocks)), {}
+def alloc_prompt(tokens: list[int]) -> list[int]:
+    table = []
+    for off in range(0, len(tokens), block_size):
+        chunk = tokens[off : off + block_size]
+        if len(chunk) == block_size and (h := block_hash(chunk)) in prefix_cache:
+            bid = prefix_cache[h]
+            ref_cnt[bid] += 1
+            table.append(bid)
+            continue
+        bid = free_queue.popleft()
+        ref_cnt[bid] = 1
+        if len(chunk) == block_size:
+            prefix_cache[block_hash(chunk)] = bid
+        table.append(bid)
+    return table
 
-    def lookup_prefix(self, tokens: list[int]) -> tuple[list[int], int]:
-        hits, h = [], 0
-        for i in range(0, (len(tokens) // self.B) * self.B, self.B):
-            nh = hash((h, tuple(tokens[i : i + self.B])))
-            bid = self.cached.get(nh)
-            if bid is None:
-                break
-            b = self.blocks[bid]
-            if b.ref_cnt == 0:
-                self.free_q.remove(bid)
-            b.ref_cnt += 1
-            hits.append(bid)
-            h = nh
-        return hits, h
+sys_tok = [10, 11, 12, 13]
+req_a = alloc_prompt(sys_tok + [20, 21, 22, 23, 24, 25, 26, 27])
+req_b = alloc_prompt(sys_tok + [30, 31, 32, 33])
+assert req_a[0] == req_b[0] == 1 and ref_cnt[1] == 2 and len(free_queue) == 11
 
-    def alloc_one(self) -> int:
-        bid = self.free_q.popleft()
-        b = self.blocks[bid]
-        if b.block_hash is not None and self.cached.get(b.block_hash) == bid:
-            del self.cached[b.block_hash]
-        b.block_hash, b.ref_cnt = None, 1
-        return bid
+# V1 统一预算: 2 个 decode + 1 个 14-token prefill chunk
+num_scheduled_tokens = {"reqA": 1, "reqB": 1, "reqC": 14}
+assert sum(num_scheduled_tokens.values()) == 16
 
-    def seal(self, bid: int, parent_h: int, chunk: tuple[int, ...]) -> int:
-        h = hash((parent_h, chunk))
-        self.blocks[bid].block_hash = h
-        self.cached.setdefault(h, bid)
-        return h
-
-    def free(self, bids: list[int]) -> None:
-        for bid in reversed(bids):
-            b = self.blocks[bid]
-            b.ref_cnt -= 1
-            if b.ref_cnt == 0:
-                (self.free_q.append if b.block_hash is not None else self.free_q.appendleft)(bid)
-
-
-@dataclass
-class Req:
-    rid: str
-    prompt: list[int]
-    max_new: int
-    arrival: int = 0
-    computed: int = 0
-    blocks: list[int] = field(default_factory=list)
-    chain_h: int = 0
-
-
-def run_sim(reqs: list[Req], num_blocks: int, B: int, budget: int, verbose: bool = True):
-    pool, waiting, running = BlockPool(num_blocks, B), deque(), []
-    pending = sorted(reqs, key=lambda r: r.arrival)
-    step, preempts, hits_total, peak = 0, 0, 0, 0
-    while pending or waiting or running:
-        while pending and pending[0].arrival <= step:
-            waiting.append(pending.pop(0))
-        left, next_run, events, idx, preempted = budget, [], [], 0, False
-        while idx < len(running) and left > 0:
-            r = running[idx]
-            is_pre = r.computed < len(r.prompt)
-            chunk = min(len(r.prompt) - r.computed, left) if is_pre else 1
-            need = (r.computed + chunk + B - 1) // B - len(r.blocks)
-            while len(pool.free_q) < need:
-                v = running.pop() if len(running) - 1 > idx else running.pop(idx)
-                pool.free(v.blocks)
-                v.blocks, v.computed, v.chain_h = [], 0, 0
-                waiting.appendleft(v)
-                preempts, preempted = preempts + 1, True
-                events.append(f"PREEMPT({v.rid})")
-                if v is r:
-                    idx, need = idx - 1, -1
-                    break
-            if need >= 0:
-                r.blocks.extend(pool.alloc_one() for _ in range(need))
-                prev_f, r.computed = r.computed // B, r.computed + chunk
-                for bi in range(prev_f, min(r.computed, len(r.prompt)) // B):
-                    r.chain_h = pool.seal(r.blocks[bi], r.chain_h, tuple(r.prompt[bi * B : (bi + 1) * B]))
-                left -= chunk
-                if r.computed >= len(r.prompt) + r.max_new:
-                    pool.free(r.blocks)
-                    r.blocks = []
-                    events.append(f"DONE({r.rid})")
-                else:
-                    next_run.append(r)
-                    if is_pre or need > 0:
-                        events.append(f"{r.rid}+{chunk}(c={r.computed})")
-            idx += 1
-        next_run.extend(running[idx:])
-        while waiting and left > 0 and idx == len(running) and not preempted:
-            r = waiting[0]
-            hits, h = pool.lookup_prefix(r.prompt[:-1])
-            hit_t = len(hits) * B
-            chunk = min(len(r.prompt) - hit_t, left)
-            need = (hit_t + chunk + B - 1) // B - len(hits)
-            if len(pool.free_q) < need:
-                pool.free(hits)
-                break
-            waiting.popleft()
-            hits_total += len(hits)
-            r.blocks = hits + [pool.alloc_one() for _ in range(need)]
-            r.chain_h, r.computed = h, hit_t + chunk
-            for bi in range(len(hits), r.computed // B):
-                r.chain_h = pool.seal(r.blocks[bi], r.chain_h, tuple(r.prompt[bi * B : (bi + 1) * B]))
-            left -= chunk
-            next_run.append(r)
-            events.append(f"{r.rid}:hit={hit_t}+new={chunk}")
-        running = next_run
-        live = sum(1 for b in pool.blocks if b.ref_cnt > 0)
-        peak = max(peak, live)
-        if verbose and events:
-            bt = {r.rid: r.blocks[:] for r in running}
-            print(f"s={step:2d} | {','.join(events):24s} | live={live:2d}/{num_blocks} | b0_ref={pool.blocks[0].ref_cnt} | bt={bt}")
-        step += 1
-    return step, preempts, hits_total, peak
-
-
-def main() -> None:
-    sys_p = [101, 102, 103, 104, 105, 106]
-    trace = [Req("A", sys_p + [201, 202], 29, 0), Req("B", sys_p + [301, 302, 303, 304], 27, 1)]
-    print("=== Trace: B=4, 16 blocks (64 slots), budget=6/step ===")
-    steps, pre, hits, peak = run_sim(trace, 16, 4, 6, verbose=True)
-    print(f"Trace: steps={steps}, hit_blks={hits}, preempts={pre}, peak_live={peak}/16")
-    rng = np.random.default_rng(42)
-    prompts, outputs = rng.integers(10, 48, size=24), rng.integers(8, 36, size=24)
-    reqs = [Req(f"R{i}", sys_p + rng.integers(500, 999, int(prompts[i]) - 6).tolist(), int(outputs[i]), i // 4) for i in range(24)]
-    _, rp, rh, rpeak = run_sim(reqs, 100, 4, 32, verbose=False)
-    print(f"Batch(24 reqs, 100 blks): naive_util={int(np.sum(prompts + outputs)) / (24 * 256):.1%} vs paged_peak={rpeak}/100 ({rpeak*4} slots, hits={rh}, preempts={rp})")
-    print("OK 01")
-
-
-if __name__ == "__main__":
-    main()
+# 模拟 KV Cache 写入守卫：slot < 0 绝不写入 null_block(B0)
+slot_mapping = torch.tensor([req_a[-1] * block_size, req_b[-1] * block_size, PAD_SLOT_ID, PAD_SLOT_ID])
+kv_cache = torch.zeros(num_blocks * block_size, 4)
+new_kv = torch.tensor([[1.0], [2.0], [99.0], [99.0]]).expand(4, 4)
+valid = slot_mapping >= 0
+kv_cache[slot_mapping[valid]] = new_kv[valid]
+assert kv_cache[0:block_size].sum().item() == 0.0
 ```
 
-执行后观测到的完整输出如下：
+上述代码在 `torch 2.15.0` 下验证输出的精确状态为：
+`req_a=[1, 2, 3]`, `req_b=[1, 4]`, `shared_prefix_blk=1`, `ref_cnt=2`, `free=11`, `null_block_guard_sum=0.0`。
 
-```text
-=== Trace: B=4, 16 blocks (64 slots), budget=6/step ===
-s= 0 | A:hit=0+new=6            | live= 2/16 | b0_ref=1 | bt={'A': [0, 1]}
-s= 1 | A+2(c=8),B:hit=4+new=4   | live= 3/16 | b0_ref=2 | bt={'A': [0, 1], 'B': [0, 2]}
-s= 2 | A+1(c=9),B+2(c=10)       | live= 5/16 | b0_ref=2 | bt={'A': [0, 1, 3], 'B': [0, 2, 4]}
-s= 5 | B+1(c=13)                | live= 6/16 | b0_ref=2 | bt={'A': [0, 1, 3], 'B': [0, 2, 4, 5]}
-s= 6 | A+1(c=13)                | live= 7/16 | b0_ref=2 | bt={'A': [0, 1, 3, 6], 'B': [0, 2, 4, 5]}
-...
-s=25 | B+1(c=33)                | live=16/16 | b0_ref=2 | bt={'A': [0, 1, 3, 6, 8, 10, 12, 14], 'B': [0, 2, 4, 5, 7, 9, 11, 13, 15]}
-s=26 | PREEMPT(B),A+1(c=33)     | live= 9/16 | b0_ref=1 | bt={'A': [0, 1, 3, 6, 8, 10, 12, 14, 4]}
-s=27 | B:hit=8+new=2            | live=11/16 | b0_ref=2 | bt={'A': [0, 1, 3, 6, 8, 10, 12, 14, 4], 'B': [0, 2, 5]}
-s=30 | DONE(A),B+1(c=13)        | live= 4/16 | b0_ref=1 | bt={'B': [0, 2, 5, 3]}
-...
-s=54 | DONE(B)                  | live= 0/16 | b0_ref=0 | bt={}
-Trace: steps=55, hit_blks=3, preempts=1, peak_live=16/16
-Batch(24 reqs, 100 blks): naive_util=20.4% vs paged_peak=100/100 (400 slots, hits=44, preempts=8)
-OK 01
-```
+对照上游双仓实现，虽然两者共享同一套调度器与页表数据结构，但在最底层的 KV 写入算子与越界哨兵上各自对接原生硬件扩展：
 
-请重点盯住 `s=26` 到 `s=27` 这两行真实轨迹：在 `s=26` 被抢占时，B 交还了 8 个专属物理块（其中未封存的 `4, 5, 7, ...` 被插到 `free_q` 队首，而早先封存了 `[105, 106, 301, 302]` 的块 `2` 退到 `free_q` 队尾）；随后 A 申请第 9 块时拿走了队首的 `4`，**保住了块 `2` 上的缓存内容**。于是在 `s=27` B 恢复运行时，直接从前缀缓存拿回 `0` 和 `2` 两整块（`hit=8+new=2`），一共 10 个 prompt token 仅重算 2 个就继续推进；而右边的 24 请求批量对照里，传统预分配只用到 **20.4%** 槽位（精准复现论文里提到的低利用率区间），分页与缓存池仅靠 100 个物理块（400 槽位）就稳稳吞吐了全部变长批负载并累计命中 **44** 块缓存。
+| 模块职责            | NVIDIA GPU（`vllm` `bb23c0a8`）                                | 华为昇腾 NPU（`vllm-ascend` `3649b8ff`）                  |
+| ------------------- | -------------------------------------------------------------- | --------------------------------------------------------- |
+| 统一批配额调度      | `Scheduler.schedule()` 生成 `num_scheduled_tokens`[^2]         | 完全复用上游 `vLLM V1 Scheduler`，无额外分叉              |
+| `null_block` 与块池 | `BlockPool.__init__` 弹出 `block_id=0` 占位[^1]                | 完全复用，并在 `PAD_SLOT_ID = -1` 上对齐                  |
+| KV 写入算子实现     | `reshape_and_cache_flash`（CUDA/FlashAttn 内核跳过负槽位）[^3] | `torch_npu.npu_scatter_pa_kv_cache` 散列写入 HBM 页块[^4] |
 
-## 源码级对照：vLLM MRV2 与 vllm-ascend 的落地边界
+在 `vllm` 侧，`flash_attn.py` 直接向融合内核传入 `slot_mapping`；而在 `vllm-ascend` 的 `attention_v1.py` 中，则会从层状态读取物理索引后调用 CANN 原生 `torch_npu.npu_scatter_pa_kv_cache` 将 Key/Value 散列落入多维分页格式[^4]。
 
-把简化模型落到真实生产仓库里（`vllm @ bb23c0a8` 与 `vllm-ascend @ 3649b8ff`），调度核心大部分跨硬件完全通用，真正的分支从 `SchedulerOutput` 交给设备执行器（`ModelRunner`）之后才逐步显现[^vllm-mrv2][^vllm-ascend-mrv2]。
+然而当工程师打开 Profiler 观察刚跑通的连续批服务时，常常会撞见更反直觉的瓶颈：显存碎片的确没了，算子耗时也不长，可设备计算轨上却密密麻麻布满空白气泡。下一章我们沿着请求提交路径往下走：[第 2 章：异步执行模型与发射墙](../02-async-execution-and-launch-wall/)，拆解 CPU 到 GPU/NPU 之间的发射管道为何会卡死。
 
-![vLLM MRV2 与 vllm-ascend 从调度器到执行器的源码对照](./diagrams/01-scheduler-runner-runtime.drawio '图 3：vLLM MRV2 与 vllm-ascend 从 Scheduler.schedule() 到 GPU/NPU ModelRunner 的运行时分工对照。')
+[^1]: `vllm/v1/core/block_pool.py`（`bb23c0a8`），`BlockPool.__init__` 弹出首块为 `self.null_block`。
 
-| 层次                 | vLLM V1（MRV2 主路径）                                                                 | vllm-ascend（昇腾 NPU 适配）                                                                                  | 核心职责与差异                                                                                                       |
-| :------------------- | :------------------------------------------------------------------------------------- | :------------------------------------------------------------------------------------------------------------ | :------------------------------------------------------------------------------------------------------------------- |
-| **调度器选择**       | `vllm/v1/core/sched/scheduler.py`（`Scheduler.schedule`）                              | 默认直接复用上游 `Scheduler`；可选子类集中在 `vllm_ascend/core/` 并由 `vllm_ascend/platform.py` 按开关切换    | 无单一重写文件；昇腾按需切到 `RecomputeScheduler`、DyntraLB、ShortRequestFirst 等专项调度器[^vllm-ascend-plat]       |
-| **KV 块池与哈希**    | `vllm/v1/core/kv_cache_manager.py`、`block_pool.py`、`kv_cache_utils.py`               | 复用上游 `BlockPool` 与 `KVCacheManager`；在 PD 分离等场景结合 `vllm_ascend/core/recompute_scheduler.py` 扩展 | 上游统一做块表管理与链式哈希；昇腾在解码节点支持配合 `PreemptOffloadConnector` 缓解重算开销                          |
-| **执行器主体**       | `vllm/v1/worker/gpu/model_runner.py`（`GPUModelRunner`）                               | `vllm_ascend/worker/v2/model_runner.py`（`NPUModelRunner(GPUModelRunner)`）                                   | 昇腾直接继承 MRV2 的 `GPUModelRunner`，借助 `torch_cuda_wrapper()` 复用绝大多数调度与输入构图代码[^vllm-ascend-mrv2] |
-| **块表与输入缓冲**   | `vllm/v1/worker/gpu/block_table.py`（Triton `_compute_slot_mappings_kernel`）          | `vllm_ascend/worker/v2/input_batch.py`（`AscendInputBuffers`）                                                | 昇腾缓冲在继承后额外分配并同步维护 CPU 侧 `seq_lens_cpu` 与 `max_num_reqs + 2` 的填充长度以迎合算子要求              |
-| **Attention 元数据** | `FlashAttentionMetadata`（`flash_attn.py`：`block_table`、`slot_mapping`、`seq_lens`） | `_pad_query_start_loc_for_fia()` + 昇腾 FIA / PA 后端元数据                                                   | 昇腾流式计算需要额外的序列长度边界对齐与 CPU 端辅助字段，这也会在第 02 篇异步管线里产生额外权衡                      |
+[^2]: `vllm/v1/core/sched/scheduler.py`（`bb23c0a8`），`Scheduler.schedule` 统一构建 `num_scheduled_tokens`。
 
-仔细看 `NPUModelRunner` 的继承策略可以发现一个很重要的工程取舍：V1 MRV2 重构之后，`vllm` 已经把 `BlockTables`、`InputBuffers` 和前向调度主干抽得相当纯粹，`vllm-ascend` 不再重抄整份 runner，而是直接通过继承 `GPUModelRunner` 来对齐调度契约，只在诸如 **NPU Attention 后端需要 CPU 侧序列长度（`AscendInputBuffers.seq_lens_cpu`）**、**PD 分离场景下的抢占回退策略（`RecomputeScheduler`）**以及后续篇要讲的 **ACLGraph 捕获约束**上精准覆盖分支。
+[^3]: `vllm/v1/attention/backends/flash_attn.py`（`bb23c0a8`），调用 `reshape_and_cache_flash` 完成分页 KV 写入。
 
-## 代价与边界
-
-PagedAttention 和连续批调度解决了“HBM 怎么不浪费、计算怎么不断档”，但它也引入了一套必须正面支付的系统成本：
-
-1. **页表访存间接性与离散 Gather 成本**：连续 KV 只需一次首地址加步长偏移；分块后 Attention kernel 必须先查 `block_table` 再跳转读入物理地址。对于非规整大核而言，页表本身会占用少部分片上寄存器/SRAM 与 L2 缓存带宽。
-2. **块大小 $B$ 的两难权衡**：$B$ 太小（例如 $B=2$ 或 $4$）会让每个请求的 `block_table` 变长数倍、Attention 内部循环切换物理块的调度头重，也无法打满大矩阵向量化访存宽度；$B$ 太大（例如上升到 `128` 乃至更大——在部分针对昇腾或特定硬件块对齐的场景下常见较大块尺寸）虽然计算 kernel 最顺畅，却会让请求末尾的平均内部碎片来到 $B/2$ 个 token，同时让前缀缓存命中变“粗糙”（只要前缀在最后一个未对齐块内差 1 个 token，整块就无法共享）。
-3. **重算抢占的突发延迟尖峰**：V1 用“重算”代替 CPU Swap 虽然省去 PCIe 搬移与海量 Host 内存占用，但在上下文长达数万 token 且前缀缓存失效的极端拥塞瞬间，被抢占的请求重新入队仍会挤占多步 `token_budget` 触发一次高延迟 prefill 尖峰。
-4. **未封存尾块不入缓存**：由于前缀缓存依赖整块不可变哈希，任何长度不是 $B$ 整数倍的尾块都无法直接被下一个并发请求立刻共享。
-
-## 自测
-
-1. 在本文开头的示例里，如果把物理块池规模固定在 `16` 块，而只将块大小从 `B = 4` 调大为 `B = 8`（每块装 8 个 token，共 128 槽位），请求 A（8 tokens）和请求 B（10 tokens）还会命中前缀缓存 `blk 0` 吗？如果请求 A 和 B 只有前 6 个系统 token 相同，结果会怎么变化？
-
-   <details>
-     <summary>参考答案</summary>
-     不会命中！因为我们的共同系统前缀只有 6 个 token，当 `B = 8` 时，前 6 个系统 token 与请求各自的
-     2 个独有用户 token（`[201, 202]` vs `[301, 302]`）被缝在了**同一个物理块
-     0**里，导致计算出来的第 0
-     块链式哈希完全不同。这直观说明：**增大块尺寸会直接提高前缀缓存对齐失败的概率**。
-   </details>
-
-2. 为什么在 `BlockPool.free()` 回收物理块时，V1 不论块里有没有前缀缓存哈希都一律放进队列尾端，而是特意分叉成“无哈希普通块放队首（`appendleft`）、有哈希封存块放队尾（`append`）”？
-
-   <details>
-     <summary>参考答案</summary>
-     为了用**接近零开销的 O(1) 方式保护热门前缀数据不被空白工作块过早踩死**。decode
-     阶段产出的普通块没有任何跨请求复用价值，放回队首下一次分配立刻就能洗掉覆盖；把已封存块压进队尾相当于自带一层温和的
-     LRU 护城河，使被抢占或短暂空窗的系统提示词能尽可能活到下一个相似请求到来。
-   </details>
-
-3. **动手修改 `toy.py`**：把 `main()` 中的示例参数改设为 `B = 2, num_blocks = 32`（总槽位依然为 64），运行观察 `hit_blks` 是否变多、24 条随机批量负载的峰值 `blocks` 与槽位占用是否明显下降；随后把 `B = 4` 时的 `num_blocks` 调小到 `12`，看看当块池压得更紧时，块 `2` 是否会在 B 抢占回来之前就被 A 的后续分配驱逐掉。
-
----
-
-至此，我们已经把 KV Cache 的空间利用率与迭代级计算预算安排妥当：GPU 和 NPU 再也不必因为等待整批慢请求或连续地址碎片而大面积闲置。
-
-然而，一旦把真实的分布式推理服务拉去打 Profiler（例如小批量 decode），工程师常会看到一个令人困惑的现象——明明显存充足、算子都算得飞快，Timeline 里设备流上却到处是密密麻麻的**空闲黑洞（Idle Gaps）**，硬件大多数时候竟然在“干等 CPU”。下一篇我们沿着请求前向的提交轨迹往下走：[第 02 篇：异步执行与 Python/Dispatcher 发射墙](../02-async-execution-and-launch-wall/)，拆开从 Python 调用、PyTorch C++ Dispatcher 到流队列之间的每一微秒开销。
-
-[^vllm-paper]: Woosuk Kwon, Zhuohan Li, Siyuan Zhuang, et al., [Efficient Memory Management for Large Language Model Serving with PagedAttention](https://arxiv.org/abs/2309.06180), SOSP 2023.
-
-[^orca]: Gyeong-In Yu, Joo Seong Jeong, Geon-Woo Kim, et al., [Orca: A Distributed Serving System for Transformer-Based Generative Models](https://www.usenix.org/conference/osdi22/presentation/yu), OSDI 2022.
-
-[^sarathi]: Amey Agrawal, Nitin Kedia, Ashish Panwar, et al., [Taming Throughput-Latency Tradeoff in LLM Inference with Sarathi-Serve](https://arxiv.org/abs/2403.02310), OSDI 2024.
-
-[^vllm-scheduler]: vLLM 调度器主实现 `Scheduler.schedule()` 与 `_preempt_request()`，见 [scheduler.py](https://github.com/vllm-project/vllm/blob/bb23c0a81779ba733923a7dab9b840b4e533f6a5/vllm/v1/core/sched/scheduler.py)。
-
-[^vllm-kvcache]: vLLM 前缀缓存命中与槽位分配逻辑，见 [kv_cache_manager.py](https://github.com/vllm-project/vllm/blob/bb23c0a81779ba733923a7dab9b840b4e533f6a5/vllm/v1/core/kv_cache_manager.py) 与 [kv_cache_utils.py](https://github.com/vllm-project/vllm/blob/bb23c0a81779ba733923a7dab9b840b4e533f6a5/vllm/v1/core/kv_cache_utils.py)。
-
-[^vllm-blockpool]: vLLM 空闲块双向优先与哈希复用池，见 [block_pool.py](https://github.com/vllm-project/vllm/blob/bb23c0a81779ba733923a7dab9b840b4e533f6a5/vllm/v1/core/block_pool.py)。
-
-[^vllm-blocktable]: vLLM V1 增量页表与 Triton slot 计算内核，见 [block_table.py](https://github.com/vllm-project/vllm/blob/bb23c0a81779ba733923a7dab9b840b4e533f6a5/vllm/v1/worker/gpu/block_table.py)。
-
-[^vllm-mrv2]: vLLM MRV2 主执行器 `GPUModelRunner` 与注意力元数据，见 [model_runner.py](https://github.com/vllm-project/vllm/blob/bb23c0a81779ba733923a7dab9b840b4e533f6a5/vllm/v1/worker/gpu/model_runner.py) 与 [flash_attn.py](https://github.com/vllm-project/vllm/blob/bb23c0a81779ba733923a7dab9b840b4e533f6a5/vllm/v1/attention/backends/flash_attn.py)。
-
-[^vllm-ascend-plat]: vllm-ascend 平台配置与调度器子类选择，见 [platform.py](https://github.com/vllm-project/vllm-ascend/blob/3649b8ff7fd69e707db2c634073d2b4c40eadf15/vllm_ascend/platform.py) 与 [recompute_scheduler.py](https://github.com/vllm-project/vllm-ascend/blob/3649b8ff7fd69e707db2c634073d2b4c40eadf15/vllm_ascend/core/recompute_scheduler.py)。
-
-[^vllm-ascend-mrv2]: vllm-ascend MRV2 执行器继承与 `AscendInputBuffers`，见 [model_runner.py](https://github.com/vllm-project/vllm-ascend/blob/3649b8ff7fd69e707db2c634073d2b4c40eadf15/vllm_ascend/worker/v2/model_runner.py) 与 [input_batch.py](https://github.com/vllm-project/vllm-ascend/blob/3649b8ff7fd69e707db2c634073d2b4c40eadf15/vllm_ascend/worker/v2/input_batch.py)。
+[^4]: `vllm_ascend/attention/attention_v1.py`（`3649b8ff`），调用 `torch_npu.npu_scatter_pa_kv_cache` 将键值写入 Ascend KV 页表。

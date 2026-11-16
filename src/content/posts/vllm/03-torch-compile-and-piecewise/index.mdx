@@ -1,150 +1,116 @@
 ---
 title: '03 torch.compile 与 Piecewise：为什么全图编译仍要按算子切分'
-description: '从 Dynamo 整图捕获、Guard 消除到 split_graph 切分与 Inductor 融合，拆解 vLLM 如何衔接分段静态图。'
+description: '从 Dynamo 整图捕获、Guard 消除到 split_graph 切分与 Inductor 融合，拆解 vLLM 如何衔接分段静态图，并对比 AscendCompiler。'
 pubDate: 2026-10-28
-category: AI Infra
+draft: false
 series: { id: vllm, order: 4 }
 tags: [vLLM, PyTorch, torch.compile, CUDA Graph]
-toc: true
 ---
 
-在[上一章](../02-async-execution-and-launch-wall/)里，异步调度把 CPU 准备下一轮批处理、更新采样状态的 Python 开销藏到了 GPU 计算背后。但当控制流真正走进单步的 `model.forward()` 之后，GPU 的等待并没有消失：PyTorch Eager 模式仍要逐算子穿越 C++ Dispatcher，让 `RMSNorm`、`Add`、`SiLU`、`Mul` 这类轻量算子反复把中间激活写回 HBM 再读出，并用 CPU 逐个发射 `cudaLaunchKernel`。
+在[第 2 章：异步执行模型与发射墙](../02-async-execution-and-launch-wall/)里，异步调度把步间等待藏到了硬件执行背后。然而当控制权真正走进单步的 `model.forward()` 时，PyTorch Eager 模式仍要让 `RMSNorm`、`Add`、`SiLU`、`Mul` 等逐元素算子一个个穿越 C++ Dispatcher，频繁把激活值吐回 HBM 再重新读出，同时迫使 CPU 发起数百次内核发射。
 
-然而，把整模型直接塞进原生的 `torch.compile(model)` 往往适得其反。PagedAttention 依赖自定义 C++/CUDA/Triton 算子与每步都在变化的 KV 块表元数据，原生编译器既无法跨动态页表把 Attention 融合进 Triton，又会在变长形状切换时频繁触发 Guard 检查或 Graph Break。**vLLM 的解法是先用无 Guard 整图追踪拿到完整 FX 计算图，再主动沿动态边界把它切分成多段——能编译融合的交给 Inductor 并套上静态图，必须吃动态元数据的透传为 Eager 执行。**
+按直觉，`torch.compile` 只要“把整模型一键编译”就能合并所有小算子；但在大语言模型推理里，直接全图编译必然撞墙。原因是 Attention 算子高度依赖变长的 KV 页表指针、变长切片位置和跨卡调度状态，一旦硬塞进整图编译器，要么触发图中断（Graph Break）碎成几十片，要么每次 Batch 序列变化就引发耗时的重编译。
 
-读完本章，你将建立以下三个核心认知：
+## 无 Guard 追踪与 Piecewise 分段编译流水
 
-- **图编译器到底在消什么开销**：`TorchDynamo`、`AOTAutograd` 与 `TorchInductor` 解决的是算子融合与 HBM 往返瓶颈，而不负责消除 CPU 端的驱动发射次数。
-- **vLLM 为什么要主动“切图”与去 Guard**：`TorchCompileWithNoGuardsWrapper` 去掉步间 Guard 校验，`split_graph()` 与 `use_inductor_graph_partition` 则用 `splitting_ops` 把动态 Attention 隔离出来，避免 Graph Break 破坏全局融合。
-- **为什么编译后仍然绕不开 CUDA Graph**：即便融合了逐元素算子、消除了 Python 框架校验，Host 仍要为每个 Triton 内核和 GEMM 单独发射指令，必须把切出来的静态子段再交给 `CUDAGraphWrapper`。
+vLLM 采用了一套极具工程巧思的折中架构：**入口取消 Guard，内部按自定义算子硬切分**。整个分段编译路径如**图 1** 所示。
 
-## 先看一个例子：1 层 Transformer 怎样被切开
+```mermaid caption="图 1：Piecewise 分段编译与图捕获分发路径"
+flowchart TD
+    NG["TorchCompile无Guard入口"] --> D["Dynamo 整图一次追踪"]
+    D --> SG["split_graph 按算子切分"]
+    SG --> S0["submod_0<br/>纯张量"]
+    SG --> S1["submod_1<br/>Attention 隔离"]
+    SG --> S2["submod_2<br/>FFN 激活"]
+    S0 --> C0["Inductor / GE<br/>融合加分段图"]
+    S2 --> C2["Inductor / GE<br/>融合加分段图"]
+    S1 --> E1["直调 Eager<br/>分页注意力"]
+```
 
-想象一个只有 1 层的标准 Transformer 解码层，前向链路共包含 12 个算子：`RMSNorm -> QKV Linear -> RoPE -> unified_attention -> O Proj -> Residual Add -> Post RMSNorm -> Gate Proj -> Up Proj -> SiLU -> Mul -> Down Proj`。除了中间的 `unified_attention` 要读取每步动态变化的分页 KV 块表外，其余全都是规则的张量运算。
+入口处的 `TorchCompileWithNoGuardsWrapper`[^1] 做了两件关键事：在非标准模式（`!= STOCK_TORCH_COMPILE`）下向 Inductor 注入跳过守卫的 `guard_filter_fn`（PyTorch 2.10+ 直接使用 `torch.compiler.skip_all_guards_unsafe`），保证模型在首次运行完成追踪后，往后无论 `num_tokens` 如何动态起伏，都不会再触发 Dynamo 重编译风暴。
 
-如果直接用默认 PyTorch `torch.compile` 追踪整层，编译器遇到不透明的自定义 Attention 内核时，要么被迫插入不可控的 Graph Break，要么退化为保守编译；而在 vLLM 里，编译器只把 `vllm.unified_attention` 标记为切分点（`splitting_op`），用 `split_graph()` 在图结构层面干净地一刀两断，切出 `submodule_0`、`submodule_1`（Eager 透传）和 `submodule_2` 三个子图。
+## split_graph 算子隔离与硬件融合结果
 
-![1 层 Transformer 经过 split_graph 按 splitting_ops 切分为三个子图的过程](./diagrams/03-split-graph-walkthrough.drawio '图 1：1 层 Transformer 的 split_graph 切分与分段执行流')
+完成无 Guard 捕获得到整张 `fx.GraphModule` 后，`vllm/compilation/backends.py` 中的 `split_graph(graph, splitting_ops)` 扫描所有计算节点[^2]。只要节点命中配置列表（例如 `unified_attention`、`mla_forward` 或昇腾侧自定义注意力算子），就在它前后划开子图边界，具体效果对比见**图 2**。
 
-拿真实尺寸代一笔账（隐藏维 $H=4096$、MLP 中间维 $I=11008$、FP16 每元素 $2\text{ B}$）：
+![FX Graph split_graph 与算子融合前后对比](./diagrams/03-fx-split-graph.drawio '图 2：FX Graph 切分隔离与子图算子融合示意图')
 
-1. **在 `submodule_0` 内**：`RMSNorm -> QKV -> RoPE` 保留在连续 FX 子图中交由 Inductor 编译，省去了框架分发开销。
-2. **在 `submodule_1` 内**：`unified_attention` 作为 Eager 黑盒独立存在，既不用为动态 KV 页表构造静态符号约束，也不会让前后段失去融合机会。
-3. **在 `submodule_2` 内**：Inductor 把 `Residual Add + Post RMSNorm` 合并为 1 个 Triton 内核，再把 `SiLU + Mul` 合并为 1 个 Triton 内核，中间激活直接停留在 GPU 寄存器和片上 SRAM 中，不往 HBM 写再读一次。在 `B=1` 条件下，单层 GPU Kernel 数从 12 个降到 10 个，激活读写流量从 $0.348\text{ MB}$ 降到 $0.296\text{ MB}$（降幅约 15%）；若再把 `submodule_0` 和 `submodule_2` 套上 Piecewise CUDA Graph，CPU 端 Host Launch 次数进一步从 10 次骤降到 3 次。
+切分必须传入 `keep_original_order=True` 调用 `torch.fx.passes.split_module.split_module`，防止重排带有原地 KV 状态写入的算子顺序，并通过连续切分合并规则避免无意义的空子图。
 
-## 编译器核心：从 TorchDynamo 到 Inductor
+切出来的纯张量段（`submod_0`、`submod_2`）不包含动态控制流与页表指针，随后被送入硬件编译后端合并 Pointwise 与归约内核（例如将 `RMSNorm + 量化` 或 `SiLU * Mul` 合成单条 Triton/NPU Kernel）；而受隔离的 `submod_1`（Attention）退出编译域直接 Eager 调用最优手写库（FlashAttention / FlashMLA / FIA），最后再用分段 `CUDAGraphWrapper(PIECEWISE)` 将 `submod_0` 与 `submod_2` 分别包进硬件静态图[^2]。
 
-把一段普通的 PyTorch `forward()` 变成高效机器码，PyTorch 2.x 的编译流水线主要经过三个阶段：`TorchDynamo` 抓图、`AOTAutograd` 降维以及 `TorchInductor` 生成融合内核。理解每一层在做什么、代价在哪里，才能看懂 vLLM 为什么对它做外科手术式的改造。
+## Inductor/Triton 与昇腾 AscendCompiler 路线对比
 
-**TorchDynamo** 运行在 CPython 字节码求值层（Frame Evaluation Hook）。它不靠修改模型代码，而是在 Python 执行 `forward()` 时逐条拦截字节码指令，把可静态推理的张量计算记录成一张纯数据结构化的 **FX Graph**（`torch.fx.GraphModule`）。如果在追踪途中撞上了无法静态展开的 Python 逻辑（比如依赖张量数值的 `if x.sum() > 0:`、未注册 FakeTensor 推导规则的 C++ 扩展、或打印日志等副作用），Dynamo 就会触发 **Graph Break**——把函数在断点处截成两半，中间插回普通 Python 解释器执行。每次 Graph Break 不仅会打断算子融合窗口，还会引入额外的子图调度开销。
+走到编译后端代码生成这一步，NVIDIA GPU 与华为昇腾 NPU 衍生出两条清晰分叉的技术管线，详见**图 3**。
 
-为了保证生成的 FX 图不出错，Dynamo 会随图附带一组 **Guards**——即对输入张量 `shape`、`stride`、`dtype`、`device` 以及闭包全局变量的前置断言。每次真正调用编译产物前，C++ 运行时都会先逐条检查这些 Guards。对于控制流稳定、但每秒要调度成百上千次的 LLM 推理服务来说，每步前花数十微秒去验证“模块属性有没有被篡改、所有层权重还在不在原设备”纯属冗余开销。
+![Inductor/Triton 与 Ascend npugraph_ex 编译管线对比](./diagrams/03-inductor-vs-ascend-compile.drawio '图 3：PyTorch Inductor 与昇腾 AscendCompiler 管线对比')
 
-**AOTAutograd** 接在 FX 图之后，把高层 `torch.nn` / PyTorch API 规范化拆解为更底层的核心 ATen 算子集；随后由 **TorchInductor** 扫描计算图，把相邻的逐元素（Elementwise）或归约算子（比如 `Add`、`RMSNorm`、`RoPE`、`SiLU * Mul`）编译成单个 **Triton Kernel**。它的核心收益来自减少 HBM 往返：原本 3 个独立算子要把中间张量写回 HBM 再读出共 6 次访存，融合后全部在寄存器和 SRAM 内部消化，只在融合块出入口读写 HBM。
+在 NVIDIA 侧，`VllmBackend` 默认激活 PyTorch TorchInductor，通过内置优化 Pass 生成 PTX 级的融合 Triton 代码并落盘缓存。而在昇腾侧，`vllm-ascend` 的 `platform.py` 显式设置了 `compilation_config.use_inductor = False` 并将后端替换为 `AscendCompiler`[^3]。
 
-![vLLM 编译栈从无 Guard 封装到 FX 切分与 Inductor 分区双路径的架构](./diagrams/03-compile-stack-arch.drawio '图 2：vLLM torch.compile 编译栈与双切分路径')
+进入 `AscendCompiler.compile` 后存在两条分支：若开启 `enable_npugraph_ex`，系统调用 `npugraph_ex.get_npu_backend`（缺失时自动兜底 `torchair`）把纯张量 FX 子图下沉至 CANN GE 静态计算图优化；若未开启，则走 `fusion_pass_compile` 执行基于 FX 模式匹配的 `GraphFusionPassManager` 算子融合 Pass。值得一提的是，`npugraph_ex_compile` 还会主动嗅探生成源码中是否含 `triton_kernel_wrapper`——因进程内 `kernel_side_table` 索引不可跨进程序列化，遇到 Triton 算子时会自动跳过落盘缓存，避免下一次重启加载崩溃[^3]。
 
-理解了这三层分工，一个常见误区也就不攻自破：**为什么打开了 `torch.compile` 和 Inductor，CPU 的 Launch Wall 依然存在？** 因为 Inductor 把 12 个算子融成 10 个甚至 6 个内核后，生成的宿主机代码仍然是一个顺序循环——CPU 仍要依次向 CUDA Driver 调用 `cuLaunchKernel` 去启动 GEMM（cuBLAS/CUTLASS）、融合 Triton 内核以及 Eager Attention。在 `M=1` 的 Decode 阶段，每个小算子在 GPU 上只跑几微秒，CPU 单次发射却要耗掉 $5\text{–}15\,\mu\text{s}$，所以必须让 CUDA Graph 接过最后一棒。
+## PyTorch FX 切分核心实现与源码映射
 
-## vLLM 的工程改造：去 Guard、主动切图与融合路径
-
-面对原生编译栈的冗余 Guard 与动态 Attention 边界，vLLM 没有选择被动容忍 Graph Break，而是在入口处用严苛契约换取确定性。模型基类通过 `_support_torch_compile`（`vllm/compilation/decorators.py`）混入 `TorchCompileWithNoGuardsWrapper`（`vllm/compilation/wrapper.py`）[^vllm-compile-stack]，在首次进入时用 `_mark_dynamic_inputs` 把 `num_tokens` 等变长维度标定为符号整数 `symint`，并关闭 C++ 符号形状 Guard 检查（`enable_cpp_symbolic_shape_guards=False`）。
-
-更关键的是 `TorchCompileWithNoGuardsWrapper` 的运行态契约：它在 `CompilationMode.VLLM_COMPILE` 下强制指定 `torch.compile(..., fullgraph=True, dynamic=False)`，只允许 TorchDynamo 对 Python 代码做**一次**无断点整图追踪；追踪完成后，通过 `torch.compiler.skip_all_guards_unsafe` 跳过步间 Guard 检验，并用 `bytecode_hook` 直接把实例的 `forward.__code__` 切换成编译入口字节码。为了防止模型在静态图环境下偷偷修改自身持久化状态，字节码拦截器还会检查前向期间是否意外触发 `nn.Module._buffers.update`，一旦启用了 CUDA Graph 便直接报错拦截。
-
-拿到的单张 FX 图交由 `VllmBackend`（`vllm/compilation/backends.py`）和 `PiecewiseBackend`（`vllm/compilation/piecewise_backend.py`）处理，这里有两条并行的切分路线：
-
-1. **默认 FX 层先切分（`use_inductor_graph_partition=False`）**：`split_graph()` 依据 `CompilationConfig.splitting_ops`[^vllm-compile-cfg]（默认涵盖各类 Attention 算子，以及非 Inductor 分区时的 `vllm::unified_kv_cache_update` 与 `vllm::unified_mla_kv_cache_update`）把整图剖开。在此之前，`_decompose_size_nodes` 会先把 `x.size()` 拆成纯整数节点 `sym_size.int`，避免不可序列化的 `torch.Size` 跨越子图边界；切出来的非切分子段交给 `PiecewiseBackend` 编译并套上 `CUDAGraphWrapper`。
-2. **新路径 Inductor 调度层切分（`use_inductor_graph_partition=True`，需 PyTorch >= 2.9）**：FX 层先切图会截断 `PostGradPassManager` 的融合视野。开启 Inductor 分区后，整张 FX 图会先完整跑完 `PostGradPassManager`（`vllm/compilation/passes/pass_manager.py`）[^vllm-fusion-passes]里的全部图优化 Pass——包括 `AddRMSNormFusionPass`、`RMSNormQuantFusionPass`、`ActivationQuantFusionPass`、`QKNormRoPEFusionPass`，以及能跨越 Attention 出入口的 `RopeKVCacheFusionPass`、`AttnQuantFusionPass` 和 `MLAAttnQuantFusionPass`——最后才由 `inductor_partition_rule_context` 设置 `custom_should_partition_ops` 在 Inductor 代码生成层按算子切开，并由 `maybe_use_cudagraph_partition_wrapper` 给每个分区包上分段静态图。
-
-除此之外，面对少数连切分清单都难以穷举、或在特定条件下才回退到 Eager 的定制算子，vLLM 还提供了 `BreakableCUDAGraphWrapper`（`vllm/compilation/breakable_cudagraph.py`）。它不再把精力花在切碎 FX 图上，而是允许在 Stream Capture 碰到带 `@eager_break_during_capture` 装饰器的算子时，由 `BreakableCUDAGraphCapture.add_eager` 当场结束当前图段、在捕获流上 Eager 执行该算子，再无缝重启下一段录制。
-
-## 动手实验：用 toy.py 验证分段融合收益
-
-为了让 FX 切分与 Inductor 融合的数据直观可见，我们在本节用纯 NumPy 编写了一个不到 140 行的验证脚本 `toy.py`。它构造了含 12 个节点的 1 层 Transformer FX DAG，实现极简版 `split_graph()` 按 `vllm.unified_attention` 切分出三个子图，并在编译子图内部合并可融合的逐元素链条（`add + rmsnorm` 保留残差写回与归一化输出，消除中间缓冲写读；`silu + mul` 合并为 1 个内核），最后对比各批量下 Eager、Inductor-PW 与 PW+CUDA Graph 的发射次数和数值一致性：
+下面这段可执行的 PyTorch 代码利用真实的 `torch.fx.symbolic_trace` 与 `split_module`，演示 `unified_attention` 如何像一把手术刀将一层 Decoder 精准拆成 `submod_0`、`submod_1` 与 `submod_2`，并验证切分前后数值完全一致：
 
 ```python
-def split_graph(nodes: list[FxNode], splitting_ops: set[str]) -> list[tuple[str, list[FxNode]]]:
-    parts: list[tuple[str, list[FxNode]]] = []
-    cur: list[FxNode] = []
-    idx = 0
-    for node in nodes:
-        if node.op in splitting_ops:
-            if cur:
-                parts.append((f"submodule_{idx}", cur))
-                idx += 1
-                cur = []
-            parts.append((f"submodule_{idx}_eager", [node]))
-            idx += 1
-        else:
-            cur.append(node)
-    if cur:
-        parts.append((f"submodule_{idx}", cur))
-    return parts
+import torch
+import torch.fx as fx
+import torch.nn as nn
+
+def unified_attention(q: torch.Tensor, k: torch.Tensor, v: torch.Tensor) -> torch.Tensor:
+    scale = q.shape[-1] ** -0.5
+    return torch.softmax((q @ k.transpose(-1, -2)) * scale, dim=-1) @ v
+
+torch.fx.wrap("unified_attention")
+
+class MiniDecoderBlock(nn.Module):
+    def __init__(self, d: int = 8) -> None:
+        super().__init__()
+        self.q_proj, self.k_proj, self.v_proj = nn.Linear(d, d, bias=False), nn.Linear(d, d, bias=False), nn.Linear(d, d, bias=False)
+        self.gate, self.up = nn.Linear(d, d, bias=False), nn.Linear(d, d, bias=False)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        attn_out = unified_attention(self.q_proj(x), self.k_proj(x), self.v_proj(x))
+        h = x + attn_out
+        return torch.nn.functional.silu(self.gate(h)) * self.up(h)
+
+model = MiniDecoderBlock(8).eval()
+gm = fx.symbolic_trace(model)
+
+submod_id, node_to_id, split_ids = 0, {}, set()
+for node in gm.graph.nodes:
+    if node.op in ("placeholder", "output"):
+        continue
+    if node.op == "call_function" and node.target is unified_attention:
+        submod_id += 1
+        node_to_id[node] = submod_id
+        split_ids.add(submod_id)
+        submod_id += 1
+    else:
+        node_to_id[node] = submod_id
+
+split_gm = fx.passes.split_module.split_module(gm, None, lambda n: node_to_id[n], keep_original_order=True)
+submods = [n for n, _ in split_gm.named_children() if n.startswith("submod_")]
+assert submods == ["submod_0", "submod_1", "submod_2"] and split_ids == {1}
+x = torch.randn(4, 8)
+with torch.no_grad():
+    assert torch.allclose(model(x), split_gm(x), atol=1e-6)
 ```
 
-直接运行 `uv run --with numpy python -I src/content/posts/vllm/03-torch-compile-and-piecewise/toy.py`（或通过仓库验证脚本 `uv run scripts/verify_toys.py vllm/03`），实际观测输出如下：
+在 `torch 2.15.0` 上实测验证输出完全匹配：
+`submods=['submod_0', 'submod_1', 'submod_2']`, `split_attention_id=[1]`, `allclose=True`。
 
-```text
-FX split count (1 layer): 3 subgraphs
-  submodule_0: ['n0_rmsnorm', 'n1_qkv', 'n2_rope']
-  submodule_1_eager: ['n3_attn']
-  submodule_2: ['n4_oproj', 'n5_res_add', 'n6_post_norm', 'n7_gate', 'n8_up', 'n9_silu', 'n10_mul', 'n11_down']
+| 编译链阶段         | NVIDIA GPU（`vllm` `bb23c0a8`）                  | 华为昇腾 NPU（`vllm-ascend` `3649b8ff`）                                            |
+| ------------------ | ------------------------------------------------ | ----------------------------------------------------------------------------------- |
+| 无 Guard 追踪外壳  | `TorchCompileWithNoGuardsWrapper`[^1]            | 共用相同无 Guard 包装类                                                             |
+| FX 子图拆分引擎    | `split_graph(..., keep_original_order=True)`[^2] | 复用 `split_graph` 并注入昇腾自定义 Attention                                       |
+| 下沉融合与代码生成 | TorchInductor FX 融合 -> Triton PTX 内核         | `AscendCompiler` -> `npugraph_ex`（兜底 `torchair`）或 `GraphFusionPassManager`[^3] |
 
-B  | Eager (K / Act_MB) | Inductor-PW (K / Act_MB) | PW+CUDAGraph host_launches
-1  | 12 /   0.348     | 10 /   0.296           | 3 (was 10)
-8  | 12 /   2.785     | 10 /   2.367           | 3 (was 10)
-64 | 12 /  22.282     | 10 /  18.940           | 3 (was 10)
+`torch.compile` 与 `split_graph` 帮我们大幅缩减了算子数量并挡住了 HBM 来回拷贝，但只要 CPU 依然需要逐子图、逐层提交内核发射调用，发射墙的最后一公里就还未打通。下一章 [第 4 章：CUDA Graph 与四道硬边界](../04-cuda-graph-and-boundaries/) 将潜入硬件指令缓存，看静态图如何做到单条发射跑完全网。
 
-Numeric equivalence max |eager - piecewise_fused|: 5.96e-08
-OK 03
-```
+[^1]: `vllm/compilation/wrapper.py`（`bb23c0a8`），`TorchCompileWithNoGuardsWrapper` 跳过非白名单动态 Guard 避免重追踪。
 
-实验数字说明了两个互为补充的事实：首先，不管批量 $B$ 从 1 放大到 64，Inductor 融合都把逐元素链条的激活 HBM 流量稳定压低了 15%（$0.348 \to 0.296\text{ MB}$、$22.282 \to 18.940\text{ MB}$），且数值误差停在 FP32 舍入噪声量级 $5.96\times 10^{-8}$；其次，Inductor 只能把单层 Kernel 数从 12 压到 10（GEMM 与 Eager Attention 依然各自占一个 Kernel），**真正把 CPU 侧 Host Launch 次数从 10 次打到 3 次的，是切分之后叠加在 `submodule_0` 与 `submodule_2` 外侧的 Piecewise CUDA Graph。**
+[^2]: `vllm/compilation/backends.py`（`bb23c0a8`），`split_graph` 与 `wrap_with_cudagraph_if_needed` 完成 FX 分段及 `PIECEWISE` 包装。
 
-## 源码对照：vLLM 编译栈与 Ascend 路径对照
-
-回到 `vllm` 源码树，`PiecewiseBackend` 还解决了一个极容易拖垮启动延迟的工程难题：**动态批量长度到底要编译多少份代码？** 如果每个 `num_tokens` 都单独触发一次 Inductor 编译，32 个 Decode 档位加上长 Prefill 会把冷启动拉长到数十分钟；如果全部按纯符号维 `symint` 编译，小批量 Triton 内核又会因为不知真实维度而错失最佳 Block 调优。
-
-vLLM 的折中方案定义在 `vllm/compilation/piecewise_backend.py` 的 `compile_sizes` 与 `compile_ranges` 之间：
-
-| 编译维度/机制          | CUDA 路径（`vllm`）                                                                                       | Ascend 路径预览（`vllm-ascend`）                                                                 | 核心源码落点                                                                                |
-| :--------------------- | :-------------------------------------------------------------------------------------------------------- | :----------------------------------------------------------------------------------------------- | :------------------------------------------------------------------------------------------ |
-| 入口封装与去 Guard     | `_support_torch_compile` + `TorchCompileWithNoGuardsWrapper`                                              | 复用同款 `TorchCompileWithNoGuardsWrapper`                                                       | `vllm/compilation/decorators.py` / `wrapper.py`                                             |
-| 形状编译与多尺度分派   | `PiecewiseBackend`（离散 `compile_sizes` 用 `create_concrete_args` 特化，长区间用 `compile_ranges` 兜底） | 已移除 `piecewise_backend.py`，不按 Piecewise Range 切分编译                                     | `vllm/compilation/piecewise_backend.py` / `compiler_interface.py`                           |
-| 算子融合与代码生成后端 | `PostGradPassManager` + Inductor 生成 Triton Kernel                                                       | `AscendCompiler` 默认路由 `npugraph_ex`（`force_eager=True`, `inplace_pass=False`）或 `torchair` | `vllm/compilation/passes/pass_manager.py` / `vllm_ascend/compilation/compiler_interface.py` |
-| 跨层编译耗时优化       | `PiecewiseCompileInterpreter` 按子图复用中间相同结构层                                                    | `GraphFusionPassManager` + 拒绝缓存含 `"triton_kernel_wrapper"` 的图                             | `vllm/compilation/backends.py` / `vllm_ascend/compilation/compiler_interface.py`            |
-| 动态图跳过与静态图捕获 | `CUDAGraphWrapper`（`PIECEWISE` / `FULL`）与 `BreakableCUDAGraphWrapper`                                  | `ACLGraphWrapper` / `BreakableACLGraphWrapper` + `UpdatableGraph`                                | `vllm/compilation/cuda_graph.py` / `vllm_ascend/compilation/acl_graph.py`                   |
-
-![vLLM CUDA 的 PiecewiseBackend 多尺寸分派与 vllm-ascend AscendCompiler 对比](./diagrams/03-piecewise-compile-runtime.drawio '图 3：PiecewiseBackend 多尺寸特化与 Ascend 编译路径预览')
-
-在 CUDA 端，编译器内部还放了一层 `AlwaysHitShapeEnv`（`vllm/compilation/compiler_interface.py`），在把同一张 Dynamo FX 图批量实例化为多组 `compile_sizes` 时伪装符号环境命中，从而复用上游追踪结果而无需重复解析模型 Python 代码；运行时 `_find_range_for_shape` 优先把高频 Decode 批量分派给 `Range(s, s)` 单点特化产物，超长或未对齐的 Prefill 批量才回退到区间符号产物。
-
-而在昇腾 `vllm-ascend` 端，工程团队选择了与 CUDA 截然不同的后端组合：由于昇腾图引擎更偏好直接接入 `npugraph_ex` 或 `torchair`（对应 `vllm_ascend/compilation/compiler_interface.py` 中的 `AscendCompiler`）[^ascend-compiler]，代码库已彻底移除了 `piecewise_backend.py`。值得注意的是，在配置 `npugraph_ex_compile` 时，源码显式设置了 `force_eager=True` 与 `inplace_pass=False`（防止特定融合优化把 GELU 等算子反推回 CPU 执行），同时一旦图中检测到 `"triton_kernel_wrapper"` 便禁止持久化图缓存——至于它如何绕开动态 Attention 参数的静态限制，将在第 6 章结合 `ACLGraph` 与 `UpdatableGraph` 详述。
-
-## 代价与边界
-
-把模型交给 `torch.compile` 与 Piecewise 切分并不是免费午餐，上线前必须正视以下四类代价与工程边界：
-
-- **冷启动编译时长与磁盘缓存依赖**：即便通过 `PiecewiseCompileInterpreter` 在中间 Transformer 层之间共享编译产物，首次为几十组 `compile_sizes` 生成并调优 Triton 内核仍可能耗时数十秒甚至数分钟。生产部署通常需要打开 `VLLM_USE_AOT_COMPILE` 或持久化编译缓存目录来分摊启动开销。
-- **动态 `symint` 与整数界限陷阱**：当批量大小超出预编译的 `compile_sizes` 落入 `compile_ranges` 时，如果模型里有未通过 `_decompose_size_nodes` 拆解的 `torch.Size` 切片，或某自定义算子不支持符号整数，仍会在子图衔接处报错。
-- **禁区操作：原位改写状态与隐藏副作用**：`TorchCompileWithNoGuardsWrapper` 移除了步间 Guard 保护，意味着一旦模型代码在前向过程中根据输入内容改变了类属性分支或触发 `_buffers.update`，无 Guard 机制既不会重新触发编译（除非触发显式校验报错），也会破坏下游 CUDA Graph 捕获。
-- **不透明 `splitting_ops` 的融合损失**：在默认的 `use_inductor_graph_partition=False` 下，切分发生在 `PostGradPassManager` 之前，任何落在切分算子前后边缘上的小变换（如刚出 Attention 紧接着的量化算子）都无法跨越子图合并。这也是社区在 PyTorch >= 2.9 上推动 Inductor 调度层切分的重要动因。
-
-## 下一章预告
-
-这一章我们看清了 `torch.compile` 和 `split_graph()` 如何把一张带动态 Attention 的模型切好、融好并喂给 `PiecewiseBackend`。但只要 CPU 还要逐一发起内核发射，发射墙就没有被彻底拆除。下一章[CUDA Graph 与四道硬边界](../04-cuda-graph-and-boundaries/)，我们将下潜到 GPU 硬件指令缓冲区，顺着地址冻结、静态填充、零同步与多流闭合四条红线，拆解静态图到底是怎样做到“一次发射跑完整张子图甚至整个模型”的。
-
-## 自测
-
-1. 为什么在 `TorchCompileWithNoGuardsWrapper` 下，vLLM 要同时传 `fullgraph=True` 与关闭步间 Guard 检查？如果一段前向代码内部偷偷改写了 `nn.Module` 的 buffer，为什么这在开启 CUDA Graph 时尤为危险？
-2. 对比 `use_inductor_graph_partition=False`（默认 FX 切分）与 `True`（Inductor 调度层切分），哪类融合 pass 会因为过早切分而失去机会？试举两个 `PostGradPassManager` 中的具体 Pass 说明。
-3. 既然 Inductor 已经把逐元素链条（如 `Add + RMSNorm` 和 `SiLU * Mul`）编译成了单个 Triton Kernel，为什么 `toy.py` 里单层仍然剩下 10 个 Kernel，而加上 Piecewise CUDA Graph 后 Host 发射才进一步压到 3 次？
-
-[^vllm-compile-cfg]: `vllm/config/compilation.py`（`CompilationMode`、`CUDAGraphMode`、`CompilationConfig.splitting_ops` 与 `set_splitting_ops_for_v1`），源码对照基线 `vllm@bb23c0a8`。
-
-[^vllm-compile-stack]: `vllm/compilation/decorators.py`（`_support_torch_compile`、`maybe_use_cudagraph_partition_wrapper`）、`vllm/compilation/wrapper.py`（`TorchCompileWithNoGuardsWrapper`）、`vllm/compilation/backends.py`（`split_graph`、`VllmBackend`）与 `vllm/compilation/piecewise_backend.py`（`PiecewiseBackend`）。
-
-[^vllm-fusion-passes]: `vllm/compilation/passes/pass_manager.py`（`PostGradPassManager`）、`vllm/compilation/partition_rules.py`（`inductor_partition_rule_context`）与 `vllm/compilation/breakable_cudagraph.py`（`BreakableCUDAGraphWrapper`）。
-
-[^ascend-compiler]: `vllm_ascend/compilation/compiler_interface.py`（`AscendCompiler`、`npugraph_ex_compile`、`fusion_pass_compile`），源码对照基线 `vllm-ascend@3649b8ff`。
+[^3]: `vllm_ascend/compilation/compiler_interface.py`（`3649b8ff`），`AscendCompiler` 实现 `npugraph_ex_compile`、缓存过滤及 `fusion_pass_compile` 切换。

@@ -11,9 +11,19 @@ featured: true
 
 过去读大模型推理代码时，很多人一上来就陷入 `PagedAttention`、张量并行、MLA 与各种定制 CUDA/CANN 算子的细节里，越看越觉得每一层都在造新轮子。追根溯源，推理引擎的一切工程权衡，都围绕单张加速卡上的三道物理边界展开：**算力峰值、HBM 显存带宽与片上暂存容量**。
 
-本系列把跨模型、跨框架共用的底层能力从上层系统拆解出来，作为全站 **AI Infra 知识库的第一站**。全篇从零假定前置背景，同时并排对照 **NVIDIA GPU（`vllm`）** 与 **华为昇腾 NPU（`vllm-ascend`）** 两条硬件路线，帮你先立起统一的第一性原理坐标系。
+本系列把跨模型、跨框架共用的底层能力从上层系统拆解出来，作为全站 **AI Infra 知识库的第一站**。全篇从零假定前置背景，同时并排对照 **NVIDIA GPU（`vllm`）** 与 **华为昇腾 NPU（`vllm-ascend`）** 两条硬件路线，帮你先立起统一的第一性原理坐标系。图 1 展示了本系列五章的递进主线，以及它如何向分布式通信、DeepSeek 架构与调度引擎三个系列延伸。
 
-![系列一学习路线：从单层前向与双硬件微架构出发，逐层打通自注意力、KV Cache、FlashAttention 与量化，并向 distributed、deepseek 与 vllm 三个系列延伸](./diagrams/00-foundations-roadmap.excalidraw '图 1：系列一（推理与异构硬件基础 01–05）学习路线与上下游系列衔接')
+```mermaid caption="图 1：推理与异构硬件基础五章演进路线"
+flowchart TD
+    S["单卡三道物理边界"] --> C1["01 硬件微架构与 Roofline"]
+    C1 --> C2["02 因果注意力与 RoPE/YaRN"]
+    C2 --> C3["03 KV Cache 与 MQA/GQA"]
+    C3 --> C4["04 FlashAttention 分块融合"]
+    C4 --> C5["05 INT8/FP8/MXFP4 模型量化"]
+    C5 --> D["系列二：分布式与跨卡通信"]
+    C5 --> DS["系列三：DeepSeek 架构演进"]
+    C5 --> V["系列四：vLLM 异构调度栈"]
+```
 
 ## 为何先立「公共底座」
 
@@ -27,13 +37,13 @@ featured: true
 
 ## 全系列五章导读
 
-建议按顺序逐章阅读，每一章均配有从 4 维小向量出发的手算示例、可在 CPU 上独立运行的 `toy.py` 验证脚本，以及对应上游源码位置对照：
+建议按顺序逐章阅读，每一章均配有交互式步骤演进图解、可在 CPU 上独立运行的 NumPy 数值验证片段，以及 `vllm` 与 `vllm-ascend` 的真实上游源码对照：
 
-1. [01 · 异构硬件底座与单层前向：从词元、Roofline 到 NVIDIA SM 与昇腾 AI Core](./01-hardware-and-roofline/)：用 4 维词元走通 `Embedding -> RMSNorm -> SwiGLU -> Logits` 全链路；系统对比 NVIDIA SM 与昇腾 DaVinci AI Core 的微架构及 `PrivateUse1` 分派机制；建立 Roofline 模型区分计算受限与访存受限。
+1. [01 · 异构硬件底座与单层前向：从词元、Roofline 到 NVIDIA SM 与昇腾 AI Core](./01-hardware-and-roofline/)：用张量剖面走通 `RMSNorm -> QKV -> Attention -> SwiGLU -> Residual` 全链路；系统对比 NVIDIA SM 与昇腾 DaVinci AI Core 的微架构及 `PrivateUse1` 分派机制；建立 Roofline 模型区分计算受限与访存受限。
 2. [02 · 自注意力与旋转位置编码（RoPE）：词元之间如何交换上下文](./02-attention-and-rope/)：从检索直觉推导因果多头注意力与 $1/\sqrt{d_k}$ 缩放；用二维旋转解释 RoPE 如何把绝对位置编码成相对距离，并拆解 NeoX/GPT-J 内存布局、YaRN 外推与昇腾交错向量查表优化。
 3. [03 · KV Cache 与头共享妥协：从显存带宽账本到 MQA 与 GQA](./03-kv-cache-and-gqa/)：算清自回归解码为何必须缓存历史 Key/Value，以及它如何成为主导 HBM 容量与带宽的第一账本；推导 MQA 与 GQA 把算术强度提升 $g$ 倍的物理逻辑，并对照 `vllm` 与 `vllm-ascend` 的分页缓存布局。
-4. [04 · FlashAttention 与硬件对齐内核：从在线 Softmax 到 FA-4、FlashMLA 与昇腾融合注意力](./04-flash-attention/)：用两组 4 个数字推导在线 Softmax 增量重缩放；追踪 FA-2/FA-3/FA-4、Split-KV 归并、FlashMLA 矩阵吸收核与昇腾片上 UB 融合算子的工程演化。
-5. [05 · 模型与 KV 量化：如何用更少比特守住精度并突破带宽墙](./05-quantization/)：讲清对称与非对称量化、分组缩放、W8A8/W4A16/FP8/MXFP4 与 KV Cache 量化，看低比特表示如何把算力墙与带宽墙同时向外推一步。
+4. [04 · FlashAttention 与硬件对齐内核：从在线 Softmax 到 FA-4、FlashMLA 与昇腾融合注意力](./04-flash-attention/)：用两组 4 个数字推导在线 Softmax 片上单一累加器就地重缩放；追踪 FA-2/FA-3/FA-4、Split-KV 归并、FlashMLA 矩阵吸收核与昇腾 `1C2V` 融合算子的工程演化。
+5. [05 · 模型与 KV 量化：如何用更少比特守住精度并突破带宽墙](./05-quantization/)：讲清离群通道导致的零桶坍缩、SmoothQuant 与 Hadamard 旋转修复、W8A8/FP8/MXFP4 微缩放格式与 KV Cache 量化，看低比特表示如何把算力墙与带宽墙同时向外推一步。
 
 ## 如何衔接后续三个系列
 

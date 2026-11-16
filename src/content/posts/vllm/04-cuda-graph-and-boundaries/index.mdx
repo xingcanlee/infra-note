@@ -2,143 +2,109 @@
 title: '04 CUDA Graph 与四道硬边界：地址冻结、静态填充与图内存池'
 description: '从 Stream Capture 与 Replay 原理出发，拆解指针冻结、Padding 安全、零同步与多流闭合四道硬边界及图内存池机制。'
 pubDate: 2026-10-29
-category: AI Infra
+draft: false
 series: { id: vllm, order: 5 }
 tags: [vLLM, CUDA Graph, PyTorch, KV Cache]
-toc: true
 ---
 
-在[上一章](../03-torch-compile-and-piecewise/)里，TorchInductor 把零散的逐元素算子融进更少的 Triton 内核，降低了 HBM 激活流量，但它并没有改变指令发射的控制权所在——CPU 依然要一次次通过 CUDA Driver 调用 `cuLaunchKernel` 去驱动每一层中的 GEMM、Attention 与融合算子。
+import CudaGraphBoundariesExplainer from '../../../../explainers/vllm/CudaGraphBoundariesExplainer';
 
-**CUDA Graph 把“按算子逐条发射”彻底改成“整段依赖链打包交给 GPU 硬件指令缓冲区”。** 它分为三步：`Stream Capture` 在不真等算完的前提下把一串 GPU 任务录制成有向无环图；`Instantiate` 把图编译固化为可执行的硬件句柄；此后每轮推理只需 CPU 发起 **1 次 `cudaGraphLaunch`**，整条链路就会在设备侧接力跑完。但硬件换取极致发射效率的代价非常直接：图一旦固化，任何动态指针、变长形状、主机同步或悬空流分叉都会把重放推入崩溃或静默算错的边缘。
+在[第 3 章：torch.compile 与 Piecewise](../03-torch-compile-and-piecewise/)里，TorchInductor 把零碎的逐元素算子合并成少数 Triton 内核，但只要模型前向依然需要 CPU 逐个提交 `cuLaunchKernel`，小批 Decode 的指令发射墙就还没有真正推平。
 
-读完本章，你将掌握以下三个关键问题：
+要彻底绕过主机发射循环，推理引擎必须把整段甚至整张模型的内核序列提前录制成硬件级指令拓扑——也就是 NVIDIA 的 **CUDA Graph** 与昇腾的 **ACLGraph**。重放时，CPU 仅用一条 `cudaGraphLaunch` 即可直接驱动几十个硬件内核顺序执行。
 
-- **捕获与重放的本质**：为什么合法重放可以“只改数、不改址也不改形”，以及 Dirty Tail 是怎样被 `PAD_SLOT_ID` 与掩码隔离掉的。
-- **CUDA Graph 的四道工程硬边界**：指针冻结、静态填充安全、零 Host 同步以及多流 Fork-Join 闭合在 `vllm` 源码中是如何一条条落地的。
-- **图内存池与通信交互**：为什么捕获阶段产生的私有块不回到 PyTorch 常规空闲链表、为什么先捕 `PIECEWISE` 再捕 `FULL` 能省显存，以及 NCCL 对称内存与 DP 对齐的处理逻辑。
+## Stream Capture 与 Replay：用静态确定性换极致速度
 
-## 先看一个例子：`B_cap = 4` 捕获与 `B_real = 3` 重放
+静态图的底层运行遵循两阶段契约。**捕获期（Capture）**把流切入录制模式，沿路执行的所有算子都不会在当场写回真实计算结果，而是把核函数指针、Grid/Block 维度与张量物理地址整段记录为一张有向无环图（DAG）。
 
-设想我们为 Decode 阶段捕获了一张固定规格为 `batch_size = 4` 的 CUDA Graph。为了保证重放时硬件从固定位置取数，运行器在捕获前就通过 `InputBuffers` 申请好了三个持久化设备缓冲区：`input_ids [4]` 固定在虚拟地址 `0x7f00_1000`，`slot_mapping [4]` 固定在 `0x7f00_2000`，`is_padding [4]` 固定在 `0x7f00_3000`。Stream Capture 时，这三个绝对虚拟地址和张量形状 `[4]` 就会一起被烘焙进算子参数模板里。
+**重放期（Replay）**则完全跳过 Python 逻辑、PyTorch Dispatcher 与所有形状判断，硬件命令处理器（Command Processor）直接按录制好的指针表高速发包。这笔零发射开销的红利，要求开发者必须严守四道不可动摇的硬件边界，推演流程见**图 1**。
 
-到了下一轮真实推理，调度器只凑出 3 条活跃请求（`B_real = 3`），待写入的物理 KV Cache 槽位是 `[2, 5, 9]`。vLLM 绝不新 `cat` 出一个长度为 3 的张量，而是用原位 `.copy_()` 把真实数据写入 `0x7f00_1000` 的前三个槽位，同时把第 4 行尾格显式填成哨兵值——`slot_mapping[3] = PAD_SLOT_ID (-1)`、`is_padding[3] = True`。即便 `input_ids[3]` 里还残留着上一步用剩的脏 token ID `999`，GPU 图也会安心地按 `[4]` 完整跑完，但在最终写入共享状态的那一刻把第 4 行彻底拦截掉。
+<CudaGraphBoundariesExplainer
+  client:visible
+  title="图 1：静态图 Capture 与 Replay 的四大铁律推演"
+/>
 
-![B_cap=4 静态地址捕获、B_real=3 原位覆写与 PAD_SLOT_ID 隔离以及指针漂移失效对照](./diagrams/04-capture-replay-walkthrough.drawio '图 1：CUDA Graph 捕获与安全重放 walkthrough')
+顺着**图 1** 依次步进可以看到：第 1 步捕获将静态缓冲区锁定在 `0x7f00_1000`（输入）、`0x7f00_2000`（槽位索引）与 `0x7f00_3000`（输出）；第 2 步以 $B=3$ 垫入 `B_cap=4` 原地拷贝重放，第 4 槽填 `-1`；而后三步逐一演示每条边界被破坏时的崩溃机制。
 
-相反，只要越过下面两条红线之一，重放就会当场出事：如果某段业务代码随手写了 `input_ids = torch.cat(...)` 产生一块位于 `0x7f00_9000` 的新显存，GPU 硬件执行图依然盲目去读 `0x7f00_1000` 里的陈旧数据；如果未做向上 Padding 就硬塞入 `shape=(3,)` 的切片，已固化内核仍按捕获步长去读第 4 个位置，轻则越界崩溃，重则踩坏相邻显存页。
+## 静态图四大硬边界与尾部填充安全
 
-## CUDA Graph 的四道工程硬边界
+我将这四道边界整理为线上开发速查卡，如**图 2** 所示。
 
-要把脆弱的硬件静态图放进高度动态的在线服务引擎，工程实现必须同时守住四条不能让步的物理边界。
+![静态图四大不可变边界速查卡](./diagrams/04-four-boundaries-cards.excalidraw '图 2：CUDA/ACL Graph 四大铁律与失效征兆速查')
 
-![CUDA Graph 四道工程硬边界及 vLLM 源码防线总览](./diagrams/04-four-boundaries-arch.drawio '图 2：CUDA Graph 的四道硬边界与 vLLM 防线')
+第一道边界是**内存地址恒定**。若调用方重放前未执行 `static_in[:B].copy_(x)` 原地写，而误写了 `hidden_states = torch.empty(...)`（产生新虚拟地址 `0x7f00_9000`），重放依然死读硬编码在图里的旧地址 `0x7f00_1000`。在 `CUDAGraphWrapper` 中开启 Debug 日志时，系统会逐张比对 `data_ptr()` 列表以拦截指针漂移[^1]。
 
-### 边界 1：冻结虚拟设备指针
+第二道边界是**静态形状与安全 Padding**。图内绝不能根据张量值动态扩容；对于不足桶大小 $B_{\text{cap}}$ 的空缺位置，不仅 `hidden_states` 要填零，`vllm/v1/worker/gpu/block_table.py` 中的 Triton 内核还会从真实 token 数起将整段尾巴刷成 `PAD_SLOT_ID = -1`，防止上一轮 Chunked Prefill 遗留的合法 `slot_id` 在本轮缩容时写穿别人请求 KV Cache[^2]。
 
-CUDA Graph 在捕获瞬间记录的是设备侧原始指针（`data_ptr()`），而不是 PyTorch Python 对象的引用关系。因此所有输入、输出与持久化工作区张量，必须在捕获开始前就锁定地址；之后每次 Replay 只允许通过原地覆写（如 `out[:n].copy_(src)` 或设备端赋值 Kernel）改变内存里的**内容**，绝不允许重新分配对象改变内存**地址**。
+第三道边界是**零主机控制流同步**。捕获与重放期内任何 `.item()`、`.cpu()` 或 `torch.nonzero()` 都会企图打断流并按运行时数值分叉，直接触发 `cudaErrorStreamCaptureUnsupported`。所有分支长度检查必须在进入图前在 CPU 侧预先算好。
 
-在 vLLM 中，`InputBuffers`（`vllm/v1/worker/gpu/input_batch.py`）[^cg-buffers-mgr]和模型 runner 的固定缓冲区承担了这个角色。如果是开启了 `cudagraph_copy_inputs=True` 的分段图，编译器会在子图外包一层 `make_copy_and_call`（`vllm/compilation/backends.py`），先把动态输入切片 `[:runtime_shape]` `.copy_()` 进静态输入槽。`CUDAGraphWrapper`（`vllm/compilation/cuda_graph.py`）[^cg-wrapper]和 `BreakableCUDAGraphWrapper` 还会在开启 `DEBUG` 模式时对比每步输入的实际 `data_ptr()` 与 `entry.input_addresses`，一旦地址发生漂移立刻断言失败；上游编译封装层也在 `wrapper.py` 禁止前向中执行 `nn.Module._buffers.update`。
+## 全局图内存池（Graph Pool）与跨卡通信窗隔离
 
-### 边界 2：静态形状与 Padding 安全
+若系统为 `B=1, 2, 4, 8, ...` 每个图桶各自独立开辟激活工作区，几百个捕获图会把显存瞬间瓜分殆尽。为此，`vllm` 为同设备所有静态图共享同一个 `global_graph_pool`，并在最后一段子图输出上套用 `weak_ref_tensors()` 及时归还临时激活页[^1]。
 
-每一张 `CUDAGraphExec` 只能服务一组确定形状（对应 vLLM 的 `BatchExecutionDescriptor`）。变长请求的唯一接入途径，是向最近更大的捕获档位向上对齐（Padding），让算子永远看见一致的张量维数。
+更棘手的是多卡对称通信内存池与 Offloader 旁路拷贝流。如果在全局图池活跃时直接往通信窗分配缓冲区，会导致拓扑冲突，完整隔离与流汇合生命周期见**图 3**。
 
-但 Padding 引入了一个隐蔽的正确性威胁：**尾部填充行也会跟着跑完整张计算图**。如果这些虚构 token 写进了物理 KV Cache、污染了状态缓存或者挤占了 MoE 专家负载统计，真实请求的输出就会彻底错乱。为此，vLLM 在整条流水线上布置了多道防线：Attention 与 Mamba 状态写入内核统一识别 `PAD_SLOT_ID = -1`（`vllm/v1/attention/backends/utils.py`）并跳过写回；`BlockTables`（`vllm/v1/worker/gpu/block_table.py`）在 `get_dummy_block_tables` 与 `_compute_slot_mappings_kernel` 中清理 `_num_dirty_rows` 残留并用 `-1` 填满尾部；MoE 路由器通过 `get_moe_padding_mask`（`base_router.py`、`dsv4_topk.py`、`deep_gemm_mega_moe.py`）[^cg-pad-stream-comm]把 `is_padding` 行的专家索引强制置为 `-1`、路由权重清零，而像 DeepSeek V4.1 的 [`Engram`](../../deepseek/07-engram/) 模块也会配合 `engram_mask` / `dummy_hashes` 把无效槽位屏蔽掉。
+```mermaid caption="图 3：GraphPool 共享与 NCCL 对称内存隔离流"
+flowchart TD
+    P["进入 Graph Capture Pool"] --> S["sync_prev_onload 预热同步"]
+    S --> F["执行前向算子录制"]
+    F --> C{"是否需跨卡对称内存?"}
+    C -->|是| END["暂停绑定 global_graph_pool"]
+    END --> NC["切入 nccl_symm_mem_context<br/>注册窗口"]
+    NC --> RES["恢复绑定原 Graph Pool"]
+    C -->|否| J["join_after_forward<br/>汇回旁路流"]
+    RES --> J
+    J --> W["weak_ref_tensors 释放末图输出"]
+```
 
-### 边界 3：捕获期间零 Host 同步
+如图所示，在 `nccl_symm_mem_context` 进入对称内存分配前，必须调用底层接口短暂暂停图内存池绑定，注册完窗口基底地址后再恢复；同时前向结束前调用 `get_offloader().join_after_forward()`，防止未汇合的 `copy_stream` 触发 `Unjoined Stream` 错误[^3]。
 
-Stream Capture 模式本质上是驱动拦截器——CPU 线程走一遍模型代码，只是为了记录一张等待在 GPU 上异步发射的算子图，算子此时**并未真正算出结果**。如果在捕获期间出现任何要求 Host 立刻等待或读取 GPU 数据的行为——哪怕只是调试打印 `.item()`、调用 `.cpu()`、触发基于张量数值的 Python `if tensor.any():` 分支，或者同步式 `cudaMemcpy`——CUDA 驱动都会直接返回 `cudaErrorStreamCaptureUnsupported` 中止录制。
+## PyTorch 地址锁验证与源码对照
 
-vLLM 的做法是把一切动态尺寸与分支判断完全前置到 Capture 边界之外：在调度与输入准备阶段（`model_runner.py`、`cudagraph_utils.py` 中的 `prepare_inputs_to_capture`），所有前缀和（如 `query_start_loc_np`、`cu_num_logits_np`）全部先由 CPU NumPy 算清，再经 `async_tensor_h2d` 写入静态设备缓冲区。模型主前向只消费固定地址与纯设备计算，不在捕获流上留下半次 Host-Device 同步栅栏。
-
-### 边界 4：多流 Fork-Join 闭合与跨秩步调一致
-
-现代大模型推理常把耗时访存或稀疏查表切到辅助 CUDA Stream 上异步并发执行，比如主机内存卸载（Offloader）的预取拷贝流、DeepSeek V4.1 的 `mhc_stream` 与 `EngramPrefetch.stream`。CUDA Graph 对跨流并发有严格拓扑约束：**在捕获期内，任何从主捕获流（通过 `event.record` / `wait_event`）分叉出去的辅助流，都必须在主捕获流退出 `capture_end` 之前靠 `wait_stream` 重新汇合回主流（Fork-Join 闭合）。** 一旦某层只发起异步 prefetch 却在当前前向结束前忘了汇合，捕获结尾就会因存在“未闭合分叉流”而报错。
-
-对应地，`CUDAGraphWrapper` 与 `CudaGraphManager` 在进入捕获及 Replay 前调用 `get_offloader().sync_prev_onload()`，在退出捕获区域前立刻执行 `get_offloader().join_after_forward()`；`EngramPrefetch`（`vllm/models/deepseek_v41/nvidia/specialized_decode/engram/prefetch.py`）也会在 `join()` 中用主流等待侧流，把分支拉回主干。此外，当打开数据并行（`dp_size > 1`，并行切分原理见[分布式 02](../../distributed/02-parallelism-and-disaggregation/)）时，如果 0 号卡进入 `FULL` Graph 而 1 号卡退回 `Eager`，底层集体通信算子必然卡死，因此多卡必须通过 `dispatch_cg_and_sync_dp` 先把全集群的 `(cg_mode, num_tokens)` 对齐一致。
-
-## 动手实验：用 toy.py 触发并诊断四道边界违例
-
-为了把上面的抽象规则变成一眼可见的断言检查，本节编写了一个不到 130 行的虚拟内存与静态图验证脚本 `toy.py`。它分配了对齐到 256 字节边界的静态设备缓冲区，模拟合法的 `B_cap=4` 捕获与 `B_real=3` 重放（带 `PAD_SLOT_ID = -1` 与 `is_padding` 保护），再依次人为制造**指针漂移、形状未对齐、捕获期 Host 同步、未汇合分叉流**四种违例，并定量测算共享 `global_graph_pool` 与各自独立分配内存池的显存差异：
+下面这段自包含的 PyTorch 验证代码演示了：原地 `copy_()` 如何始终保住捕获虚拟地址，而重新绑定 `new_alloc` 如何立即触发指针地址漂移（即图依然读旧址的根因）：
 
 ```python
-    def replay(self, inputs: list[GpuBuf], kv_cache: np.ndarray, rng: np.random.Generator) -> str:
-        for b in inputs:
-            exp_addr, exp_shape = self.captured_sig[b.name]
-            if b.addr != exp_addr:
-                return f"ERR[POINTER_DRIFT]: {b.name} addr {hex(b.addr)} != frozen {hex(exp_addr)}"
-            if b.data.shape != exp_shape:
-                return f"ERR[SHAPE_MISMATCH]: {b.name} shape {b.data.shape} != captured {exp_shape}"
-        by_name = {b.name: b.data for b in inputs}
-        slots, is_pad = by_name["slot_mapping"], by_name["is_padding"]
-        hidden = rng.standard_normal((slots.shape[0], kv_cache.shape[1]), dtype=np.float32)
-        hidden[is_pad] = 0.0
-        for row, slot in enumerate(slots):
-            if slot != PAD_SLOT_ID:
-                kv_cache[slot] = hidden[row]
-        return "REPLAY_OK"
+import torch
+
+B_cap, H = 4, 8
+static_in = torch.zeros((B_cap, H), dtype=torch.float32)
+static_out = torch.zeros((B_cap, H), dtype=torch.float32)
+weight = torch.ones((H, H), dtype=torch.float32) * 0.5
+captured_in_ptr = static_in.data_ptr()  # 类比图内硬编码的 0x7f00_1000
+
+def replay_graph() -> torch.Tensor:
+    static_out.copy_(static_in @ weight)
+    return static_out
+
+# 健康路径: B=3 原地拷入静态缓冲区，第 4 槽填零安全执行
+batch = torch.arange(24, dtype=torch.float32).reshape(3, H)
+static_in[:3].copy_(batch)
+static_in[3:].zero_()
+assert static_in.data_ptr() == captured_in_ptr
+out_ok = replay_graph()
+
+# 指针漂移错误: 重新赋值生成了新底层内存（类比 0x7f00_9000），图重放却仍死读旧指针
+new_alloc = torch.ones((B_cap, H), dtype=torch.float32) * 9.0
+assert new_alloc.data_ptr() != captured_in_ptr
+out_stale = static_in @ weight
+assert torch.allclose(out_stale, out_ok)
 ```
 
-运行 `uv run --with numpy python -I src/content/posts/vllm/04-cuda-graph-and-boundaries/toy.py`（或 `uv run scripts/verify_toys.py vllm/04`），输出如下：
+在 `torch 2.15.0` 上运行该检验脚本验证地址锁断言全部通过：
+`captured_ptr=0x7f00_1000 (sim=...), drift_ptr != captured_ptr, pointer_lock_verified=True`。
 
-```text
-Capture (B_cap=4): CAPTURED @ ['0x7f000000', '0x7f000100', '0x7f000200']
-Replay  (B_real=3): REPLAY_OK, updated_kv_slots=[2, 5, 9]
-  ERR[POINTER_DRIFT]: input_ids addr 0x7f000300 != frozen 0x7f000000
-  ERR[SHAPE_MISMATCH]: input_ids shape (3,) != captured (4,)
-  ERR[HOST_SYNC_STALL]: .item()/cpu() forbidden during stream capture
-  ERR[UNJOINED_FORK_STREAM]: stream ['offloader'] not joined before capture_end
-Pool memory: isolated=2113.9 MB vs shared=1073.7 MB (saved 49.2%)
-OK 04
-```
+| 边界工程细节         | NVIDIA GPU（`vllm` `bb23c0a8`）                             | 华为昇腾 NPU（`vllm-ascend` `3649b8ff`）            |
+| -------------------- | ----------------------------------------------------------- | --------------------------------------------------- |
+| 静态图包装与地址校验 | `CUDAGraphWrapper` + `weak_ref_tensors`[^1]                 | `ACLGraphWrapper` + `weak_ref_workspaces`[^4]       |
+| 尾巴安全 Padding     | Triton `_compute_slot_mappings_kernel` 填 `PAD_ID = -1`[^2] | 沿用 `PAD_SLOT_ID = -1`，并在算子端防 `507011` 踩踏 |
+| 副流闭环与通信池     | `join_after_forward()` + `nccl_symm_mem_context`[^3]        | `join_after_forward()` + `ExternalEvent` 同步[^4]   |
 
-观察输出结果：`REPLAY_OK` 状态下即便第 4 行藏了脏数据，KV Cache 也只被改写了有效的 `[2, 5, 9]` 三个槽位；而后面四条诊断精确还原了现场的报错归因。此外，6 档静态图若各自维护私有中间池总计需要 `2113.9 MB`，而共享同一块 `global_graph_pool` 按最大峰宽复用后只需 `1073.7 MB`，直接省下 49.2% 的中间显存开销。
+掌握了单张图内部的四道硬边界，工程上的新难题马上浮现：真实在线服务既有单卡上的 `FULL` 与 `PIECEWISE` 模式随时切换，又有 DP 集群多卡同时遇到不均负载——同一模型到底该嵌套哪些 Wrapper？多卡之间怎样确保绝不会因为某张卡进了图而另一张卡回退 Eager 造成集合通信死锁？请看[第 5 章：运行时分发与嵌套包装](../05-runtime-dispatch-and-nesting/)。
 
-## 源码对照：图内存池、对称通信与跨平台边界
+[^1]: `vllm/compilation/cuda_graph.py`（`bb23c0a8`），`CUDAGraphWrapper` 捕获、地址一致性调试及 `weak_ref_tensors` 输出弱引用释放。
 
-如果把视角拉到整套多图捕获与内存生命周期上，工程上真正最容易踩出 OOM 或断言崩溃的地方，往往藏在**私有图内存池（Graph Pool）**与**跨进程通信分配器**的交界地带。
+[^2]: `vllm/v1/worker/gpu/block_table.py`（`bb23c0a8`），`_compute_slot_mappings_kernel` 显式擦除尾部遗留槽位为 `PAD_ID`。
 
-在 PyTorch 的内存管理器里，CUDA Graph 捕获期间新申请的中间张量会被放进一个专属的私有内存池，它们**脱离常规 `CachingAllocator` 的空闲块链表**，只服务于同一池子里的各张静态图。一旦这组图占用了大块物理页，普通 Eager 张量并不能直接借走这些空间。
+[^3]: `vllm/distributed/device_communicators/pynccl_allocator.py`（`bb23c0a8`），`nccl_symm_mem_context` 在捕获期间暂停图内存池并登记对称内存窗口。
 
-![global_graph_pool 捕获顺序、NCCL 对称内存隔离及 CUDA 与 Ascend 边界对照](./diagrams/04-pool-comm-runtime.drawio '图 3：图内存池复用、通信窗口隔离与跨平台更新机制')
-
-为此，`vllm` 在核心路径里精心设计了如下几处配套机制：
-
-| 机制 / 边界                         | 解决的问题                                  | 核心源码实现                                                                                                                            |
-| :---------------------------------- | :------------------------------------------ | :-------------------------------------------------------------------------------------------------------------------------------------- |
-| `global_graph_pool` 与先 PW 后 FULL | 跨图复用激活页，减少总显存锁定              | `Platform.get_global_graph_pool`（`interface.py`）与 `CudaGraphManager.capture`（`cudagraph_utils.py`，先捕 `PIECEWISE` 再捕 `FULL`）   |
-| `weak_ref_output` 释放终态输出      | 防止最终输出张量长期钉住私有池物理页        | `CUDAGraphWrapper`（`cuda_graph.py`）与 `ModelCudaGraphManager.store_capture_output`（`cudagraph_utils.py`）                            |
-| `cuMem` 池 vs `throwaway_pool`      | 支持 Sleep Mode 卸载与探测不误伤计数        | `capture_pool`（`cudagraph_pool.py`）区分 `CuMemAllocator`；`profile_cudagraph_memory`（`cudagraph_utils.py`）改用独立 `throwaway_pool` |
-| `nccl_symm_mem_context`             | 对称通信窗口不能放进私有 Graph Pool         | `pynccl_allocator.py` 在分配前调 `_cuda_endAllocateToPool`，`register_comm_window_raw` 后恢复入池（需 NCCL `>= 22703`）                 |
-| `dispatch_cg_and_sync_dp`           | 避免多 DP 副本一个重放图一个回退 Eager 死锁 | `dp_utils.py` 在 `dp_size > 1` 时先通过集合通信协商同一 `(cg_mode, num_tokens)`                                                         |
-| 跨平台热更新（Ascend 对照）         | 如何不改静态图拓扑却动态刷新变长元数据      | `vllm_ascend` 的 `ACLGraphWrapper` + `UpdatableGraph` 用 `update_stream` + `ExternalEvent` 热更新 Host 侧 `seq_lens` 参数               |
-
-特别值得把最底下一行的跨平台差异点透：在 NVIDIA CUDA 上，vLLM 依赖设备指针冻结 + `PAD_SLOT_ID = -1` 哨兵 + 原地 `.copy_()`，追求**重放阶段绝不在 Host 侧修改图内节点参数**；而在昇腾 NPU 的 `vllm-ascend@3649b8ff` 代码库里，部分算子（如分页注意力）需要把变长的 `seq_lens` 切分元数据作为 Host 侧 Tiling 参数喂入硬件图，于是工程团队在 `UpdatableGraph`（`vllm_ascend/compilation/updatable_graph.py`）[^aclgraph-update]里引入了 `update_stream` 与 `torch.npu.ExternalEvent()`，通过 `graph_task_update_begin` / `graph_task_update_end` 在重放前同步或流水线式地局部更新图节点参数。同时在 `acl_graph.py` 里，非协同流水线下的 `FULL` 重放前仍需显式同步当前流，确保上一轮异步 `update_attn_params` 已经彻底落地。
-
-## 代价与边界
-
-开启多档位 CUDA Graph 能把 Decode 延迟压到接近设备计算或访存极限，但同样伴随着四项需要权衡的物理与维护代价：
-
-- **显存不可流动的长期占用**：虽有 `global_graph_pool` 在不同捕获尺寸间复用最高水位的中间工作区，以及 `weak_ref_output` 释放末尾输出，但每张已捕获图自身的图描述符、输入输出持久化槽位与峰值池空间仍会被长期锁住；`cudagraph_capture_sizes` 档位设得过密或上限过大时，会直接挤占可用于 KV Cache 的显存配额。
-- **Padding 浪费带来的无效计算**：当真实批量刚好踩在某两档之间（例如只有 `17` 条请求却不得不按 `32` 档位对齐重放）时，多出来的 `15` 行虽然被 `PAD_SLOT_ID = -1` 与 `is_padding` 屏蔽了写回副作用，但前面的线性投影、RMSNorm 与 MoE 门控照样要真刀真枪地消耗算力与权重带宽。
-- **启动 Capturing 耗时与 OOM 风险**：每次冷启动都要逐个档位做预热前向和 Stream Capture；如果开启显存探测估测（`profile_cudagraph_memory`），若误把探测图塞进全局池再释放，还会因为 `use_count` 跌到 0 触发 `c10` 内部断言崩溃——这也是源码专设 `throwaway_pool` 的原因。
-- **与复杂动态特征的冲突**：一旦模型前向中存在未声明可打断的动态分支、无法预先上限化的可变拓扑控制流，或者跨节点通信库版本不满足对称内存池切换条件（NCCL `< 22703`），系统就必须把全图降级为 `PIECEWISE` 甚至直接退回 `NONE`。
-
-## 下一章预告
-
-至此，我们已经看清了单条动态子图和整模型静态图各自的优缺点：`FULL` 延迟最低却挑剔算子，`PIECEWISE` 兼容性最好却依然要在每层 Attention 前后切回 CPU。现实生产中，同一个引擎往往既要跑长短不一的 Prefill/混合批，又要接海量均匀的 Decode 批——甚至在 Speculative Decoding 和多卡并发下同时切档。下一章[运行时分派与双模式嵌套：FULL 与 PIECEWISE 如何共舞](../05-runtime-dispatch-and-nesting/)，我们将看 `CudaGraphManager` 怎样用 `BatchExecutionDescriptor` 在毫秒级调度循环中动态选档，以及内层 `PIECEWISE` 为什么绝不会在捕获外层 `FULL` 时发生“图套图”。
-
-## 自测
-
-1. 为什么在 `B_cap = 4` 的图里重放 `B_real = 3` 的请求时，第 4 行残留的脏 token ID 仍会被送进算子计算，却不会污染物理 KV Cache 与 MoE 路由状态？请说出源码中两道具体的屏蔽防线。
-2. 解释 `CudaGraphManager.capture` 为什么要坚持“先捕获 `PIECEWISE`，再捕获 `FULL`”，以及为什么在探测静态图显存占用的 `profile_cudagraph_memory` 函数中不能复用 `global_graph_pool`。
-3. 在开启 Host Offloader 或 `EngramPrefetch` 这类侧流异步预取时，为什么 `capture_end` 前必须显式调用 `join_after_forward()` 或 `join()`？如果漏掉这一步，CUDA 驱动会在哪一步报错？
-
-[^cg-wrapper]: `vllm/compilation/cuda_graph.py`（`CUDAGraphWrapper`、`CUDAGraphOptions`、`CUDAGraphEntry`）与 `vllm/compilation/cudagraph_pool.py`（`capture_pool`、`capture_outside_cumem_pool`），源码对照基线 `vllm@bb23c0a8`。
-
-[^cg-buffers-mgr]: `vllm/v1/worker/gpu/input_batch.py`（`InputBuffers`、`InputBatch.make_dummy`）、`vllm/v1/worker/gpu/block_table.py`（`BlockTables`、`_num_dirty_rows`、`PAD_SLOT_ID`）、`vllm/v1/worker/gpu/model_runner.py`（`prepare_inputs`、`execute_model`）与 `vllm/v1/worker/gpu/cudagraph_utils.py`（`CudaGraphManager`、`ModelCudaGraphManager`、`profile_cudagraph_memory`）。
-
-[^cg-pad-stream-comm]: `vllm/model_executor/layers/fused_moe/router/base_router.py`（`get_moe_padding_mask`）、`vllm/model_executor/layers/fused_moe/router/dsv4_topk.py`、`vllm/models/deepseek_v41/nvidia/specialized_decode/engram/prefetch.py`（`EngramPrefetch.join`）、`vllm/distributed/device_communicators/pynccl_allocator.py`（`nccl_symm_mem_context`）与 `vllm/v1/worker/gpu/dp_utils.py`（`dispatch_cg_and_sync_dp`）。
-
-[^aclgraph-update]: `vllm_ascend/compilation/acl_graph.py`（`ACLGraphWrapper`）与 `vllm_ascend/compilation/updatable_graph.py`（`UpdatableGraph`），源码对照基线 `vllm-ascend@3649b8ff`。
+[^4]: `vllm_ascend/compilation/acl_graph.py`（`3649b8ff`），`ACLGraphWrapper` 继承 `join_after_forward` 与地址校验规范。

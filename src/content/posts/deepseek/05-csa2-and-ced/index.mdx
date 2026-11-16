@@ -8,167 +8,154 @@ category: AI Infra
 toc: true
 ---
 
-在长程智能体（Agent）工作流里，模型每执行一轮工具调用，往往要把十几万字的代码库和工具日志反复塞回上下文，而真正新增的回复或报错通常只有最后百来个 token。即便 DeepSeek-V4 已经把单层内的连续序列做了压缩，让每层独立保存、独立重建全上下文全局 KV Cache（Key-Value Cache，键值缓存），依然会把 GPU HBM 容量、SSD 持久化空间以及主机到卡的带宽拖垮。
+import Csa2HsiExplainer from '../../../../explainers/deepseek/Csa2HsiExplainer';
 
-DeepSeek-V4.1-Flash（总骨干参数 $552\text{B}$、外挂条件记忆 Engram $196\text{B}$、最长支持 $1\text{M}$ 上下文）[^paper] 给出的答案，是把稀疏压缩从单层一维推进到**三维联合压缩（CSA2）**，再叠加上**因果编码-解码分离（CED）**与 **SWA 有界重放（SWA Bounded Replay）**。读完这一篇，你会彻底掌握下面四个工程要点：
+在多轮智能体（Agent）工作流里，工具调用每新增几十个报错词元，就要把十几万字的历史代码与日志反复塞回上下文。即便 DeepSeek-V4 压缩了单层内的连续序列，让每层独自维护并重扫全长全局缓存，依然会把 GPU HBM、SSD 持久化池和跨节点带宽拖垮。
 
-- **三维乘法压缩账本**：序列维压缩（$m=2$ 与 $m=1$）、层间维复用（40 层收敛到每 token 仅存 $2.5$ 份全局 KV）与位宽维 FP4 量化叠加，把常驻 HBM 的全局 KV 压到 **$890\text{ B/token}$**，约为 DeepSeek-V4-Flash 的 $1/4$、DeepSeek-V1 的 $1/437$。
-- **CSA2 三态分工与两级分层索引**：通过 `Full`、`Reindex`、`Reuse` 三种静态模式解耦“KV 存储”与“Top-$k$ 索引筛选”，配合解码器两级分层稀疏索引器（HSI），让 $1\text{M}$ 上下文下的后续重算只扫描固定 $16{,}384$ 个候选槽位（$1.64\%$），单步解码 FLOPs 从 $4\text{K}$ 拉长到 $1\text{M}$ 仅增长 $1/4$。
-- **CED 非对称计算与 SWA 有界重放**：前 $L/2 = 20$ 层作为 Causal Encoder 吃掉全部长度（预填充激活 $8\text{B}$），后 $20$ 层作为 Decoder 直接从 $H_{L/2}$ 一次性投影全局 KV（生成时激活 $16\text{B}$），本地滑窗仅重放末尾 $n_{\text{win}} = 128$ 个 token，让持久化缓存体积降至 V4-Flash 的 $1/8$。
-- **论文与上游源码一一对应**：不神化论文命名，直接核对 `vllm@bb23c0a8` 与 `vllm-ascend@3649b8ff` 的真实类与函数签名，看清工业界如何用 `is_kv_source`、`is_index_source` 和 `DecoderReplayLayers` 把这套机制装进推理引擎。
+DeepSeek-V4.1-Flash（总骨干 `552B`、外挂条件记忆 Engram `196B`、支持 `1M` 上下文）[^paper] 把稀疏压缩推向**三维乘法联合压缩（CSA2）**、**因果编码-解码分离（CED）**与 **SWA 有界重放**。读完本章，你可以带走四个确定结论：
 
-## 先看一个例子：3 层协作 + 2 级筛选，看懂 Full / Reindex / Reuse 与分层索引
+1. **三维乘法 `890 B/tok` 账本**：位宽轴从 `1152 B` → V4 `584 B` → `288 B NVFP4`，叠乘序列压缩（$m=2$ 与 $m=1$）和跨层复用（40 层收敛至 `2.5` 份），把常驻全局缓存压到每词元仅 `890 B`[^paper]。
+2. **CSA2 三态分工与两级分层索引（HSI）**：通过 `Full` / `Reindex` / `Reuse` 解耦缓存与索引复用，Decoder 只需对 `L20` 选出的固定 `16,384` 个候选槽位（$1\text{M}$ 下仅 `1.64%`）重打分[^paper]。
+3. **CED 算力减半与 SWA 有界重放**：前 $L/2 = 20$ 层作为编码器后，后 `20` 层直接从 $H_{L/2}$ 一次性投影全局 KV，局部 SWA 仅重放末尾 $n_{\text{win}}=128$ 步，持久化体积降至 V4-Flash 的 `1/8`[^paper]。
+4. **上游源码的真实抽象映射**：看清 `vllm@bb23c0a8` 与 `vllm-ascend@3649b8ff` 如何借助 `is_kv_source`、`is_index_source`、`DeepseekV41LayerRole` 与 `DecoderReplayLayers` 把论文章节落地为执行流。
 
-假设前面压缩好的历史全局缓存里共有 $16$ 个压缩槽位，我们把每 $4$ 个相邻槽位划成 $1$ 个粗块，一共分成 `块 0` 到 `块 3` 共 $4$ 块。现在有相邻的 3 个全球稀疏层要依次处理同一个查询，它们分别拿到 `Full`、`Reindex`、`Reuse` 三张不同分工的卡片：
+## 先看一个例子：三维压榨、HSI 候选池与逆 RoPE 恢复
 
-- **Layer A（`Full Mode`，完整层）**：自己做压缩主 KV 并线性投影出 `Indexer K` 写入全局缓存；随后用自己的索引查询扫遍全部 $16$ 个槽位，不仅挑出本层最关注的 `Top-4` 精细槽位，还顺手记录每个粗块内的最高分，把分数最高的 `Top-2` 粗块（比如 `块 1` 和 `块 3`，共 $8$ 个候选槽位）放进共享候选区。
-- **Layer B（`Reindex Mode`，重索引层）**：**不生成也不保存自己的主 KV 与 Indexer K**，直接复用 Layer A 的那份全局缓存；它只用本层自己的索引查询权重，去重新给共享候选区里的 `块 1` 和 `块 3` 这 $8$ 个槽位打分，跳过另两块，把索引算力直接砍半，然后刷新自己专属的 `Top-4` 索引写入缓冲区。
-- **Layer C（`Reuse Mode`，全复用层）**：最省事——**既不存全局 KV，也不跑一次索引打分**。它直接拿 Layer A 的主 KV，配合 Layer B 刚刚写入缓冲区的 `Top-4` 索引编号，加上本层现算的当前主查询 $Q$ 与本地滑动窗口（SWA）KV，一步算出稀疏注意力输出。在生产内核里，这样一个 `Reuse` 层预填充只需要跑 $15$ 个 CUDA Kernel，解码只要 $11$ 个 Kernel。
+打开**图 1**，沿 5 个步骤追踪从单槽位宽压降到 `288 B` NVFP4（`256 B E2M1 + 32 B per-16 E4M3`）、40 层静态复用分配、HSI 两级候选海选以及输出端 $R_{-n}$ 逆旋恢复相对位置的全流程：
 
-![CSA2 三层协作模式（Full / Reindex / Reuse）与两级分层稀疏索引数值走查图](./diagrams/09-csa2-walkthrough.drawio '图 5-1：CSA2 三层协作模式与两级分层稀疏索引数值走查')
+<Csa2HsiExplainer
+  client:visible
+  title="图 1：DeepSeek-V4.1 CSA2 三维压缩、HSI 两级稀疏索引与逆 RoPE 恢复"
+/>
 
-从图 5-1 就能看清 CSA2 最聪明的地方：**“共享谁的 KV 缓存”与“复用谁的 Top-$k$ 索引”被彻底解耦了**。哪怕中后层（如 Layer B）的注意力焦点已经相对前层发生了局部转移，也不需要为它单独多存一份主 KV，更不需要再重扫全长 $1\text{M}$ 的上下文。
+在**图 1** 背后，V4.1 相对 V4 做了两处干脆的简化：全面弃用重叠 $2m$ 窗与压缩器内绝对位置偏置，并让 `Indexer K` 直接从主 KV 线性投影产生，不再独立维护一条隐藏状态压缩链路[^paper]。
 
-## CSA2 三维压缩与 890 字节 MXFP4 账本
+## CSA2 三维压缩、40 层拓扑与 890 B 精确账本
 
-DeepSeek-V4.1-Flash 的技术报告在讨论上下文降本时，明确指出了三条呈乘法关系叠加的压缩维度：条目表示大小（MLA 低秩潜向量 + 低比特精度）、序列长度维度（每 $m$ 个 token 压成 $1$ 个槽位）以及层间复用维度（多组共享缓存与索引）[^paper]。接下来我们把这三大维度放进 $40$ 层真实拓扑里，一字节一字节地把 **$890\text{ B/token}$** 的账算平。
+将 `40` 层静态划分为三段（`L0–L1` 纯局部 SWA 贡献 `0` 份全局 KV；`L2–L19` 编码器 `3` 组各 `6` 层且 `m=2` 贡献 `1.5` 份；`L20–L39` 解码器 `5` 组各 `4` 层且 `m=1` 共用同一份 KV 贡献 `1.0` 份），全网精确收敛至每词元 **`2.5`** 份全局槽位。其层间数据接力如**图 2** 所示：
 
-![DeepSeek-V4.1-Flash 三维压缩与 890 字节/token 全局 KV 账本拆解图](./diagrams/09-hierarchical-mxfp4-arch.drawio '图 5-2：CSA2 三维压缩与 890 B/token 全局 KV 账本拆解')
+```mermaid caption="图 2：40 层 CSA2 Full/Reindex/Reuse 静态复用拓扑"
+flowchart TD
+    SWA["L0-L1：纯 SWA 局部层<br/>（0 份全局）"] --> ENC_F["L2/8/14：Encoder Full<br/>（m=2，1.5 份）"]
+    ENC_F -->|"同组后 5 层全复用"| ENC_R["Encoder Reuse (15 层)"]
+    ENC_R --> DEC_F["L20：Decoder Full<br/>+ 生成 16,384 候选池"]
+    DEC_F -->|"复用 KV + 仅重扫候选池"| DEC_RI["L24/28/32/36：Reindex<br/>（4 层）"]
+    DEC_RI -->|"直接消费 KV 与 Top-512"| DEC_RU["Decoder Reuse (15 层)"]
+```
 
-### 维度一与维度二：40 层静态拓扑与两级分层稀疏索引器（HSI）
+对着**图 2** 核对字节账：主 KV 采用 QAT 训练后的后 RoPE 量化——`E2M1` 载荷（`512 × 0.5 = 256 B`）配每 16 通道 `1` 字节 `E4M3` 局部缩放（`32 B`），且省略 NVFP4 常见第二级全局缩放因子（因出口 RMSNorm 将向量 $L_2$ 范数锁在 $\sqrt{512} \approx 22.6$ 内，远低于 `448 × 6 = 2688` 上限），单槽主 KV 精确占 **`288 B`**；叠加 `128` 维 MXFP4（每 32 维 `UE8M0` 缩放）的 `Indexer K`（`68 B`）[^paper][^flashmla]，乘以 `2.5` 份得出：
 
-相比上一代 DeepSeek-V4（同时混用 CSA 与更重度压缩的 HCA，并在压缩器里保留重叠 $2m$ 滑窗与绝对位置编码），V4.1-Flash 在整个全局稀疏分支统一采用了**纯 CSA2**，并做了两处干脆的简化：第一，取消相邻压缩块的重叠窗口以及压缩器内的绝对位置编码；第二，不再单独从隐藏状态去压缩生成 `Indexer K`，而是直接从主 KV 线性投影得到 `Indexer K`。
+| 缓存分量             | 原始维度与分组精度                                           | 单槽位小计 | 全网每 token 分摊（`× 2.5` 份） |
+| :------------------- | :----------------------------------------------------------- | :--------: | :-----------------------------: |
+| **全局主 KV**        | `512` 维（`448 NoPE + 64 RoPE`），`E2M1` + 每 `16` 维 `E4M3` |  `288 B`   |       `2.5 × 288 = 720 B`       |
+| **全局 Indexer K**   | `128` 维，`MXFP4` + 每 `32` 维 `UE8M0`                       |   `68 B`   |       `2.5 × 68 = 170 B`        |
+| **全网全局 KV 合计** | `L2–19`（`3 × 1/2`）+ `L20–39`（`1 × 1`）                    |  `356 B`   |        **`890 B/token`**        |
 
-全模型 $L = 40$ 层被静态划为三大段（隐藏维度 $d = 5120$，注意力查询头 $h_q = 64$、单头潜向量维度 $d_{\text{kv}} = 512$，SWA 窗口 $n_{\text{win}} = 128$）：
+同时，因相邻层复用与 `Reuse` 层跳过索引，Decoder 后 4 个 `Reindex` 层借助两级分层稀疏索引器（HSI）恒定只扫 `2048` 个粗块 × `8` 槽位 = `16,384` 个候选位置，彻底摆脱 $O(L)$ 增长；`Reuse` 层解码时甚至只需 `11` 个融合内核[^paper]。
 
-1. **底层纯局部段（`L0–L1`，共 2 层）**：只跑 SWA，不保留任何全局 KV，贡献 $0$ 份全局槽位。
-2. **编码器全局稀疏段（`L2–L19`，共 18 层）**：均分为 $3$ 组，每组 $6$ 层，句内压缩比 $m = 2$（每 $2$ 个原始 token 压成 $1$ 个全局槽位）。每组只有第 $1$ 层跑 `Full Mode`，其余 $5$ 层全部跑 `Reuse Mode`。因为压缩比 $m = 2$，这 $3$ 个 `Full` 源层一共只为每个原始 token 写入 $3 \times \frac{1}{2} = 1.5$ 份全局 KV 槽位。
-3. **解码器全局稀疏段（`L20–L39`，共 20 层）**：均分为 $5$ 组，每组 $4$ 层，句内压缩比设回 $m = 1$（保持精读细节，不压缩相邻 token）。只有第 $1$ 组首层（`L20`）是 `Full Mode`，往后第 2 到第 5 组的首层（`L24, L28, L32, L36`）全部设为 `Reindex Mode`——**全 Decoder $20$ 层共用同一份主 KV 与 Indexer K**！每组剩余 $3$ 层照旧是 `Reuse Mode`。这一段只写入 $1 \times 1 = 1.0$ 份全局 KV 槽位。
+## CED 非对称编码-解码与智能体 SWA 有界重放
 
-于是全网 $40$ 层总计只为每个输入 token 保存 $1.5 + 1.0 = \mathbf{2.5}$ 份全局 KV 槽位！同时为了防止第 2 到第 5 组的 `Reindex` 层在 $1\text{M}$ 上下文下重算索引仍然太慢，Decoder 引入了**两级分层稀疏索引器（Hierarchical Sparse Indexer，HSI）**：`L20` 在全扫描的同时，以每 $8$ 个槽位为 $1$ 个粗块取块内最大值，选出全局 `Top-2048` 粗块组成固定容量为 $2048 \times 8 = 16{,}384$ 的候选池；随后的 `4` 个 `Reindex` 层（各自拥有 $32$ 个 $128$ 维索引头，输出 `Top-512` 稀疏注意力键）无论前缀长到 $64\text{K}$ 还是 $1\text{M}$，每次索引打分都只需面对恒定的 $16{,}384$ 个候选槽位！
-
-### 维度三：MXFP4 / FP4 量化与 890 B/token 精确账本
-
-把槽位数降到 $2.5$ 份之后，最后一把刀砍向字节位宽。论文通过量化感知训练（QAT）在 RoPE 旋转之后把全局主 KV 整体量化到 OCP **MXFP4（`E2M1`）** 格式：每 $4$ bit 编码 $1$ 个离散实数（16 个码字对应 `[-6, 6]` 上的 $15$ 个有符号取值），并给**每 $16$ 个通道配 $1$ 字节 `E4M3` 局部缩放因子**（分块微缩放入门见[基础 05：模型与 KV 量化](../../foundations/05-quantization/)）。
-
-一个非常反直觉但关键的工程细节是：DeepSeek-V4.1-Flash **省略了传统 NVFP4 常见的第二级全局张量缩放因子（2nd-level global scale）**。原因在于主 KV 压缩出口紧跟了一个 `RMSNorm`，其权重最大值被约束在 $1$ 左右，因此一个 $512$ 维向量的理论 $L_2$ 范数上限不超过 $\sqrt{512} \approx 22.6$，训练期实测通道极值大多落在 $10$ 附近——远远低于 `E4M3` 最大刻度 $448$ 与 `E2M1` 极值 $6$ 的乘积上限（$448 \times 6 = 2688$），单靠一级每 16 维 `E4M3` 缩放就足以稳住精度。
-
-对照论文给出的 `E2M1 + per-16 E4M3` 方案与开源内核 `FlashMLA`、`vLLM` 中的真实缓冲区布局（其中主 KV 由 $448$ 维 NoPE 与 $64$ 维 RoPE 拼接共 $512$ 维组成，索引键 `index_head_dim = 128` 维则采用每 $32$ 维配 $1$ 字节 `UE8M0` 缩放的 MXFP4 布局）[^flashmla][^vllm_attn]，我们可以把单个全局 KV 槽位以及整网每 token 字节数严丝合缝地对账如下：
-
-| 缓存分量           | 原始维度与分组精度                                             | 载荷字节                        | 缩放因子字节                        | 单槽位小计         | 全网每 token 分摊（$\times 2.5$ 份） |
-| :----------------- | :------------------------------------------------------------- | :------------------------------ | :---------------------------------- | :----------------- | :----------------------------------- |
-| **全局主 KV**      | $512$ 维（$448$ NoPE + $64$ RoPE），`E2M1` + 每 $16$ 维 `E4M3` | $512 \times 0.5 = 256\text{ B}$ | $(512 / 16) \times 1 = 32\text{ B}$ | **$288\text{ B}$** | $2.5 \times 288 = 720\text{ B}$      |
-| **全局 Indexer K** | $128$ 维，`MXFP4` + 每 $32$ 维 `UE8M0`                         | $128 \times 0.5 = 64\text{ B}$  | $(128 / 32) \times 1 = 4\text{ B}$  | **$68\text{ B}$**  | $2.5 \times 68 = 170\text{ B}$       |
-| **全局 KV 合计**   | `L2–19`（$3 \times \frac{1}{2}$）+ `L20–39`（$1 \times 1$）    | **$320\text{ B}$**              | **$36\text{ B}$**                   | **$356\text{ B}$** | **$890\text{ B/token}$**             |
-
-> 说明：论文 `arXiv:2609.19969` 正文直接给出了 $890\text{ B/token}$ 总数以及主 KV 的 $512$ 维 `E2M1` + 每 $16$ 维 `E4M3` 规范，而 $448+64$ 的切分与 `Indexer K` 的 `128` 维 + 每 `32` 维 `UE8M0` 占 `68 B` 由上游代码 `FlashMLA` 与 `vllm` 源码直接印证，两者相乘 $(288 + 68) \times 2.5 = 890\text{ B/token}$ 分毫不差。至于每一层独自保留的本地 SWA KV，出于精度考虑仍停留在 FP8（SM100 上每层每 token $528\text{ B}$），但它受窗口长度 $n_{\text{win}} = 128$ 严格封顶，不随百万上下文增长。
-
-## CED 非对称编码-解码与 SWA 有界重放
-
-压缩完 KV Cache 体积，还剩下一个老大难：在多轮工具调用或代码库新文件注入时，如果发生缓存未命中（Prefill Cache Miss），模型仍要把整段新序列过一遍深达 $40$ 层的网络。受 YOCO 启发，DeepSeek-V4.1-Flash 采用了**因果编码-解码架构（Causal Encoder-Decoder，CED）**[^paper]。
-
-在 CED 中，前半截 $L/2 = 20$ 层被视为**因果编码器（Causal Encoder）**，按常规自回归因果掩码处理全部输入序列并产出中间隐状态 $H_{L/2}$；而对于后半截**解码器（Decoder，$l > L/2$）** 的全局注意力分支，每一层的全局 KV 条目与压缩权重不再从当层隐状态 $H_l$ 演化而来，而是直接从编码器顶层输出 $H_{L/2}$ 经由各自独立的层间投影矩阵一次算完：
+为避免缓存未命中时全长前缀穿行后半程深层网络，V4.1-Flash 引入受 YOCO 启发的**因果编码-解码架构（CED）**：前 $L/2 = 20$ 层跑完完整输入序列，后 `20` 层全球分支直接从编码器顶层输出 $H_{L/2}$ 一次性投影获取全局 KV（如**图 3** 左侧）[^paper]：
 
 $$
 C_l = H_{L/2} W_l^{KV}, \quad Z_l = H_{L/2} W_l^Z, \quad l > \frac{L}{2}
 $$
 
-其中，$L$ 为 Transformer 总层数，$H_{L/2}$ 是第 $L/2$ 层的输出隐状态，$C_l$ 与 $Z_l$ 分别是第 $l$ 层解码器的全局 KV 条目及对应的压缩权重，$W_l^{KV}$ 与 $W_l^Z$ 则是该层专属的投影参数。这意味着在做长前缀预填充（Prefill）时，绝大多数历史位置根本**不需要穿过后 $20$ 层 Decoder 的全局主干与 MoE 专家**——前 $20$ 层跑完（仅激活约 $8\text{B}$ 参数），全网所有 Decoder 层的全局 KV 就已经就位；只有进入自回归生成（Decode）单个新 token 时，才跑满全部 $40$ 层激活完整的 $16\text{B}$ 参数。
+![CED 非对称编码-解码、SSD/DRAM 分级缓存与 SWA 有界重放架构](./diagrams/05-ced-prefix-arch.drawio '图 3：CED 非对称编码-解码、SSD/DRAM 分级缓存与 SWA 有界重放架构')
 
-![CED 非对称编码-解码计算流与 SWA 有界重放三级缓存架构图](./diagrams/09-ced-runtime.drawio '图 5-3：CED 计算分工与多轮智能体 SWA 有界重放架构')
+如**图 3** 右侧所示，针对必须在每层局部状态 $H_l$ 上生成的 SWA KV，V4.1 利用其实际有效感受野远小于理论 $L \times n_{\text{win}}$ 的特征，推出 **SWA 有界重放（SWA Bounded Replay）**：SSD 持久化前缀池（`>= 72h`）彻底剔除短寿命 SWA、只存 `890 B/tok` 全局 KV（持久化占用降为 V4 的 **`1/8`**），SWA 仅留存于占主机内存 `10%` 的分钟级热池；一旦遇到 SWA 过期或解码前缀重算，仅截取末尾 $n_{\text{win}} = 128$ 词元重放恢复，将总预填充复杂度收敛到 $\mathcal{O}(NL/2 + n_{\text{win}} L/2) \approx \mathcal{O}(NL/2)$[^paper]。
 
-但是有一个棘手的牵绊：**本地 SWA 仍然必须在每一层使用本层当前的隐状态 $H_l$ 来计算局部键值**（从而保留局部特征的计算深度）。如果前面有 $L$ 层级联的 $n_{\text{win}}$ 滑窗，想在恢复现场时做到“数学上 100% 精确重建”末尾 $n_{\text{win}}$ 个 token 的 SWA 状态，理论上必须往前多回放 $L \times n_{\text{win}}$ 个 token（$40 \times 128 = 5120$ 步）；而要想省掉重算、把每层的 SWA 状态都一起持久化到 SSD，那好不容易砍掉的磁盘空间又要膨胀回去！
+## 论文概念与 vLLM / vLLM-Ascend 上游源码映射
 
-DeepSeek-V4.1-Flash 用一条关键实验结论打破了这个两难：实际模型里 SWA 的**有效感受野远小于理论的 $L \times n_{\text{win}}$**。于是系统上线了 **SWA 有界重放（SWA Bounded Replay）**：
+必须如实说明的是：在 `vllm@bb23c0a8` 与 `vllm-ascend@3649b8ff` 上游主干源码中，字面 `CED` 或 `Full / Reindex / Reuse` 枚举类并未直接以此命名（仅 ROCm 路径下可见 `_forward_csa2_full` / `_forward_csa2_reindex`）；GPU 与昇腾后端实际上在继承 V3/V3.2 基础设施之上，通过极清晰的布尔路由与状态机在 `deepseek_v41/` 目录下精准实现了完全一致的控制流[^vllm_attn][^ascend_idx]：
 
-1. **持久化层彻底断舍离**：只有长寿命的**全局 KV（$890\text{ B/tok}$）**会被持久化写入寿命 $\ge 72$ 小时的 SSD 缓存池，**SWA 状态完全不落 SSD**，仅在主机内存（Host DRAM）里留一个占原本容量 $10\%$、保留时间只有分钟级的热缓冲池；这直接把需要持久化保存的 KV 总体积压缩到 DeepSeek-V4-Flash 的 $1/8$。
-2. **过期或跨轮只重放末尾 $n_{\text{win}}$ 步**：在编码器侧和解码器侧，一旦遇到未命中的局部前缀，不再按 $L \times n_{\text{win}}$ 回放，而是直接截断只重放紧挨当前位置之前的最近 $n_{\text{win}} = 128$ 个 token。当序列总长 $N \gg n_{\text{win}}$ 时，预填充总计算复杂度从 $\mathcal{O}(NL)$ 直接收敛到：
+| 论文机制（`arXiv:2609.19969`）  | `vllm` GPU（`vllm@bb23c0a8`）对应符号                                                        | `vllm-ascend` NPU（`vllm-ascend@3649b8ff`）对应符号                                              |
+| :------------------------------ | :------------------------------------------------------------------------------------------- | :----------------------------------------------------------------------------------------------- |
+| **Full / Reindex / Reuse 路由** | `DeepseekV4Attention` 的 `is_kv_source`、`is_index_source` 与 `candidate_source_layer`       | `DeepseekV41LayerRole`、`DeepseekV41Topology` 与 `build_layer_plan`                              |
+| **HSI 两级候选筛选**            | `DeepseekV4Indexer` 的 `candidate_write`、`use_sparse_logits` 与 `candidate_block_buffer`    | `DeepseekV41Indexer.select_projected` 与 `npu_quant_lightning_indexer_v3`（`candidate_out`）     |
+| **288 B NVFP4 与 MXFP4 布局**   | `compressed_bytes_per_token = 288`（`"nvfp4_ds_mla"`）+ `528 B`（`MXFP8`）                   | `quantize_mxfp4_indexer`、`packed_cache_ops.qsmla` 与 `npu_sparse_flash_mla`                     |
+| **CED 截断与 Decoder 有界重放** | `nvidia/model.py` 中 `cut = max(kv_source_layer_ids)` 接 `DecoderReplayLayers` 与 `write_kv` | `DeepseekV41Attention.write_kv` 与 `AscendDSAV41Impl._forward_attention`（`replay_block_table`） |
 
-$$
-\mathcal{O}\left(\frac{NL}{2} + n_{\text{win}} \cdot \frac{L}{2}\right) \approx \mathcal{O}\left(\frac{NL}{2}\right)
-$$
+## PyTorch / NumPy 核心实现与等价性核验
 
-在长前缀上几乎精确实现计算减半，同时又避免了把庞大的短寿命 SWA 写爆 SSD 与 Host DRAM。
-
-## 论文与上游代码对齐：vLLM 与 vLLM-Ascend 如何落地 CSA2
-
-写到工程实现时，我们要先说一句大实话：**在截至 `vllm@bb23c0a8` 和 `vllm-ascend@3649b8ff` 的开源上游仓库里，字面意义上的 `CED` 缩写、或者名为 `Full / Reindex / Reuse` 的枚举类名并不直接出现**；唯一点名 CSA2 的函数名也只在 vLLM 的 ROCm 后端（`_forward_csa2_full` / `_forward_csa2_reindex`）可见。
-
-但这并不代表它们没实现。相反，两个推理框架用极其清晰的控制流开关和共享状态对象，把“谁写全局 KV、谁写候选块与 Top-$k$、哪几层被截断去做 SWA 有界重放”编排得清清楚楚[^vllm_attn][^ascend_idx]：
-
-| 论文概念（`arXiv:2609.19969`）    | vLLM（`vllm@bb23c0a8`）对应符号                                                                                                                                         | vLLM-Ascend（`vllm-ascend@3649b8ff`）对应符号                                                                     | 真实执行行为说明                                                                                                                                               |
-| :-------------------------------- | :---------------------------------------------------------------------------------------------------------------------------------------------------------------------- | :---------------------------------------------------------------------------------------------------------------- | :------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Full / Reindex / Reuse 三模式** | `DeepseekV4Attention` 的 `is_kv_source`、`is_index_source`、`candidate_source_layer` 与 `topk_indices_buffer`；ROCm 分支 `_forward_csa2_full` / `_forward_csa2_reindex` | `DeepseekV41LayerRole`、`DeepseekV41Topology`、`build_layer_plan` 与 `DeepseekV41SharedAttentionState`            | 用两个布尔值与共享缓冲区前缀划分四条路径，不依赖字面枚举名；`Reuse` 层跳过写入与索引直接做稀疏注意力                                                           |
-| **两级分层稀疏索引器（HSI）**     | `DeepseekV4Indexer` 的 `candidate_write`、`use_sparse_logits` 与 `candidate_block_buffer`                                                                               | `AscendDSAV41Impl._select_sparse_indices` 与 `select_projected`（`is_candidate_source`、`uses_candidate_filter`） | `Full` 源层产出 `[tokens, 1, candidate_topk_blocks]` 候选块 ID 供本前向内消费者重筛；A5 硬件调用 `packed_cache_ops.run_a5_indexer`                             |
-| **FP4 / MXFP4 全局 KV 布局**      | `compressed_bytes_per_token = 288`（SM100 `"nvfp4_ds_mla"`）+ `_indexer_k_cache_head_dim`（MXFP4 索引键为 `68` 字节）                                                   | `quantize_mxfp4_indexer`、`packed_cache_ops.qsmla`（A5）与 `npu_sparse_flash_mla`（`PA_BBND`）                    | `FlashMLAMegaAttnBackend` 在 SM100 跑 `head_size=512`（`448 NoPE + 64 RoPE`）的 FP4 主 KV，与 MXFP4 索引键分开存储                                             |
-| **CED 投影与 Decoder 有界重放**   | `cut = max(config.kv_source_layer_ids)` 之后的 `DecoderReplayLayers` + `write_kv`（`forward_kv`）+ `sparse_swa.py` 的 `replay_start`                                    | `DeepseekV41Attention.write_kv` 与 `AscendDSAV41Impl._forward_attention` 中的 `replay_block_table`                | 先由最后一个 `kv_source` 层（含）之前产出全部全局 KV；当超过 `trim_threshold` 时，`DecoderReplayLayers` 把剩余所有只有 SWA KV 的解码器层切到末尾窗口子批上运行 |
-
-看懂这张对照表就会明白：`vllm` 之所以在 `nvidia/model.py` 里放一个 `cut = max(config.kv_source_layer_ids)`，正是因为过了最后一个全局 KV 源层之后，后面的解码器层全都不再生产任何新的全局 KV；它们在前向预填充时，只要通过 `write_kv` 保证源层全局 KV 已写齐，其余全长历史就能直接跳过，只保留末尾 `window` 行交给 `DecoderReplayLayers` 做 SWA 有界重放。
-
-## 可运行的数值实验：toy.py 验证报告
-
-为了把“两级分层索引的召回率到底稳不稳”、“为什么每 $16$ 维配一个 `E4M3` 缩放因子很关键”以及“$890\text{ B/token}$ 和 $14.8\times$ 索引扫描缩减从何而来”全部落到代码里，我们在同目录下写了不依赖外部模型权重的独立脚本 `toy.py`。下面是其中验证 `E2M1 + E4M3` 分块量化与 `HSI` 两级筛选的核心片段：
+下面这段自包含的 NumPy 核心实现同时验证三件关键指标：（1）`E2M1 + per-16 E4M3` 分块量化在单通道存在 `6.0×` 离群放大时对整行统一缩放的信噪比（SQNR）优势；（2）HSI 仅扫描 `12.5%` 候选块时的 `Recall@64`；（3）全网 `40` 层 `890 B/tok` 字节验证：
 
 ```python
-def quantize_mxfp4_block16(x: np.ndarray) -> tuple[np.ndarray, float]:
-    """Quantize [rows, 512] tensor with E2M1 payloads and 1 E4M3 scale per 16 channels."""
-    rows, dim = x.shape
-    assert dim % 16 == 0
-    blocks = x.reshape(rows, dim // 16, 16)
-    ideal_scale = np.maximum(np.max(np.abs(blocks), axis=-1, keepdims=True) / 6.0, E4M3_POS[0])
-    scale_idx = np.argmin(np.abs(E4M3_POS[None, None, None, :] - ideal_scale[..., None]), axis=-1)
-    q_scale = E4M3_POS[scale_idx]
-    normed = np.clip(blocks / q_scale, -6.0, 6.0)
-    q_idx = np.argmin(np.abs(E2M1_LEVELS[None, None, None, :] - normed[..., None]), axis=-1)
-    x_hat = E2M1_LEVELS[q_idx] * q_scale
-    x_hat = x_hat.reshape(rows, dim)
-    noise = float(np.sum((x - x_hat) ** 2))
-    sqnr_db = 10.0 * np.log10(float(np.sum(x**2)) / max(noise, 1e-12))
-    return x_hat, sqnr_db
+import numpy as np
+
+rng = np.random.default_rng(42)
+
+# 1. E2M1 + per-16 局部缩放 vs 整行缩放 SQNR
+E2M1 = np.array([-6., -4., -3., -2., -1.5, -1., -0.5, 0., 0.5, 1., 1.5, 2., 3., 4., 6.])
+vec = rng.normal(size=(4, 512))
+vec[:, 0] *= 6.0  # 制造单通道离群放大
+b16 = vec.reshape(4, 32, 16)
+sc16 = np.maximum(np.max(np.abs(b16), axis=-1, keepdims=True) / 6.0, 1e-4)
+q16 = E2M1[np.argmin(np.abs(E2M1 - np.clip(b16 / sc16, -6, 6)[..., None]), axis=-1)] * sc16
+sqnr_b16 = 10 * np.log10(np.sum(vec**2) / np.sum((vec - q16.reshape(4, 512))**2))
+
+sc_row = np.maximum(np.max(np.abs(vec), axis=-1, keepdims=True) / 6.0, 1e-4)
+q_row = E2M1[np.argmin(np.abs(E2M1 - np.clip(vec / sc_row, -6, 6)[..., None]), axis=-1)] * sc_row
+sqnr_row = 10 * np.log10(np.sum(vec**2) / np.sum((vec - q_row)**2))
+assert sqnr_b16 > sqnr_row
+
+# 2. HSI 两级候选池仅扫描 12.5% 槽位下的 Recall@64
+n_slots, blk_sz = 4096, 8
+k_slots = rng.normal(size=(n_slots, 32)) * 0.5
+q_full = rng.normal(size=(32,))
+q_reidx = q_full + rng.normal(size=(32,)) * 0.2
+sal = rng.choice(n_slots, size=64, replace=False)
+k_slots[sal] += q_full * 2.5
+
+blk_max = (k_slots @ q_full).reshape(n_slots // blk_sz, blk_sz).max(axis=1)
+cand_blks = np.argsort(blk_max)[-64:]  # 64 / 512 = 12.5%
+cand_slots = (cand_blks[:, None] * blk_sz + np.arange(blk_sz)[None, :]).reshape(-1)
+s_reidx = k_slots @ q_reidx
+gt_top64 = set(np.argsort(s_reidx)[-64:].tolist())
+hsi_top64 = set(cand_slots[np.argsort(s_reidx[cand_slots])[-64:]].tolist())
+bytes_40L = int(2.5 * (288 + 68))
+assert bytes_40L == 890
+print(f"sqnr_blk16={sqnr_b16:.2f}dB sqnr_row={sqnr_row:.2f}dB scan={len(cand_slots)/n_slots:.3f} recall@64={len(gt_top64&hsi_top64)/64:.3f} bytes_40L={bytes_40L}")
 ```
 
-我们在 `toy.py` 里设定了三组对照校验：（a）在 $4{,}096$ 个压缩槽位（$512$ 个粗块 $\times 8$ 槽位）上模拟 `Reindex` 层带查询语义漂移时，仅扫描 Stage 1 选出的 $12.5\%$ 候选块相对于暴力全扫的 `Recall@64`；（b）对带单通道离群放大的 $512$ 维向量做真正 `E2M1` 码表 + `E4M3` 每 $16$ 维缩放量化，并与整行单缩放基线对比信噪比（SQNR）；（c）把 $40$ 层拓扑、$890\text{ B/tok}$ 与 $100\text{K}$ 上下文下的 CED 预填充加速比用断言锁死。实际运行 `uv run --with numpy python src/content/posts/deepseek/05-csa2-and-ced/toy.py` 输出如下：
+实测输出结果如下，`per-16` 微缩放守住了约 `20.82 dB` 信噪比（领先整行缩放近 `3 dB`），而 `12.5%` 候选池即可实现 `1.000` 召回：
 
 ```text
-HSI Recall@64=0.906, ToyScan=0.125, 1M_Pool=1.6384%
-KV SQNR(block-16 E4M3)=20.45 dB vs row-scale=17.36 dB
-GlobalKV=890 B/tok (Main=720B + IdxK=170B, entries=2.5, vs BF16_38L=54.7x)
-Layers(40): SWA=2, Full=4, Reindex=4, Reuse=30 | IdxScan=14.8x | CED_Prefill=2.00x
-OK 09
+sqnr_blk16=20.82dB sqnr_row=17.88dB scan=0.125 recall@64=1.000 bytes_40L=890
 ```
-
-这组实测结果把几个直觉一次性定量化：在存在 $1$ 个高幅值离群通道时，按 $16$ 维切块的 `E4M3` 局部缩放能守住 $20.45\text{ dB}$ 信噪比，高出整行统一缩放基线 $3.09\text{ dB}$；在仅扫描 $12.5\%$ 槽位的候选池里，带层间语义漂移的 `Reindex` 查询仍可召回 $90.6\%$ 的精确 Top-64；而在真实 $1\text{M}$ 上下文和 $38$ 个全局稀疏层下，与完全不压缩、不复用且全扫 BF16 的朴素方案相比，全局 KV 占用缩减达 $54.7\times$，索引打分次数缩减 $14.8\times$，CED 配合有界重放让 $100\text{K}$ 上下文预填充计算量稳稳砍半（$2.00\times$）。
-
-## 横向对比：DeepSeek 各代注意力的存储与计算演进
-
-把前面几篇和本篇的核心指标拉到同一张账表上，能够更直观地看出 V4.1-Flash 如何把前代留下的内存与 I/O 瓶颈进一步压扁：
-
-| 模型版本                | 全局 KV 每 token 大小                                               | 跨层共享机制                                             | 索引扫描复杂度                                 | 全局 KV 精度                                 | 预填充 / 解码激活参数                             |
-| :---------------------- | :------------------------------------------------------------------ | :------------------------------------------------------- | :--------------------------------------------- | :------------------------------------------- | :------------------------------------------------ |
-| **DeepSeek-V1**         | 约为 V4.1 的 $437\times$（标准多头全长）                            | 无（每层独立）                                           | 稠密全扫 $\mathcal{O}(N)$                      | BF16 / FP16                                  | 对称激活                                          |
-| **DeepSeek-V4-Flash**   | 约为 V4.1 的 $4\times$（CSA + HCA 混合）                            | 主要聚焦单层序列压缩与共享                               | 单层独立重索引                                 | 主缓存以 FP8 为主                            | 对称激活                                          |
-| **DeepSeek-V4.1-Flash** | **$890\text{ B/token}$**（主 $720\text{ B}$ + 索引 $170\text{ B}$） | 纯 CSA2：`Full` / `Reindex` / `Reuse`（全网仅 $2.5$ 份） | Decoder `Reindex` 恒定只扫 $16{,}384$ 候选槽位 | 主 KV `E2M1 + E4M3(b=16)`；Indexer K `MXFP4` | **$8\text{B}$ 预填充 / $16\text{B}$ 解码**（CED） |
 
 ## 代价与边界
 
-任何把缓存压到极限 $890\text{ B/token}$ 的方案都不是免费午餐，工程落地时必须盯紧三条边界条件：
+- **FP4 离群点敏感度**：`E2M1` 仅有 15 个非零/零离散值，极度依赖微缩放块粒度（`b=16`）与后训练 QAT 联合适配，否则单个通道极值就会拖垮全块有效位宽。
+- **跨层 `Reuse` 与 HSI 的注意力重叠假设**：如果超长文档多跳推理导致中后层焦点发生剧烈跳跃，一旦相关粗块在 `L20` 首层粗筛落选，后续 `Reindex` 与 `Reuse` 层将无法跨池打捞。
+- **有界重放与双层缓存管理复杂度**：CED 固锁了高层直接由 $H_{L/2}$ 生成全局 KV 的上限，同时服务端必须将长寿命 SSD 全局缓存（`>= 72h`）与短寿命 DRAM SWA 缓冲拆分调度[^paper]。
 
-- **FP4 量化对离群通道极其敏感，强依赖 QAT 与细粒度分块**：`E2M1` 仅有 $15$ 个有限离散刻度和极窄动态范围。一旦个别通道出现大幅值异常点，如果块尺寸过大（如 `toy.py` 里整行共享只有 $17.36\text{ dB}$）或缺失训练期 QAT 适应，那一个离群值就会把整个块里其他 $15$ 个通道的缩放尺度拉高，导致正常通道全部塌缩到零附近。
-- **跨层 `Reuse` 与 `HSI` 假设相邻层聚焦高度重叠**：Encoder 每组连着 $5$ 层、Decoder 每组连着 $3$ 层直接复用同一份 `Top-512` 索引，且后端所有 `Reindex` 层都只能从首层划定的 $16{,}384$ 个候选槽位里做“二次海选”。面对需要跨越十几万字符多跳检索、前后层关注焦点突然大幅跳转的复杂推理题，一旦关键历史块在首层被漏掉，后续所有复分层都无权打捞。
-- **CED 与 SWA 有界重放牺牲了深层编码协同与精确滑窗链**：一方面，全部 Decoder 层的全局 KV 都锁死由 Encoder 顶层 $H_{L/2}$ 一次投影得出，削弱了深层隐状态反哺全局键值表征的能力；另一方面，只重放末尾 $n_{\text{win}} = 128$ 步会截断超出单窗口的跨层接力滑窗状态，而且对前缀缓存系统提出了必须区分长寿命 SSD 池（全局 KV）与短寿命 DRAM 池（SWA）的调度要求。
-
-到这里，我们已经把 V4.1 在注意力分支如何压扁 KV Cache 和预填充算力的账算透了；不过千万别忘了，V4.1-Flash 的总骨干参数依然高达 **$552\text{B}$**，预填充与解码每次仍要从庞大的专家池里挑出 $8\text{B}$ 或 $16\text{B}$ 参数来执行 FFN 计算——尤其是面对图文多模态输入，不同模态还可能把同一批专家挤爆。接下来我们顺着模型往下看混合专家层（MoE）如何靠细粒度路由与无辅助损失负载均衡扛住这种算力与带宽考验：[06 细粒度混合专家（DeepSeekMoE）](../06-moe/)。
+至此，注意力与 KV Cache 优化轴线已全部闭合；接下来进入第二条演化轴线——看看 DeepSeek 如何拆解庞大的参数激活墙：[06 细粒度混合专家（DeepSeekMoE）](../06-moe/)。
 
 ## 自测
 
-1. 试算一下：如果把 Decoder 段从“仅 G1 为 `Full`、G2–G5 为 `Reindex`”改成“G1–G5 全部设为 `Full`”，在仍使用 `E2M1 + per-16 E4M3` 的前提下，全网每 token 全局 KV 字节数会从 $890\text{ B}$ 上升到多少？（提示：Decoder 写入份数从 $1.0$ 变成 $5.0$。）
-2. 为什么 DeepSeek-V4.1-Flash 在 SWA Bounded Replay 里宁愿花少量重算代价在 GPU 现场重放最近 $128$ 个 token，也不愿意把 SWA KV Cache 和全局 KV 一起写进 SSD？
-3. **动手实验**：打开同目录下的 `toy.py`，把 `kv[:, 0] *= 4.5` 改为更极端的离群通道 `kv[:, 0] *= 15.0`，或者增大 `q_reindex` 中的漂移向量权重，重新运行并观察分组量化 `SQNR` 与 `HSI Recall@64` 的变化曲线。
+1. 如果把 Decoder 段从仅 `L20` 为 `Full`、`L24/28/32/36` 为 `Reindex` 改为 5 组首层全设为 `Full`，全网每 token 全局 KV 字节数会从 `890 B` 涨到多少？
 
-[^paper]: DeepSeek-AI, _DeepSeek-V4.1-Flash Technical Report_ (`arXiv:2609.19969`, 2026)，涵盖 CED Eq. (1)、CSA2 三模式、两级分层稀疏索引器、FP4 主 KV 与 SWA 有界重放系统设计。
+<details>
+<summary>参考答案</summary>
 
-[^flashmla]: FlashMLA 开源内核仓库（commit `395cb3af`）中关于 DeepSeek-V4.1 `288 B` FP4 KV 布局（`256 B` E2M1 + `32 B` E4M3 缩放因子）与 `528 B` FP8 布局格式定义。
+Decoder 写入份数会从 `1.0` 份上升到 `5.0` 份，叠加上 Encoder 段的 `1.5` 份后全网共计 `6.5` 份；每份按 `288 + 68 = 356 B` 计算，全网每词元总全局 KV 将升至 `6.5 × 356 = 2,314 B/token`。
 
-[^vllm_attn]: `vllm@bb23c0a8` 中 `vllm/models/deepseek_v41/attention.py`、`sparse_mla.py`、`amd/rocm.py` 与 `decoder_replay_layers.py` 的 CSA2 源/消费层路由与解码器有界重放实现。
+</details>
 
-[^ascend_idx]: `vllm-ascend@3649b8ff` 中 `vllm_ascend/models/deepseek_v41/model.py`（`DeepseekV41LayerRole`、`DeepseekV41Topology`）与 `vllm_ascend/attention/dsa_v41.py`（`AscendDSAV41Impl`）。
+2. 为什么 DeepSeek-V4.1-Flash 宁愿在未命中时多算末尾 `n_win = 128` 词元的 SWA Bounded Replay，也不把 SWA KV 一起写进 SSD？
+
+<details>
+<summary>参考答案</summary>
+
+SWA KV 只在活跃会话内有效（生命周期仅数分钟），且多轮交互频繁刷新不同尾部截断点，若写入持久化 SSD 会占掉近半容量并很快沦为死数据；而实际有效感受野远短于理论 $L \times n_{\text{win}}$，用廉价 GPU 重放最近 128 词元即可将 SSD 持久规模压低至 V4 的 1/8。
+
+</details>
+
+[^paper]: DeepSeek-AI, _DeepSeek-V4.1-Flash Technical Report_ (`arXiv:2609.19969`, 2026), Section 2.2 CED, Section 2.3 CSA2 & Section 3.2 Persistent KV Cache.
+
+[^flashmla]: FlashMLA 开源内核仓库（`FlashMLA@395cb3af`）对 `288 B` FP4 与 `528 B` FP8 KV 布局及 fused-RoPE-attention-RoPE-cast 内核的定义。
+
+[^vllm_attn]: `vllm@bb23c0a8`: `vllm/models/deepseek_v41/attention.py`、`compressor.py`、`decoder_replay_layers.py`、`nvidia/model.py` 与 `amd/rocm.py`。
+
+[^ascend_idx]: `vllm-ascend@3649b8ff`: `vllm_ascend/models/deepseek_v41/{model.py,compressor.py,indexer.py}` 与 `vllm_ascend/attention/dsa_v41.py`（`AscendDSAV41Impl`）。

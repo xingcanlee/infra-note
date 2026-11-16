@@ -1,167 +1,115 @@
 ---
 title: '07 性能观测与线上故障定位：从 Profiler 轨迹到五维排障树'
-description: '从零定义大模型推理服务时延与吞吐指标，通过 Profiler 四大轨迹指纹与五维源码排障决策树，系统化定位静态图静默降级、DP 死锁、Host 同步与脏 Padding 尾部串扰。'
+description: '从零定义大模型推理服务时延与吞吐指标，通过 Profiler 五类轨迹指纹与二分排障决策树，系统化定位静态图静默降级、DP 死锁、Host 同步与脏 Padding 尾部串扰。'
 pubDate: 2026-11-01
+draft: false
 series: { id: vllm, order: 8 }
-category: AI Infra
 tags: [vLLM, Ascend, Profiling, CUDA Graph, ACLGraph, Roofline]
-toc: true
 ---
 
-在[上一篇（Ascend ACLGraph 与 npugraph_ex）](../06-ascend-aclgraph-and-npugraph/)里，我们打通了 vLLM 引擎跨 NVIDIA CUDA 与华为 Ascend CANN 的全部运行时栈。按理说，静态编译加上整图捕获应当直接带来接近硬件极限的解码速度。
+import ProfilerSignaturesExplainer from '../../../../explainers/vllm/ProfilerSignaturesExplainer';
 
-然而真实生产上线时，最常见的问题并不是“引擎报错退出”，而是更难察觉的“**静默故障**”：显存看似充足，吞吐却只有预期一半；热身一过，短批请求开始间歇性乱码；或者单机八卡偶发卡死在集合通信上。如果不靠一套基于真实轨迹指纹与源码不变量的排障体系，工程师只能靠盲目改参数撞大运。本文作为系列收官，整理了一套通吃 CUDA 与 Ascend 的系统化观测与五维排障工作流。
+经过前六章的拆解，我们已经把 GPU 与昇腾 NPU 从调度、异步流水、分段编译到静态图与 DP 对齐的整个架构拼合完整。然而在线上压测与模型适配过程中，引擎很少因为明显语法错误崩溃，更常见的是**性能突然掉回 Eager、莫名挂死、或是无声无息地吐出乱码**。
 
-## 先建坐标系：服务级指标与长尾放大原理
+真正厉害的推理引擎工程师，并不靠“盲猜改参数”排障，而是打开 Nsight Systems（`nsys`）或 `torch_npu.profiler`，一眼从时间线指纹直接反推出对应源码模块。
 
-看懂底层 Profiler 轨迹前，必须先把应用层感觉到的“卡”和“慢”，精确翻译成引擎层指标。在 vLLM `vllm/v1/metrics/stats.py` 的指标定义下，核心吞吐与延迟由四个量刻画[^metrics_v1]：
+## 五类真实 Profiler 故障指纹交互诊断
 
-- **TTFT**（Time to First Token，首 Token 延迟，`vllm:time_to_first_token_seconds`）：请求从进入引擎排队到生成第一个输出 Token 的时间，主要由调度排队与 Prefill 计算带宽决定。
-- **ITL**（Inter-Token Latency，Token 间延迟，`vllm:inter_token_latency_seconds`）：连续两个输出 Token 之间的时间间隔，对瞬时抖动极为敏感。
-- **TPOT**（Time Per Output Token，单输出 Token 平均时间，`vllm:request_time_per_output_token_seconds`）：上游代码在统计 $N_{\text{gen}} > 1$ 的请求时，按 $\text{TPOT} = \frac{t_{\text{decode}}}{N_{\text{gen}} - 1}$ 均摊生成阶段耗时[^metrics_v1]。
-- **Throughput**（系统吞吐量，`tok/s`）：单位墙钟时间内全系统产出的生成 Token 总数。
+在采集 Trace 前，需记住两项平台采样配置要点：GPU 侧通过 `ProfilerConfig` 配置 `torch` / `cuda` / `proton` 三类采集器[^1]；而 Ascend 侧的 `TorchNPUProfilerWrapper` 使用 `torch_npu.profiler`（`ProfilerLevel.Level1` 与 `AiCMetrics.PipeUtilization`），官方源码明确警告**不要轻易开启耗时的 `with_stack`（映射到 `with_modules`），也不能与守护进程 `msmonitor_use_daemon` 同时开启**[^2]。
 
-为什么底层偶尔一次微小的同步或重新编译，会直接打爆线上 **P99 尾延迟**？因为 Continuous Batching 下的 Decode 步是全批锁步前进的。只要某一层触发了 Host `.item()` 回读或临时退出静态图重编，同批内所有并发请求的当前 ITL 都会同时被拉出几毫秒到几十毫秒的尖刺，长尾指标瞬间恶化。
+拿到时间轴后，先用**图 1** 的交互诊断面板逐一核对健康基线与四类典型病态指纹：
 
-## 先看一个例子：四大 Profiler 轨迹指纹图谱
+<ProfilerSignaturesExplainer
+  client:visible
+  title="图 1：nsys 与 torch_npu.profiler 五类故障指纹诊断推演"
+/>
 
-假设我们正在线上压测一个 `batch = 8`、`60` 层网络、生成 `100` 个 Token 的解码实例，用 NVIDIA `nsys` 或华为 `msprof` 抓取单步 Decode 时间线，把 Host CPU 调度轨和设备侧流（CUDA / NPU Stream）摆在一起，几乎所有静态图与编译问题都会显影成四种一眼可辨的图形指纹：
+顺着**图 1** 的五个步进特征，我们可以精确读懂每张 Trace 的弦外之音：
 
-![batch=8 60 层 Decode 步中 Profiler 四大典型时间线指纹对比](./diagrams/07-profiler-signatures-walkthrough.drawio)
+1. **健康指纹（Step 1）**：`Host` 轨仅有一根 `0.08 ms` 左右的窄发射棒（`cudaGraphLaunch` / `aclmdlRI`），而 `Device` 轨几乎填满连续计算块，利用率超过 $90\%$。
+2. **启动受限锯齿（Step 2）**：`Host` 轨堆满比核函数还宽的密集发射调用，`Device` 轨碎成无数空白间隔——这是典型静默掉回 `--enforce-eager` 或 `CUDAGraphMode.NONE` 的铁证。
+3. **Host 隐式同步墙（Step 3）**：时间线上冒出阻塞整步的 `cudaStreamSynchronize` / `aclrtSynchronizeStream` 以及紧邻的 4 字节 D2H 传回，说明某处漏出了 `.item()` 或 `torch.nonzero()`。
+4. **DP 跨卡长尾等待（Step 4）**：`HCCL` / `NCCL` 通信轨突然出现大段阻塞等待，根源在于某卡长序列 Prefill 计算慢或 `dp_utils` 对齐异常。
+5. **脏 Padding 尾部写穿（Step 5）**：图本身正常重放不卡顿，但业务输出间歇乱码，或触发底层异步越界陷阱 **`507011`**——往往是 Batch 从大变小（例如 $B=4 \to 2$）时未将尾部槽位刷回 `PAD_SLOT_ID = -1`[^3]。
 
-1. **① 健康 `FULL` Graph**：CPU 在步首仅发出一次 `replay()` 调用后几乎闲置；设备侧流上 `60` 层算子紧贴背靠背连续执行，利用率逼近硬件极限。
-2. **② Launch-Wall 梳状图**：CPU 调度线程占空接近 `100%`，设备流却像一把稀疏的梳子——每个小算子执行几微秒，中间却隔着十几到几十微秒的空白间隙。这几乎是“静态图根本没生效，整模型在 Eager 跑”的铁证。
-3. **③ `.item()` Sync 锯齿**：设备算子原本密集执行，中间却突然出现一大段毫秒级的完全空白（Stream Drain），与此同时 CPU 线程悬停在 D2H 拷贝或等待上。这说明某处代码触发了隐式主机同步。
-4. **④ Piecewise / 混批空泡**：静态编译子图和未进图的 Eager Attention 交替出现（如 Prefill + Decode 非对称混批导致降级为分段捕获），设备流在每层 Attention 位置反复经历“退出图 → Host 重算调度 → 再进图”的周期性气泡。
+## 五类症状根因决策树与二分排障流
 
-## 五维源码排障决策树：从症状直达不变量
+为了在半夜告警响应中实现秒级归因，**图 2** 总结了面向以上五类症状的根因定位树；而一旦需要现场复现隔离，则按**图 3** 的四步二分法剥离编译、静图、重编与具体层问题。
 
-看到上述轨迹异常或功能故障后，如何把范围从几万行 Python/C++ 缩到具体配置或源码行？下面这张排障决策树基于 `vllm`（`bb23c0a8`）与 `vllm-ascend`（`3649b8ff`）的运行时约束构建，涵盖五类最高频的生产故障[^cg_resolve][^dp_sync][^dirty_pad][^pool_order]：
-
-![vLLM 与 vllm-ascend 线上五大高频静态图与并发故障排障决策树](./diagrams/07-debug-decision-arch.drawio)
-
-### 分支一：静默回退 Eager / Piecewise（对应指纹②、④）
-
-很多人误以为启动参数写了启用全图捕获，运行时就一定跑在 `FULL` 模式里。实际上，在 `vllm/config/compilation.py` 的 `resolve_cudagraph_mode_and_sizes` 函数中，引擎会根据当前 Attention 后端上报的 `AttentionCGSupport` 能力以及并发特性组合执行静默降级（从 `ALWAYS` → `UNIFORM_BATCH` → `UNIFORM_SINGLE_TOKEN_DECODE` → `NEVER`）[^cg_resolve]；比如当开启多卡 DP（`dp > 1`）并搭配 `deepep_high_throughput` 等暂不兼容全图捕获的模式时，配置解析阶段就会直接把图模式退回 `NONE`！而在执行期，`CUDAGraphWrapper` 与 `ACLGraphWrapper` 只要检测到运行时标志 `cudagraph_runtime_mode == NONE` 或与自身录制模式不匹配，同样会安静旁路回 Eager[^wrapper_bypass]。
-
-**核查信号**：开启 `VLLM_LOGGING_LEVEL=DEBUG` 查看引擎启动解析后的实际 `cudagraph_mode` 与捕获桶序列，并核对线上真实批尺寸是否频繁突破 `max_capture_size` 桶上限。
-
-### 分支二：多卡 DP 死锁与通信分支分叉
-
-单卡正常、多卡（特别是 Data Parallel 叠加 Tensor Parallel）间歇性挂死，根源几乎都是“各 Rank 走上了不一致的控制流或 Padding 尺度”。在上游 `vllm/v1/worker/gpu/dp_utils.py` 中，`dispatch_cg_and_sync_dp` 与 `sync_cudagraph_and_dp_padding` 负责在每一调度步跨 Rank 对齐“本步是否进入静态图”以及统一的填充批尺寸[^dp_sync]。若部分卡进静态图而另一张卡落回 Eager，或者如在昇腾 `NPUModelRunner.sample_tokens` 中出现 `lm_head` TP 分片行数未对齐、`deepseek_v41` 空 Rank 跳过虚拟批（Dummy Batch）掩蔽规则失败[^ds_dummy]，集体通信（AllReduce / AllGather）就会永久等待而锁死。
-
-### 分支三：捕获期崩溃、挂死与隐式重编（对应指纹③）
-
-捕获或热身阶段一旦报错或无响应，最忌讳直接一头扎进底层 C++ 栈猜测，而应按“四级二分法”逐层剥离：
-
-1. 先加 `--enforce-eager` 跑通单步，确认权重、算子形状与逻辑正确；
-2. 撤掉 eager 限制但设 `cudagraph_mode=NONE`，把“图编译器（TorchInductor / `AscendCompiler`）”问题与“图捕获器（CUDA Graph / ACLGraph）”问题彻底切开；
-3. 开启 `VLLM_DISABLE_COMPILE_CACHE=1` 排除历史序列化缓存干扰，并在疑为动态 Shape 重编时利用 `torch.compiler.set_stance("fail_on_recompile")` 让引擎在第一次发生重编译时立刻带堆栈抛错[^compile_stance]；
-4. 若以上仅在开启图捕获后才挂死，通过减少模型层数二分定位出事算子：重点排查 `.item()` / `.nonzero()` 等隐式 D2H 同步、导致回退 CPU 的 `inplace_pass` 优化，以及卸载流或辅助流忘记在图内显式收口（`get_offloader().join_after_forward()` 或缺 `ExternalEvent`）[^acl_offloader]。
-
-### 分支四：`B=4 -> B=2` 脏 Padding 尾部串扰（热身后静默算错）
-
-这是最危险、也最容易和计算精度问题混淆的 Bug：**单个请求或单批运行完全正确，但只要先跑过一个 `B=4` 大批（写入了 `bucket=4` 缓冲全部 4 行），紧接着跑一个 `B=2` 小批（复用同一个 `bucket=4` 静态内存），输出结果就开始漂移甚至胡言乱语。**
-
-原因在于 `InputBuffers` 在图捕获时绑定了固定设备地址，只覆写有效前 `B=2` 槽位时，第 `2..3` 行依然躺着上一轮留下的合法块索引和隐藏状态！因此源码中布下了三道防线：
-
-- 在 `vllm/v1/worker/gpu/block_table.py` 的 `_compute_slot_mappings_kernel` 中，会把超出有效 Token 的 `[actual_num_tokens, max_num_tokens)` 尾部槽位全部强制填充为 `PAD_SLOT_ID = -1`（定义于 `v1/attention/backends/utils.py`）[^dirty_pad]，让 KV 写入核遇到 `-1` 直接跳过；
-- 在 MoE 与 Engram 等非注意力算子分支，通过 `InputBuffers.is_padding`、`valid_token_count` 以及 `PrepareAndFinalizeWithMC2._mask_runner_padding` 显式清零尾部激活后再送入路由器或集合通信[^ds_dummy]；
-- 在 Ascend Engram 主机侧固定缓冲分配里，则通过 `aclrtMallocHost` 显式全量预清零防止未初始化字节污染[^engram_zero]。
-
-### 分支五：捕获池 OOM、Sleep Mode 失配与流资源上限 `207008`
-
-图捕获爆显存或 Sleep/Wake 崩溃通常违反了以下三条底线之一：
-
-- **池共享顺序不可逆**：`vllm/v1/worker/gpu/cudagraph_utils.py` 的 `ModelCudaGraphManager` 明确强制必须先捕获 `PIECEWISE` 再捕获 `FULL`，才能复用同一个 `get_global_graph_pool()` 减少显存翻倍[^pool_order]；
-- **探针池必须隔离**：`profile_cudagraph_memory` 若不隔离到临时池 `throwaway_pool` 并在 `capture_outside_cumem_pool()` 下跑，释放后会在 c10 分配器触发 `use_count > 0` 断言崩溃[^pool_order]；
-- **昇腾句柄配额与持久化缓冲**：配置过密的捕获桶会耗尽 CANN 硬件流句柄并报错 `"207008"`（低版本 HDK 还会报 `"alloc sq cq fail"`），需合理裁剪捕获尺寸并启用 `weak_ref_workspaces`[^acl_offloader]；同时类似 RoPE 缓冲等参数需标记 `persistent=False`，避免阻断引擎 Sleep 期间的显存归还。
-
-## 观测工具链与跨平台开关矩阵
-
-把上面这套定位逻辑落地到具体命令行和配置，可以归结为下面这张跨 NVIDIA 与 Ascend 的诊断工具矩阵：
-
-![NVIDIA CUDA 与 Huawei Ascend 性能观测与诊断开关工具链矩阵](./diagrams/07-debug-tooling-runtime.drawio)
-
-- **CUDA 侧工具**：宏观用 `nsys` 看 Host 发射轨与 CUDA Stream 气泡；细粒度在 vLLM 中配置 `ProfilerConfig`（`vllm/config/profiler.py`，支持 `--profiler-config.profiler=torch|cuda|proton` 与 `torch_profiler_dir` 精确控制捕获窗口），结合 `proton_graph_attribution` 做 Triton 图节点算子归因[^profiler_cfg]。
-- **Ascend 侧工具**：系统流水线采集用 `msprof` / CANN `ascend_pt`；Python 层封装使用 `TorchNPUProfilerWrapper`（默认 `ProfilerLevel.Level1` 与 `AiCMetrics.PipeUtilization`，源码互斥阻止与 `msmonitor_use_daemon` 同开）[^npu_prof]。面对 `UpdatableGraph` 或脏 Padding 数值漂移时，可用 `NPUModelRunner` 内置的 `msprobe`（`PrecisionDebugger` / `AclGraphDumper`）及不破环捕获流的 `device_print` 分层对齐[^msprobe_ref]。
-
-| 排障对比维度         | NVIDIA CUDA 生态（`vllm@bb23c0a8`）                                                                            | 华为昇腾 CANN 生态（`vllm-ascend@3649b8ff`）                                                                                                                                                                              | 线上定位动作差异                                                         |
-| :------------------- | :------------------------------------------------------------------------------------------------------------- | :------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | :----------------------------------------------------------------------- |
-| **Profiler 封装类**  | `TorchProfilerWrapper`（`CPU`/`CUDA` Kineto）+ `CudaProfilerWrapper`（`torch.cuda.nvtx.range`）[^profiler_cfg] | `TorchNPUProfilerWrapper`（`CPU`/`NPU`，与 `msmonitor_use_daemon` 互斥）[^npu_prof]                                                                                                                                       | 昇腾开启 `with_modules` 会显著放大 Host 发射开销，测真值需关闭栈采样     |
-| **分析视图与产物**   | `nsys` `.nsys-rep` 时间线与 Triton `proton_graph_attribution` 图归因[^profiler_cfg]                            | `torch_npu.profiler.profiler.analyse()` 产出 `trace_view.json`、`kernel_details.csv` 等，导入 **MindStudio Insight**                                                                                                      | PD 分离场景下须分别向 P 与 D 实例发 `/start_profile` 请求采集时间线      |
-| **典型图与内核报错** | `cudaErrorStreamCaptureUnsupported`、c10 `use_count > 0`（探针未用 `throwaway_pool`）[^pool_order]             | **`207008`**（流资源耗尽 + 老旧 HDK `Alloc sq cq fail`）[^acl_offloader]；**`507011`**（`SparseFlashMla` 漏传 caller-owned `sinks` 重放踩释放内存）；**`507015`**（A5 DSpark 多传物理索引触发核陷阱）[^ascend_sparse_err] | 昇腾设备错常异步延迟到后续 `synchronize()` 才抛栈，须回退 Eager 缩小范围 |
-
-## 动手验证：轨迹指纹分类与 `B=4 -> B=2` 脏 Padding 复现
-
-为了把四类轨迹判定与最具欺骗性的 `B=4 -> B=2` 脏 Padding 故障落到可重复运行的代码上，我们在同目录编写了纯 NumPy/标准库脚本 `toy.py`。它同时做了三件事：
-
-1. 合成 `batch = 8, L = 60` 的四组轨迹样本并自动分类；
-2. 先对 `bucket = 4` 运行一次 `B=4`（写入槽位 `[100..103]`），紧接着切到 `B=2`（新槽位 `[104, 105]`），分别对比“漏填尾部 `-1` 与掩码”和“按 `PAD_SLOT_ID = -1` 掩蔽”两种重放路径对 KV 池与 MoE 求和的影响；
-3. 对故障实例与健康实例分别跑完五维自动化健康检查。
-
-在站点目录执行 `uv run --with numpy python src/content/posts/vllm/07-profiling-and-debugging/toy.py`，实测输出如下：
-
-```text
-== Trace Signatures (batch=8, L=60) ==
-healthy_full  : tpot=3.40ms cpu=0.10 gap=0.02 sync=0.0ms eager_attn=0.00 -> HEALTHY_FULL_GRAPH
-launch_wall   : tpot=10.12ms cpu=0.95 gap=0.72 sync=0.0ms eager_attn=0.00 -> LAUNCH_WALL_COMB
-host_sync     : tpot=9.16ms cpu=0.36 gap=0.12 sync=4.8ms eager_attn=0.00 -> HOST_SYNC_SAWTOOTH
-piecewise_mix : tpot=6.46ms cpu=0.49 gap=0.18 sync=0.0ms eager_attn=0.34 -> PIECEWISE_BUBBLE
-== B=4 -> B=2 Dirty Padding Repro == buggy_err=8.752918 fixed_err=0.000e+00
-faulty_checks : {'1_no_silent_fallback': False, '2_dp_ranks_aligned': False, '3_zero_host_sync_in_capture': False, '4_pad_slot_masked': False, '5_pool_order_and_handles_ok': False}
-healthy_checks: {'1_no_silent_fallback': True, '2_dp_ranks_aligned': True, '3_zero_host_sync_in_capture': True, '4_pad_slot_masked': True, '5_pool_order_and_handles_ok': True}
-OK 07
+```mermaid caption="图 2：五类线上异常指纹的 Trace 根因决策树"
+flowchart LR
+    S["观测 Trace<br/>与报错异常"] --> F1["Device 出现<br/>锯齿空洞"]
+    S --> F2["Host 出现长条<br/>StreamSync"]
+    S --> F3["HCCL 通信轨<br/>出现长等块"]
+    S --> F4["输出乱码或爆<br/>507011"]
+    F1 --> C1["查 Batch 未入桶<br/>或拆图降级"]
+    F2 --> C2["查隐式 .item<br/>或 sync 守卫"]
+    F3 --> C3["查 dp_utils 对齐<br/>与长尾负载"]
+    F4 --> C4["查 PAD_SLOT_ID<br/>刷写与 sinks"]
 ```
 
-从输出里能直观看到两件事：第一，只要发生一次 `4.8ms` 的 Host 同步锯齿，单步 `tpot` 就会从 `3.40ms` 跃升至 `9.16ms`，甚至逼近完全退回 Eager 的 Launch Wall（`10.12ms`）；第二，漏掉 `PAD_SLOT_ID = -1` 尾部清零后，`B=4 -> B=2` 静态复用的误差高达 `8.752918`（不仅污染了第 `102, 103` 号旧 KV 槽位，还带偏了 MoE 归约结果），加上掩蔽约束后误差立刻归零到 `0.000e+00`。
+当面对一个完全陌生的模型或新硬件升级导致的崩坏时，遵循**图 3** 的二分隔离原则可以避免把 Eager 算子 Bug、Dynamo 编译 Bug 与 CUDA/ACL Graph 地址 Bug 混为一谈：先用 `--enforce-eager` 验清裸算子正确性；再以 `cudagraph_mode=NONE` 仅验证分段编译；随后打开重编译失败中断捕捉隐藏动态 Guard；最终锁定精确失效算子与层号。
 
-## 代价与边界
+```mermaid caption="图 3：推理引擎二分法故障定位工作流"
+flowchart TD
+    B0["生产复现异常"] --> B1["切 --enforce-eager 裸跑"]
+    B1 --> B2{"算子自身是否报错?"}
+    B2 -->|是| FIX1["排查算子数值或显存越界"]
+    B2 -->|否| B3["设 cudagraph_mode=NONE 测编译"]
+    B3 --> B4["开 fail_on_recompile<br/>查重追踪"]
+    B4 --> B5["仅开启 Graph 并开 Debug 验地址"]
+    B5 --> FIX2["用 PAD_SLOT_ID<br/>与日志定界"]
+```
 
-性能观测与调试开关本身并非“零成本”的旁观者，线上排查必须清醒认识三条边界：
+## PyTorch 脏 Padding 复现与双仓调试对照
 
-1. **观测器干扰（Observer Effect）**：在微秒级算子密集发射的 Decode 步里，只要开启 `torch_profiler_with_stack=True` 或在昇腾 `torch_npu.profiler` 中开启 `with_modules`（源码里也对此做了明确警示[^npu_prof]），每次算子分发都要抓取完整 Python 调用栈，Host 侧调度时间可能成倍膨胀，原本健康的 `FULL` 轨甚至会被人为观测出假的 CPU 瓶颈。因此**开着重度堆栈采集得到的 `TPOT` 不能作为基线吞吐数据汇报**，测真实吞吐与抓调用栈必须拆成两次运行。
-2. **图捕获确定性与数值复现界限**：即便 `VLLM_LOGGING_LEVEL=DEBUG` 确认静态图模式正常、`input_addresses` 完全复用且尾部已经写死 `PAD_SLOT_ID = -1`，不同 Batch 组合下的 FP16/BF16 浮点累加顺序或异步原子加仍然允许出现极微小的末位精度波动。用 `msprobe` 做分层比对时，应结合相对误差阈值判断，不能机械要求不同算子并发顺序下也绝对逐比特相等。
-3. **重编译报错模式仅适合压测定界**：`set_stance("fail_on_recompile")` 是极好的压测拦截器，但绝对不能带着它进生产流量服务，否则偶发一条超长上下文溢出预设桶就会触发整实例崩溃。
+下面这段自包含的 PyTorch 测试代码直观再现了最隐蔽的第 5 类故障：第 1 步 $B=4$ 写入槽 `[2, 3, 4, 5]` 后，第 2 步批缩小至 $B=2$ 仅改写前两位而不把 `[2:]` 置 `-1`，会导致 `new_keys` 的无效激活直接污染物理位置 `[4, 5]`：
 
-## 自测
+```python
+import torch
 
-你可以用下面两道练习加一次动手实验验证本篇的排障框架是否已经内化：
+PAD_SLOT_ID = -1
+kv_blocks = torch.zeros(16, dtype=torch.float32)
 
-1. 一台 8 卡机器打开 `dp=8` 与高吞吐 MoE 通信后，`TPOT` 比预期高出一倍，`nsys` 上 CPU 调度线程跑满且设备侧满是微秒空泡。不重编代码的情况下，你第一步应该核查哪两个函数/开关信号，分别确认什么？
-2. 请解释为什么必须先捕获 `PIECEWISE` 再捕获 `FULL`？而内存 profiling 时为什么不能直接在 `get_global_graph_pool()` 中采样而必须换用 `throwaway_pool`？
-3. 动手挑战：打开同目录下的 `toy.py`，把 `repro_dirty_padding_bug` 里固定路径 `static_slots[b_active:] = pad_slot_id` 注释掉，只保留 `valid_mask`（模拟“修了 MoE 求和但忘了修 KV 槽位填充”）。运行一次，看 `fixed_err` 会变成多少，理解为什么注意力写入与非注意力归约两处必须同时掩蔽。
+# Step N (B=4): 正常写入物理槽 [2, 3, 4, 5]
+slot_mapping = torch.tensor([2, 3, 4, 5], dtype=torch.int64)
+kv_blocks[slot_mapping] = torch.tensor([10.0, 11.0, 12.0, 13.0])
 
----
+# Step N+1 (缩容为 B=2): 尾部填充位置带入垃圾值 999.0
+new_keys = torch.tensor([20.0, 21.0, 999.0, 999.0])
+buggy_slots = slot_mapping.clone()
+buggy_slots[:2] = torch.tensor([6, 7])
+buggy_kv = kv_blocks.clone()
+buggy_kv[buggy_slots] = new_keys  # 未刷写 [-1]，槽 4 和 5 被 999.0 覆写破坏!
+assert buggy_kv[4].item() == 999.0 and buggy_kv[5].item() == 999.0
 
-至此，**vLLM 引擎篇**全部七讲完结：从第一篇 PagedAttention 与 Continuous Batching 的显存、调度底座出发，穿过了异步执行与 Launch Wall、Dynamo/`torch.compile` 分段图、CUDA Graph 捕获边界与运行时控制流分发，深入了华为 Ascend CANN 上的 `ACLGraph`、`UpdatableGraph` 与 `ExternalEvent` 多流协同，最后收敛到今天这套基于真实轨迹指纹与源码不变量的排障体系。
+# 正确修复: 缩容尾部显式置 PAD_SLOT_ID = -1，写前掩码跳过
+fixed_slots = buggy_slots.clone()
+fixed_slots[2:] = PAD_SLOT_ID
+fixed_kv = kv_blocks.clone()
+mask = fixed_slots >= 0
+fixed_kv[fixed_slots[mask]] = new_keys[mask]
+assert fixed_kv[4].item() == 12.0 and fixed_kv[5].item() == 13.0
+```
 
-你可以随时回到 [系列四：vLLM 与昇腾推理引擎导览](../) 串联全系列脉络，或结合 [系列一：基础底座](../../foundations/)、[系列二：分布式并行](../../distributed/)与[系列三：DeepSeek 架构演进](../../deepseek/) 对照模型结构创新（MLA、DSA、MoE、Engram、mHC）与底层执行引擎之间的双向咬合。
+在 `torch 2.15.0` 上运行该片段精确复现损坏与保护差异：
+`buggy_kv[4:6]=[999.0, 999.0], fixed_kv[4:6]=[12.0, 13.0]`。
 
-[^metrics_v1]: 见 `vllm/v1/metrics/stats.py`（L530–L655）及 `vllm/v1/metrics/loggers.py`：`vllm:time_to_first_token_seconds`、`vllm:inter_token_latency_seconds` 与 `vllm:request_time_per_output_token_seconds`（`decode_time / (num_generation_tokens - 1)`）定义。
+| 观测与诊断维度        | NVIDIA GPU（`vllm` `bb23c0a8`）                               | 华为昇腾 NPU（`vllm-ascend` `3649b8ff`）                             |
+| --------------------- | ------------------------------------------------------------- | -------------------------------------------------------------------- |
+| Profiler 引擎封装     | `ProfilerConfig` 支持 `torch`/`cuda`/`proton`[^1]             | `TorchNPUProfilerWrapper`（`PipeUtilization`，禁与 daemon 并用）[^2] |
+| 地址漂移 Debug 检查   | `VLLM_LOGGING_LEVEL=DEBUG` 自动断言输入 `data_ptr()`          | 同左，`ACLGraphWrapper` Debug 态逐一核对输入地址                     |
+| 静态图资源 / 内存陷阱 | `CUDA_LAUNCH_BLOCKING=1` 抓同步现场                           | `207008` 流上限、`507011` 释放态读写异步报错提示[^4]                 |
+| 脏尾部写入槽防护      | `_compute_slot_mappings_kernel` 强制刷 `PAD_SLOT_ID = -1`[^3] | 复用 `PAD_SLOT_ID = -1` 规则防止向量散列写入踩踏                     |
 
-[^cg_resolve]: 见 `vllm/config/compilation.py`（L1403–L1418、L1536–L1658）：`resolve_cudagraph_mode_and_sizes` 依据 `AttentionCGSupport` 对图模式的逐级降级规则，以及 `dp > 1` + `deepep_high_throughput` 回退为 `NONE` 的条件分支。
+走到这里，你已经顺着真实工业级代码的纹理，走完了从 PagedAttention 连续批调度、异步发射队列、无 Guard 分段编译、CUDA Graph 四大边界、DP 跨卡共识、昇腾 ACLGraph 热更新直到 Profiler 指纹定位的全部七章。
 
-[^wrapper_bypass]: 见 `vllm/compilation/wrapper.py`（L140–L230）、`vllm/compilation/cuda_graph.py`（L140–L358）及 `vllm_ascend/compilation/acl_graph.py`（L283–L290）：运行时图模式检查与 DEBUG 级别输入地址一致性断言。
+你可以随时回到[vLLM 与昇腾推理引擎导览](../)梳理全局依赖关系，或结合[基础底座](../../foundations/)、[分布式并行](../../distributed/)与[DeepSeek 架构演进](../../deepseek/)对照前沿模型算子设计（MLA、DSA、MoE、Engram 与 mHC）与底层执行运行时之间环环相扣的设计契约。
 
-[^dp_sync]: 见 `vllm/v1/worker/gpu/dp_utils.py`（L225–L353）：`dispatch_cg_and_sync_dp` 与 `sync_cudagraph_and_dp_padding`。
+[^1]: `vllm/config/profiler.py`（`bb23c0a8`），`ProfilerConfig` 定义了 `torch`、`cuda` 与 `proton` 采集后端与参数规范。
 
-[^ds_dummy]: 见 `vllm_ascend/models/deepseek_v41/model.py`（L1224–L1264）与 `vllm_ascend/worker/v2/model_runner.py`（L351–L357）：DP Dummy 填充步对齐、`valid_token_count` 掩蔽及 `lm_head` TP 行数对齐约束。
+[^2]: `vllm_ascend/profiler/torch_npu_profiler.py`（`3649b8ff`），`TorchNPUProfilerWrapper` 配置 `Level1` + `PipeUtilization` 并禁与 `msmonitor_use_daemon` 混用。
 
-[^compile_stance]: 见 `vllm/compilation/wrapper.py`（L223）：`torch.compiler.set_stance("fail_on_recompile")` 防重编触发点。
+[^3]: `vllm/v1/attention/backends/utils.py` & `vllm/v1/worker/gpu/block_table.py`（`bb23c0a8`），`PAD_SLOT_ID = -1` 与尾部覆写逻辑。
 
-[^acl_offloader]: 见 `vllm_ascend/compilation/acl_graph.py`（L34–L47、L236–L290）：`get_offloader()` 同步、`weak_ref_workspaces`、老旧 HDK `"alloc sq cq fail"` 及 `"207008"` 流资源报错拦截；以及 `vllm_ascend/compilation/compiler_interface.py`（L149）禁用 `inplace_pass` 防止算子回退 CPU。
-
-[^dirty_pad]: 见 `vllm/v1/attention/backends/utils.py`（L55）与 `vllm/v1/worker/gpu/block_table.py`（L370–L379）：`PAD_SLOT_ID = -1` 及 `_compute_slot_mappings_kernel` 对尾部填充槽位的清写逻辑。
-
-[^engram_zero]: 见 `vllm_ascend/engram/embedding.py`（L211–L235）：`aclrtMallocHost` 分配后的显式清零。
-
-[^pool_order]: 见 `vllm/v1/worker/gpu/cudagraph_utils.py`（L479–L482、L1027–L1030）与 `vllm/compilation/cudagraph_pool.py`（L1–L45）：`PIECEWISE` 先于 `FULL` 捕获的池共享原则，以及 `throwaway_pool` / `capture_outside_cumem_pool()` 防 c10 断言报错机制。
-
-[^profiler_cfg]: 见 `vllm/config/profiler.py` 与 `vllm/profiler/wrapper.py`：`ProfilerConfig`（`profiler`、`torch_profiler_dir`、`torch_profiler_with_stack`、`proton_graph_attribution`）。
-
-[^npu_prof]: 见 `vllm_ascend/profiler/torch_npu_profiler.py`（L1–L86）：`TorchNPUProfilerWrapper`（`ProfilerLevel.Level1`、`AiCMetrics.PipeUtilization`、`with_modules` 堆栈开销说明及 `msmonitor_use_daemon` 互斥检查）。
-
-[^msprobe_ref]: 见 `vllm_ascend/worker/v2/model_runner.py`（`PrecisionDebugger` / `AclGraphDumper`）与 `vllm_ascend/utils.py`（L310–L360，`device_print`）。
-
-[^ascend_sparse_err]: 见 `vllm_ascend/attention/sparse_flash_mla.py`（L63–L73 `_ensure_sinks` 注释说明 `507011` 与异步延迟报错根因；L110–L122 说明 A5 平台 `507015` 陷阱与裁剪逻辑）。
+[^4]: `vllm_ascend/attention/sparse_flash_mla.py`（`3649b8ff`），详细记录了生命周期失效引起异步报错 `507011` 的排障线索。

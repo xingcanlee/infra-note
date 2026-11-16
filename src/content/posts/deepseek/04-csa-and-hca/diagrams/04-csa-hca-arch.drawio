@@ -1,0 +1,67 @@
+<mxfile host="wisp-diagram">
+  <diagram id="ds-04-csa-hca" name="04-csa-hca">
+    <mxGraphModel dx="800" dy="600" grid="1" gridSize="8" guides="1" page="0" math="0" shadow="0">
+      <root>
+        <mxCell id="0"/>
+        <mxCell id="1" parent="0"/>
+        <mxCell id="g_comp" value="序列轴门控折块（ArXiv:2606.19348）" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f2fb;strokeColor=#2f5783;strokeWidth=1.25;dashed=1;verticalAlign=top;align=left;spacingLeft=12;spacingTop=6;fontFamily=Inter;fontSize=12;fontStyle=1;fontColor=#2f5783;container=0;" vertex="1" parent="1">
+          <mxGeometry x="0" y="0" width="232" height="384" as="geometry"/>
+        </mxCell>
+        <mxCell id="csa_box" value="CSA（m = 4，重叠 2m = 8 窗）&lt;br&gt;双投影 C^a/C^b + Z^a/Z^b + B^a/B^b&lt;br&gt;沿 2m 行做逐通道 Softmax 加权&lt;br&gt;+ FP4 闪电索引器筛选 Top-k 块" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f2fb;strokeColor=#2f5783;strokeWidth=2;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="16" y="40" width="200" height="112" as="geometry"/>
+        </mxCell>
+        <mxCell id="hca_box" value="HCA（m&#x27; = 128，无重叠单窗）&lt;br&gt;单投影 C, Z + B，序列缩至 1/128&lt;br&gt;1M 上下文仅余约 7,812 条压缩块&lt;br&gt;取消索引器，直接全块稠密读取" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f5e9;strokeColor=#2c522d;strokeWidth=2;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="16" y="168" width="200" height="104" as="geometry"/>
+        </mxCell>
+        <mxCell id="ring_box" value="FP32 定长 StateCache（环形缓冲）&lt;br&gt;暂存未闭合尾部词元&lt;br&gt;+ SWA (n_win=128)" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#fbf2df;strokeColor=#7b5518;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="16" y="288" width="200" height="80" as="geometry"/>
+        </mxCell>
+        <mxCell id="g_attn" value="双轨 RoPE 与输出逆旋转（Eq. 27）" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#fbf2df;strokeColor=#7b5518;strokeWidth=1.25;dashed=1;verticalAlign=top;align=left;spacingLeft=12;spacingTop=6;fontFamily=Inter;fontSize=12;fontStyle=1;fontColor=#7b5518;container=0;" vertex="1" parent="1">
+          <mxGeometry x="248" y="0" width="240" height="384" as="geometry"/>
+        </mxCell>
+        <mxCell id="rope_track" value="双轨 Partial RoPE（末 64 维）&lt;br&gt;全局支：deepseek_yarn 长文本外推&lt;br&gt;SWA 支：factor=1.0 锁定局部对齐" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#fbf2df;strokeColor=#7b5518;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="264" y="40" width="208" height="80" as="geometry"/>
+        </mxCell>
+        <mxCell id="mqa_sink" value="RMSNorm + Shared KV MQA + Sink&lt;br&gt;C^Comp 兼任 Key/Value 携带绝对位置&lt;br&gt;分母注入可学习 exp(z&#x27;_h) 泄洪项" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f2fb;strokeColor=#2f5783;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="264" y="136" width="208" height="88" as="geometry"/>
+        </mxCell>
+        <mxCell id="inv_rope" value="输出逆旋转 R_{-t}（inverse=True）&lt;br&gt;在输出末尾 64 维消除绝对旋转&lt;br&gt;还原相对位置 R_{k_pos - t}" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#fbf2df;strokeColor=#7b5518;strokeWidth=2;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="264" y="240" width="208" height="72" as="geometry"/>
+        </mxCell>
+        <mxCell id="wo_grp" value="Grouped Output Proj&lt;br&gt;(DeepseekV4GroupedWoA)" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#f4f4f2;strokeColor=#5c6067;strokeWidth=1;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="264" y="328" width="208" height="40" as="geometry"/>
+        </mxCell>
+        <mxCell id="g_stack" value="V4 混合堆叠与实测收益" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f5e9;strokeColor=#2c522d;strokeWidth=1.25;dashed=1;verticalAlign=top;align=left;spacingLeft=12;spacingTop=6;fontFamily=Inter;fontSize=12;fontStyle=1;fontColor=#2c522d;container=0;" vertex="1" parent="1">
+          <mxGeometry x="504" y="0" width="184" height="384" as="geometry"/>
+        </mxCell>
+        <mxCell id="st_flash" value="DeepSeek-V4-Flash (43L)&lt;br&gt;L0–1：纯 SWA&lt;br&gt;L2–42：CSA(m=4) 与&lt;br&gt;HCA(m&#x27;=128) 交错堆叠&lt;br&gt;&lt;br&gt;KV 降至 V3.2 的 7%&lt;br&gt;FLOPs 降至 V3.2 的 10%" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f5e9;strokeColor=#2c522d;strokeWidth=2;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="520" y="40" width="152" height="152" as="geometry"/>
+        </mxCell>
+        <mxCell id="st_pro" value="DeepSeek-V4-Pro (61L)&lt;br&gt;L0–1：HCA 起始&lt;br&gt;L2–60：CSA / HCA 交错&lt;br&gt;&lt;br&gt;KV 降至 V3.2 的 10%&lt;br&gt;FLOPs 降至 V3.2 的 27%&lt;br&gt;（GQA-8 基准的 2%）" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#f4f4f2;strokeColor=#5c6067;strokeWidth=1;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="520" y="208" width="152" height="160" as="geometry"/>
+        </mxCell>
+        <mxCell id="ve1" value="" style="endArrow=classic;startArrow=none;html=1;strokeColor=#1d1d1f;strokeWidth=1.25;edgeStyle=orthogonalEdgeStyle;rounded=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.35;entryDx=0;entryDy=0;" edge="1" parent="1" source="csa_box" target="mqa_sink">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="ve2" value="" style="endArrow=classic;startArrow=none;html=1;strokeColor=#1d1d1f;strokeWidth=1.25;edgeStyle=orthogonalEdgeStyle;rounded=1;exitX=1;exitY=0.45;exitDx=0;exitDy=0;entryX=0;entryY=0.65;entryDx=0;entryDy=0;" edge="1" parent="1" source="hca_box" target="mqa_sink">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="ve3" value="" style="endArrow=classic;startArrow=none;html=1;strokeColor=#1d1d1f;strokeWidth=1.25;edgeStyle=orthogonalEdgeStyle;rounded=1;dashed=1;dashPattern=4 4;exitX=1;exitY=0.3;exitDx=0;exitDy=0;entryX=0;entryY=0.8;entryDx=0;entryDy=0;" edge="1" parent="1" source="ring_box" target="rope_track">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="ve4" value="" style="endArrow=classic;startArrow=none;html=1;strokeColor=#1d1d1f;strokeWidth=1.25;edgeStyle=orthogonalEdgeStyle;rounded=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="rope_track" target="mqa_sink">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="ve5" value="" style="endArrow=classic;startArrow=none;html=1;strokeColor=#1d1d1f;strokeWidth=1.25;edgeStyle=orthogonalEdgeStyle;rounded=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="mqa_sink" target="inv_rope">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="ve6" value="" style="endArrow=classic;startArrow=none;html=1;strokeColor=#1d1d1f;strokeWidth=1.25;edgeStyle=orthogonalEdgeStyle;rounded=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="inv_rope" target="wo_grp">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="ve7" value="" style="endArrow=classic;startArrow=none;html=1;strokeColor=#1d1d1f;strokeWidth=1.25;edgeStyle=orthogonalEdgeStyle;rounded=1;dashed=1;dashPattern=4 4;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.7;entryDx=0;entryDy=0;" edge="1" parent="1" source="wo_grp" target="st_flash">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

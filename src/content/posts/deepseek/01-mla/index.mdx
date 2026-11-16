@@ -8,59 +8,52 @@ category: AI Infra
 toc: true
 ---
 
-[基础 03：KV Cache 与 GQA](../../foundations/03-kv-cache-and-gqa/) 通过「让多个 Query 头共用同一个 KV 头」压缩缓存，代价是直接减少独立 KV 头的个数，在从零训练的多学科推理基准上带来了肉眼可见的精度滑坡。多头潜在注意力（Multi-Head Latent Attention，简称 MLA）换了一道更本质的线性代数问题：如果不删减推理时的多头结构，而是把所有头的 Key 和 Value 在写入显存前先联合投影成**一条共享的低秩潜在向量**，推理时能不能只把这条压缩向量搬进片上，再在数学上等价恢复出 128 个独立注意力头？
+import MlaAbsorbExplainer from '../../../../explainers/deepseek/MlaAbsorbExplainer';
 
-答案不仅是可以，还把每层每词元的 KV 缓存压到了仅有 `576` 个元素（`512 + 64`，在 BF16 下仅 `1152 B`）。在 DeepSeek-V2 论文中，相比 DeepSeek 67B 使用的 GQA，MLA 将 KV Cache 直接削减了 `93.3%`，并在 8 卡 H800 上把最大生成吞吐推升了 `5.76x`（超过 `50,000 tokens/s`），同时在性能评估上全面反超标准 MHA[^dsv2-paper]。
+[基础 03：KV Cache 与 GQA](../../foundations/03-kv-cache-and-gqa/) 通过让多个 Query 头共用同一个 KV 头来压缩缓存，代价是直接削减独立键值头的数量，在从零训练的多学科推理基准上带来可见的精度滑坡。多头潜在注意力（Multi-Head Latent Attention，MLA）换了一条线性代数路线：把所有头的 Key 与 Value 写入显存前先联合压成**一条低秩潜在向量**，推理时能否只把压缩向量搬进片上，再等价恢复出 128 个独立注意力头？
+
+答案不仅是可以，还将每层每词元的 KV 缓存压至仅 `576` 个元素（`512 + 64`，BF16 下为 `1152 B`）。在 DeepSeek-V2 论文中，相比 67B 模型的 GQA，MLA 把 KV Cache 削减 `93.3%`，并在 8 卡 H800 上将最大生成吞吐推升 `5.76x`（超过 `50,000 tokens/s`），同时评测成绩反超标准 MHA[^dsv2-paper]。
 
 读完本章，你可以带走四件确定的事：
 
-1. **矩阵吸收如何绕过 KV 解压**：利用矩阵乘法结合律把上投影矩阵 $W_{UK}^\top$ 吸进 Query、把 $W_{UV}$ 移到注意力输出之后，把 `128` 头 MHA 无损化归成 `1` 头 MQA，而无需把历史潜在向量展开成多头 K/V。
-2. **解耦 RoPE 为什么在数学上不可省略**：位置旋转矩阵 $R_{t-s}$ 若直接夹在 $W_Q$ 与 $W_{UK}$ 之间，会因为矩阵乘法不可交换而破坏预吸收；将向量拆成无位置编码内容支与共享位置支是恢复等价性的唯一解。
-3. **训练 Prefill 与推理 Decode 为何必须切换双路径**：`forward_mha` 在大 $s_q$ 下维持较小的 `192` 维点积节省计算量，而 `forward_mqa` 在 `s_q = 1` 解码时把 HBM 读取流量压低数十倍。
-4. **生产框架源码中的真实落地形态**：对照 `DeepSeek-V3/inference/model.py`、重构后的 `vllm`（`MLAAttention` 与 `FlashMLAImpl`，权重属性为 `W_UK_T`/`W_UV`）与 `vllm-ascend`（`AscendMLAImpl` 与 `npu_mla_prolog_v3`）。
+1. **矩阵吸收如何绕过 KV 解压**：利用矩阵乘法结合律把上投影矩阵 $W_{UK}^\top$ 吸进 Query、把 $W_{UV}$ 留到输出之后，把 `128` 头 MHA 无损化归成 `1` 头 MQA，无需把历史潜向量展开。
+2. **解耦 RoPE 为什么在数学上不可省略**：位置旋转矩阵 $R_{s-t}$ 若夹在 $W_Q$ 与 $W_{UK}$ 之间，会因不可交换性毁掉预吸收；将向量拆成无位置内容支与共享位置支是恢复等价性的唯一解。
+3. **训练 Prefill 与推理 Decode 为何必须切换双路径**：`forward_mha` 在大 $s_q$ 下维持较小的 `192` 维点积省算力，而 `forward_mqa` 在 `s_q = 1` 解码时把 HBM 读取流量压低数十倍。
+4. **GPU 与昇腾双生态的真实源码落地**：对照 `DeepSeek-V3/inference/model.py`、`vllm` 的 `MLAAttention` / `FlashMLAImpl` 与 `vllm-ascend` 的 `AscendMLAImpl`。
 
-## 先看一个例子：4 维头向量是如何被「矩阵吸收」压进 3 维潜在缓存的
+## 先看一个例子：潜向量是如何被矩阵吸收化归为 1 头 MQA 的
 
-先抛开 RoPE 和多层堆叠，看一组极小的数字尺寸：`n_h = 2` 个注意力头，单头向量维度 `d_h = 4`，而写入缓存的潜在向量只有 `d_c = 3` 维。传统思路（Naive 路径）先把历史潜在向量 $c_s \in \mathbb{R}^{S \times 3}$ 乘上投影权重 $W_{UK} \in \mathbb{R}^{3 \times 2 \times 4}$，恢复出完整的多头键矩阵 $K_s \in \mathbb{R}^{S \times 2 \times 4}$ 后再与查询 $q_t \in \mathbb{R}^{2 \times 4}$ 做点积——结果虽然保持了 2 个独立头的表达能力，却把原本只有 3 维的缓存又膨胀回了 `2 * 4 = 8` 维临时张量。
-
-![MLA 矩阵吸收从 Naive 展开等价变为 1 头 MQA 的数值示例](./diagrams/04-absorb-walkthrough.drawio)
-
-观察单头 $h$ 对历史位置 $s$ 的注意力打分，乘法顺序完全可以换一个括号位置：
+先抛开 RoPE，看一组小尺寸：`n_h = 4` 个头、单头内容维 `d_nope = 8`、潜在维 `d_c = 6`。如果按传统展开思路（Naive 路径）先把缓存 $c_s^{KV} \in \mathbb{R}^{S \times 6}$ 乘上投影权重还原为多头键值，单 token 会膨胀回 `4 * 8 = 32` 维临时张量；而观察单头 $h$ 的注意力打分，乘法括号完全可以换位：
 
 $$
 q_{t,h}^\top k_{s,h} = q_{t,h}^\top \bigl(W_{UK,h}^\top c_s\bigr) = \underbrace{\bigl(q_{t,h}^\top W_{UK,h}^\top\bigr)}_{q_{t,h}^{\text{abs}} \in \mathbb{R}^{d_c}} \, c_s
 $$
 
-其中 $q_{t,h} \in \mathbb{R}^{d_h}$ 为当前查询向量（示例 `d_h = 4`），$W_{UK,h} \in \mathbb{R}^{d_h \times d_c}$（按 `vLLM` 转置布局 `W_UK_T` 记为 `[N, d_h, d_c]`），$c_s \in \mathbb{R}^{d_c}$ 为第 $s$ 个历史词元唯一存储的潜在向量（示例 `d_c = 3`）。代入这组小尺寸验证两边计算量与内存流量：
+其中 $q_{t,h}$ 为当前查询向量，$W_{UK,h}$ 为该头的键上投影矩阵，$c_s$ 为第 $s$ 个历史词元唯一存储的低秩潜向量。通过**图 1** 的五步交互推演，可以直观对比 Naive 展开与 Decode 矩阵吸收在计算流与每层字节账本上的差异。
 
-- **Naive 路径**：需要对全部 $S$ 个历史词元还原 `S * 2 * 4 = 8S` 个键元素并搬运进计算单元。
-- **矩阵吸收路径**：当前只有 `1` 个查询词元，只需做一次 `[2, 4] @ [4, 3]` 把 `q_t` 吸收成 2 个 3 维查询向量 $q_t^{\text{abs}}$，接下来直接在潜空间与仅占 `3S` 个元素的缓存 $c_s$ 做 **1 头 MQA** 点积。注意力概率 $p_{t,h}$ 对 $c_s$ 加权求得潜空间输出 $o_h \in \mathbb{R}^3$ 后，同样借线性结合律把 Value 上投影 $W_{UV,h}$ 留到最后再乘（训练与无偏展开时也可直接并入输出投影 $W_O$）。两条路径给出的 logits 与最终输出向量逐位一致。
+<MlaAbsorbExplainer client:visible title="图 1：MLA 矩阵吸收五步等价推演与 Per-Token 字节账本" />
 
-## 解耦 RoPE 的数学必然性：为什么位置旋转会毁掉吸收
+沿着**图 1** 的步骤拆解，吸收路径包含两个对称动作：前级把单步查询 `q_t^C` 乘进 `W_UK^T` 得到 `q_t^abs`，在 `576` 维潜空间直接点积单拷贝缓存求出潜输出 $u_t$；后级再通过 `u_t W_UV` 还原回多头空间并送入 $W_O$，数值输出与完整展开逐位一致。
 
-刚才的结合律之所以能成立，全靠 $q_{t,h}$ 与 $c_s$ 之间只隔着固定不变的参数矩阵 $W_{UK,h}$。一旦按现代大模型的习惯，给展开后的 $q_t$ 和 $k_s = W_{UK} c_s$ 直接施加旋转位置编码（RoPE），位置相关性就会把一堵不可合并的墙插进两者中间。记第 $t$ 步正交旋转矩阵为 $R_t$，第 $s$ 步键向量在旋转后的打分为：
+## 解耦 RoPE 的数学必然性与双分支架构
+
+刚才的结合律之所以成立，全靠 $q_{t,h}$ 与 $c_s$ 之间只隔着常系数矩阵 $W_{UK,h}$。一旦直接对展开后的 $q_t$ 和 $k_s = W_{UK} c_s$ 施加 RoPE，第 $t$ 步与第 $s$ 步的相对旋转矩阵 $R_{s-t} = R_t^\top R_s$ 会直接横插在矩阵乘中间：
 
 $$
 (R_t q_t)^\top \bigl(R_s W_{UK} c_s\bigr) = q_t^\top \bigl(R_t^\top R_s\bigr) W_{UK} c_s = q_t^\top R_{s-t} W_{UK} c_s
 $$
 
-其中 $R_{s-t} = R_t^\top R_s$ 是仅与相对位置差 $s - t$ 有关的块对角 2D 旋转矩阵（与形状为 `[d_h, d_h]` 的正交变换同构）。问题就在这里：矩阵乘法**不可交换**，$R_{s-t} W_{UK} \neq W_{UK} R_{s-t}$，而且 $R_{s-t}$ 随每一个历史位置 $s$ 实时变化！你无法把随时间变化的 $R_{s-t} W_{UK}$ 提前乘到 $q_t$ 里，否则就必须为缓存里的每条 $c_s$ 重新展开 $k_s$ 再旋转——矩阵吸收瞬间失效，显存带宽红利归零。在配套 `toy.py` 中，如果强行无视 $R_{s-t}$ 做预吸收，仅这一项打分误差就高达 `0.3494`。
+由于矩阵乘法**不可交换**（$R_{s-t} W_{UK} \neq W_{UK} R_{s-t}$），且 $R_{s-t}$ 随每个历史词元位置 $s$ 实时变化，预吸收瞬间失效。DeepSeek-V2/V3 的解法是**解耦 RoPE（Decoupled RoPE）**[^dsv2-paper][^dsv3-paper]：把注意力头劈成互不干扰的内容支（NoPE）与位置支（RoPE），如**图 2** 所示。
 
-DeepSeek-V2 给出的解法是**解耦 RoPE（Decoupled RoPE）**[^dsv2-paper]：把每个注意力头劈成互不干扰的两段——**内容支（NoPE）**继续享受低秩压缩与矩阵吸收，只保留一套极窄的**位置支（RoPE）**专门承载相对位置关系，并在末尾拼接到一起算 Softmax：
+![DeepSeek-V2 与 V3 中 MLA 双支低秩压缩、解耦 RoPE 与推理双路径架构](./diagrams/01-mla-arch.drawio '图 2：DeepSeek-V2/V3 MLA 双支低秩压缩、解耦 RoPE 与推理双路径架构')
 
-![DeepSeek-V2 与 V3 中 MLA 解耦 RoPE 与训练推理双路径架构](./diagrams/04-mla-arch.drawio)
-
-以 DeepSeek-V2 与 DeepSeek-V3[^dsv3-paper] 的实际生产超参数为例（`n_h = 128` 头、内容子空间 `P = d_h^C = 128`、位置子空间 `R = d_h^R = 64`、KV 潜在维度 `L = d_c = 512`、Query 低秩维度 `d_c' = 1536`）：
-
-1. **KV 压缩与共享位置键**：每个词元从隐状态 $h_t$ 投影出一条共享内容潜向量 $c_t^{KV} \in \mathbb{R}^{512}$（经 RMSNorm 稳定数值）和一条**全头共享的单头 RoPE 键** $k_t^R = \text{RoPE}(W_{KR} h_t) \in \mathbb{R}^{64}$。真正写进 KV Cache 落盘的，只有拼接后的 $[c_t^{KV};\, k_t^R] \in \mathbb{R}^{576}$。
-2. **Query 分支**：从 $c_t^Q \in \mathbb{R}^{1536}$ 投影出每个头的无位置查询 $q_t^C \in \mathbb{R}^{128 \times 128}$ 与旋转查询 $q_t^R = \text{RoPE}(W_{QR} c_t^Q) \in \mathbb{R}^{128 \times 64}$。
-3. **可吸收的分块打分**：第 $h$ 个头的完整注意力内积拆为两项相加，其中前一项完全不含位置矩阵、可放心吸收 `W_UK_T`，后一项在 64 维小向量上直接与共享 $k_s^R$ 点积，再统一乘以完整头维缩放因子 $(128 + 64)^{-1/2} = 192^{-1/2}$（长上下文开启 YaRN 外推时另乘 `mscale` 系数）[^dsv3-paper]：
+对照**图 2** 的真实生产维度（`n_h = 128` 头、内容维 $P = 128$、旋转维 $R = 64$、KV 潜维 $L = 512$、Query 潜维 $1536$），第 $h$ 个头的完整注意力内积拆为无位置与位置两项相加，统一缩放因子为 $(128 + 64)^{-1/2} = 192^{-1/2}$（长上下文开启 YaRN 时另乘 `mscale`）[^dsv3-paper]：
 
 $$
 \text{score}_{t,s,h} = \frac{\bigl(q_{t,h}^C W_{UK,h}^\top\bigr)\, c_s^{KV} + \bigl(q_{t,h}^R\bigr)^\top k_s^R}{\sqrt{d_h^C + d_h^R}}
 $$
 
-把这组尺寸放进 DeepSeek-V3 的 `61` 层（BF16，每元素 2 字节）显存账本里对比：
+下表对比 `61` 层（BF16）配置下的单 token 存储开销；尽管物理上每词元只存 `576` 个元素，MLA 在数学上依然保住了 `128` 个相互独立的查询子空间：
 
 | 方案配置（61 层，$n_h=128, d_h=128$） | 每层每词元元素数 |  每层字节  | 61 层单 token 总开销 |  相对 MLA 倍数  |
 | :------------------------------------ | :--------------: | :--------: | :------------------: | :-------------: |
@@ -68,92 +61,125 @@ $$
 | **GQA-8（8 个 KV 头）**               |     `2,048`      | `4,096 B`  |     `244.00 KiB`     |     `3.56x`     |
 | **MLA（`512 + 64` 联合缓存）**        |      `576`       | `1,152 B`  |     `68.62 KiB`      | `1.00x`（基准） |
 
-只存 `576` 个元素（按标准 128 维单头换算等价于 `4.5` 个单向量，即所谓「相当于 GQA-2.25 的缓存成本」）[^dsv2-paper]，MLA 却在数学上完整保留了 `128` 个相互独立的查询子空间——既打掉了 90% 以上的显存，又保住了 MHA 级别的模型表达上限。
+## 双路径动态分发与 GPU / Ascend NPU 源码对照
 
-## 双路径分发与生产实现：vLLM 与 vllm-ascend 源码对齐
+既然矩阵吸收能省几十倍显存流量，为什么不在 Prefill 阶段也全程使用吸收路径？算一笔算力账即可明白：
 
-一个新手最容易踩的直觉误区是：**既然矩阵吸收能省显存，为什么不在 Prefill 和训练阶段也全程用吸收路径？**
+- **长提示词 Prefill（`forward_mha`）**：输入 $s_q$ 很大时，把 $c^{KV}$ 展开为 `[S, 128, 128]` 的线性计算量能被大 GEMM 摊薄，核心注意力点积保持在较窄的 `192` 维（Value 为 `128` 维）。
+- **单步 Decode（`forward_mqa`）**：若 `s_q = 1`，展开全部历史 KV 会把 HBM 读取放大数十倍；吸收路径虽然把注意力点积维度抬升到 `576` 维（Value 升到 `512` 维），但彻底免除了历史展开。
 
-算一笔矩阵乘法的算力账就明白了。假设一次 Prefill 输入 `s_q = 4096` 个词元、`n_h = 128` 个头：
+因此生产引擎一律按查询长度在两条路径之间动态切换。**图 3** 对照了 NVIDIA GPU（`vLLM` / `FlashMLA`）与华为昇腾 NPU（`vllm-ascend`）两条生产执行链路。
 
-- 如果走 **Naive 路径（`forward_mha`）**：先用 $c^{KV} \in \mathbb{R}^{S \times 512}$ 展开出 `[S, 128, 128]` 的键与值，随后 128 个头做常规 MHA 注意力的点积维度只有 $P + R = 192$（Value 为 $128$）。因为 Prefill 中 $s_q \approx s_{kv}$，展开多头 KV 的线性计算量能被大块 GEMM 摊薄，而核心注意力点积在 `192` 维上算得飞快。
-- 如果在 Prefill 硬走 **吸收路径（`forward_mqa`）**：`4096` 个查询词元每个头都要把维度从 `128` 膨胀乘进 `512` 维，且随后的注意力矩阵乘法要全程跑在 **`576` 维（比 192 大 3 倍）** 的 QK 维和 **`512` 维（比 128 大 4 倍）** 的 V 维上——当序列稍微长一点时，计算量会直接反超 Naive 路径数倍！
+![vLLM GPU 与 vllm-ascend NPU 的 MLA 权重分形与算子调度对照](./diagrams/01-mla-gpu-vs-npu-runtime.drawio '图 3：vLLM GPU 与 vllm-ascend NPU 的 MLA 权重分形与算子调度对照')
 
-因此，无论是 DeepSeek-V3 官方参考推理代码，还是工业部署引擎，全部采用了**双路径动态切换**[^dsv3-code]：训练与长提示词 Prefill 走 `forward_mha`（计算友好），单步或短查询 Decode 走 `forward_mqa`（带宽友好）。
+结合**图 3**，将三个上游代码仓的关键工程符号对照如下：
 
-![vLLM GPU 与 vllm-ascend NPU 的 MLA 双路径权重预处理与算子分发](./diagrams/04-mla-runtime.drawio)
+- **DeepSeek-V3 参考实现**（`inference/model.py` `L396-498`[^dsv3-code]）：在 `MLA` 模块内显式区分 `impl = "naive"` 与 `"absorb"`；`"absorb"` 分支维护 `kv_cache`（512 维）与 `pe_cache`（64 维），前级 `einsum("bshd,hdc->bshc")` 吸收后在 `512` 维潜空间归约，再经 `einsum("bshc,hdc->bshd")` 还原。
+- **vLLM GPU**（`mla_attention.py`[^vllm-mla] 与 `flashmla.py`[^vllm-flashmla]）：权重加载后调用 `split_kv_b_proj` 生成 3D 参数 **`W_UK_T`**（`[N, P, L]`）与 **`W_UV`**（`[N, L, V]`），并向内存管理器上报 `num_kv_heads = 1, head_size = 576`；Decode 阶段由 `_prepare_mqa_query` 吸收后送入 `FlashMLAImpl.forward_mqa`（缓存形状 `[num_blocks, block_size, 1, 576]`，`head_dim_v = 512`），最后走 `_v_up_proj`。
+- **vllm-ascend NPU**（`mla_v1.py`[^ascend-mla]）：`AscendMLAImpl.process_weights_after_loading` 通过 `maybe_trans_nz` 将 `W_UK_T` 与 `W_UV` 重排为达芬奇 **`ACL_FORMAT_FRACTAL_NZ`** 分形；Decode 前置投影由 `npu_mla_prolog_v3`（或 `cann_ops_transformer.mla_prolog`）融合写入分离的 `kv_c`（512）与 `k_pe`（64）`PA_NZ` 缓存（按 `nz_fmt_last_dim = 16` 对齐），再由 `npu_fused_infer_attention_score_v2` 计算并调用 `torch_npu.npu_transpose_batchmatmul` 完成 `_v_up_proj`。
 
-把这一设计对照到三个真实代码仓的精确源码符号中：
+## PyTorch / NumPy 核心实现与等价性核验
 
-| 层次与文件                                                                    | 关键权重预处理与结构                                                                                                        | Prefill 路径（`s_q` 大）                                                    | Decode 路径（`s_q` 小）                                                                                                                                                                        |
-| :---------------------------------------------------------------------------- | :-------------------------------------------------------------------------------------------------------------------------- | :-------------------------------------------------------------------------- | :--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **DeepSeek-V3 参考实现**（`inference/model.py` `L396-498`[^dsv3-code]）       | `kv_a_proj_with_mqa` + `kv_b_proj`（`impl = "naive"` 或 `"absorb"`）                                                        | `"naive"` 分支维护 `k_cache`、`v_cache`，直接展开 MHA                       | `"absorb"` 分支维护 `kv_cache`（512）与 `pe_cache`（64），用 `einsum("bshd,hdc->bshc")` 吸收后接 `einsum("bshc,hdc->bshd")`                                                                    |
-| **vLLM GPU**（`mla_attention.py`[^vllm-mla] & `flashmla.py`[^vllm-flashmla]） | `process_weights_after_loading` 调用 `split_kv_b_proj` 拆出独立 3D 参数 **`W_UK_T`**（`[N,P,L]`）与 **`W_UV`**（`[N,L,V]`） | `MLAAttention.forward_impl` 按 `num_mha_tokens` 路由至 `impl.forward_mha`   | 按 `num_decode_tokens` 调用 `_prepare_mqa_query`（`torch.bmm(..., W_UK_T)`）→ `FlashMLAImpl.forward_mqa`（`[B_blk, 64, 1, 576]`，`head_dim_v=512`）→ `_v_up_proj`（`bmm W_UV`）                |
-| **vllm-ascend NPU**（`mla_v1.py`[^ascend-mla]）                               | `AscendMLAImpl.process_weights_after_loading` 将 `W_UK_T`、`W_UV` 通过 `maybe_trans_nz` 转为昇腾分形 **`FRACTAL_NZ`**       | `_forward_prefill` 以 BF16 `TND` 布局执行 `npu_fused_infer_attention_score` | `npu_mla_prolog_v3`（或 `cann_ops_transformer.mla_prolog`）融合前置投影与缓存写入，随后执行 `npu_fused_infer_attention_score_v2`（`PA`/`PA_NZ`）与 `npu_transpose_batchmatmul`（`_v_up_proj`） |
-
-尤其要注意阅读 **vLLM** 源码时的一个版本细节：早期原型文档常把吸收权重写成 `w_kc`/`w_vc`，但在当前主干 `vllm@bb23c0a8` 的重构后 `MLAAttention` 类中[^vllm-mla]，`split_kv_b_proj` 与 `process_weights_after_loading` 已统一整理为语义清晰的 `self.W_UK_T`（`[N, P, L]`）与 `self.W_UV`（`[N, L, V]`），并且专门定义了 `get_kv_cache_config` 将后端报告为「`num_kv_heads = 1`、`head_size = 576`」，让上层调度与页式内存管理器无缝接管。
-
-## 数值验证：矩阵吸收等价性与耦合 RoPE 失效
-
-下面的验证脚本（`toy.py`）使用完全贴合 vLLM `W_UK_T [N, P, L]` 与 `W_UV [N, L, V]` 张量排布的纯 NumPy 实现，同时验证两件事：（1）在解耦 RoPE 下，Naive 展开的 MHA 与仅读取 `[c_kv; k_pe]` 的 1 头吸收 MQA 数值误差在双精度机器极限以内；（2）如果错误地把 RoPE 直接施加到展开后的 $k_{\text{nope}}$ 并强行做预吸收，打分矩阵会出现巨大偏差。
+下面这段自包含的 NumPy 核心实现完全对应 `vLLM` 的 `W_UK_T [N, P, L]` 与 `W_UV [N, L, V]` 排布，直接核验解耦 RoPE 下 Naive 展开 MHA 与矩阵吸收 1 头 MQA 的逐位数值等价性：
 
 ```python
-# Path A: Naive Prefill (decompress c_kv -> full MHA, P+R head dim)
-k_nope = np.einsum("tc,hcp->thp", c_kv, np.transpose(w_uk, (1, 0, 2)))
-v_full = np.einsum("tc,hcw->thw", c_kv, np.transpose(w_uv, (1, 0, 2)))
-k_mha = np.concatenate([k_nope, np.broadcast_to(k_pe[:, None, :], (s_kv, n_h, d_rope))], axis=-1)
-o_mha = np.einsum("ht,thv->hv", softmax(np.einsum("hd,thd->ht", q_mha, k_mha) * scale_softmax), v_full).reshape(-1) @ w_o
+import numpy as np
 
-# Path B: Absorbed Decode (1-head MQA over packed [c_kv; k_pe] of dim L+R)
-q_nope_abs = np.einsum("hp,hpl->hl", q_nope, w_uk_t)          # _prepare_mqa_query
-q_mqa = np.concatenate([q_nope_abs, q_pe], axis=-1)           # [N, L+R]
-kv_joint = np.concatenate([c_kv, k_pe], axis=-1)              # [S_kv, L+R]
-probs_mqa = softmax((q_mqa @ kv_joint.T) * scale_softmax, axis=-1)
-o_latent = probs_mqa @ c_kv                                   # [N, L], head_dim_v=L
-o_abs = np.einsum("hl,hlv->hv", o_latent, w_uv_nhv).reshape(-1) @ w_o
+rng = np.random.default_rng(42)
+n_h, d_nope, d_rope, d_c, s_kv = 4, 8, 4, 6, 16
+
+def softmax(x: np.ndarray) -> np.ndarray:
+    e = np.exp(x - np.max(x, axis=-1, keepdims=True))
+    return e / np.sum(e, axis=-1, keepdims=True)
+
+def apply_rope(x: np.ndarray, pos: np.ndarray, half: int, base: float = 10000.0) -> np.ndarray:
+    freq = 1.0 / (base ** (np.arange(0, half) * 2.0 / (2 * half)))
+    ang = np.outer(pos, freq)
+    c, s = np.cos(ang), np.sin(ang)
+    if x.ndim == 3:
+        c, s = c[:, None, :], s[:, None, :]
+    x1, x2 = x[..., :half], x[..., half:]
+    return np.concatenate([x1 * c - x2 * s, x2 * c + x1 * s], axis=-1)
+
+h_kv = rng.normal(size=(s_kv, 16))
+w_dkv, w_kr = rng.normal(size=(16, d_c)) / 4.0, rng.normal(size=(16, d_rope)) / 4.0
+w_uk_t = rng.normal(size=(n_h, d_nope, d_c)) / np.sqrt(d_c)
+w_uv = rng.normal(size=(n_h, d_c, d_nope)) / np.sqrt(d_c)
+q_nope = rng.normal(size=(n_h, d_nope))
+q_pe = apply_rope(rng.normal(size=(1, n_h, d_rope)), np.array([s_kv - 1]), d_rope // 2)[0]
+
+# 仅落盘的 1 头潜在缓存 [c_kv ; k_pe]
+c_kv = h_kv @ w_dkv
+k_pe = apply_rope(h_kv @ w_kr, np.arange(s_kv), d_rope // 2)
+assert c_kv.shape == (s_kv, d_c) and k_pe.shape == (s_kv, d_rope)
+scale = 1.0 / np.sqrt(d_nope + d_rope)
+
+# Path A：Naive 展开为多头 MHA
+k_mha = np.concatenate([np.einsum("sc,hpc->shp", c_kv, w_uk_t), np.broadcast_to(k_pe[:, None, :], (s_kv, n_h, d_rope))], axis=-1)
+v_mha = np.einsum("sc,hcv->shv", c_kv, w_uv)
+logits_mha = np.einsum("hd,shd->hs", np.concatenate([q_nope, q_pe], axis=-1), k_mha) * scale
+out_mha = np.einsum("hs,shv->hv", softmax(logits_mha), v_mha)
+
+# Path B：矩阵吸收（_prepare_mqa_query + 1 头 MQA + _v_up_proj）
+q_mqa = np.concatenate([np.einsum("hp,hpc->hc", q_nope, w_uk_t), q_pe], axis=-1)
+kv_joint = np.concatenate([c_kv, k_pe], axis=-1)
+logits_mqa = (q_mqa @ kv_joint.T) * scale
+out_mqa = np.einsum("hc,hcv->hv", softmax(logits_mqa) @ c_kv, w_uv)
+assert out_mha.shape == out_mqa.shape == (n_h, d_nope)
+print(f"max_logit_diff={np.max(np.abs(logits_mha - logits_mqa)):.2e} max_out_diff={np.max(np.abs(out_mha - out_mqa)):.2e}")
 ```
 
-执行 `uv run toy.py` 的完整输出如下：
+直接执行上述脚本的实测输出如下，证明两条路径无论是注意力打分还是最终输出张量均在双精度浮点舍入极限内完全等价：
 
 ```text
-[MLA decoupled] max_logit_diff=1.67e-16 | max_out_diff=8.33e-17
-[coupled RoPE breaks absorb] max_logit_error=0.3494 (cannot merge R_t * W_UK)
-
---- DeepSeek-V3 Scale KV Cache Ledger (61 layers, n_q=128, d_h=128, BF16) ---
-MHA (128 KV heads) :  65536 B/layer/tok | 3904.00 KiB/tok (61L) | 56.89x larger than MLA
-GQA-8 (8 KV heads) :   4096 B/layer/tok |  244.00 KiB/tok (61L) |  3.56x larger than MLA
-MLA (512 + 64)     :   1152 B/layer/tok |   68.62 KiB/tok (61L) | baseline (576 elems/layer)
-OK 04
+max_logit_diff=4.44e-16 max_out_diff=2.32e-16
 ```
-
-两条路径不仅注意力 logits 差控制在 `1.67e-16`、输出误差控制在 `8.33e-17`，也以 `0.3494` 的打分报错量坐实了耦合 RoPE 无法跨越矩阵乘结合律的数学障碍。
 
 ## 代价与边界
 
-- **非 2 次幂与 Q/V 不对称的底层工程挑战**：Decode 吸收把单个注意力头的 Q/K 维度推高到 `576`（`512 + 64`，非 2 的整数次幂），同时让输出 `V` 留在 `512` 维、使 `d_qk != d_v`。传统按 `64` 或 `128` 对称头宽设计的标准 FlashAttention 模板很难直接贴合 `576/512` 的寄存器与共享内存分块大小——正是这个硬件痛点催生了专门面向 MLA 的定制化融合内核（例如 `FlashMLA` 针对 Hopper 架构的异步分块与 `block_size = 64` 调度），这也是[基础 04：FlashAttention 与 FlashMLA](../../foundations/04-flash-attention/)继续深入的方向。
-- **Query 长度切换阈值与额外权重占用**：矩阵吸收在 `s_q = 1` 时几乎白拿带宽红利，但在投机解码验证批、Chunked Prefill 小块等中等 `s_q` 场景里，吸收路径的 `576` 维点积与前后两步 `bmm` 算力开销何时超过 `forward_mha` 取决于批中 `s_q` 与历史 `s_kv` 的比值；此外 `process_weights_after_loading` 需要按头保留连续 3D 的 `W_UK_T` 与 `W_UV`，虽然总参数量极小，仍须留意算子所需的特定内存布局（如昇腾 `FRACTAL_NZ`）。
-- **单头 KV 的张量并行复制代价**：因为被吸收后的 Decode 视图在逻辑上等价于 `num_kv_heads = 1` 的 MQA，当启用跨卡张量并行（TP）切分 `128` 个 Query 头时，每张卡仍需各自持有这份本就压缩过 56.9 倍的 `576` 维共享潜在缓存，所以 DeepSeek-V3 部署推理时倾向在注意力层结合数据并行（DP）与更小的 TP 度（Prefill 与 Decode 均仅用 `TP4`，而把大规模并行留给后段 MoE 的 `DP80 / EP320`）[^dsv3-paper]。
+- **非 2 次幂头宽与 Q/V 不对称**：Decode 吸收将单个注意力头的 Q/K 维度推至 `576`（`512 + 64`），同时让 V 保持 `512` 维（`d_qk != d_v`）。标准基于 `64` 或 `128` 对称头宽的 FlashAttention 模板很难直接贴合，直接催生了 `FlashMLA`（Hopper 异步分块与 `block_size = 64`）与昇腾分形重构。
+- **混合批分发与权重布局开销**：Prefill 与投机解码验证批需要权衡 `s_q` 拐点阈值（如 `FlashMLAMetadataBuilder.reorder_batch_threshold = 128`）；此外 `process_weights_after_loading` 需常驻 3D `W_UK_T` / `W_UV` 并匹配平台所需分形排布。
+- **单头 KV 的张量并行复制代价**：Decode 吸收后的缓存逻辑上等价于 `num_kv_heads = 1` 的 MQA，切分 `128` 个 Query 头时各卡仍需各自持有一份 `576` 维缓存，因此 DeepSeek-V3 在部署上常将注意力控制在较小 TP 度（`TP4`）而把大规模并行留给后段 MoE[^dsv3-paper]。
 
-## 自测与动手实验
+## 自测
 
-用下面三个问题检验你对 MLA 数学与工程细节的掌握：
+1. 在矩阵吸收的等价推导中，为什么可以省略把 $c_s$ 还原成 $K_s$、$V_s$，但依然要求在 `forward_mqa` 输出后执行一次 `_v_up_proj`（乘以 $W_{UV}$）？
 
-1. 在矩阵吸收的等价推导中，为什么最终可以省略把 $c_s$ 还原成 $K_s$、$V_s$，但依然要求在 `forward_mqa` 输出后执行一次 `_v_up_proj`（乘以 $W_{UV}$）？它和后层的 $W_O$ 在计算图上是什么关系？
-2. 为什么 DeepSeek-V2 只保留了 `1` 个共享的 `64` 维 `k_pe` 头，而没有给 `128` 个头各自分配 `1` 个 RoPE 键？如果真这么做，`get_kv_cache_config` 的虚拟 KV 头数与缓存大小会发生什么变化？
-3. 在 `s_q = 2048, s_kv = 2048` 的纯 Prefill 请求与 `s_q = 1, s_kv = 32768` 的纯 Decode 请求混在一个 batch 里时，vLLM 如何避免某一种路径拖累另一类请求？
+<details>
+<summary>参考答案</summary>
 
-**动手实验**：在 `toy.py` 中尝试把 `d_c` 从 `6` 调大到 `12`（此时潜在维度反而超过了单头展开维度 `d_nope = 8`），重新运行 `uv run toy.py`，思考为什么此时如果继续吸收矩阵，在 Prefill 与 Decode 阶段各自划算与否——这一直觉恰好对应真实模型中 `L = 512` 相对 `P = 128` 大 `4` 倍、但又远小于 `N * P = 128 * 128 = 16384` 的全部奥秘。
+注意力加权求和 $\sum_s p_{t,h,s} (W_{UV,h} c_s)$ 关于固定矩阵 $W_{UV,h}$ 满足线性分配律，因此可以先在 $512$ 维潜空间算出单步加权向量 $u_{t,h} = \sum_s p_{t,h,s} c_s$，再对 $1$ 个结果向量乘一次 $W_{UV,h}$。注意 $W_{UV,h}$ 是每个头独立的非线性投影位置（夹在注意力输出与最终 $W_O$ 之前），在不吸收进 $W_O$（且为了复用 `forward_mha`/`forward_mqa` 共享的线性层权重）时必须在输出端显式执行 `_v_up_proj`。
 
-当单步 Decode 的 KV 容量被 MLA 压到底限后，下一步 bottleneck 转向长上下文里计算量与访存量随 $L$ 增长的挑战，这正是下一章 [02 原生稀疏注意力（NSA）](../02-swa-and-nsa/) 要拆解的主线。
+</details>
 
-[^dsv2-paper]: DeepSeek-AI. _DeepSeek-V2: A Strong, Economical, and Efficient Mixture-of-Experts Language Model_ (`arXiv:2405.04434`), 2024, Section 2.1, Appendix C & D.2.
+2. 为什么 DeepSeek-V2 只保留了 `1` 个共享的 `64` 维 `k_pe` 头，而没有给 `128` 个头各自分配 `1` 个 RoPE 键？
 
-[^dsv3-paper]: DeepSeek-AI. _DeepSeek-V3 Technical Report_ (`arXiv:2412.19437`), 2024, Section 2.1 & 3.4 (YaRN `mscale` 与部署拓扑 `TP4/DP80/EP320`).
+<details>
+<summary>参考答案</summary>
+
+因为 RoPE 位置旋转夹在查询与键之间无法通过矩阵结合律吸收进 $c_s^{KV}$。如果给 `128` 个头各存一条 64 维 $k_s^R$，每词元仅位置缓存就要多占 `128 × 64 = 8192` 维（比内容潜向量 `512` 维大 16 倍），且 Decode 阶段无法共享单头 MQA 访存，`get_kv_cache_config` 的虚拟缓存也将不再是 `num_kv_heads = 1`。
+
+</details>
+
+3. 当单步同时混有 `s_q = 2048` 的 Prefill 请求与 `s_q = 1` 的 Decode 请求时，vLLM 如何避免某一种路径拖累另一类请求？
+
+<details>
+<summary>参考答案</summary>
+
+通过 `FlashMLAMetadataBuilder` 与 `MLAAttention.forward_impl` 按请求/token 阈值（如 `reorder_batch_threshold`）将同一个批次动态拆分为 `num_mha_tokens` 与 `num_decode_tokens` 两段：长查询段走 `forward_mha` 享受低维 GEMM 算力红利，纯 Decode 段走 `forward_mqa` 享受 576 维潜空间访存红利。
+
+</details>
+
+当单步 Decode 的 KV 容量被 MLA 压到底限后，下一步瓶颈转向长上下文里计算量与访存量随序列长度 $L$ 增长的挑战，这正是下一章 [02 原生稀疏注意力（NSA）](../02-swa-and-nsa/) 的主线。
+
+[^dsv2-paper]: DeepSeek-AI. _DeepSeek-V2: A Strong, Economical, and Efficient Mixture-of-Experts Language Model_ (`arXiv:2405.04434`), 2024, Section 2.1 & Appendix C.
+
+[^dsv3-paper]: DeepSeek-AI. _DeepSeek-V3 Technical Report_ (`arXiv:2412.19437`), 2024, Section 2.1 & 3.4.
 
 [^dsv3-code]: DeepSeek-V3 (`DeepSeek-V3@9b4e9788`): `inference/model.py` (`L396-498`) 中的 `MLA` 模块（`"naive"` 与 `"absorb"` 两条推理路径）。
 
-[^vllm-mla]: vLLM (`vllm@bb23c0a8`): `vllm/model_executor/layers/attention/mla_attention.py` 中的 `MLAAttention`、`split_kv_b_proj`、`process_weights_after_loading`、`forward_impl`、`_prepare_mqa_query`、`_v_up_proj` 与 `MLACommonBaseImpl.forward_mha`。
+[^vllm-mla]: vLLM (`vllm@bb23c0a8`): `vllm/model_executor/layers/attention/mla_attention.py` 中的 `MLAAttention`、`split_kv_b_proj`、`process_weights_after_loading`、`forward_impl`、`_prepare_mqa_query` 与 `_v_up_proj`。
 
-[^vllm-flashmla]: vLLM (`vllm@bb23c0a8`): `vllm/v1/attention/backends/mla/flashmla.py` 中的 `FlashMLABackend`（`block_size = 64`）、`FlashMLAMetadataBuilder`（`reorder_batch_threshold = 128`）与 `FlashMLAImpl.forward_mqa`（`head_dim_v = kv_lora_rank = 512`）。
+[^vllm-flashmla]: vLLM (`vllm@bb23c0a8`): `vllm/v1/attention/backends/mla/flashmla.py` 中的 `FlashMLABackend`、`FlashMLAMetadataBuilder` 与 `FlashMLAImpl.forward_mqa`。
 
-[^ascend-mla]: vllm-ascend (`vllm-ascend@3649b8ff`): `vllm_ascend/attention/mla_v1.py` 中的 `AscendMLAImpl`（`_forward_prefill`、`_run_prolog_v3`、`npu_mla_prolog_v3`、`cann_ops_transformer.mla_prolog`、`npu_fused_infer_attention_score_v2`、`npu_transpose_batchmatmul`）。
+[^ascend-mla]: vllm-ascend (`vllm-ascend@3649b8ff`): `vllm_ascend/attention/mla_v1.py` 中的 `AscendMLAImpl`、`npu_mla_prolog_v3`、`npu_fused_infer_attention_score_v2` 与 `npu_transpose_batchmatmul`。
