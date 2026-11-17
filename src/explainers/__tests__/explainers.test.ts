@@ -45,7 +45,6 @@ import EngramGateExplainer, { buildEngramGateSteps } from '../deepseek/EngramGat
 import EngramPrimeHashExplainer, {
   buildEngramPrimeHashSteps,
 } from '../deepseek/EngramPrimeHashExplainer';
-import MhcSinkhornExplainer, { buildMhcSinkhornSteps } from '../deepseek/MhcSinkhornExplainer';
 import MlaAbsorbExplainer, { buildMlaAbsorbSteps } from '../deepseek/MlaAbsorbExplainer';
 import MoeRoutingAlignExplainer, {
   buildMoeRoutingAlignSteps,
@@ -126,7 +125,6 @@ const ALL_EXPLAINERS: ExplainerEntry[] = [
     buildSteps: buildEngramPrimeHashSteps,
   },
   { name: 'EngramGate', Component: EngramGateExplainer, buildSteps: buildEngramGateSteps },
-  { name: 'MhcSinkhorn', Component: MhcSinkhornExplainer, buildSteps: buildMhcSinkhornSteps },
   { name: 'SpecDecVerify', Component: SpecDecVerifyExplainer, buildSteps: buildSpecDecVerifySteps },
   { name: 'DsparkChain', Component: DsparkChainExplainer, buildSteps: buildDsparkChainSteps },
   { name: 'V41LayerStep', Component: V41LayerStepExplainer, buildSteps: buildV41LayerStepSteps },
@@ -167,9 +165,9 @@ const ALL_EXPLAINERS: ExplainerEntry[] = [
   },
 ];
 
-describe('all 32 interactive SVG explainers', () => {
-  it('covers exact 32 explainers across all 4 series', () => {
-    expect(ALL_EXPLAINERS).toHaveLength(32);
+describe('all 31 interactive SVG explainers', () => {
+  it('covers exact 31 explainers across all 4 series', () => {
+    expect(ALL_EXPLAINERS).toHaveLength(31);
   });
 
   it.each(ALL_EXPLAINERS)(

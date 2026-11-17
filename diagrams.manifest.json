@@ -155,16 +155,52 @@
         "src/content/posts/deepseek/07-engram/diagrams/11-shortconv-dilation.wisp.svg": "sha256-c954d5c6c1a2a46d1bc84c3aff0d4f636251f6716e93add08d5b920ca2ee4cc3"
       }
     },
-    "src/content/posts/deepseek/08-mhc/diagrams/08-mhc-bus-arch.drawio": {
-      "source": "sha256-62982425a6368a9eb8d1cf6c4adcb92e2fcd73208533d46d407c8e4372ccaf2a",
+    "src/content/posts/deepseek/08-mhc/diagrams/08-mhc-arch-comp.drawio": {
+      "source": "sha256-541c3f2cc241881908474832107cd7f63f6b9b13a1b98510f00e0ad30ad9aa2b",
       "style": "clean",
       "exporter": "drawio-cli",
       "embedFonts": false,
       "outputs": {
-        "src/content/posts/deepseek/08-mhc/diagrams/08-mhc-bus-arch.wisp.svg": "sha256-6690aa86e102a536232cdf5449d7fe485f9c4b532624f006eac7faf546d8636b"
+        "src/content/posts/deepseek/08-mhc/diagrams/08-mhc-arch-comp.wisp.svg": "sha256-c3315060d97680d6e9c3fc3272a70f3c7410780ca5764f3292ba0249f06c5256"
       },
       "pages": [
-        "mhc-bus-arch"
+        "mhc-arch-comp"
+      ]
+    },
+    "src/content/posts/deepseek/08-mhc/diagrams/08-mhc-block-trace.drawio": {
+      "source": "sha256-1319dacc292708d3a1659cb65d6e295b63ca089efbbefb427b5237b42d97fe07",
+      "style": "clean",
+      "exporter": "drawio-cli",
+      "embedFonts": false,
+      "outputs": {
+        "src/content/posts/deepseek/08-mhc/diagrams/08-mhc-block-trace.wisp.svg": "sha256-42ee69267a0de2b7f00c4d6f37e3ec0d78288994aad1428d068f8abb848a0bba"
+      },
+      "pages": [
+        "mhc-block-trace"
+      ]
+    },
+    "src/content/posts/deepseek/08-mhc/diagrams/08-mhc-single-pass.drawio": {
+      "source": "sha256-f85978a3e3e535edda1ed0a8bfea27104f07459084c418ecc24ee40f9f23dbb5",
+      "style": "clean",
+      "exporter": "drawio-cli",
+      "embedFonts": false,
+      "outputs": {
+        "src/content/posts/deepseek/08-mhc/diagrams/08-mhc-single-pass.wisp.svg": "sha256-98b4439398ddae9570438510272aed44c1c49374e7393f79ff9e714eab77cdca"
+      },
+      "pages": [
+        "mhc-single-pass"
+      ]
+    },
+    "src/content/posts/deepseek/08-mhc/diagrams/08-mhc-sinkhorn-stability.drawio": {
+      "source": "sha256-8d6e1e710c198c46324fe153f000da108e284af6f7304103ea2e5c7b21e17d4d",
+      "style": "clean",
+      "exporter": "drawio-cli",
+      "embedFonts": false,
+      "outputs": {
+        "src/content/posts/deepseek/08-mhc/diagrams/08-mhc-sinkhorn-stability.wisp.svg": "sha256-b17101bc05ebbe6bb7f4cc9a2350e0be9669f2f7c04e4bfca1983e2094a4317c"
+      },
+      "pages": [
+        "mhc-sinkhorn-stability"
       ]
     },
     "src/content/posts/deepseek/09-mtp-and-dspark/diagrams/09-mtp-vllm-runtime.drawio": {

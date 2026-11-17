@@ -267,69 +267,366 @@ def build_07_engram_dist_lookup() -> None:
     c.save(out, strict=True, build_svg=True)
 
 
-def build_08_mhc_bus_arch() -> None:
-    """08-mhc-bus-arch.drawio：n=4 多流超连接残差总线 vs 单流标准残差对比。"""
-    c = DrawioCanvas(page_name="mhc-bus-arch", diagram_id="ds-08-mhc-bus", width=688)
+def build_08_mhc_arch_comp() -> None:
+    """08-mhc-arch-comp.drawio：严格对应原论文 Fig. 1（标准残差 vs HC vs mHC 单层拓扑）。"""
+    c = DrawioCanvas(page_name="mhc-arch-comp", diagram_id="ds-08-mhc-arch-comp", width=688)
 
-    # 上半区：传统单流残差
-    c.group("g_std", 8, 8, 672, 88, "传统单流残差 (x_{l+1} = x_l + F(x_l))：信道带宽固定为 d，子层间直接叠加", tone="neutral", dashed=True)
-    c.node("std_x0", 24, 44, 136, 36, "单流 x_l [B, d]", tone="neutral", font_size=12)
-    c.node("std_fn", 224, 44, 192, 36, "RMSNorm -> Attn / MoE", tone="neutral", font_size=12)
-    c.node("std_add", 488, 44, 176, 36, "+ 写回 x_{l+1} [B, d]", tone="neutral", font_size=12)
-    c.connect("es1", "std_x0", "std_fn", tone="muted")
-    c.connect("es2", "std_fn", "std_add", tone="muted")
+    # (a) 标准单流残差连接
+    c.group("col_a", 0, 8, 152, 488, "(a) 标准残差连接", tone="neutral", dashed=False)
+    c.node("a_xl", 8, 448, 80, 32, r"\(\mathbf{x}_l\) [1, C]", tone="neutral", font_size=12)
+    c.node("a_fn", 64, 256, 80, 40, r"Layer \(\mathcal{F}\)" + "\n(Attn / FFN)", tone="active", emphasis=True, font_size=12)
+    c.node("a_add", 32, 104, 32, 32, "⊕", tone="neutral", bold=True, font_size=14)
+    c.node("a_out", 8, 56, 80, 24, r"\(\mathbf{x}_{l+1}\) [1, C]", tone="neutral", font_size=12)
 
-    # 下半区：n=4 mHC 多流残差总线（上支路 Pre->主干->Post，下支路 H_res 并行混洗，零连线交叉）
-    c.group("g_mhc", 8, 120, 672, 264, "mHC 4 路并行残差总线 (n=4)：双随机流形保护跨层增益与 Shifted Post-Pre 融合", tone="active", dashed=False)
-    c.multi_lane_bus(
-        "bus_in",
-        24,
-        160,
-        112,
-        count=4,
-        lane_h=24,
-        lane_gap=8,
-        labels=["Stream 0 [B,d]", "Stream 1 [B,d]", "Stream 2 [B,d]", "Stream 3 [B,d]"],
-        tone="active",
-    )
+    c.connect("ea1", "a_xl", "a_add", tone="fg", exit_xy=(0.5, 0.0), entry_xy=(0.5, 1.0))
+    c.connect("ea2", "a_xl", "a_fn", tone="fg", exit_xy=(1.0, 0.5), entry_xy=(0.5, 1.0), points=[(104, 464)])
+    c.connect("ea3", "a_fn", "a_add", tone="fg", exit_xy=(0.5, 0.0), entry_xy=(1.0, 0.5), points=[(104, 120)])
+    c.connect("ea4", "a_add", "a_out", tone="fg", exit_xy=(0.5, 0.0), entry_xy=(0.5, 1.0))
 
-    c.node("h_pre", 168, 160, 96, 48, "H_pre (1×4)\n坍缩融合输入", tone="active", font_size=12)
-    c.node("sub_fn", 280, 160, 112, 48, "子层主干计算\nAttn / MoE", tone="highlight", font_size=12)
-    c.node("h_post", 408, 160, 96, 48, "H_post (4×1)\n回写分发门控", tone="active", font_size=12)
-    c.node("h_res", 256, 232, 160, 48, "H_res (4×4)\nSinkhorn 双随机混洗", tone="done", emphasis=True, font_size=12)
+    # (b) 无约束超连接 HC 与 (c) 流形受限超连接 mHC
+    specs = [
+        (
+            "b",
+            168,
+            "(b) 超连接 (HC)",
+            "error",
+            r"Res Mapping" + "\n" + r"\(\mathcal{H}_l^{\mathrm{res}}\) [n×n]",
+            r"Pre Mapping" + "\n" + r"\(\mathcal{H}_l^{\mathrm{pre}}\) [1×n]",
+            r"Post Mapping" + "\n" + r"\(\mathcal{H}_l^{\mathrm{post}\,\top}\) [n×1]",
+            False,
+        ),
+        (
+            "c",
+            432,
+            "(c) 流形受限超连接 (mHC)",
+            "done",
+            r"Res Mapping" + "\n" + r"\(\mathcal{P}_{\mathcal{M}^{\mathrm{res}}}(\mathcal{H}_l^{\mathrm{res}})\)",
+            r"Pre Mapping" + "\n" + r"\(\mathcal{P}_{\mathcal{M}^{\mathrm{pre}}}(\mathcal{H}_l^{\mathrm{pre}})\)",
+            r"Post Mapping" + "\n" + r"\(\mathcal{P}_{\mathcal{M}^{\mathrm{post}}}(\mathcal{H}_l^{\mathrm{post}})\)",
+            True,
+        ),
+    ]
 
-    c.multi_lane_bus(
-        "bus_out",
-        520,
-        160,
-        144,
-        count=4,
-        lane_h=24,
-        lane_gap=8,
-        labels=["Stream 0' (归一化约束)", "Stream 1' (归一化约束)", "Stream 2' (归一化约束)", "Stream 3' (归一化约束)"],
-        tone="done",
-    )
+    for p, ox, title, map_tone, res_lbl, pre_lbl, post_lbl, emph in specs:
+        c.group(f"col_{p}", ox, 8, 256, 488, title, tone=map_tone, dashed=False)
+        c.tensor_block(f"{p}_xl", ox + 16, 448, 96, 32, r"\(\mathbf{x}_l\) [n, C]", tone="neutral", stack=2, font_size=12)
+        c.node(f"{p}_res", ox + 8, 368, 112, 48, res_lbl, tone=map_tone, emphasis=emph, font_size=12)
+        c.node(f"{p}_pre", ox + 136, 368, 112, 48, pre_lbl, tone=map_tone, emphasis=False, font_size=12)
+        c.tensor_block(f"{p}_hres", ox + 16, 312, 96, 24, r"\(\mathbf{h}_l^{\mathrm{res}}\)", tone="neutral", stack=2, font_size=12)
+        c.node(f"{p}_hin", ox + 152, 312, 80, 24, r"\(\mathbf{h}_l^{\mathrm{in}}\) [1, C]", tone="neutral", font_size=12)
+        c.node(f"{p}_fn", ox + 144, 256, 96, 32, r"Layer \(\mathcal{F}\)", tone="active", emphasis=True, font_size=12)
+        c.node(f"{p}_hout", ox + 152, 208, 80, 24, r"\(\mathbf{h}_l^{\mathrm{out}}\) [1, C]", tone="neutral", font_size=12)
+        c.node(f"{p}_post", ox + 136, 144, 112, 48, post_lbl, tone=map_tone, emphasis=False, font_size=12)
+        c.tensor_block(f"{p}_hpost", ox + 152, 104, 80, 24, r"\(\mathbf{h}_l^{\mathrm{post}}\)", tone="neutral", stack=2, font_size=12)
+        c.node(f"{p}_add", ox + 48, 104, 32, 32, "⊕", tone="neutral", bold=True, font_size=14)
+        c.tensor_block(f"{p}_out", ox + 16, 56, 96, 24, r"\(\mathbf{x}_{l+1}\) [n, C]", tone="neutral", stack=2, font_size=12)
 
-    c.connect("em1", "bus_in_0", "h_pre", tone="fg")
-    c.connect("em2", "h_pre", "sub_fn", tone="fg")
-    c.connect("em3", "sub_fn", "h_post", tone="fg")
-    c.connect("em4", "h_post", "bus_out_0", tone="fg")
-    c.connect("em5", "bus_in_3", "h_res", tone="fg")
-    c.connect("em6", "h_res", "bus_out_3", tone="fg")
+        c.connect(f"e{p}_1", f"{p}_xl", f"{p}_res", tone="fg", exit_xy=(0.5, 0.0), entry_xy=(0.5, 1.0))
+        c.connect(f"e{p}_2", f"{p}_xl", f"{p}_pre", tone="fg", exit_xy=(1.0, 0.5), entry_xy=(0.5, 1.0), points=[(ox + 192, 464)])
+        c.connect(f"e{p}_3", f"{p}_res", f"{p}_hres", tone="fg", exit_xy=(0.5, 0.0), entry_xy=(0.5, 1.0))
+        c.connect(f"e{p}_4", f"{p}_hres", f"{p}_add", tone="fg", exit_xy=(0.5, 0.0), entry_xy=(0.5, 1.0))
+        c.connect(f"e{p}_5", f"{p}_add", f"{p}_out", tone="fg", exit_xy=(0.5, 0.0), entry_xy=(0.5, 1.0))
+        c.connect(f"e{p}_6", f"{p}_pre", f"{p}_hin", tone="fg", exit_xy=(0.5, 0.0), entry_xy=(0.5, 1.0))
+        c.connect(f"e{p}_7", f"{p}_hin", f"{p}_fn", tone="fg", exit_xy=(0.5, 0.0), entry_xy=(0.5, 1.0))
+        c.connect(f"e{p}_8", f"{p}_fn", f"{p}_hout", tone="fg", exit_xy=(0.5, 0.0), entry_xy=(0.5, 1.0))
+        c.connect(f"e{p}_9", f"{p}_hout", f"{p}_post", tone="fg", exit_xy=(0.5, 0.0), entry_xy=(0.5, 1.0))
+        c.connect(f"e{p}_10", f"{p}_post", f"{p}_hpost", tone="fg", exit_xy=(0.5, 0.0), entry_xy=(0.5, 1.0))
+        c.connect(f"e{p}_11", f"{p}_hpost", f"{p}_add", tone="fg", exit_xy=(0.0, 0.5), entry_xy=(1.0, 0.5))
 
+    out = POSTS_ROOT / "08-mhc" / "diagrams" / "08-mhc-arch-comp.drawio"
+    c.save(out, strict=True, build_svg=True)
+
+
+def build_08_mhc_block_trace() -> None:
+    """08-mhc-block-trace.drawio：Transformer 双子层展开（对应 V4 Fig. 2）与 n=4 单子层数值走查。"""
+    c = DrawioCanvas(page_name="mhc-block-trace", diagram_id="ds-08-mhc-block-trace", width=688)
+
+    # 左栏：1 个 Transformer 层 = 2 个 mHC 子层（自下而上）
+    c.group("g_blk", 0, 8, 272, 440, "1 个 Transformer 层 = 2 个 mHC 子层", tone="neutral", dashed=False)
+    c.tensor_block("b_in", 16, 400, 96, 32, r"\(\mathbf{x}_l\) [4, C]", tone="neutral", stack=2, font_size=12)
+    c.node("s1_res", 16, 328, 96, 32, "Res Mixing", tone="done", font_size=12)
+    c.node("s1_attn", 136, 320, 128, 48, "Pre → RMSNorm\n→ Attention → Post", tone="active", emphasis=True, font_size=12)
+    c.node("s1_add", 48, 272, 32, 32, "⊕", tone="neutral", bold=True, font_size=14)
+    c.tensor_block("b_mid", 16, 216, 96, 32, r"\(\mathbf{x}_{l+1}\) [4, C]", tone="neutral", stack=2, font_size=12)
+    c.node("s2_res", 16, 152, 96, 32, "Res Mixing", tone="done", font_size=12)
+    c.node("s2_moe", 136, 144, 128, 48, "Pre → RMSNorm\n→ MoE / FFN → Post", tone="highlight", emphasis=True, font_size=12)
+    c.node("s2_add", 48, 96, 32, 32, "⊕", tone="neutral", bold=True, font_size=14)
+    c.tensor_block("b_out", 16, 56, 96, 24, r"\(\mathbf{x}_{l+2}\) [4, C]", tone="neutral", stack=2, font_size=12)
+
+    c.connect("eb1", "b_in", "s1_res", tone="fg", exit_xy=(0.5, 0.0), entry_xy=(0.5, 1.0))
+    c.connect("eb2", "b_in", "s1_attn", tone="fg", exit_xy=(1.0, 0.5), entry_xy=(0.5, 1.0), points=[(200, 416)])
+    c.connect("eb3", "s1_res", "s1_add", tone="fg", exit_xy=(0.5, 0.0), entry_xy=(0.5, 1.0))
+    c.connect("eb4", "s1_attn", "s1_add", tone="fg", exit_xy=(0.5, 0.0), entry_xy=(1.0, 0.5), points=[(200, 288)])
+    c.connect("eb5", "s1_add", "b_mid", tone="fg", exit_xy=(0.5, 0.0), entry_xy=(0.5, 1.0))
+    c.connect("eb6", "b_mid", "s2_res", tone="fg", exit_xy=(0.5, 0.0), entry_xy=(0.5, 1.0))
+    c.connect("eb7", "b_mid", "s2_moe", tone="fg", exit_xy=(1.0, 0.5), entry_xy=(0.5, 1.0), points=[(200, 232)])
+    c.connect("eb8", "s2_res", "s2_add", tone="fg", exit_xy=(0.5, 0.0), entry_xy=(0.5, 1.0))
+    c.connect("eb9", "s2_moe", "s2_add", tone="fg", exit_xy=(0.5, 0.0), entry_xy=(1.0, 0.5), points=[(200, 112)])
+    c.connect("eb10", "s2_add", "b_out", tone="fg", exit_xy=(0.5, 0.0), entry_xy=(0.5, 1.0))
+
+    # 右栏：单子层数值走查（取 4 分支第 0 维示例）
+    c.group("g_trace", 288, 8, 400, 440, "单子层数值走查（取 n=4 分支首维，初值均值 = 25.0）", tone="active", dashed=True)
     c.node(
-        "shift_note",
-        24,
+        "tr_in",
         304,
-        640,
-        64,
-        "V4.1 边界融合 (Shifted Post-Pre)：除 L1/L14 Engram 边界外，将上一子层 Post 写回 + 本子层 Pre + 下层 RMSNorm 合并为单遍读写\nGPU: mhc_shifted_post_pre_deep_gemm / TileLang；Ascend NPU: torch.ops._C_ascend.npu_hc_pre_v3 + npu_hc_post",
+        40,
+        368,
+        48,
+        r"输入 4 分支 \(\mathbf{x}_l = [10.0,\ 20.0,\ 30.0,\ 40.0]^\top\)" + "\n（4 分支求和 = 100.0，均值 = 25.0）",
+        tone="neutral",
+        font_size=12,
+    )
+    c.node(
+        "tr_res",
+        304,
+        112,
+        176,
+        136,
+        r"① 主干 Res Mapping"
+        + "\n"
+        + r"\(\mathcal{H}_l^{\mathrm{res}}\) (4×4 双随机)"
+        + "\n\n[19.0, 24.0, 26.0, 31.0]\n总和 = 100 · 均值 = 25.0\n极值收拢，均值严格守恒",
         tone="done",
+        emphasis=True,
+        font_size=12,
+    )
+    c.node(
+        "tr_sub",
+        496,
+        112,
+        176,
+        136,
+        r"② 支路 Pre → \(\mathcal{F}\) → Post"
+        + "\nPre [0.5, 0.2, 0.2, 0.1]\n"
+        + r"→ 单流 \(h_l^{\mathrm{in}} = 19.0\)"
+        + "\n"
+        + r"→ Layer \(\mathcal{F}\) 输出 +4.0"
+        + "\nPost [1.2, 0.8, 0.5, 1.5]\n得 [+4.8, +3.2, +2.0, +6.0]",
+        tone="active",
+        font_size=12,
+    )
+    c.node(
+        "tr_out",
+        304,
+        272,
+        368,
+        56,
+        r"③ 残差写回相加" + "\n" + r"\(\mathbf{x}_{l+1} = \mathbf{h}_l^{\mathrm{res}} + \mathbf{h}_l^{\mathrm{post}} = [23.8,\ 27.2,\ 28.0,\ 37.0]^\top\)",
+        tone="done",
+        emphasis=True,
+        font_size=12,
+    )
+    c.node(
+        "tr_note",
+        304,
+        344,
+        368,
+        88,
+        "对照左图可见两个结构事实：\n• RMSNorm 只在右支路 Layer F 入口，管不到左侧 Res 主干\n• 30 层共 60 次 Res 连乘，微偏会被放大至 ~3000×",
+        tone="neutral",
+        dashed=True,
         align="left",
         font_size=12,
     )
 
-    out = POSTS_ROOT / "08-mhc" / "diagrams" / "08-mhc-bus-arch.drawio"
+    c.connect("et1", "tr_in", "tr_res", tone="fg", exit_xy=(88 / 368, 1.0), entry_xy=(0.5, 0.0))
+    c.connect("et2", "tr_in", "tr_sub", tone="fg", exit_xy=(280 / 368, 1.0), entry_xy=(0.5, 0.0))
+    c.connect("et3", "tr_res", "tr_out", tone="fg", exit_xy=(0.5, 1.0), entry_xy=(88 / 368, 0.0))
+    c.connect("et4", "tr_sub", "tr_out", tone="fg", exit_xy=(0.5, 1.0), entry_xy=(280 / 368, 0.0))
+
+    out = POSTS_ROOT / "08-mhc" / "diagrams" / "08-mhc-block-trace.drawio"
+    c.save(out, strict=True, build_svg=True)
+
+
+def build_08_mhc_sinkhorn_stability() -> None:
+    """08-mhc-sinkhorn-stability.drawio：原论文 Fig. 8 真实 27B 60 子层连乘矩阵与 Sinkhorn-Knopp 投影流程。"""
+    c = DrawioCanvas(page_name="mhc-sinkhorn-stability", diagram_id="ds-08-mhc-sinkhorn", width=688)
+
+    # 左上：无约束 HC 60 子层连乘复合矩阵（原论文 Fig. 8 上排最右）
+    c.group("g_hc60", 0, 8, 336, 240, r"(a) HC 60 子层连乘 \(\prod_{i=1}^{60}\mathcal{H}_{61-i}^{\mathrm{res}}\)（27B 实测）", tone="error", dashed=False)
+    c.heatmap_grid(
+        "hm_hc",
+        8,
+        40,
+        cell_w=64,
+        cell_h=32,
+        cells=[
+            [("-132.8", "error", False), ("-112.2", "error", False), ("-117.0", "error", False), ("-113.3", "error", False)],
+            [("-129.3", "error", False), ("-109.3", "error", False), ("-113.9", "error", False), ("-110.3", "error", False)],
+            [("+142.3", "error", True), ("+120.2", "error", True), ("+125.3", "error", True), ("+121.3", "error", True)],
+            [("-139.3", "error", False), ("-117.8", "error", False), ("-122.6", "error", False), ("-118.7", "error", False)],
+        ],
+        col_labels=["列 -259", "-219", "-228", "-221"],
+        row_labels=["-475", "-463", "+509", "-499"],
+    )
+    c.text("hc_cap", 8, 200, 320, 32, "左列为行和 · 顶行为列和 · 全序列增益峰值 ~3000×", size=12, tone="error", align="center", bold=True)
+
+    # 右上：mHC 60 子层连乘复合矩阵（原论文 Fig. 8 下排最右）
+    c.group("g_mhc60", 352, 8, 336, 240, r"(b) mHC 60 子层连乘 \(\prod_{i=1}^{60}\mathcal{P}(\mathcal{H}_{61-i}^{\mathrm{res}})\)（27B 实测）", tone="done", dashed=False)
+    c.heatmap_grid(
+        "hm_mhc",
+        360,
+        40,
+        cell_w=64,
+        cell_h=32,
+        cells=[
+            [("0.24", "done", False), ("0.26", "done", False), ("0.23", "done", False), ("0.27", "done", True)],
+            [("0.23", "done", False), ("0.25", "done", False), ("0.26", "done", False), ("0.27", "done", True)],
+            [("0.21", "done", False), ("0.25", "done", False), ("0.27", "done", True), ("0.28", "done", True)],
+            [("0.21", "done", False), ("0.27", "done", True), ("0.24", "done", False), ("0.29", "done", True)],
+        ],
+        col_labels=["列 0.88", "1.03", "1.00", "1.11"],
+        row_labels=["1.00", "1.01", "1.01", "1.00"],
+    )
+    c.text("mhc_cap", 360, 200, 320, 32, "左行和约 1.00 · 顶列和近 1.00 · 全网增益 ≤ 1.6×", size=12, tone="done", align="center", bold=True)
+
+    # 底部：Sinkhorn-Knopp 四步静态演化流程
+    c.group("g_sk", 0, 264, 688, 136, r"(c) Sinkhorn-Knopp 投影四步演算（以 2×2 矩阵为例，工程固定展开 \(t_{\max}=20\) 轮）", tone="active", dashed=True)
+    c.node("sk0", 16, 304, 144, 80, r"① 取指数变全正" + "\n" + r"\(\mathbf{M}^{(0)}=\exp(\tilde{\mathcal{H}}_l^{\mathrm{res}})\)" + "\n[1, 3 ; 1, 1]", tone="neutral", font_size=12)
+    c.node("sk1", 184, 304, 144, 80, r"② 除列和 \(\mathcal{T}_c\)" + "\n[0.50, 0.75 ; 0.50, 0.25]\n列和对齐 [1, 1]", tone="active", font_size=12)
+    c.node("sk2", 352, 304, 144, 80, r"③ 除行和 \(\mathcal{T}_r\)" + "\n[0.40, 0.60 ; 0.67, 0.33]\n行和对齐 [1, 1]", tone="active", font_size=12)
+    c.node("sk3", 520, 304, 152, 80, "④ 交替迭代收敛\n[0.37, 0.63 ; 0.63, 0.37]\n行和 = 1 且 列和 = 1", tone="done", emphasis=True, font_size=12)
+
+    c.connect("esk1", "sk0", "sk1", tone="fg")
+    c.connect("esk2", "sk1", "sk2", tone="fg")
+    c.connect("esk3", "sk2", "sk3", tone="fg")
+
+    out = POSTS_ROOT / "08-mhc" / "diagrams" / "08-mhc-sinkhorn-stability.drawio"
+    c.save(out, strict=True, build_svg=True)
+
+
+def build_08_mhc_single_pass() -> None:
+    """08-mhc-single-pass.drawio：每子层 HBM 访存比例尺（20d -> 14d -> 10d）与双硬件执行栈。"""
+    c = DrawioCanvas(page_name="mhc-single-pass", diagram_id="ds-08-mhc-single-pass", width=688)
+
+    c.proportional_strip(
+        "io_split",
+        8,
+        32,
+        672,
+        32,
+        [
+            (9, "Post 读写 9d", "active", False),
+            (4, "算系数读 4d", "highlight", False),
+            (5, "Pre 混入 5d", "active", False),
+            (2, "Norm 2d", "neutral", False),
+        ],
+        title=r"1. 朴素分立 4 内核 \((4n+4)d = 20d\)：每个子层反复把 [T, 4, d] 搬进搬出 HBM",
+        total_label="20d (基准)",
+    )
+
+    c.proportional_strip(
+        "io_twopass",
+        8,
+        104,
+        472,
+        32,
+        [
+            (9, "Pass1: Post + 算系数 (9d)", "active", False),
+            (5, "Pass2: 汇聚 Pre + Norm (5d)", "highlight", False),
+        ],
+        title=r"2. 标准两遍融合 \((3n+2)d = 14d\)：\(A_l\) 需等全维归约完成，被迫读两遍 \(X_l\)",
+        total_label="14d (-30%)",
+    )
+
+    c.proportional_strip(
+        "io_mega",
+        8,
+        176,
+        336,
+        32,
+        [
+            (5, r"单遍读 5d (\(y + X_l\))", "done", True),
+            (5, r"单遍写 5d (\(X_{l+1}\) + Norm)", "done", True),
+        ],
+        title=r"3. V4.1 Single-Pass Mega-mHC \((2n+2)d = 10d\)：改用上层 \(A_{l-1}\)，单遍触及下界",
+        total_label="10d (-50% 下界)",
+    )
+
+    (lx, ly, lw, _), (rx, ry, rw, _) = c.swimlane_pair(
+        "mhc_hw",
+        "NVIDIA GPU (vLLM bb23c0a8)",
+        "Huawei Ascend NPU (vllm-ascend 3649b8ff)",
+        y=232,
+        h=232,
+        total_w=688,
+        gap=16,
+        left_tone="active",
+        right_tone="highlight",
+    )
+
+    c.node(
+        "g_s1",
+        lx,
+        ly,
+        lw,
+        48,
+        "mhc_shifted_post_pre 跨子层延迟融合\n上层 Post 留到下层入口一次性合并读写",
+        tone="active",
+        font_size=12,
+    )
+    c.node(
+        "g_s2",
+        lx,
+        ly + 64,
+        lw,
+        48,
+        "SM100 分级加速内核\nDeepGEMM mega_mhc / CuTe / Lamport AR",
+        tone="active",
+        emphasis=True,
+        font_size=12,
+    )
+    c.node(
+        "g_s3",
+        lx,
+        ly + 128,
+        lw,
+        48,
+        "L1 / L14 Engram 边界显式打断融合\nmhc_post_tilelang → engram → mhc_pre",
+        tone="done",
+        dashed=True,
+        font_size=12,
+    )
+
+    c.node(
+        "n_s1",
+        rx,
+        ry,
+        rw,
+        48,
+        "npu_hc_pre_v3 算子内接上层 pre_mix\n单算子融合输入坍缩与 Sinkhorn 迭代",
+        tone="highlight",
+        font_size=12,
+    )
+    c.node(
+        "n_s2",
+        rx,
+        ry + 64,
+        rw,
+        48,
+        "rms_norm_cast 一次归一化两路输出\n同步产出 BF16 激活与 FP32 MoE 路由",
+        tone="highlight",
+        emphasis=True,
+        font_size=12,
+    )
+    c.node(
+        "n_s3",
+        rx,
+        ry + 128,
+        rw,
+        48,
+        "每子层尾调 npu_hc_post 物化四流\nL1 / L14 无需拆分支直接接入 AscendEngram",
+        tone="done",
+        dashed=True,
+        font_size=12,
+    )
+
+    c.connect("eg1", "g_s1", "g_s2", tone="fg")
+    c.connect("eg2", "g_s2", "g_s3", tone="fg")
+    c.connect("en1", "n_s1", "n_s2", tone="fg")
+    c.connect("en2", "n_s2", "n_s3", tone="fg")
+
+    out = POSTS_ROOT / "08-mhc" / "diagrams" / "08-mhc-single-pass.drawio"
     c.save(out, strict=True, build_svg=True)
 
 
@@ -455,10 +752,13 @@ def main() -> None:
     build_07_shortconv_dilation()
     build_07_engram_runtime()
     build_07_engram_dist_lookup()
-    build_08_mhc_bus_arch()
+    build_08_mhc_arch_comp()
+    build_08_mhc_block_trace()
+    build_08_mhc_sinkhorn_stability()
+    build_08_mhc_single_pass()
     build_09_mtp_runtime()
     build_10_five_gen_ledger()
-    print("Successfully built and strictly linted all 8 Part-B static diagrams.")
+    print("Successfully built and strictly linted all 11 Part-B static diagrams.")
 
 
 if __name__ == "__main__":

@@ -190,7 +190,9 @@ describe('infra-note content integrity', () => {
       } else {
         expect(visualCount, `Expected >= 3 visuals in ${post.slug}`).toBeGreaterThanOrEqual(3);
         const hasInteractiveOrSpecial =
-          explainerCount >= 1 || post.slug === 'vllm/03-torch-compile-and-piecewise';
+          explainerCount >= 1 ||
+          post.slug === 'vllm/03-torch-compile-and-piecewise' ||
+          post.slug === 'deepseek/08-mhc';
         expect(
           hasInteractiveOrSpecial,
           `Expected interactive <*Explainer> or routed flow in ${post.slug}`,

@@ -43,19 +43,19 @@
 
 ## 系列三：DeepSeek 架构演进（`series.id = deepseek`，`order: 1..11`，`pubDate: 2026-11-03..2026-11-13`）
 
-| `order` | 目录 / 篇目                 | 可视化工具组合             | 核心讲解与硬件对照                                                  |
-| :-----: | :-------------------------- | :------------------------- | :------------------------------------------------------------------ |
-|   `1`   | `deepseek/index.mdx`        | Mermaid                    | DeepSeek V2 → V4.1 五代模型核心机制演进路线                         |
-|   `2`   | `01-mla`                    | Explainer + Draw.io        | MLA 矩阵吸收（Absorb）全推导、按字节比例条与 GPU/昇腾运行时双泳道   |
-|   `3`   | `02-swa-and-nsa`            | Explainer + Draw.io        | 滑窗 Sink 热力分布、NSA 三分支融合门控与 $G=16$ GQA 硬件对齐分块    |
-|   `4`   | `03-dsa`                    | Explainer + Draw.io        | V3.2 闪电索引器、Top-K 稀疏收集、$656\text{B}/132\text{B}$ 字节对比 |
-|   `5`   | `04-csa-and-hca`            | Explainer + Draw.io        | V4 $m=4$ 条件分组压缩 CSA 与跨层指针复用 HCA                        |
-|   `6`   | `05-csa2-and-ced`           | Explainer + Draw.io        | V4.1 NVFP4 `288 B` CSA2、分层索引与上下文编码解码 CED 前缀重播      |
-|   `7`   | `06-moe`                    | Explainer + Draw.io        | 无辅助损失动态偏置平衡、`moe_align_block_size` 与 GPU/昇腾 MoE 融合 |
-|   `8`   | `07-engram`                 | Explainer+Draw.io+Exc+论文 | 多头奇素数哈希、上下文门控、$1d/4d$ 比例图、ShortConv 与异构预取    |
-|   `9`   | `08-mhc`                    | Explainer + Draw.io        | Sinkhorn Birkhoff 双随机收敛（含行列和）、Mega-mHC 与 4 流残差总线  |
-|  `10`   | `09-mtp-and-dspark`         | Explainer + Draw.io        | 无损拒绝采样分布守恒、MTP/DSpark 验证泳道与 vLLM/昇腾投机框架       |
-|  `11`   | `10-architecture-synthesis` | Explainer + Draw.io        | V4.1 单 Token 6 步全解码、集群级 DBO 全流程（含 `μB1 Combine`）     |
+| `order` | 目录 / 篇目                 | 可视化工具组合             | 核心讲解与硬件对照                                                                         |
+| :-----: | :-------------------------- | :------------------------- | :----------------------------------------------------------------------------------------- |
+|   `1`   | `deepseek/index.mdx`        | Mermaid                    | DeepSeek V2 → V4.1 五代模型核心机制演进路线                                                |
+|   `2`   | `01-mla`                    | Explainer + Draw.io        | MLA 矩阵吸收（Absorb）全推导、按字节比例条与 GPU/昇腾运行时双泳道                          |
+|   `3`   | `02-swa-and-nsa`            | Explainer + Draw.io        | 滑窗 Sink 热力分布、NSA 三分支融合门控与 $G=16$ GQA 硬件对齐分块                           |
+|   `4`   | `03-dsa`                    | Explainer + Draw.io        | V3.2 闪电索引器、Top-K 稀疏收集、$656\text{B}/132\text{B}$ 字节对比                        |
+|   `5`   | `04-csa-and-hca`            | Explainer + Draw.io        | V4 $m=4$ 条件分组压缩 CSA 与跨层指针复用 HCA                                               |
+|   `6`   | `05-csa2-and-ced`           | Explainer + Draw.io        | V4.1 NVFP4 `288 B` CSA2、分层索引与上下文编码解码 CED 前缀重播                             |
+|   `7`   | `06-moe`                    | Explainer + Draw.io        | 无辅助损失动态偏置平衡、`moe_align_block_size` 与 GPU/昇腾 MoE 融合                        |
+|   `8`   | `07-engram`                 | Explainer+Draw.io+Exc+论文 | 多头奇素数哈希、上下文门控、$1d/4d$ 比例图、ShortConv 与异构预取                           |
+|   `9`   | `08-mhc`                    | Draw.io(×4) + Mermaid      | 原论文三代残差结构对照、双子层展开微例、27B 映射矩阵与 Sinkhorn 投影、V4.1 单遍 `10d` 融合 |
+|  `10`   | `09-mtp-and-dspark`         | Explainer + Draw.io        | 无损拒绝采样分布守恒、MTP/DSpark 验证泳道与 vLLM/昇腾投机框架                              |
+|  `11`   | `10-architecture-synthesis` | Explainer + Draw.io        | V4.1 单 Token 6 步全解码、集群级 DBO 全流程（含 `μB1 Combine`）                            |
 
 ---
 
