@@ -69,79 +69,87 @@ flowchart TD
   COMB --> SUM
 ```
 
-## 核心实现与 GPU / 昇腾源码对照
+## PyTorch 参考实现与 GPU / 昇腾源码对照
 
-下面给出不依赖外部权重的独立 NumPy 核心实现，完整复现 Node-Limited 组掩码、无辅损 `grouped_topk` 选路、无偏权重归一化、步间偏置更新与 `moe_align_block_size` 填充对齐逻辑，并通过张量形状和分布收敛断言验证：
+下面给出不依赖外部权重的独立 PyTorch 参考实现，`AuxLossFreeGroupedRouter` 与 `moe_align_block_size` 分别复现 Node-Limited 组掩码、无辅损 `grouped_topk` 选路、无偏权重归一化、步间偏置更新与 Grouped GEMM 块填充对齐，可直接对照下文 `vLLM` 上游源码：
 
 ```python
-import numpy as np
+import torch
+import torch.nn as nn
 
 
-def run_moe_routing_and_align() -> None:
-    rng = np.random.default_rng(42)
-    T, E, G, M, K = 64, 256, 8, 4, 8
-    logits = rng.standard_normal((T, E)).astype(np.float32) * 0.5
-    logits[:, :4] += 2.5  # 模拟冷启动热点集中在前 4 个专家
-    bias = np.zeros(E, dtype=np.float32)
-    gamma = 0.08
+class AuxLossFreeGroupedRouter(nn.Module):
+    """DeepSeek-V3 组限无辅损负载均衡路由器（对应 vLLM `grouped_topk`）。
 
-    def sigmoid(x: np.ndarray) -> np.ndarray:
-        return 1.0 / (1.0 + np.exp(-x))
+    输入：
+        logits: [T, E]（各词元对 E 个路由专家的原始打分）
+    输出：
+        (topk_ids [T, K], topk_weights [T, K])
+    """
 
-    load_max_history = []
-    for _ in range(8):
-        orig = sigmoid(logits)
-        biased = orig + bias[None, :]
-        grouped = biased.reshape(T, G, E // G)
-        top2_per_group = np.sort(grouped, axis=-1)[:, :, -2:].sum(axis=-1)
-        top_groups = np.argpartition(top2_per_group, -M, axis=-1)[:, -M:]
+    def __init__(self, num_experts: int = 256, num_groups: int = 8, topk_group: int = 4, topk: int = 8):
+        super().__init__()
+        self.num_experts, self.num_groups = num_experts, num_groups
+        self.topk_group, self.topk = topk_group, topk
+        # 动态均衡偏置不参与反向传播梯度更新，因此注册为持久化 buffer
+        self.register_buffer("e_score_correction_bias", torch.zeros(num_experts))
 
-        group_mask = np.zeros((T, G), dtype=bool)
-        np.put_along_axis(group_mask, top_groups, True, axis=1)
-        masked = np.where(np.repeat(group_mask, E // G, axis=1), biased, -np.inf)
+    def forward(self, logits: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
+        T, E = logits.shape
+        # 1. Sigmoid 独立亲和度打分（避免 Softmax 在 256 个专家上互相挤压梯度）
+        original_scores = torch.sigmoid(logits)
+        # 2. 仅在选路阶段叠加修正偏置抑制过载热点，保留 original_scores 用于最终加权
+        scores = original_scores + self.e_score_correction_bias.unsqueeze(0)
 
-        topk_ids = np.argpartition(masked, -K, axis=-1)[:, -K:]
-        raw_w = np.take_along_axis(orig, topk_ids, axis=1)
-        topk_weights = raw_w / raw_w.sum(axis=-1, keepdims=True)
+        # 3. Node-Limited 组筛选：取每组 Top-2 得分之和选出 Top-M 组，将跨卡通信限定在 <= M 个节点内
+        group_scores = scores.view(T, self.num_groups, E // self.num_groups).topk(2, dim=-1).values.sum(dim=-1)
+        top_groups = group_scores.topk(self.topk_group, dim=-1).indices
+        group_mask = torch.zeros_like(group_scores, dtype=torch.bool).scatter_(1, top_groups, True)
+        score_mask = group_mask.unsqueeze(-1).expand(T, self.num_groups, E // self.num_groups).reshape(T, E)
+        tmp_scores = scores.masked_fill(~score_mask, float("-inf"))
 
-        counts = np.bincount(topk_ids.ravel(), minlength=E)
-        load_max_history.append(int(counts.max()))
-        bias += gamma * np.sign(counts.mean() - counts)
+        # 4. 选出 Top-K 专家下标，再回表 gather 未加偏置的原始亲和度做权重归一化
+        topk_ids = torch.topk(tmp_scores, k=self.topk, dim=-1, sorted=False).indices
+        raw_w = original_scores.gather(1, topk_ids)
+        topk_weights = raw_w / raw_w.sum(dim=-1, keepdim=True)
+        return topk_ids, topk_weights
 
-    assert topk_ids.shape == (T, K) and topk_weights.shape == (T, K)
-    assert np.allclose(topk_weights.sum(axis=-1), 1.0, atol=1e-6)
+    @torch.no_grad()
+    def step_bias(self, topk_ids: torch.Tensor, gamma: float = 0.04) -> None:
+        """免梯度符号更新：Δb_i = γ * sign(c̄ - c_i)，过载专家降偏置、冷门专家升偏置。"""
+        counts = torch.bincount(topk_ids.reshape(-1), minlength=self.num_experts).float()
+        self.e_score_correction_bias.add_(gamma * torch.sign(counts.mean() - counts))
 
-    block_size = 16
-    flat_e = topk_ids.ravel()
-    sorted_idx = np.argsort(flat_e, kind="stable")
+
+def moe_align_block_size(topk_ids: torch.Tensor, num_experts: int, block_size: int = 16) -> torch.Tensor:
+    """按专家编号重排行索引并用 -1 补齐至 block_size 整数倍，满足 Grouped GEMM 瓦片对齐要求。"""
+    flat_e = topk_ids.reshape(-1)
+    sorted_idx = torch.argsort(flat_e, stable=True)
     sorted_e = flat_e[sorted_idx]
-    padded_tokens, padded_experts = [], []
-    for e_id in range(E):
-        pos = np.where(sorted_e == e_id)[0]
-        if pos.size == 0:
+    padded_tokens = []
+    for e_id in range(num_experts):
+        pos = torch.nonzero(sorted_e == e_id, as_tuple=True)[0]
+        if pos.numel() == 0:
             continue
-        rem = (-pos.size) % block_size
-        block_tok = np.concatenate([sorted_idx[pos], np.full(rem, -1, dtype=np.int64)])
-        padded_tokens.append(block_tok)
-        padded_experts.extend([e_id] * (len(block_tok) // block_size))
-
-    aligned_tokens = np.concatenate(padded_tokens)
-    assert aligned_tokens.size % block_size == 0
-    print(
-        f"max_load_trajectory={load_max_history}, "
-        f"valid_routes={T * K}, aligned_slots={aligned_tokens.size}, "
-        f"active_blocks={len(padded_experts)}"
-    )
+        # 仅对有命中的活跃专家尾部补 -1 哨兵槽位，后续计算核遇 -1 自动跳过
+        rem = (-pos.numel()) % block_size
+        padded_tokens.append(torch.cat([sorted_idx[pos], torch.full((rem,), -1, dtype=torch.long)]))
+    return torch.cat(padded_tokens)
 
 
 if __name__ == "__main__":
-    run_moe_routing_and_align()
-```
-
-实测执行输出如下，可以看到最热专家的命中次数从 `64/64` tokens 迅速回落至 `9–13` 区间，且对齐后的总槽位 `2816` 严格整除 `block_size=16`：
-
-```text
-max_load_trajectory=[64, 57, 10, 34, 16, 12, 9, 13], valid_routes=512, aligned_slots=2816, active_blocks=176
+    torch.manual_seed(42)
+    T, E, K, block_size = 64, 256, 8, 16
+    router = AuxLossFreeGroupedRouter(num_experts=E, num_groups=8, topk_group=4, topk=K)
+    with torch.no_grad():
+        topk_ids, topk_weights = router(torch.randn(T, E))
+        assert topk_ids.shape == (T, K) and topk_weights.shape == (T, K)
+        assert torch.allclose(topk_weights.sum(dim=-1), torch.ones(T), atol=1e-6)
+        router.step_bias(topk_ids)
+        assert not torch.all(router.e_score_correction_bias == 0)
+        aligned_tokens = moe_align_block_size(topk_ids, E, block_size=block_size)
+        aligned_slots = aligned_tokens.numel()
+        assert aligned_slots % block_size == 0
 ```
 
 ### NVIDIA GPU 实现路径（`vLLM` & `DeepEP`）
@@ -210,7 +218,7 @@ submitted_gate_up = (
 1. 为什么无辅损负载均衡只在 `topk` 选择阶段加上偏置 $b_i$，而计算输出组合权重 `topk_weights` 时必须回头 gather 原始未偏置分数 $s_{i,t}$？
 2. 在 DeepSeek-V3 的 8 组限流路由中，设置 `topk_group=4` 对跨机 All-to-All 网络拓扑有什么直接收益？
 3. 对照 `AscendMoERunner._prepare_router_and_milestones` 的代码注释，说明为什么共享专家的 Gate-Up 计算可以和路由专家的 Top-K 及 Dispatch 重叠？
-4. 若将上文 NumPy 核心代码里的 `block_size=16` 调大到 `64`，在 `T=64, K=8` 规模下 `aligned_slots` 的有效负载率会升高还是降低？为什么？
+4. 若将上文 PyTorch 核心代码里的 `block_size=16` 调大到 `64`，在 `T=64, K=8` 规模下 `aligned_slots` 的有效负载率会升高还是降低？为什么？
 
 [^v3-paper]: DeepSeek-AI, _DeepSeek-V3 Technical Report_, [arXiv:2412.19437](https://arxiv.org/abs/2412.19437)（2024），§2.1 阐述 256 细粒度专家与无辅助损失偏置负载均衡设计。
 

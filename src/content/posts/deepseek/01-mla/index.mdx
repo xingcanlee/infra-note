@@ -78,61 +78,111 @@ $$
 - **vLLM GPU**（`mla_attention.py`[^vllm-mla] 与 `flashmla.py`[^vllm-flashmla]）：权重加载后调用 `split_kv_b_proj` 生成 3D 参数 **`W_UK_T`**（`[N, P, L]`）与 **`W_UV`**（`[N, L, V]`），并向内存管理器上报 `num_kv_heads = 1, head_size = 576`；Decode 阶段由 `_prepare_mqa_query` 吸收后送入 `FlashMLAImpl.forward_mqa`（缓存形状 `[num_blocks, block_size, 1, 576]`，`head_dim_v = 512`），最后走 `_v_up_proj`。
 - **vllm-ascend NPU**（`mla_v1.py`[^ascend-mla]）：`AscendMLAImpl.process_weights_after_loading` 通过 `maybe_trans_nz` 将 `W_UK_T` 与 `W_UV` 重排为达芬奇 **`ACL_FORMAT_FRACTAL_NZ`** 分形；Decode 前置投影由 `npu_mla_prolog_v3`（或 `cann_ops_transformer.mla_prolog`）融合写入分离的 `kv_c`（512）与 `k_pe`（64）`PA_NZ` 缓存（按 `nz_fmt_last_dim = 16` 对齐），再由 `npu_fused_infer_attention_score_v2` 计算并调用 `torch_npu.npu_transpose_batchmatmul` 完成 `_v_up_proj`。
 
-## PyTorch / NumPy 核心实现与等价性核验
+## PyTorch 参考实现：双路径 MLA 与矩阵吸收等价验证
 
-下面这段自包含的 NumPy 核心实现完全对应 `vLLM` 的 `W_UK_T [N, P, L]` 与 `W_UV [N, L, V]` 排布，直接核验解耦 RoPE 下 Naive 展开 MHA 与矩阵吸收 1 头 MQA 的逐位数值等价性：
+下面这段自包含的 PyTorch `MiniMLA` 实现完全对应 `vLLM` 的 `W_UK_T [N, P, L]` 与 `W_UV [N, L, V]` 排布，展示 Prefill 展开 MHA 与 Decode 矩阵吸收 1 头 MQA 的张量流转并验证二者在双精度下的数值等价性：
 
 ```python
-import numpy as np
+import math
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
 
-rng = np.random.default_rng(42)
-n_h, d_nope, d_rope, d_c, s_kv = 4, 8, 4, 6, 16
 
-def softmax(x: np.ndarray) -> np.ndarray:
-    e = np.exp(x - np.max(x, axis=-1, keepdims=True))
-    return e / np.sum(e, axis=-1, keepdims=True)
-
-def apply_rope(x: np.ndarray, pos: np.ndarray, half: int, base: float = 10000.0) -> np.ndarray:
-    freq = 1.0 / (base ** (np.arange(0, half) * 2.0 / (2 * half)))
-    ang = np.outer(pos, freq)
-    c, s = np.cos(ang), np.sin(ang)
+def apply_rope(x: torch.Tensor, pos: torch.Tensor, base: float = 10000.0) -> torch.Tensor:
+    """对输入末尾偶数维施加标准 RoPE 旋转，支持 [S, R] 与 [1, N, R] 形状。"""
+    half = x.shape[-1] // 2
+    inv_freq = 1.0 / (base ** (torch.arange(0, half, dtype=x.dtype, device=x.device) / half))
+    ang = pos.to(x.dtype).unsqueeze(-1) * inv_freq  # [S, half]
+    c, s = ang.cos(), ang.sin()
     if x.ndim == 3:
-        c, s = c[:, None, :], s[:, None, :]
+        # 3D 查询张量 [S, N, R] 需在头维插入广播轴
+        c, s = c.unsqueeze(1), s.unsqueeze(1)
     x1, x2 = x[..., :half], x[..., half:]
-    return np.concatenate([x1 * c - x2 * s, x2 * c + x1 * s], axis=-1)
+    return torch.cat([x1 * c - x2 * s, x2 * c + x1 * s], dim=-1)
 
-h_kv = rng.normal(size=(s_kv, 16))
-w_dkv, w_kr = rng.normal(size=(16, d_c)) / 4.0, rng.normal(size=(16, d_rope)) / 4.0
-w_uk_t = rng.normal(size=(n_h, d_nope, d_c)) / np.sqrt(d_c)
-w_uv = rng.normal(size=(n_h, d_c, d_nope)) / np.sqrt(d_c)
-q_nope = rng.normal(size=(n_h, d_nope))
-q_pe = apply_rope(rng.normal(size=(1, n_h, d_rope)), np.array([s_kv - 1]), d_rope // 2)[0]
 
-# 仅落盘的 1 头潜在缓存 [c_kv ; k_pe]
-c_kv = h_kv @ w_dkv
-k_pe = apply_rope(h_kv @ w_kr, np.arange(s_kv), d_rope // 2)
-assert c_kv.shape == (s_kv, d_c) and k_pe.shape == (s_kv, d_rope)
-scale = 1.0 / np.sqrt(d_nope + d_rope)
+class MiniMLA(nn.Module):
+    """Multi-Head Latent Attention (MLA) 双路径参考实现。
 
-# Path A：Naive 展开为多头 MHA
-k_mha = np.concatenate([np.einsum("sc,hpc->shp", c_kv, w_uk_t), np.broadcast_to(k_pe[:, None, :], (s_kv, n_h, d_rope))], axis=-1)
-v_mha = np.einsum("sc,hcv->shv", c_kv, w_uv)
-logits_mha = np.einsum("hd,shd->hs", np.concatenate([q_nope, q_pe], axis=-1), k_mha) * scale
-out_mha = np.einsum("hs,shv->hv", softmax(logits_mha), v_mha)
+    对应 vLLM `MLAAttention`（Naive 展开 MHA vs Decode 矩阵吸收 1 头 MQA）：
+        c_kv: [S, d_c],  k_pe: [S, d_rope],  q_nope: [N, d_nope],  q_pe: [N, d_rope]
+    输出：
+        (logits [N, S], out [N, d_nope])
+    """
 
-# Path B：矩阵吸收（_prepare_mqa_query + 1 头 MQA + _v_up_proj）
-q_mqa = np.concatenate([np.einsum("hp,hpc->hc", q_nope, w_uk_t), q_pe], axis=-1)
-kv_joint = np.concatenate([c_kv, k_pe], axis=-1)
-logits_mqa = (q_mqa @ kv_joint.T) * scale
-out_mqa = np.einsum("hc,hcv->hv", softmax(logits_mqa) @ c_kv, w_uv)
-assert out_mha.shape == out_mqa.shape == (n_h, d_nope)
-print(f"max_logit_diff={np.max(np.abs(logits_mha - logits_mqa)):.2e} max_out_diff={np.max(np.abs(out_mha - out_mqa)):.2e}")
+    def __init__(self, d_model: int = 16, n_h: int = 4, d_nope: int = 8, d_rope: int = 4, d_c: int = 6):
+        super().__init__()
+        self.n_h, self.d_nope, self.d_rope, self.d_c = n_h, d_nope, d_rope, d_c
+        # 注意力缩放因子按单头完整维度 (d_nope + d_rope) 计算
+        self.scale = 1.0 / math.sqrt(d_nope + d_rope)
+        # 联合 KV 下投影：压缩进 d_c 维潜空间（DeepSeek-V3 中 d_c=512）
+        self.w_dkv = nn.Linear(d_model, d_c, bias=False)
+        # 解耦 RoPE 键投影：所有头共享 1 份 d_rope 维位置键（DeepSeek-V3 中 d_rope=64）
+        self.w_kr = nn.Linear(d_model, d_rope, bias=False)
+        # 合并上投影权重，等价 vLLM 中的 kv_b_proj（将同时拆出 W_UK 与 W_UV）
+        self.kv_b_proj = nn.Linear(d_c, n_h * 2 * d_nope, bias=False)
+
+    def split_kv_b_proj(self) -> tuple[torch.Tensor, torch.Tensor]:
+        """对齐 vLLM `process_weights_after_loading`，拆出 W_UK_T [N, P, L] 与 W_UV [N, L, V]。"""
+        w = self.kv_b_proj.weight.view(self.n_h, 2 * self.d_nope, self.d_c)
+        w_uk_t, w_uv = w.split(self.d_nope, dim=1)
+        return w_uk_t, w_uv.transpose(-1, -2)  # [N, P, L], [N, L, V]
+
+    def encode_kv(self, h_kv: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
+        """写盘阶段仅缓存压缩潜向量 c_kv [S, L] 与单头旋转位置键 k_pe [S, R]。"""
+        c_kv = self.w_dkv(h_kv)
+        k_pe = apply_rope(self.w_kr(h_kv), torch.arange(h_kv.shape[0], device=h_kv.device))
+        return c_kv, k_pe
+
+    def forward_naive(self, q_nope: torch.Tensor, q_pe: torch.Tensor, c_kv: torch.Tensor, k_pe: torch.Tensor):
+        """Prefill 路径（forward_mha）：将潜向量显式解压为 N 头完整 K/V 后执行标准 MHA。"""
+        w_uk_t, w_uv = self.split_kv_b_proj()
+        k_nope = torch.einsum("sc,hpc->shp", c_kv, w_uk_t)  # [S, N, P]
+        # 共享单头 k_pe [S, R] 沿头维广播拼接至每头末尾 -> [S, N, P+R]
+        k_mha = torch.cat([k_nope, k_pe.unsqueeze(1).expand(-1, self.n_h, -1)], dim=-1)
+        v_mha = torch.einsum("sc,hcv->shv", c_kv, w_uv)     # [S, N, V]
+        logits = torch.einsum("hd,shd->hs", torch.cat([q_nope, q_pe], dim=-1), k_mha) * self.scale
+        out = torch.einsum("hs,shv->hv", F.softmax(logits, dim=-1), v_mha)
+        return logits, out
+
+    def forward_absorb(self, q_nope: torch.Tensor, q_pe: torch.Tensor, c_kv: torch.Tensor, k_pe: torch.Tensor):
+        """Decode 路径（forward_mqa）：把 W_UK_T 吸进 Query、W_UV 延后到输出，全程不展开历史 KV。"""
+        w_uk_t, w_uv = self.split_kv_b_proj()
+        # _prepare_mqa_query：将 q_nope [N, P] 乘 W_UK_T [N, P, L] 吸收至潜空间，拼接 q_pe -> [N, L+R]
+        q_mqa = torch.cat([torch.einsum("hp,hpc->hc", q_nope, w_uk_t), q_pe], dim=-1)
+        kv_joint = torch.cat([c_kv, k_pe], dim=-1)          # 单头联合缓存 [S, L+R]
+        logits = (q_mqa @ kv_joint.T) * self.scale          # 1 头 MQA 打分 [N, S]
+        attn_latent = F.softmax(logits, dim=-1) @ c_kv      # 在潜空间完成加权聚合 [N, L]
+        # _v_up_proj：最后再乘 W_UV [N, L, V] 还原回输出头空间 [N, V]
+        out = torch.einsum("hc,hcv->hv", attn_latent, w_uv)
+        return logits, out
+
+
+if __name__ == "__main__":
+    torch.manual_seed(42)
+    s_kv, d_model, n_h, d_nope, d_rope, d_c = 16, 16, 4, 8, 4, 6
+    # 显式使用 float64 验证代数恒等性（避免 FP32 舍入掩盖机器极限误差）
+    mla = MiniMLA(d_model, n_h, d_nope, d_rope, d_c).to(torch.float64)
+    with torch.no_grad():
+        h_kv = torch.randn(s_kv, d_model, dtype=torch.float64)
+        q_nope = torch.randn(n_h, d_nope, dtype=torch.float64)
+        q_pe = apply_rope(torch.randn(1, n_h, d_rope, dtype=torch.float64), torch.tensor([s_kv - 1]))[0]
+        c_kv, k_pe = mla.encode_kv(h_kv)
+        assert c_kv.shape == (s_kv, d_c) and k_pe.shape == (s_kv, d_rope)
+        logits_mha, out_mha = mla.forward_naive(q_nope, q_pe, c_kv, k_pe)
+        logits_mqa, out_mqa = mla.forward_absorb(q_nope, q_pe, c_kv, k_pe)
+        assert out_mha.shape == out_mqa.shape == (n_h, d_nope)
+        assert torch.allclose(out_mha, out_mqa, atol=1e-13)
+        logit_diff = (logits_mha - logits_mqa).abs().max().item()
+        out_diff = (out_mha - out_mqa).abs().max().item()
+        print(f"max_logit_diff={logit_diff:.2e} max_out_diff={out_diff:.2e}")
 ```
 
 直接执行上述脚本的实测输出如下，证明两条路径无论是注意力打分还是最终输出张量均在双精度浮点舍入极限内完全等价：
 
 ```text
-max_logit_diff=4.44e-16 max_out_diff=2.32e-16
+max_logit_diff=1.18e-16 max_out_diff=4.16e-17
 ```
 
 ## 代价与边界

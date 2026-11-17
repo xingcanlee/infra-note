@@ -368,9 +368,11 @@ class ManifoldHyperConnection(nn.Module):
 
         # RMSNorm 除法后置重排：(x_flat / r) @ phi^T == (x_flat @ phi^T) * (1 / r)
         inv_rms = torch.rsqrt(x_flat.square().mean(dim=-1, keepdim=True) + self.eps)
+        # 合并投影一次算出 Pre(n) + Post(n) + Res(n^2) 共 n^2 + 2n 个动态 logit
         raw = F.linear(x_flat, self.phi.float()) * inv_rms
         raw_pre, raw_post, raw_res = raw.split([self.n, self.n, self.n * self.n], dim=-1)
 
+        # Pre 用 sigmoid 非负加权，Post 用 2*sigmoid（0 初值对齐单位写回 1.0），Res 经 FP32 Sinkhorn 投向双随机流形
         pre_map = torch.sigmoid(self.alpha[0] * raw_pre.unsqueeze(-2) + self.b_pre)
         post_map = 2.0 * torch.sigmoid(
             self.alpha[1] * raw_post.unsqueeze(-2) + self.b_post
@@ -378,6 +380,7 @@ class ManifoldHyperConnection(nn.Module):
         res_logits = self.alpha[2] * raw_res.unflatten(-1, (self.n, self.n)) + self.b_res
         res_map = self._sinkhorn_knopp(res_logits)
 
+        # 单流算子 f 在 [..., dim] 上运算，FLOPs 与标准残差完全一致
         block_input = (pre_map @ x_fp32).squeeze(-2).to(orig_dtype)
         block_output = self.f(block_input)
         if block_output.shape != block_input.shape:
@@ -386,12 +389,14 @@ class ManifoldHyperConnection(nn.Module):
                 f"input {tuple(block_input.shape)}, output {tuple(block_output.shape)}"
             )
 
+        # 主干 Res 跨流混洗与旁路 Post 写回相加 -> [..., n, dim]
         residual = res_map @ x_fp32
         injection = post_map.transpose(-1, -2) * block_output.float().unsqueeze(-2)
         return (residual + injection).to(orig_dtype)
 
 
 if __name__ == "__main__":
+    torch.manual_seed(8)
     with torch.no_grad():
         B, T, n, dim = 2, 8, 4, 64
         f = nn.Linear(dim, dim)
@@ -399,12 +404,14 @@ if __name__ == "__main__":
         x_eq = expand_streams(h, n)
         expected = expand_streams(h + f(h), n)
 
+        # 不变式 1：phi=0 时等值流步 0 必须精确退化为标准残差连接 h + f(h)
         hc = HyperConnection(f, n=n, dim=dim)
         mhc = ManifoldHyperConnection(f, n=n, dim=dim)
         assert torch.allclose(hc(x_eq), expected, atol=1e-5)
         assert torch.allclose(mhc(x_eq), expected, atol=1e-5)
         assert collapse_streams(mhc(x_eq)).shape == h.shape
 
+        # 不变式 2：20 轮 Sinkhorn-Knopp 输出的行和、列和同时收敛至 1.0（Birkhoff 双随机流形）
         mat = mhc._sinkhorn_knopp(torch.randn(B, n, n) * 1.5)
         assert torch.allclose(mat.sum(dim=-1), torch.ones(B, n), atol=1e-3)
         assert torch.allclose(mat.sum(dim=-2), torch.ones(B, n), atol=1e-3)

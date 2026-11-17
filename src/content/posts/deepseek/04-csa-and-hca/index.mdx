@@ -82,57 +82,90 @@ flowchart TD
 | **折叠与写盘内核**     | `fused_save_compress_norm` + `rope_quant_insert`（head=512 CUDA 走 CuTe-DSL 核）          | V4 走原生 `torch.ops._C_ascend.compressor`；V4.1 走 `compressor_triton` 三段核 `K1/K2/K3`                |
 | **双轨 RoPE 与逆旋转** | `build_deepseek_v4_rope` + `fused_inv_rope_fp8_quant` / FlashMLA 融合核                   | `ComplexExpRotaryEmbedding`（`default`/`c{ratio}`）+ `AscendDSAV41Impl._apply_rotary(..., inverse=True)` |
 
-## PyTorch / NumPy 核心实现与数值验证
+## PyTorch 参考实现：重叠门控折叠与输出逆 RoPE
 
-下面这段自包含的 NumPy 实现直接验证两项核心属性：（1）在 $G=16$ 重叠块内埋入关键针词元，`Softmax` 门控折叠如何防止均匀池化信号稀释；（2）只对末 `16` 维施加 GPT-J 交错旋转时，前 `48` 维 NoPE 零漂移，且输出端位置 `-50` 的逆旋转严格还原相对位置 `-33`：
+下面这段自包含的 PyTorch 实现对照前文式 (44)–(61)：用 `OverlapCSACompressor` 落地 $2m=8$ 重叠双窗的逐通道 Softmax 门控折叠，同时用 `gptj_partial_rope` 验证前 `48` 维 NoPE 零漂移，以及输出端位置 `-50` 的逆旋转如何把绝对旋转还原回相对位置 `-33`：
 
 ```python
-import numpy as np
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
 
-rng = np.random.default_rng(42)
 
-def gptj_partial_rope(x: np.ndarray, pos: int, rope_dim: int = 16, theta: float = 10000.0, inverse: bool = False) -> np.ndarray:
-    inv_freq = 1.0 / (theta ** (np.arange(0, rope_dim, 2) / rope_dim))
+def gptj_partial_rope(
+    x: torch.Tensor, pos: int, rope_dim: int = 16, theta: float = 10000.0, inverse: bool = False
+) -> torch.Tensor:
+    """仅对末尾 rope_dim 维施加 GPT-J 交错旋转；inverse=True 取 sin 负号实现 R_{-pos} 逆旋转。"""
+    inv_freq = 1.0 / (theta ** (torch.arange(0, rope_dim, 2, dtype=x.dtype, device=x.device) / rope_dim))
     ang = pos * inv_freq
-    c, s = np.cos(ang), (-np.sin(ang) if inverse else np.sin(ang))
-    out = x.copy()
-    seg = out[..., -rope_dim:]
-    ev, od = seg[..., 0::2].copy(), seg[..., 1::2].copy()
+    # R_{-t} = R_t^T：仅需把正弦项取反即可在注意力输出端消去绝对位置偏置
+    c, s = ang.cos(), (-ang.sin() if inverse else ang.sin())
+    out = x.clone()
+    seg = out[..., -rope_dim:]  # 对应 DeepseekV4ScalingRotaryEmbedding 的尾切片 rope_dim_offset
+    ev, od = seg[..., 0::2].clone(), seg[..., 1::2].clone()
     seg[..., 0::2] = ev * c - od * s
     seg[..., 1::2] = od * c + ev * s
     return out
 
-# 1. 重叠 2m 门控折叠 vs 均匀池化（G=16 窗口中 idx=5 埋入关键信号）
-G, d_c = 16, 16
-needle = rng.normal(size=(d_c,))
-C_a, C_b = rng.normal(size=(G, d_c)), rng.normal(size=(G, d_c)) * 0.5
-C_a[5] = needle
-Z_a, Z_b = np.zeros((G, d_c)), np.zeros((G, d_c)); Z_a[5] = 4.5
-C_mean = C_a.mean(axis=0)
-Z_win = np.concatenate([Z_a, Z_b], axis=0); C_win = np.concatenate([C_a, C_b], axis=0)
-S_win = np.exp(Z_win - Z_win.max(axis=0, keepdims=True))
-S_win /= S_win.sum(axis=0, keepdims=True)
-C_gated = (S_win * C_win).sum(axis=0)
-cos = lambda a, b: float(np.dot(a, b) / (np.linalg.norm(a) * np.linalg.norm(b)))
-assert C_gated.shape == (d_c,)
-print(f"cos_mean={cos(C_mean, needle):.4f} cos_gated={cos(C_gated, needle):.4f}")
 
-# 2. 末 16 维 GPT-J 逆 RoPE 相对位置还原定理
-x_test = rng.normal(size=(1, 64))
-k_rot = gptj_partial_rope(x_test, 17)
-inv_rel = gptj_partial_rope(k_rot, 50, inverse=True)
-direct_rel = gptj_partial_rope(x_test, -33)
-nope_drift = float(np.max(np.abs(k_rot[..., :-16] - x_test[..., :-16])))
-rel_pos_err = float(np.max(np.abs(inv_rel - direct_rel)))
-assert nope_drift == 0.0 and rel_pos_err < 1e-12
-print(f"nope_drift={nope_drift:.1e} rel_pos_err={rel_pos_err:.2e}")
+class OverlapCSACompressor(nn.Module):
+    """DeepSeek-V4 重叠双窗序列压缩器（净步长 m=4，窗口宽 2m=8）。
+
+    输入：
+        h_prev_block: [m, d_model],  h_curr_block: [m, d_model]
+    输出：
+        compressed_kv: [1, d_c]（单条闭合块潜向量，兼作 Key 与 Value）
+    """
+
+    def __init__(self, m: int = 4, d_model: int = 32, d_c: int = 64):
+        super().__init__()
+        # 前后半窗采用两套独立的内容投影 (W^{aKV}, W^{bKV}) 与门控打分投影 (W^{aZ}, W^{bZ})
+        self.w_kv_a = nn.Linear(d_model, d_c, bias=False)
+        self.w_kv_b = nn.Linear(d_model, d_c, bias=False)
+        self.w_z_a = nn.Linear(d_model, d_c, bias=False)
+        self.w_z_b = nn.Linear(d_model, d_c, bias=False)
+        # 可学习的块内相对位置偏置 B^a, B^b，形状均为 [m, d_c]
+        self.b_a = nn.Parameter(torch.zeros(m, d_c))
+        self.b_b = nn.Parameter(torch.zeros(m, d_c))
+
+    def forward(self, h_prev_block: torch.Tensor, h_curr_block: torch.Tensor) -> torch.Tensor:
+        c_win = torch.cat([self.w_kv_b(h_prev_block), self.w_kv_a(h_curr_block)], dim=0)  # [2m, d_c]
+        z_win = torch.cat(
+            [self.w_z_b(h_prev_block) + self.b_b, self.w_z_a(h_curr_block) + self.b_a], dim=0
+        )  # [2m, d_c]
+        # 沿时间行做逐通道 Softmax 竞争（dim=0），让关键信号独享高权重而免遭平均稀释
+        scores = F.softmax(z_win, dim=0)
+        return (scores * c_win).sum(dim=0, keepdim=True)  # [1, d_c]
+
+
+if __name__ == "__main__":
+    torch.manual_seed(42)
+    m, d_model, d_c = 4, 32, 64
+    comp = OverlapCSACompressor(m=m, d_model=d_model, d_c=d_c).to(torch.float64)
+    with torch.no_grad():
+        h_prev = torch.randn(m, d_model, dtype=torch.float64)
+        h_curr = torch.randn(m, d_model, dtype=torch.float64)
+        compressed_kv = comp(h_prev, h_curr)
+        assert compressed_kv.shape == (1, d_c)
+
+        # 验证输出逆 RoPE 恒等式：R_{-50}(R_{17} x) == R_{17 - 50} x == R_{-33} x，且前 48 维零漂移
+        x_test = torch.randn(1, 64, dtype=torch.float64)
+        k_rot = gptj_partial_rope(x_test, 17)
+        inv_rel = gptj_partial_rope(k_rot, 50, inverse=True)
+        direct_rel = gptj_partial_rope(x_test, -33)
+        nope_drift = (k_rot[..., :-16] - x_test[..., :-16]).abs().max().item()
+        rel_pos_err = (inv_rel - direct_rel).abs().max().item()
+        assert nope_drift == 0.0 and rel_pos_err < 1e-12
+        print(
+            f"compressed_kv={tuple(compressed_kv.shape)} "
+            f"nope_drift={nope_drift:.1e} rel_pos_err={rel_pos_err:.2e}"
+        )
 ```
 
-实测输出如下，门控折叠保住了 `0.9985` 的方向一致性，而逆 RoPE 误差压在双精度极限 `6.66e-16`：
+实测输出如下，前 `48` 维 NoPE 严格零漂移，输出端逆 RoPE 误差压在双精度极限以内：
 
 ```text
-cos_mean=0.4471 cos_gated=0.9985
-nope_drift=0.0e+00 rel_pos_err=6.66e-16
+compressed_kv=(1, 64) nope_drift=0.0e+00 rel_pos_err=4.44e-16
 ```
 
 ## 代价与边界

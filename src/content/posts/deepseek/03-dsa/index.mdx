@@ -78,50 +78,77 @@ flowchart TD
 | **前置融合核**    | `wk_weights_proj` BF16 融合 + `fused_indexer_q_rope_quant`                                           | `PreprocessType` 三路路由（`PROLOG_V3` / `MLAPO` / `NATIVE`）+ 可选 `_q_stream` 异步流  |
 | **打分与回捞核**  | `SparseAttnIndexer`（`fp8_fp4_paged_mqa_logits`）+ `FlashMLASparseBackend`（`flash_mla_sparse_fwd`） | `npu_lightning_indexer` + `npu_sparse_flash_attention` / `sparse_flash_mla`             |
 
-## PyTorch / NumPy 核心实现与等价性核验
+## PyTorch 参考实现：闪电索引器与稀疏 MLA 回捞
 
-下面这段自包含的 NumPy 核心实现验证 DSA 在 $L=128$ 序列中只挑 $k=16$（`12.5%`）历史槽位时，对显著关键位置（`salient`）的命中率、注意力质量保持率以及稀疏输出相对误差：
+下面这段自包含的 PyTorch 参考实现对应上表 `vLLM` / `vllm-ascend` 的核心结构：用 `LightningIndexer` 实现 $H^I$ 头共享单键的 $\operatorname{ReLU}$ 索引打分，再用 `sparse_mla_decode` 只从缓存中按 `topk_ids` 回捞 $k$ 条潜向量完成 1 头 MQA 计算：
 
 ```python
-import numpy as np
+import math
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
 
-rng = np.random.default_rng(42)
 
-def softmax(x: np.ndarray) -> np.ndarray:
-    e = np.exp(x - np.max(x, axis=-1, keepdims=True))
-    return e / np.sum(e, axis=-1, keepdims=True)
+class LightningIndexer(nn.Module):
+    """DeepSeek-V3.2 闪电索引器（对应 vLLM `Indexer` / `SparseAttnIndexer`）。
 
-L_ctx, H_idx, d_idx, k_top = 128, 8, 32, 16
-base_dir = rng.normal(size=(64,))
-base_dir /= np.linalg.norm(base_dir)
-q_main = base_dir[None, :] * 9.0 + rng.normal(size=(16, 64)) * 0.2
-c_hist = rng.normal(size=(L_ctx, 64)) * 0.5
-salient = np.arange(0, 100, 10)
-c_hist[salient] = base_dir[None, :] * 5.5 + rng.normal(size=(10, 64)) * 0.1
+    输入：
+        h_q:  [T_q, d_model]（当前查询隐状态）
+        h_kv: [L_ctx, d_model]（待检索历史隐状态）
+    输出：
+        topk_ids: [T_q, k_top]（仅保留得分最高的 k_top 个历史词元槽位下标）
+    """
 
-# 稠密基线输出与目标分布
-attn_ref = softmax((q_main @ c_hist.T) / np.sqrt(64))
-p_target = attn_ref.sum(axis=0); p_target /= p_target.sum()
-out_dense = attn_ref @ c_hist
+    def __init__(self, d_model: int = 64, h_idx: int = 8, d_idx: int = 32, k_top: int = 16):
+        super().__init__()
+        self.h_idx, self.d_idx, self.k_top = h_idx, d_idx, k_top
+        self.wq_b = nn.Linear(d_model, h_idx * d_idx, bias=False)  # 多头轻量索引查询
+        self.wk = nn.Linear(d_model, d_idx, bias=False)            # 全部索引头共享 1 份键（132 B/tok）
+        self.weights_proj = nn.Linear(d_model, h_idx, bias=False)  # 每头动态加权标量 w_{t,j}^I
 
-# ReLU 闪电索引器打分与 Top-k 回捞
-q_i = np.broadcast_to(base_dir[:d_idx], (H_idx, d_idx)) + rng.normal(size=(H_idx, d_idx)) * 0.05
-k_i = c_hist[:, :d_idx] * 0.6
-w_i = np.ones(H_idx) / H_idx
-idx_scores = (np.maximum(0.0, q_i @ k_i.T) * w_i[:, None]).sum(axis=0)
-topk_ids = np.argsort(idx_scores)[-k_top:]
-assert idx_scores.shape == (L_ctx,) and topk_ids.shape == (k_top,)
+    def forward(self, h_q: torch.Tensor, h_kv: torch.Tensor) -> torch.Tensor:
+        q_idx = self.wq_b(h_q).view(-1, self.h_idx, self.d_idx)  # [T_q, H^I, d^I]
+        k_idx = self.wk(h_kv)                                    # [L_ctx, d^I]（单头共享）
+        w_idx = self.weights_proj(h_q)                           # [T_q, H^I]
 
-out_sparse = softmax((q_main @ c_hist[topk_ids].T) / np.sqrt(64)) @ c_hist[topk_ids]
-assert out_sparse.shape == out_dense.shape
-rel_err = np.linalg.norm(out_dense - out_sparse) / np.linalg.norm(out_dense)
-print(f"salient_hits={len(set(topk_ids)&set(salient))}/10 mass_kept={p_target[topk_ids].sum()*100:.2f}% rel_err={rel_err:.4f}")
-```
+        # ReLU 截断负相关性并免除全序列 Softmax 同步，天然支持 FP8 低比特累加后排序
+        head_scores = F.relu(torch.einsum("thd,sd->ths", q_idx, k_idx))  # [T_q, H^I, L_ctx]
+        scores = (head_scores * w_idx.unsqueeze(-1)).sum(dim=1)          # [T_q, L_ctx]
+        return torch.topk(scores, k=self.k_top, dim=-1, sorted=False).indices
 
-运行脚本的实测输出结果如下，仅凭 `12.5%` 稀疏槽位即可命中全部 `10/10` 关键位置并守住 `97.50%` 注意力质量：
 
-```text
-salient_hits=10/10 mass_kept=97.50% rel_err=0.0252
+def sparse_mla_decode(
+    q_abs: torch.Tensor,
+    q_pe: torch.Tensor,
+    c_kv_cache: torch.Tensor,
+    k_pe_cache: torch.Tensor,
+    topk_ids: torch.Tensor,
+    w_uv: torch.Tensor,
+) -> torch.Tensor:
+    """只从 [L_ctx, ...] HBM 缓存中 Gather topk_ids 槽位并完成 1 头潜空间 MQA（复杂度 O(k_top)）。"""
+    # 仅搬运选中的 k_top 行，避免扫描全长上下文
+    c_sel = c_kv_cache[topk_ids]                            # [k_top, d_c]
+    k_pe_sel = k_pe_cache[topk_ids]                         # [k_top, d_rope]
+    q_mqa = torch.cat([q_abs, q_pe], dim=-1)                # [N, d_c + d_rope]
+    kv_sel = torch.cat([c_sel, k_pe_sel], dim=-1)           # [k_top, d_c + d_rope]
+    scale = 1.0 / math.sqrt(q_mqa.shape[-1])
+    attn_latent = F.softmax((q_mqa @ kv_sel.T) * scale, dim=-1) @ c_sel  # [N, d_c]
+    return torch.einsum("hc,hcv->hv", attn_latent, w_uv)    # [N, d_v]
+
+
+if __name__ == "__main__":
+    torch.manual_seed(42)
+    L_ctx, d_model, k_top, n_h, d_c, d_rope, d_v = 128, 64, 16, 4, 16, 8, 12
+    indexer = LightningIndexer(d_model=d_model, h_idx=8, d_idx=32, k_top=k_top)
+    with torch.no_grad():
+        topk_ids = indexer(torch.randn(1, d_model), torch.randn(L_ctx, d_model))
+        assert topk_ids.shape == (1, k_top)
+        out = sparse_mla_decode(
+            torch.randn(n_h, d_c), torch.randn(n_h, d_rope),
+            torch.randn(L_ctx, d_c), torch.randn(L_ctx, d_rope),
+            topk_ids[0], torch.randn(n_h, d_c, d_v),
+        )
+        assert out.shape == (n_h, d_v)
 ```
 
 ## 代价与边界

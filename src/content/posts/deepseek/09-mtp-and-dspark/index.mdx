@@ -81,57 +81,95 @@ $$
 3. **并行查表与极低串行成本**：查一行 `W_1[x_{k-1}]` 再乘以 `W_2` 只是一次 $[B, 256] \times [256, V]$ 矩阵乘，图 2 下泳道展示了这一结构如何把连续几步串行降为微秒级马尔可夫采样步。
 4. **置信度头（`DSparkConfidenceHead`）与自适应截断**：每个位置额外预测单步接受置信度 $p_k$，在运行时累乘出序列存活概率 $\prod_{j=1}^k p_j$；`AdaptiveVerificationManager` 通过 Triton 二分检索核 `_assign_draft_token_budget_kernel`（`adaptive_verification.py:60-100`）按当前全局步配额砍掉低收益长尾，防止无效占位把验证批推过 Roofline 计算拐点[^vllm-adaptive]。
 
-## PyTorch / NumPy 核心实现：无损拒绝采样与低秩马尔可夫链
+## PyTorch 参考实现：无损拒绝采样与低秩马尔可夫头
 
-下面这段自包含 NumPy 脚本把两件核心计算同时落地并做数值校验：一边跑 $50{,}000$ 次无损拒绝采样与残差重采样验证分布总变差（TV），一边跑 $r=256$ 低秩马尔可夫条件草稿链并断言输出形状。
+下面这段自包含 PyTorch 实现覆盖两条核心机制：一边用 `lossless_rejection_sample` 验证 $50{,}000$ 次拒绝采样与残差重采样的边缘分布无损等价性；一边用 `DSparkMarkovHead` 演示并行 SWA 草稿 logits 如何借低秩查表依次注入相邻词元条件偏置：
 
 ```python
-import numpy as np
+import torch
+import torch.nn as nn
 
-rng = np.random.default_rng(9)
-p = np.array([0.35, 0.25, 0.30, 0.10], dtype=np.float64)
-q = np.array([0.20, 0.50, 0.20, 0.10], dtype=np.float64)
-trials = 50000
-counts = np.zeros(4, dtype=np.int64)
-drafts = rng.choice(4, size=trials, p=q)
-u = rng.random(trials)
-res = np.maximum(0.0, p - q)
-res_p = res / res.sum()
-accept_mask = u <= np.minimum(1.0, p[drafts] / q[drafts])
-for d_tok, acc in zip(drafts, accept_mask):
-    if acc:
-        counts[d_tok] += 1
-    else:
-        counts[rng.choice(4, p=res_p)] += 1
-emp = counts / trials
-tv = 0.5 * np.sum(np.abs(emp - p))
-assert tv < 0.01
 
-B, n_spec, V, r = 2, 5, 1024, 256
-base_logits = rng.standard_normal((B, n_spec, V)).astype(np.float32)
-w1 = rng.standard_normal((V, r)).astype(np.float32) * 0.05
-w2 = rng.standard_normal((r, V)).astype(np.float32) * 0.05
-prev = np.array([10, 42], dtype=np.int64)
-drafted = np.zeros((B, n_spec), dtype=np.int64)
-for i in range(n_spec):
-    bias_i = w1[prev] @ w2
-    logits_i = base_logits[:, i] + bias_i
-    prev = np.argmax(logits_i, axis=-1)
-    drafted[:, i] = prev
-assert drafted.shape == (B, n_spec)
-print(
-    f"[09-mtp-dspark] lossless_TV={tv:.5f}, accept_rate={accept_mask.mean():.4f}, "
-    f"dspark_draft_shape={drafted.shape}"
-)
+def lossless_rejection_sample(
+    p: torch.Tensor, q: torch.Tensor, n_samples: int
+) -> tuple[torch.Tensor, float]:
+    """向量化无损拒绝采样：对草稿分布 q 采样并用残差分布 norm(max(0, p - q)) 补偿被拒位。"""
+    # 1. 从草稿分布 q 采样候选词元，按 min(1, p(x)/q(x)) 概率接收
+    drafts = torch.multinomial(q, n_samples, replacement=True)
+    accept_mask = torch.rand(n_samples, dtype=p.dtype) <= (p[drafts] / q[drafts]).clamp_max(1.0)
+
+    # 2. 构造残差补偿分布 p'(x) = norm(max(0, p(x) - q(x)))，精确补齐欠采样词元的概率质量
+    res = torch.clamp(p - q, min=0.0)
+    res_p = res / res.sum()
+
+    # 3. 仅对被拒绝槽位从残差分布 p' 重采样替换，保证最终边缘分布严格等于目标 p
+    n_reject = int((~accept_mask).sum().item())
+    final_tokens = drafts.clone()
+    final_tokens[~accept_mask] = torch.multinomial(res_p, n_reject, replacement=True)
+    return final_tokens, accept_mask.float().mean().item()
+
+
+class DSparkMarkovHead(nn.Module):
+    """V4.1 DSpark 低秩马尔可夫条件修正头（对应 qwen3_dspark.py）。
+
+    输入：
+        base_logits: [B, n_spec, V]（由 3 层 SWA 草稿主干一次并行产出）
+        prev:        [B]（第 0 步起始词元 ID）
+    输出：
+        drafted:     [B, n_spec]（依次修正采样出的草稿词元序列）
+    """
+
+    def __init__(self, vocab_size: int = 1024, markov_rank: int = 256):
+        super().__init__()
+        # 低秩分解转移矩阵 W_1 [V, r] 与 W_2 [r, V]，将条件转移压进 r=256 窄瓶颈
+        self.markov_w1 = nn.Embedding(vocab_size, markov_rank)
+        self.markov_w2 = nn.Linear(markov_rank, vocab_size, bias=False)
+
+    def forward(self, prev_tokens: torch.Tensor) -> torch.Tensor:
+        # O(1) 取出 prev_tokens 对应行后乘 W_2，等价 [B, r] @ [r, V] -> [B, V] 条件偏置
+        return self.markov_w2(self.markov_w1(prev_tokens))
+
+    def draft_chain(self, base_logits: torch.Tensor, prev: torch.Tensor) -> torch.Tensor:
+        drafted = []
+        for i in range(base_logits.shape[1]):
+            # 第 k 步并行基础 logits 加上刚采出的第 k-1 步马尔可夫偏置，形成微秒级条件链
+            logits_i = base_logits[:, i] + self(prev)
+            prev = logits_i.argmax(dim=-1)
+            drafted.append(prev)
+        return torch.stack(drafted, dim=1)
+
+
+if __name__ == "__main__":
+    torch.manual_seed(9)
+    # 故意放大第 2 词元的草稿概率（0.50 vs 0.25），检验残差重采样仍无损收敛回目标分布 p
+    p = torch.tensor([0.35, 0.25, 0.30, 0.10], dtype=torch.float64)
+    q = torch.tensor([0.20, 0.50, 0.20, 0.10], dtype=torch.float64)
+    trials = 50_000
+    sampled, accept_rate = lossless_rejection_sample(p, q, trials)
+    emp = torch.bincount(sampled, minlength=4).double() / trials
+    tv = 0.5 * (emp - p).abs().sum().item()
+    assert tv < 0.01
+
+    B, n_spec, V, r = 2, 5, 1024, 256
+    head = DSparkMarkovHead(vocab_size=V, markov_rank=r)
+    with torch.no_grad():
+        base_logits = torch.randn(B, n_spec, V)
+        prev = torch.tensor([10, 42], dtype=torch.long)
+        drafted = head.draft_chain(base_logits, prev)
+    assert drafted.shape == (B, n_spec)
+    print(
+        f"[09-mtp-dspark] lossless_TV={tv:.5f}, accept_rate={accept_rate:.4f}, "
+        f"dspark_draft_shape={tuple(drafted.shape)}"
+    )
 ```
 
 实测输出：
 
 ```text
-[09-mtp-dspark] lossless_TV=0.00374, accept_rate=0.7525, dspark_draft_shape=(2, 5)
+[09-mtp-dspark] lossless_TV=0.00270, accept_rate=0.7503, dspark_draft_shape=(2, 5)
 ```
 
-尽管人为把第 $2$ 号词元的草稿概率放大到目标的两倍（`0.50` vs `0.25`），五万次采样后实测总变差仅为 `0.00374`（远低于 `0.01` 阈值），而单步接受率 `0.7525` 也严格对齐理论期望 $\sum_x \min(p, q) = 0.20 + 0.25 + 0.20 + 0.10 = 0.75$。
+尽管人为把第 $2$ 号词元的草稿概率放大到目标的两倍（`0.50` vs `0.25`），五万次采样后实测总变差仅为 `0.00270`（远低于 `0.01` 阈值），而单步接受率 `0.7503` 也严格对齐理论期望 $\sum_x \min(p, q) = 0.20 + 0.25 + 0.20 + 0.10 = 0.75$。
 
 ## 双硬件生产运行时：vLLM GPU vs vllm-ascend
 

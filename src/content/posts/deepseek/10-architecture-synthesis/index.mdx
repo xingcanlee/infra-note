@@ -68,23 +68,25 @@ import ClusterDboSynthExplainer from '../../../../explainers/deepseek/ClusterDbo
 2. **异步 Engram 预取贴身同行**：由于第 `1`、`14` 层的 Engram 哈希在层前即已知，后台流早在第 $0$ 层开始的同时就把 `6.0 ms` 主机表 DMA 搬运放飞，完美藏进多层计算与微批间隙里；同时 `EngramModelState` 与 `attn_metadata` 按 `dbo_current_ubatch_id()` 严格隔离 `ubatch_idx = 0 / 1`，避免双微批串写。
 3. **DBO 开启时的算子退避规则**：正如 `vllm/models/deepseek_v41/nvidia/ops/mhc.py`（`L57`）所示，当 `parallel_config.use_ubatching` 开启时，引擎主动关闭跨层 `mhc_shifted_post_pre` 融合——因为 `μB0` 与 `μB1` 在 MoE 边界交错让路，不能在单微批内把上一层 post 和本层 pre 绑成同一段静态流水。
 
-## PyTorch / NumPy 核心验证：五代 KV 字节与 DBO 时序核算
+## Python 核心验证：五代 KV 字节与 DBO 时序核算
 
 下面这段自包含 Python 脚本精确复算了图 2 的三档 KV 字节规格与图 3 的串行/DBO 毫秒级调度加速比：
 
 ```python
-import numpy as np
+import math
 
+# 1. 五代单层每 Token 主 KV 字节演进（BF16 -> FP8 -> NVFP4）
 kv_v23_bf16 = 512 * 2 + 64 * 2   # 1152 B/layer
 kv_v32_fp8 = 512 * 1 + 64 * 1    # 576 B/layer
 kv_v41_fp4 = 448 // 2 + 64       # 224 B FP4 + 64 B scale/RoPE = 288 B/layer
 assert kv_v23_bf16 == 1152 and kv_v32_fp8 == 576 and kv_v41_fp4 == 288
 
+# 2. 双微批 DBO 流水线稳态耗时核算（单位：ms，对应图 3 时间线）
 attn, disp, gmm, comb, engram_wait = 1.4, 1.8, 2.2, 1.8, 0.8
 serial_2mb = 2 * (attn + disp + gmm + comb) + engram_wait
 dbo_2mb = 9.4  # uB0/uB1 Attn(0..2.8) + wait(0.4) + uB0/uB1 MoE(3.2..7.6) + hidden uB1 Comb(7.6..9.4)
 speedup = serial_2mb / dbo_2mb
-assert np.isclose(serial_2mb, 15.2) and speedup > 1.6
+assert math.isclose(serial_2mb, 15.2) and speedup > 1.6
 print(
     f"[10-synthesis] kv_bytes=(V2/3:{kv_v23_bf16}B, V3.2:{kv_v32_fp8}B, V4.1:{kv_v41_fp4}B), "
     f"serial_ms={serial_2mb:.1f}, dbo_ms={dbo_2mb:.1f}, speedup={speedup:.2f}x"
