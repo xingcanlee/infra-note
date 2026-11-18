@@ -2,6 +2,7 @@ import { formatNumber } from 'astro-wisp/explainers';
 import { motion } from 'motion/react';
 import {
   RADIUS_SM,
+  fontVarFor,
   resolveToneFill,
   resolveToneStroke,
   useDiagramMotion,
@@ -38,7 +39,10 @@ export interface HeatmapMatrixProps {
   fontSize?: number;
 }
 
-const STRONG_STROKE = 2.25;
+const STRONG_STROKE = 2;
+export const HEAT_ALPHA_BASE = 0.04;
+export const HEAT_ALPHA_RANGE = 0.44;
+export const DARK_HEAT_STROKE_WEIGHT = 0.48;
 
 /**
  * 复用二维数值热力与稀疏掩码矩阵：
@@ -101,6 +105,7 @@ export default function HeatmapMatrix({
 
   const baseFill = resolveToneFill(tone);
   const baseStroke = resolveToneStroke(tone);
+  const heatOverlayFill = `light-dark(${baseStroke}, color-mix(in srgb, ${baseStroke} ${Math.round(DARK_HEAT_STROKE_WEIGHT * 100)}%, ${baseFill}))`;
   const hiFill = resolveToneFill(selectedTone);
   const hiStroke = resolveToneStroke(selectedTone);
 
@@ -134,19 +139,20 @@ export default function HeatmapMatrix({
                   y={y + 2}
                   width={11}
                   height={11}
-                  rx={2}
+                  rx={RADIUS_SM}
                   fill={baseFill}
                   stroke={baseStroke}
-                  strokeWidth={0.8}
+                  strokeWidth={1}
                 />
                 <rect
                   x={lx}
                   y={y + 2}
                   width={11}
                   height={11}
-                  rx={2}
+                  rx={RADIUS_SM}
                   fill={baseStroke}
-                  fillOpacity={0.04 + 0.42 * lv}
+                  style={{ fill: heatOverlayFill }}
+                  fillOpacity={HEAT_ALPHA_BASE + 0.42 * lv}
                 />
               </g>
             );
@@ -158,7 +164,7 @@ export default function HeatmapMatrix({
             dominantBaseline="central"
             style={{
               fill: 'var(--wisp-muted)',
-              fontFamily: 'var(--wisp-font-mono)',
+              fontFamily: 'var(--wisp-font-sans)',
               fontSize: 10,
             }}
           >
@@ -177,7 +183,7 @@ export default function HeatmapMatrix({
             dominantBaseline="central"
             style={{
               fill: 'var(--wisp-muted)',
-              fontFamily: 'var(--wisp-font-mono)',
+              fontFamily: fontVarFor(lbl, 'mono'),
               fontSize: 11,
               fontVariantNumeric: 'tabular-nums',
             }}
@@ -196,7 +202,7 @@ export default function HeatmapMatrix({
             dominantBaseline="central"
             style={{
               fill: 'var(--wisp-muted)',
-              fontFamily: 'var(--wisp-font-mono)',
+              fontFamily: fontVarFor(lbl, 'mono'),
               fontSize: 11,
               fontVariantNumeric: 'tabular-nums',
             }}
@@ -229,7 +235,7 @@ export default function HeatmapMatrix({
                 rx={RADIUS_SM}
                 fill={isMasked ? resolveToneFill('mask') : baseFill}
                 stroke={isMasked ? resolveToneStroke('mask') : baseStroke}
-                strokeWidth={1.1}
+                strokeWidth={1}
                 fillOpacity={isNull && !isMasked ? 0.35 : 1}
               />
               {!isMasked && !isNull && (
@@ -240,9 +246,10 @@ export default function HeatmapMatrix({
                   height={ch}
                   rx={RADIUS_SM}
                   initial={false}
-                  animate={{ fillOpacity: 0.04 + 0.44 * heat }}
+                  animate={{ fillOpacity: HEAT_ALPHA_BASE + HEAT_ALPHA_RANGE * heat }}
                   transition={highlightTransition}
                   fill={baseStroke}
+                  style={{ fill: heatOverlayFill }}
                 />
               )}
               {isSoft && !isSel && (
@@ -253,6 +260,7 @@ export default function HeatmapMatrix({
                   height={ch}
                   rx={RADIUS_SM}
                   fill={baseStroke}
+                  style={{ fill: heatOverlayFill }}
                   fillOpacity={0.18}
                 />
               )}
@@ -261,7 +269,7 @@ export default function HeatmapMatrix({
                 y={cy + STRONG_STROKE / 2}
                 width={cellW - STRONG_STROKE}
                 height={ch - STRONG_STROKE}
-                rx={Math.max(1, RADIUS_SM - 1)}
+                rx={RADIUS_SM}
                 initial={false}
                 animate={{ opacity: isSel ? 1 : 0 }}
                 transition={highlightTransition}
@@ -277,7 +285,7 @@ export default function HeatmapMatrix({
                 dominantBaseline="central"
                 style={{
                   fill: isMasked || isNull ? 'var(--wisp-muted)' : 'var(--wisp-fg)',
-                  fontFamily: 'var(--wisp-font-mono)',
+                  fontFamily: fontVarFor(text, 'mono'),
                   fontSize,
                   fontWeight: isSel ? 600 : 500,
                   fontVariantNumeric: 'tabular-nums',

@@ -1,16 +1,11 @@
 import { useMemo } from 'react';
 import { Explainer, Stage, type Step } from 'astro-wisp/explainers';
-import {
-  ActiveFocusFrame,
-  ByteLedgerBar,
-  MetricRow,
-  PointerArcs,
-  SectionBox,
-  SlotStrip,
-  STAGE_W,
-  TensorBlock,
-  assertMaxHues,
-} from '@/explainers/kit';
+import ActiveFocusFrame from '@/explainers/kit/ActiveFocusFrame';
+import ByteLedgerBar from '@/explainers/kit/ByteLedgerBar';
+import { MetricRow, SectionBox } from '@/explainers/kit/MetricRow';
+import { PointerArcs, SlotStrip } from '@/explainers/kit/PointerBoard';
+import TensorBlock from '@/explainers/kit/TensorBlock';
+import { STAGE_W, assertMaxHues } from '@/explainers/kit/motion';
 
 export interface CsaRingState {
   phase: 'ring' | 'csa_fold' | 'hca_swa' | 'inv_rope' | 'ledger';

@@ -1,16 +1,12 @@
 import { useMemo } from 'react';
 import { Explainer, Stage, type Step } from 'astro-wisp/explainers';
-import {
-  ActiveFocusFrame,
-  ByteLedgerBar,
-  DataFlowArrow,
-  HeatmapMatrix,
-  MetricRow,
-  SectionBox,
-  STAGE_W,
-  TensorBlock,
-  assertMaxHues,
-} from '@/explainers/kit';
+import ActiveFocusFrame from '@/explainers/kit/ActiveFocusFrame';
+import ByteLedgerBar from '@/explainers/kit/ByteLedgerBar';
+import DataFlowArrow from '@/explainers/kit/DataFlowArrow';
+import HeatmapMatrix from '@/explainers/kit/HeatmapMatrix';
+import { MetricRow, SectionBox } from '@/explainers/kit/MetricRow';
+import TensorBlock from '@/explainers/kit/TensorBlock';
+import { STAGE_W, assertMaxHues } from '@/explainers/kit/motion';
 
 export interface Csa2HsiState {
   phase: 'axes' | 'modes' | 'hsi_l1' | 'hsi_l2' | 'inv_ced';

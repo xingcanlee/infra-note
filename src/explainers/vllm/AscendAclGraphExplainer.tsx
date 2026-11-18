@@ -1,18 +1,13 @@
 import { useMemo } from 'react';
 import { Explainer, Stage, type Step } from 'astro-wisp/explainers';
 
-import {
-  MetricRow,
-  SectionBox,
-  SlotStrip,
-  STAGE_W,
-  SwimlaneTimeline,
-  assertMaxHues,
-  type MetricItem,
-  type SlotItem,
+import { MetricRow, SectionBox, type MetricItem } from '@/explainers/kit/MetricRow';
+import { SlotStrip, type SlotItem } from '@/explainers/kit/PointerBoard';
+import SwimlaneTimeline, {
   type TimelineLane,
   type TimelineSyncEvent,
-} from '@/explainers/kit';
+} from '@/explainers/kit/SwimlaneTimeline';
+import { STAGE_W, assertMaxHues } from '@/explainers/kit/motion';
 
 export interface AscendAclGraphState {
   stepTag: string;

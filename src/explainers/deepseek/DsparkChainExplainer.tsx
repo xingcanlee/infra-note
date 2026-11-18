@@ -1,12 +1,9 @@
 import { useMemo } from 'react';
 import { Explainer, Stage, type Step, type Tone } from 'astro-wisp/explainers';
-import {
-  MetricRow,
-  SectionBox,
-  SlotStrip,
-  SwimlaneTimeline,
-  assertMaxHues,
-} from '@/explainers/kit';
+import { MetricRow, SectionBox } from '@/explainers/kit/MetricRow';
+import { SlotStrip } from '@/explainers/kit/PointerBoard';
+import SwimlaneTimeline from '@/explainers/kit/SwimlaneTimeline';
+import { assertMaxHues } from '@/explainers/kit/motion';
 
 export interface DsparkChainState {
   stepIndex: number;
@@ -78,7 +75,7 @@ export function buildDsparkChainSteps(): Step<DsparkChainState>[] {
         speedupText: '6.0 vs 11.8 ms (-49%)',
       },
       caption:
-        'Target 主模型一次前向并行核验截断后的连续草稿树/链；相比 V3 串行 MTP，DSpark 将单轮“草稿+检验”时延压缩约 49%，且保留高命中率。',
+        'Target 主模型一次前向并行核验截断后的连续草稿树/链；相比 V3 串行 MTP，DSpark 将单轮「草稿+检验」时延压缩约 49%，且保留高命中率。',
     },
   ];
 }

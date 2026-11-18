@@ -1,14 +1,10 @@
 import { useMemo } from 'react';
 import { Explainer, Stage, type Step } from 'astro-wisp/explainers';
-import {
-  ActiveFocusFrame,
-  MetricRow,
-  ProbabilityBars,
-  SectionBox,
-  SlotStrip,
-  assertMaxHues,
-  type AnyTone,
-} from '@/explainers/kit';
+import ActiveFocusFrame from '@/explainers/kit/ActiveFocusFrame';
+import { MetricRow, SectionBox } from '@/explainers/kit/MetricRow';
+import { SlotStrip } from '@/explainers/kit/PointerBoard';
+import ProbabilityBars from '@/explainers/kit/ProbabilityBars';
+import { assertMaxHues, type AnyTone } from '@/explainers/kit/motion';
 
 export interface SpecDecVerifyState {
   stepIndex: number;
@@ -101,7 +97,7 @@ export function buildSpecDecVerifySteps(): Step<SpecDecVerifyState>[] {
         emittedTokens: '单步产出 2 token',
       },
       caption:
-        '对任意词 $x$，直接接受概率 $\\min(p(x), q(x))$ 与“拒绝后从残差重采中 $x$”的概率 $0.25 \\times \\frac{\\max(0,p(x)-q(x))}{0.25}$ 相加恒等于 $p(x)$，严格无损。',
+        '对任意词 $x$，直接接受概率 $\\min(p(x), q(x))$ 与「拒绝后从残差重采中 $x$」的概率 $0.25 \\times \\frac{\\max(0,p(x)-q(x))}{0.25}$ 相加恒等于 $p(x)$，严格无损。',
     },
     {
       state: {

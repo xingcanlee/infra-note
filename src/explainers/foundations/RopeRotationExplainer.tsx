@@ -1,15 +1,14 @@
 import { useMemo } from 'react';
 import { Explainer, Stage, type Step, type Tone } from 'astro-wisp/explainers';
+import HeatmapMatrix from '@/explainers/kit/HeatmapMatrix';
+import { MetricRow, SectionBox } from '@/explainers/kit/MetricRow';
+import TensorBlock from '@/explainers/kit/TensorBlock';
 import {
-  HeatmapMatrix,
-  MetricRow,
   STAGE_W,
-  SectionBox,
-  TensorBlock,
   assertMaxHues,
   resolveToneFill,
   resolveToneStroke,
-} from '@/explainers/kit';
+} from '@/explainers/kit/motion';
 
 export interface RopeRotationState {
   stepIndex: number;

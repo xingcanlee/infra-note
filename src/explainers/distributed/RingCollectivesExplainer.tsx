@@ -1,16 +1,9 @@
 import { useMemo } from 'react';
 import { Explainer, Stage, type Step } from 'astro-wisp/explainers';
-import {
-  DataFlowArrow,
-  MetricRow,
-  SectionBox,
-  SlotStrip,
-  STAGE_W,
-  assertMaxHues,
-  type AnyTone,
-  type MetricItem,
-  type SlotItem,
-} from '@/explainers/kit';
+import DataFlowArrow from '@/explainers/kit/DataFlowArrow';
+import { MetricRow, SectionBox, type MetricItem } from '@/explainers/kit/MetricRow';
+import { SlotStrip, type SlotItem } from '@/explainers/kit/PointerBoard';
+import { STAGE_W, assertMaxHues, type AnyTone } from '@/explainers/kit/motion';
 
 export interface RingEdge {
   from: 0 | 1 | 2 | 3;

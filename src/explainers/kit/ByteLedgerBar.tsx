@@ -1,8 +1,11 @@
 import { motion } from 'motion/react';
 import {
   RADIUS,
+  RADIUS_SM,
   estimateTextWidth,
   fitTextMetrics,
+  fontKindFor,
+  fontVarFor,
   resolveToneFill,
   resolveToneStroke,
   useDiagramMotion,
@@ -50,7 +53,8 @@ export default function ByteLedgerBar({
   const scaledWidths = widths.map((wi) => (wi / sumW) * w);
 
   const titleEst = title ? estimateTextWidth(title, 12.5, 'sans') : 0;
-  const totalEst = totalLabel ? estimateTextWidth(totalLabel, 11.5, 'mono') : 0;
+  const totalKind = totalLabel ? fontKindFor(totalLabel, 'mono') : 'mono';
+  const totalEst = totalLabel ? estimateTextWidth(totalLabel, 11.5, totalKind) : 0;
   const headerCrowded = Boolean(title && totalLabel && titleEst + totalEst > w - 16);
   const availTitle = headerCrowded
     ? Math.max(80, w * (titleEst / Math.max(1, titleEst + totalEst)) - 8)
@@ -58,8 +62,8 @@ export default function ByteLedgerBar({
   const availTotal = headerCrowded
     ? Math.max(60, w * (totalEst / Math.max(1, titleEst + totalEst)) - 8)
     : w - 8;
-  const titleFit = title ? fitTextMetrics(title, availTitle, 12.5, 9.5, 'sans') : null;
-  const totalFit = totalLabel ? fitTextMetrics(totalLabel, availTotal, 11.5, 9, 'mono') : null;
+  const titleFit = title ? fitTextMetrics(title, availTitle, 12.5, 10, 'sans') : null;
+  const totalFit = totalLabel ? fitTextMetrics(totalLabel, availTotal, 11.5, 10, totalKind) : null;
 
   interface LayoutItem {
     seg: ByteSegment;
@@ -95,6 +99,8 @@ export default function ByteLedgerBar({
       }
 
       const fullText = seg.sub ? `${seg.label} (${seg.sub})` : seg.label;
+      const fullKind = fontKindFor(fullText, 'mono');
+      const labelKind = fontKindFor(seg.label, 'mono');
       let insideText: string | null = null;
       let insideFit: { fontSize: number; textLength?: number } | null = null;
       let level = 0;
@@ -102,14 +108,14 @@ export default function ByteLedgerBar({
       let calloutW = 0;
       let nextLevelEnds = acc.levelEnds;
 
-      if (estimateTextWidth(fullText, 10.5, 'mono') <= sw - 8) {
+      if (estimateTextWidth(fullText, 10.5, fullKind) <= sw - 8) {
         insideText = fullText;
-        insideFit = fitTextMetrics(fullText, sw - 8, 11, 9.5, 'mono');
-      } else if (estimateTextWidth(seg.label, 10, 'mono') <= sw - 8) {
+        insideFit = fitTextMetrics(fullText, sw - 8, 11, 10, fullKind);
+      } else if (estimateTextWidth(seg.label, 10, labelKind) <= sw - 8) {
         insideText = seg.label;
-        insideFit = fitTextMetrics(seg.label, sw - 8, 10.5, 9, 'mono');
+        insideFit = fitTextMetrics(seg.label, sw - 8, 10.5, 10, labelKind);
       } else {
-        calloutW = Math.ceil(estimateTextWidth(seg.label, 10.5, 'mono')) + 8;
+        calloutW = Math.ceil(estimateTextWidth(seg.label, 10.5, labelKind)) + 8;
         calloutCx = Math.max(x + calloutW / 2 + 2, Math.min(x + w - calloutW / 2 - 2, sx + sw / 2));
         const leftEdge = calloutCx - calloutW / 2;
         let chosen = acc.levelEnds.findIndex((end) => leftEdge >= end + 8);
@@ -168,7 +174,7 @@ export default function ByteLedgerBar({
           lengthAdjust={totalFit.textLength ? 'spacingAndGlyphs' : undefined}
           style={{
             fill: 'var(--wisp-muted)',
-            fontFamily: 'var(--wisp-font-mono)',
+            fontFamily: fontVarFor(totalLabel, 'mono'),
             fontSize: totalFit.fontSize,
             fontVariantNumeric: 'tabular-nums',
           }}
@@ -188,58 +194,80 @@ export default function ByteLedgerBar({
         strokeWidth={1}
       />
 
-      {layoutItems.map(({ seg, sx, sw, insideText, insideFit, calloutCx, calloutW, level }, i) => {
-        if (sw <= 0.5) return null;
+      {/* 第一遍：先画所有分段矩形与引导折线，避免折线在 DOM 绘制顺序上压过相邻标签 */}
+      <g>
+        {layoutItems.map(({ seg, sx, sw, insideText, insideFit, calloutCx, level }, i) => {
+          if (sw <= 0.5) return null;
 
-        const fill = resolveToneFill(seg.tone);
-        const stroke = resolveToneStroke(seg.tone);
-        const calloutY = y + h + 14 + level * 15;
+          const fill = resolveToneFill(seg.tone);
+          const stroke = resolveToneStroke(seg.tone);
+          const calloutY = y + h + 14 + level * 15;
 
-        return (
-          <g key={`${seg.label}-${i}`}>
-            <motion.rect
-              initial={false}
-              animate={{ x: sx, width: sw }}
-              transition={stepTransition}
-              y={y}
-              height={h}
-              rx={2}
-              fill={fill}
-              stroke={stroke}
-              strokeWidth={seg.active ? 2 : 1.1}
-            />
-            {insideText && insideFit ? (
-              <text
-                x={sx + sw / 2}
-                y={y + h / 2}
-                textAnchor="middle"
-                dominantBaseline="central"
-                textLength={insideFit.textLength}
-                lengthAdjust={insideFit.textLength ? 'spacingAndGlyphs' : undefined}
-                style={{
-                  fill: 'var(--wisp-fg)',
-                  fontFamily: 'var(--wisp-font-mono)',
-                  fontSize: insideFit.fontSize,
-                  fontWeight: seg.active ? 600 : 500,
-                  fontVariantNumeric: 'tabular-nums',
-                }}
-              >
-                {insideText}
-              </text>
-            ) : (
-              <g>
+          return (
+            <g key={`seg-${seg.label}-${i}`}>
+              <motion.rect
+                initial={false}
+                animate={{ x: sx, width: sw }}
+                transition={stepTransition}
+                y={y}
+                height={h}
+                rx={RADIUS_SM}
+                fill={fill}
+                stroke={stroke}
+                strokeWidth={seg.active ? 2 : 1.25}
+              />
+              {!(insideText && insideFit) && (
                 <polyline
                   points={`${(sx + sw / 2).toFixed(1)},${y + h} ${calloutCx.toFixed(1)},${calloutY - 7}`}
                   fill="none"
                   stroke={stroke}
                   strokeWidth={1}
                 />
+              )}
+            </g>
+          );
+        })}
+      </g>
+
+      {/* 第二遍：统一绘制段内标签与带遮罩底盒的引出标注 */}
+      <g>
+        {layoutItems.map(
+          ({ seg, sx, sw, insideText, insideFit, calloutCx, calloutW, level }, i) => {
+            if (sw <= 0.5) return null;
+
+            const calloutY = y + h + 14 + level * 15;
+
+            if (insideText && insideFit) {
+              return (
+                <text
+                  key={`lbl-${seg.label}-${i}`}
+                  x={sx + sw / 2}
+                  y={y + h / 2}
+                  textAnchor="middle"
+                  dominantBaseline="central"
+                  textLength={insideFit.textLength}
+                  lengthAdjust={insideFit.textLength ? 'spacingAndGlyphs' : undefined}
+                  style={{
+                    fill: 'var(--wisp-fg)',
+                    fontFamily: fontVarFor(insideText, 'mono'),
+                    fontSize: insideFit.fontSize,
+                    fontWeight: seg.active ? 600 : 500,
+                    fontVariantNumeric: 'tabular-nums',
+                  }}
+                >
+                  {insideText}
+                </text>
+              );
+            }
+
+            return (
+              <g key={`lbl-${seg.label}-${i}`}>
                 <rect
                   x={calloutCx - calloutW / 2}
                   y={calloutY - 7}
                   width={calloutW}
                   height={14}
-                  rx={2}
+                  rx={RADIUS_SM}
                   fill="var(--wisp-bg)"
                   fillOpacity={0.92}
                 />
@@ -249,8 +277,8 @@ export default function ByteLedgerBar({
                   textAnchor="middle"
                   dominantBaseline="central"
                   style={{
-                    fill: stroke,
-                    fontFamily: 'var(--wisp-font-mono)',
+                    fill: 'var(--wisp-fg)',
+                    fontFamily: fontVarFor(seg.label, 'mono'),
                     fontSize: 10.5,
                     fontWeight: 600,
                     fontVariantNumeric: 'tabular-nums',
@@ -259,10 +287,10 @@ export default function ByteLedgerBar({
                   {seg.label}
                 </text>
               </g>
-            )}
-          </g>
-        );
-      })}
+            );
+          },
+        )}
+      </g>
     </g>
   );
 }

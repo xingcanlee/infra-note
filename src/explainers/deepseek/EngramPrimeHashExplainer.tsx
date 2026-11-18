@@ -1,13 +1,9 @@
 import { useMemo } from 'react';
 import { Explainer, Stage, type Step, type Tone } from 'astro-wisp/explainers';
-import {
-  MetricRow,
-  PointerArcs,
-  SectionBox,
-  SlotStrip,
-  TensorBlock,
-  assertMaxHues,
-} from '@/explainers/kit';
+import { MetricRow, SectionBox } from '@/explainers/kit/MetricRow';
+import { PointerArcs, SlotStrip } from '@/explainers/kit/PointerBoard';
+import TensorBlock from '@/explainers/kit/TensorBlock';
+import { assertMaxHues } from '@/explainers/kit/motion';
 
 export interface EngramPrimeHashState {
   stepIndex: number;

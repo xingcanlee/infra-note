@@ -1,20 +1,17 @@
 import { useMemo } from 'react';
 import { Explainer, Stage, type Step } from 'astro-wisp/explainers';
 
+import ActiveFocusFrame from '@/explainers/kit/ActiveFocusFrame';
+import DataFlowArrow from '@/explainers/kit/DataFlowArrow';
+import { MetricRow, SectionBox, type MetricItem } from '@/explainers/kit/MetricRow';
 import {
-  ActiveFocusFrame,
-  DataFlowArrow,
-  MetricRow,
   PointerArcs,
-  SectionBox,
   SlotStrip,
-  STAGE_W,
-  TensorBlock,
-  assertMaxHues,
-  type MetricItem,
   type PointerArc,
   type SlotItem,
-} from '@/explainers/kit';
+} from '@/explainers/kit/PointerBoard';
+import TensorBlock from '@/explainers/kit/TensorBlock';
+import { STAGE_W, assertMaxHues } from '@/explainers/kit/motion';
 
 export interface CudaGraphBoundariesState {
   stepTag: string;

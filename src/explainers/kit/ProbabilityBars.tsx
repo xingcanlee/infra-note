@@ -2,6 +2,7 @@ import { formatNumber } from 'astro-wisp/explainers';
 import { motion } from 'motion/react';
 import {
   RADIUS_SM,
+  fontVarFor,
   resolveToneFill,
   resolveToneStroke,
   useDiagramMotion,
@@ -92,10 +93,10 @@ export default function ProbabilityBars({
                   y={y + 3}
                   width={10}
                   height={10}
-                  rx={2}
+                  rx={RADIUS_SM}
                   fill={resolveToneFill(lg.tone)}
                   stroke={resolveToneStroke(lg.tone)}
-                  strokeWidth={1.1}
+                  strokeWidth={1.25}
                 />
                 <text
                   x={lx + 14}
@@ -122,7 +123,7 @@ export default function ProbabilityBars({
         x2={x + w}
         y2={baseLineY}
         stroke="var(--wisp-border)"
-        strokeWidth={1.2}
+        strokeWidth={1}
       />
 
       {refLine && (
@@ -148,7 +149,7 @@ export default function ProbabilityBars({
                   dominantBaseline="central"
                   style={{
                     fill: rs,
-                    fontFamily: 'var(--wisp-font-mono)',
+                    fontFamily: fontVarFor(refLine.label, 'mono'),
                     fontSize: 10.5,
                   }}
                 >
@@ -176,6 +177,7 @@ export default function ProbabilityBars({
               const by = baseLineY - bh;
               const fill = item.masked ? resolveToneFill('mask') : resolveToneFill(b.tone);
               const stroke = item.masked ? resolveToneStroke('mask') : resolveToneStroke(b.tone);
+              const topText = item.masked ? 'Mask' : (b.tag ?? valueFormat(b.value));
 
               return (
                 <g key={bi}>
@@ -185,7 +187,7 @@ export default function ProbabilityBars({
                       y={baseLineY - 6}
                       width={bw}
                       height={6}
-                      rx={2}
+                      rx={RADIUS_SM}
                       fill={fill}
                       stroke={stroke}
                       strokeWidth={1}
@@ -202,7 +204,7 @@ export default function ProbabilityBars({
                       fill={fill}
                       fillOpacity={b.faded ? 0.45 : 1}
                       stroke={stroke}
-                      strokeWidth={b.highlight ? 2 : 1.15}
+                      strokeWidth={b.highlight ? 2 : 1.25}
                       strokeDasharray={b.dashed ? '3 2' : undefined}
                     />
                   )}
@@ -213,13 +215,13 @@ export default function ProbabilityBars({
                     dominantBaseline="central"
                     style={{
                       fill: item.masked ? 'var(--wisp-muted)' : stroke,
-                      fontFamily: 'var(--wisp-font-mono)',
+                      fontFamily: fontVarFor(topText, 'mono'),
                       fontSize: 10.5,
                       fontWeight: b.highlight ? 600 : 500,
                       fontVariantNumeric: 'tabular-nums',
                     }}
                   >
-                    {item.masked ? 'Mask' : (b.tag ?? valueFormat(b.value))}
+                    {topText}
                   </text>
                 </g>
               );
@@ -232,7 +234,7 @@ export default function ProbabilityBars({
               dominantBaseline="central"
               style={{
                 fill: item.masked ? 'var(--wisp-muted)' : 'var(--wisp-fg)',
-                fontFamily: 'var(--wisp-font-mono)',
+                fontFamily: fontVarFor(item.label, 'mono'),
                 fontSize: 11,
                 fontWeight: 600,
                 fontVariantNumeric: 'tabular-nums',
@@ -248,7 +250,7 @@ export default function ProbabilityBars({
                 dominantBaseline="central"
                 style={{
                   fill: 'var(--wisp-muted)',
-                  fontFamily: 'var(--wisp-font-mono)',
+                  fontFamily: fontVarFor(item.sublabel, 'mono'),
                   fontSize: 10,
                 }}
               >

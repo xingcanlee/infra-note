@@ -1,16 +1,11 @@
 import { useMemo } from 'react';
 import { Explainer, Stage, type Step } from 'astro-wisp/explainers';
-import {
-  MetricRow,
-  SectionBox,
-  STAGE_W,
-  SwimlaneTimeline,
-  assertMaxHues,
-  type AnyTone,
-  type MetricItem,
+import { MetricRow, SectionBox, type MetricItem } from '@/explainers/kit/MetricRow';
+import SwimlaneTimeline, {
   type TimelineLane,
   type TimelineSyncEvent,
-} from '@/explainers/kit';
+} from '@/explainers/kit/SwimlaneTimeline';
+import { STAGE_W, assertMaxHues, type AnyTone } from '@/explainers/kit/motion';
 
 export interface DboTimelineState {
   modeTag: string;

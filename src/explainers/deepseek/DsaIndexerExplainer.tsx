@@ -1,15 +1,11 @@
 import { useMemo } from 'react';
 import { Explainer, Stage, type Step } from 'astro-wisp/explainers';
-import {
-  ActiveFocusFrame,
-  ByteLedgerBar,
-  HeatmapMatrix,
-  MetricRow,
-  SectionBox,
-  SlotStrip,
-  STAGE_W,
-  assertMaxHues,
-} from '@/explainers/kit';
+import ActiveFocusFrame from '@/explainers/kit/ActiveFocusFrame';
+import ByteLedgerBar from '@/explainers/kit/ByteLedgerBar';
+import HeatmapMatrix from '@/explainers/kit/HeatmapMatrix';
+import { MetricRow, SectionBox } from '@/explainers/kit/MetricRow';
+import { SlotStrip } from '@/explainers/kit/PointerBoard';
+import { STAGE_W, assertMaxHues } from '@/explainers/kit/motion';
 
 export interface DsaIndexerState {
   phase: 'score' | 'topk' | 'gather' | 'ledger' | 'crossover';

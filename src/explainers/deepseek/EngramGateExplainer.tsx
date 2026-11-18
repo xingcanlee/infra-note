@@ -1,12 +1,10 @@
 import { useMemo } from 'react';
 import { Explainer, Stage, type Step, type Tone } from 'astro-wisp/explainers';
-import {
-  ActiveFocusFrame,
-  HeatmapMatrix,
-  MetricRow,
-  ProbabilityBars,
-  assertMaxHues,
-} from '@/explainers/kit';
+import ActiveFocusFrame from '@/explainers/kit/ActiveFocusFrame';
+import HeatmapMatrix from '@/explainers/kit/HeatmapMatrix';
+import { MetricRow } from '@/explainers/kit/MetricRow';
+import ProbabilityBars from '@/explainers/kit/ProbabilityBars';
+import { assertMaxHues } from '@/explainers/kit/motion';
 
 export interface EngramGateState {
   stepIndex: number;
@@ -35,7 +33,7 @@ export function buildEngramGateSteps(): Step<EngramGateState>[] {
     {
       state: {
         stepIndex: 0,
-        phaseLabel: 'Step 1 · 同形多义 N-gram "Apple" 的静态检索初值',
+        phaseLabel: 'Step 1 · 同形多义 N-gram「Apple」的静态检索初值',
         matrixValues: [
           [0.0, 0.0, null, null],
           [0.0, 0.0, null, null],
@@ -50,7 +48,7 @@ export function buildEngramGateSteps(): Step<EngramGateState>[] {
         injectDelta: 'α_t 未分化',
       },
       caption:
-        '静态 N-gram 查表对“Apple pie”和“Apple Inc.”取回完全相同的 $e_t$；随后经 wkv 投影成 4 条流独立 Key（总宽 $4d$）与 1 条共享 Value（宽 $d$）。',
+        '静态 N-gram 查表对「Apple pie」和「Apple Inc.」取回完全相同的 $e_t$；随后经 wkv 投影成 4 条流独立 Key（总宽 $4d$）与 1 条共享 Value（宽 $d$）。',
     },
     {
       state: {

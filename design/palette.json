@@ -75,6 +75,7 @@
     "sans": [
       "Inter Variable",
       "Noto Sans SC Variable",
+      "Wisp CJK Fallback",
       "-apple-system",
       "BlinkMacSystemFont",
       "PingFang SC",
@@ -92,11 +93,13 @@
       "Consolas",
       "Noto Sans SC Variable",
       "PingFang SC",
+      "Microsoft YaHei",
       "monospace"
     ],
     "hand": [
       "Inter Variable",
       "Noto Sans SC Variable",
+      "Wisp CJK Fallback",
       "-apple-system",
       "BlinkMacSystemFont",
       "PingFang SC",
@@ -126,7 +129,7 @@
     "measure-em": 42
   },
   "space": { "unit-px": 4, "scale": [0, 4, 8, 12, 16, 24, 32, 48, 64, 96] },
-  "radius": { "sm": 4, "md": 8, "lg": 12 },
+  "radius": { "sm": 3, "md": 4, "lg": 4 },
   "diagram": {
     "stroke-width": { "thin": 1, "normal": 1.25, "bold": 2 },
     "font-size-px": { "label": 14, "title": 18, "note": 12 },

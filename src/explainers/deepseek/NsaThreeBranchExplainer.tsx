@@ -1,15 +1,11 @@
 import { useMemo } from 'react';
 import { Explainer, Stage, type Step } from 'astro-wisp/explainers';
-import {
-  ActiveFocusFrame,
-  DataFlowArrow,
-  HeatmapMatrix,
-  MetricRow,
-  SectionBox,
-  STAGE_W,
-  TensorBlock,
-  assertMaxHues,
-} from '@/explainers/kit';
+import ActiveFocusFrame from '@/explainers/kit/ActiveFocusFrame';
+import DataFlowArrow from '@/explainers/kit/DataFlowArrow';
+import HeatmapMatrix from '@/explainers/kit/HeatmapMatrix';
+import { MetricRow, SectionBox } from '@/explainers/kit/MetricRow';
+import TensorBlock from '@/explainers/kit/TensorBlock';
+import { STAGE_W, assertMaxHues } from '@/explainers/kit/motion';
 
 export interface NsaThreeBranchState {
   phase: 'cmp' | 'accum' | 'slc' | 'win' | 'gate';

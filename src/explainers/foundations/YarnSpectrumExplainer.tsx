@@ -1,13 +1,10 @@
 import { useMemo } from 'react';
 import { Explainer, Stage, type Step, type Tone } from 'astro-wisp/explainers';
-import {
-  ByteLedgerBar,
-  MetricRow,
-  ProbabilityBars,
-  STAGE_W,
-  TensorBlock,
-  assertMaxHues,
-} from '@/explainers/kit';
+import ByteLedgerBar from '@/explainers/kit/ByteLedgerBar';
+import { MetricRow } from '@/explainers/kit/MetricRow';
+import ProbabilityBars from '@/explainers/kit/ProbabilityBars';
+import TensorBlock from '@/explainers/kit/TensorBlock';
+import { STAGE_W, assertMaxHues } from '@/explainers/kit/motion';
 
 export interface YarnSpectrumState {
   stepIndex: number;

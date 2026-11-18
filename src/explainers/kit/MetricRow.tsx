@@ -1,7 +1,10 @@
 import {
+  RADIUS,
   RADIUS_SM,
   estimateTextWidth,
   fitTextMetrics,
+  fontKindFor,
+  fontVarFor,
   resolveToneFill,
   resolveToneStroke,
   type AnyTone,
@@ -35,11 +38,11 @@ export function MetricRow({ x, y, w, h = 40, gap = 8, metrics }: MetricRowProps)
         const tone = m.tone ?? 'neutral';
         const fill = tone === 'neutral' ? 'var(--wisp-surface)' : resolveToneFill(tone);
         const stroke = m.active ? resolveToneStroke(tone) : 'var(--wisp-border)';
-        const valColor =
-          m.active && tone !== 'neutral' ? resolveToneStroke(tone) : 'var(--wisp-fg)';
+        const valColor = 'var(--wisp-fg)';
         const innerW = Math.max(24, cw - 12);
-        const lblFit = fitTextMetrics(m.label, innerW, 10.5, 8.5, 'sans');
-        const valFit = fitTextMetrics(m.value, innerW, 12.5, 8.5, 'mono');
+        const valKind = fontKindFor(m.value, 'mono');
+        const lblFit = fitTextMetrics(m.label, innerW, 10.5, 10, 'sans');
+        const valFit = fitTextMetrics(m.value, innerW, 12.5, 10, valKind);
         return (
           <g key={`${m.label}-${i}`}>
             <rect
@@ -50,7 +53,7 @@ export function MetricRow({ x, y, w, h = 40, gap = 8, metrics }: MetricRowProps)
               rx={RADIUS_SM}
               fill={fill}
               stroke={stroke}
-              strokeWidth={m.active ? 1.5 : 1}
+              strokeWidth={m.active ? 2 : 1}
             />
             <text
               x={mx + cw / 2}
@@ -77,7 +80,7 @@ export function MetricRow({ x, y, w, h = 40, gap = 8, metrics }: MetricRowProps)
               lengthAdjust={valFit.textLength ? 'spacingAndGlyphs' : undefined}
               style={{
                 fill: valColor,
-                fontFamily: 'var(--wisp-font-mono)',
+                fontFamily: fontVarFor(m.value, 'mono'),
                 fontSize: valFit.fontSize,
                 fontWeight: 600,
                 fontVariantNumeric: 'tabular-nums',
@@ -120,7 +123,7 @@ export function SectionBox({
         y={y}
         width={w}
         height={h}
-        rx={4}
+        rx={RADIUS}
         fill="var(--wisp-surface)"
         fillOpacity={0.32}
         stroke={stroke}
@@ -137,7 +140,7 @@ export function SectionBox({
               Math.ceil(estimateTextWidth(title, 11.5, 'sans')) + 8,
             )}
             height={16}
-            rx={3}
+            rx={RADIUS_SM}
             fill="var(--wisp-bg)"
             fillOpacity={0.92}
           />

@@ -1,10 +1,28 @@
-import { useEffect, useState } from 'react';
+import { useSyncExternalStore } from 'react';
 import type { HueTone, Tone } from 'astro-wisp/explainers';
 
 export const STAGE_W = 680;
 export const RADIUS = 4;
 export const RADIUS_SM = 3;
 export const MAX_HUES = 3;
+
+const CJK_RE = /[\u4e00-\u9fff]/;
+
+/** 判断文本是否包含汉字，以便在等宽场景中切换为支持中文的 sans 字体栈。 */
+export function hasCjk(text: string): boolean {
+  return CJK_RE.test(text);
+}
+
+/** 根据内容是否含中文返回字体家族种类及 CSS font-family 令牌。 */
+export function fontKindFor(text: string, preferred: 'mono' | 'sans' = 'mono'): 'mono' | 'sans' {
+  return preferred === 'sans' || CJK_RE.test(text) ? 'sans' : 'mono';
+}
+
+export function fontVarFor(text: string, preferred: 'mono' | 'sans' = 'mono'): string {
+  return fontKindFor(text, preferred) === 'sans'
+    ? 'var(--wisp-font-sans)'
+    : 'var(--wisp-font-mono)';
+}
 
 export const NEUTRAL_TONES = new Set<string>(['slate', 'mask', 'visited', 'neutral']);
 
@@ -72,7 +90,7 @@ export function estimateTextWidth(
   return units * fontSize;
 }
 
-/** 在 maxW 约束内计算自适应字号 [minSize, maxSize]；若缩至 minSize 仍超出则返回 textLength 兜底。 */
+/** 在 maxW 约束内计算自适应字号 [max(minSize, 10), maxSize]；仅当轻微压缩（≥0.88）时启用 textLength。 */
 export function fitTextMetrics(
   text: string,
   maxW: number,
@@ -81,14 +99,20 @@ export function fitTextMetrics(
   family: 'mono' | 'sans' = 'sans',
 ): { fontSize: number; textLength?: number } {
   const safeMaxW = Math.max(8, maxW);
-  const fullW = estimateTextWidth(text, maxSize, family);
-  if (fullW <= safeMaxW) return { fontSize: maxSize };
-  const scaled = Math.max(minSize, (safeMaxW / Math.max(fullW, 1)) * maxSize);
+  const effectiveMin = Math.max(minSize, 10);
+  const effectiveMax = Math.max(maxSize, effectiveMin);
+  const fullW = estimateTextWidth(text, effectiveMax, family);
+  if (fullW <= safeMaxW) return { fontSize: effectiveMax };
+  const scaled = Math.max(effectiveMin, (safeMaxW / Math.max(fullW, 1)) * effectiveMax);
   const rounded = Math.round(scaled * 10) / 10;
   if (estimateTextWidth(text, rounded, family) <= safeMaxW) {
     return { fontSize: rounded };
   }
-  return { fontSize: minSize, textLength: Math.floor(safeMaxW) };
+  const minEstW = estimateTextWidth(text, effectiveMin, family);
+  if (safeMaxW / Math.max(minEstW, 1) >= 0.88) {
+    return { fontSize: effectiveMin, textLength: Math.floor(safeMaxW) };
+  }
+  return { fontSize: effectiveMin };
 }
 
 export type AnyTone = Tone | 'neutral';
@@ -131,22 +155,55 @@ export function resolveToneFill(tone: AnyTone): string {
     : `var(--wisp-hue-${tone}-fill)`;
 }
 
-/** 统一动效参数：首帧与 SSR 保持一致，挂载后同步 prefers-reduced-motion 并控制流式脉冲启停。 */
-export function useDiagramMotion() {
-  const [reduced, setReduced] = useState(false);
-  const [canAnimateFlow, setCanAnimateFlow] = useState(false);
+const REDUCED_MOTION_QUERY = '(prefers-reduced-motion: reduce)';
+const reducedMotionListeners = new Set<() => void>();
+let reducedMotionMql: MediaQueryList | null = null;
+let reducedMotionListening = false;
 
-  useEffect(() => {
-    if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return;
-    const mq = window.matchMedia('(prefers-reduced-motion: reduce)');
-    const sync = () => {
-      setReduced(mq.matches);
-      setCanAnimateFlow(!mq.matches);
-    };
-    sync();
-    mq.addEventListener('change', sync);
-    return () => mq.removeEventListener('change', sync);
-  }, []);
+function getReducedMotionMql(): MediaQueryList | null {
+  if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return null;
+  if (!reducedMotionMql) {
+    reducedMotionMql = window.matchMedia(REDUCED_MOTION_QUERY);
+  }
+  return reducedMotionMql;
+}
+
+function handleReducedMotionChange() {
+  for (const listener of reducedMotionListeners) listener();
+}
+
+function subscribeReducedMotion(listener: () => void): () => void {
+  reducedMotionListeners.add(listener);
+  const mq = getReducedMotionMql();
+  if (mq && !reducedMotionListening) {
+    mq.addEventListener('change', handleReducedMotionChange);
+    reducedMotionListening = true;
+  }
+  return () => {
+    reducedMotionListeners.delete(listener);
+    if (reducedMotionListeners.size === 0 && mq && reducedMotionListening) {
+      mq.removeEventListener('change', handleReducedMotionChange);
+      reducedMotionListening = false;
+    }
+  };
+}
+
+function getReducedMotionSnapshot(): boolean {
+  return getReducedMotionMql()?.matches ?? false;
+}
+
+function getReducedMotionServerSnapshot(): boolean {
+  return false;
+}
+
+/** 统一动效参数：基于模块级单一 matchMedia 订阅同步 prefers-reduced-motion 并控制流式脉冲启停。 */
+export function useDiagramMotion() {
+  const reduced = useSyncExternalStore(
+    subscribeReducedMotion,
+    getReducedMotionSnapshot,
+    getReducedMotionServerSnapshot,
+  );
+  const canAnimateFlow = !reduced;
 
   return {
     reduced,
@@ -161,7 +218,7 @@ export function useDiagramMotion() {
     },
     packetTransition: {
       duration: reduced ? 0 : 1.5,
-      repeat: reduced ? 0 : Infinity,
+      repeat: reduced ? 0 : 1,
       ease: 'linear' as const,
     },
   };

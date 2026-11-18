@@ -91,7 +91,7 @@ export default function DataFlowArrow({
     : muted
       ? 'var(--wisp-subtle)'
       : 'var(--wisp-muted)';
-  const sw = strokeWidth ?? (active ? 1.85 : 1.15);
+  const sw = strokeWidth ?? (active ? 2 : 1.25);
   const opacity = muted && !active ? 0.45 : 1;
 
   const endTri = arrowEnd

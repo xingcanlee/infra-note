@@ -1,13 +1,9 @@
 import { useMemo } from 'react';
 import { Explainer, Stage, type Step } from 'astro-wisp/explainers';
-import {
-  LogRooflineChart,
-  MetricRow,
-  STAGE_W,
-  SwimlaneTimeline,
-  assertMaxHues,
-  type AnyTone as Tone,
-} from '@/explainers/kit';
+import LogRooflineChart from '@/explainers/kit/LogRooflineChart';
+import { MetricRow } from '@/explainers/kit/MetricRow';
+import SwimlaneTimeline from '@/explainers/kit/SwimlaneTimeline';
+import { STAGE_W, assertMaxHues, type AnyTone as Tone } from '@/explainers/kit/motion';
 
 export interface RooflineState {
   stepIndex: number;

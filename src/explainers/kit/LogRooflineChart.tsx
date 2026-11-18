@@ -1,6 +1,9 @@
 import { motion } from 'motion/react';
 import {
+  RADIUS_SM,
   estimateTextWidth,
+  fontKindFor,
+  fontVarFor,
   resolveToneFill,
   resolveToneStroke,
   useDiagramMotion,
@@ -79,7 +82,7 @@ export default function LogRooflineChart({
     Array<{ rm: { ai: number; label: string; tone: AnyTone }; rx: number; ly: number; lw: number }>
   >((acc, rm) => {
     const rx = toPx(rm.ai);
-    const lw = Math.ceil(estimateTextWidth(rm.label, 10, 'mono')) + 8;
+    const lw = Math.ceil(estimateTextWidth(rm.label, 10, fontKindFor(rm.label, 'mono'))) + 8;
     const lx = Math.max(left + 4, Math.min(left + pw - lw - 4, rx + 4));
     const collidesRow0 = acc.some((prev) => prev.ly > top + ph - 18 && lx < prev.rx + prev.lw + 6);
     const ly = top + ph - (collidesRow0 ? 26 : 12);
@@ -126,8 +129,8 @@ export default function LogRooflineChart({
     const py = toPy(pt.perf);
     const stroke = resolveToneStroke(pt.tone);
     const fill = resolveToneFill(pt.tone);
-    const fs = pt.active ? 10.5 : 9.5;
-    const lw = Math.ceil(estimateTextWidth(pt.label, fs, 'mono')) + 8;
+    const fs = pt.active ? 10.5 : 10;
+    const lw = Math.ceil(estimateTextWidth(pt.label, fs, fontKindFor(pt.label, 'mono'))) + 8;
     const nearRight = px + 9 + lw > left + pw - 2;
     const anchor: 'start' | 'end' = nearRight ? 'end' : 'start';
     const rawLx = nearRight ? px - 9 : px + 9;
@@ -153,7 +156,7 @@ export default function LogRooflineChart({
         y={top}
         width={pw}
         height={ph}
-        rx={3}
+        rx={RADIUS_SM}
         fill="var(--wisp-surface)"
         fillOpacity={0.38}
         stroke="var(--wisp-border)"
@@ -171,7 +174,7 @@ export default function LogRooflineChart({
               y2={top + ph}
               stroke="var(--wisp-border)"
               strokeDasharray="2 3"
-              strokeWidth={0.9}
+              strokeWidth={1}
             />
             <text
               x={px}
@@ -202,7 +205,7 @@ export default function LogRooflineChart({
               y2={py}
               stroke="var(--wisp-border)"
               strokeDasharray="2 3"
-              strokeWidth={0.9}
+              strokeWidth={1}
             />
             <text
               x={left - 6}
@@ -233,7 +236,7 @@ export default function LogRooflineChart({
               x2={rx}
               y2={top + ph}
               stroke={rs}
-              strokeWidth={1.15}
+              strokeWidth={1.25}
               strokeDasharray="4 3"
             />
             <rect
@@ -241,7 +244,7 @@ export default function LogRooflineChart({
               y={ly - 7}
               width={lw}
               height={14}
-              rx={2}
+              rx={RADIUS_SM}
               fill="var(--wisp-bg)"
               fillOpacity={0.92}
             />
@@ -252,7 +255,7 @@ export default function LogRooflineChart({
               dominantBaseline="central"
               style={{
                 fill: rs,
-                fontFamily: 'var(--wisp-font-mono)',
+                fontFamily: fontVarFor(rm.label, 'mono'),
                 fontSize: 10,
                 fontWeight: 600,
               }}
@@ -277,7 +280,7 @@ export default function LogRooflineChart({
             y={ly - 7.5}
             width={lw}
             height={15}
-            rx={2}
+            rx={RADIUS_SM}
             fill="var(--wisp-bg)"
             fillOpacity={0.92}
           />
@@ -322,14 +325,14 @@ export default function LogRooflineChart({
               r={pt.active ? 5.5 : 4}
               fill={fill}
               stroke={stroke}
-              strokeWidth={pt.active ? 2.2 : 1.3}
+              strokeWidth={pt.active ? 2 : 1.25}
             />
             <rect
               x={pillX}
               y={ly - 7}
               width={lw}
               height={14}
-              rx={2}
+              rx={RADIUS_SM}
               fill="var(--wisp-bg)"
               fillOpacity={0.9}
             />
@@ -340,8 +343,8 @@ export default function LogRooflineChart({
               dominantBaseline="central"
               style={{
                 fill: pt.active ? stroke : 'var(--wisp-muted)',
-                fontFamily: 'var(--wisp-font-mono)',
-                fontSize: pt.active ? 10.5 : 9.5,
+                fontFamily: fontVarFor(pt.label, 'mono'),
+                fontSize: pt.active ? 10.5 : 10,
                 fontWeight: pt.active ? 600 : 500,
               }}
             >

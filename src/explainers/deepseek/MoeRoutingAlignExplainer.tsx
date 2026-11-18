@@ -1,14 +1,11 @@
 import { useMemo } from 'react';
 import { Explainer, Stage, type Step, type Tone } from 'astro-wisp/explainers';
-import {
-  ActiveFocusFrame,
-  HeatmapMatrix,
-  MetricRow,
-  ProbabilityBars,
-  SectionBox,
-  SlotStrip,
-  assertMaxHues,
-} from '@/explainers/kit';
+import ActiveFocusFrame from '@/explainers/kit/ActiveFocusFrame';
+import HeatmapMatrix from '@/explainers/kit/HeatmapMatrix';
+import { MetricRow, SectionBox } from '@/explainers/kit/MetricRow';
+import { SlotStrip } from '@/explainers/kit/PointerBoard';
+import ProbabilityBars from '@/explainers/kit/ProbabilityBars';
+import { assertMaxHues } from '@/explainers/kit/motion';
 
 export interface MoeRoutingAlignState {
   stepIndex: number;

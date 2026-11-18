@@ -4,6 +4,8 @@ import {
   RADIUS_SM,
   estimateTextWidth,
   fitTextMetrics,
+  fontKindFor,
+  fontVarFor,
   resolveToneFill,
   resolveToneStroke,
   useDiagramMotion,
@@ -171,7 +173,7 @@ export default function SwimlaneTimeline({
                 dominantBaseline="central"
                 style={{
                   fill: 'var(--wisp-muted)',
-                  fontFamily: 'var(--wisp-font-mono)',
+                  fontFamily: fontVarFor(lane.subtitle, 'mono'),
                   fontSize: 10,
                 }}
               >
@@ -186,9 +188,10 @@ export default function SwimlaneTimeline({
               const tone: AnyTone = blk.kind === 'error' ? 'error' : isBubble ? 'mask' : blk.tone;
               const fill = resolveToneFill(tone);
               const stroke = resolveToneStroke(tone);
+              const blkKind = fontKindFor(blk.label, 'mono');
               const blkFit =
                 bw >= 26
-                  ? fitTextMetrics(blk.label, bw - 6, bw >= 64 ? 10.5 : 9.5, 7.5, 'mono')
+                  ? fitTextMetrics(blk.label, bw - 6, bw >= 64 ? 10.5 : 10, 10, blkKind)
                   : null;
 
               return (
@@ -203,7 +206,7 @@ export default function SwimlaneTimeline({
                     fill={fill}
                     fillOpacity={isBubble ? 0.45 : 1}
                     stroke={stroke}
-                    strokeWidth={blk.active ? 2 : 1.1}
+                    strokeWidth={blk.active ? 2 : 1.25}
                     strokeDasharray={blk.dashed || isBubble ? '3 2' : undefined}
                   />
                   {blkFit && (
@@ -216,7 +219,7 @@ export default function SwimlaneTimeline({
                       lengthAdjust={blkFit.textLength ? 'spacingAndGlyphs' : undefined}
                       style={{
                         fill: isBubble ? 'var(--wisp-muted)' : 'var(--wisp-fg)',
-                        fontFamily: 'var(--wisp-font-mono)',
+                        fontFamily: fontVarFor(blk.label, 'mono'),
                         fontSize: blkFit.fontSize,
                         fontWeight: blk.active ? 600 : 500,
                         fontVariantNumeric: 'tabular-nums',
@@ -252,13 +255,14 @@ export default function SwimlaneTimeline({
               x2={ex}
               y2={y1}
               stroke={stroke}
-              strokeWidth={ev.active ? 1.75 : 1.15}
+              strokeWidth={ev.active ? 2 : 1.25}
               strokeDasharray={ev.dashed ? '3 2' : undefined}
             />
             <polygon points={tri} fill={stroke} />
             {ev.label &&
               (() => {
-                const evW = Math.max(32, Math.ceil(estimateTextWidth(ev.label, 9.5, 'mono')) + 8);
+                const evKind = fontKindFor(ev.label, 'mono');
+                const evW = Math.max(32, Math.ceil(estimateTextWidth(ev.label, 10, evKind)) + 8);
                 const evX = Math.max(
                   trackX + evW / 2,
                   Math.min(trackX + trackW - evW / 2, (sx + ex) / 2),
@@ -271,7 +275,7 @@ export default function SwimlaneTimeline({
                       y={evY - 7}
                       width={evW}
                       height={14}
-                      rx={2}
+                      rx={RADIUS_SM}
                       fill="var(--wisp-bg)"
                     />
                     <text
@@ -281,8 +285,8 @@ export default function SwimlaneTimeline({
                       dominantBaseline="central"
                       style={{
                         fill: stroke,
-                        fontFamily: 'var(--wisp-font-mono)',
-                        fontSize: 9.5,
+                        fontFamily: fontVarFor(ev.label, 'mono'),
+                        fontSize: 10,
                         fontWeight: 600,
                       }}
                     >
@@ -303,7 +307,7 @@ export default function SwimlaneTimeline({
           y1={trackY - 6}
           y2={trackY + totalH + 6}
           stroke="var(--wisp-accent)"
-          strokeWidth={1.75}
+          strokeWidth={2}
           strokeDasharray="4 2"
         />
       )}

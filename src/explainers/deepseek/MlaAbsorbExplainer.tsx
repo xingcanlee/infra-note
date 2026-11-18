@@ -1,15 +1,11 @@
 import { useMemo } from 'react';
 import { Explainer, Stage, type Step } from 'astro-wisp/explainers';
-import {
-  ActiveFocusFrame,
-  ByteLedgerBar,
-  DataFlowArrow,
-  MetricRow,
-  SectionBox,
-  STAGE_W,
-  TensorBlock,
-  assertMaxHues,
-} from '@/explainers/kit';
+import ActiveFocusFrame from '@/explainers/kit/ActiveFocusFrame';
+import ByteLedgerBar from '@/explainers/kit/ByteLedgerBar';
+import DataFlowArrow from '@/explainers/kit/DataFlowArrow';
+import { MetricRow, SectionBox } from '@/explainers/kit/MetricRow';
+import TensorBlock from '@/explainers/kit/TensorBlock';
+import { STAGE_W, assertMaxHues } from '@/explainers/kit/motion';
 
 export interface MlaAbsorbState {
   phase: 'latent' | 'naive' | 'absorb_q' | 'mqa_dot' | 'v_up';
@@ -111,7 +107,7 @@ export default function MlaAbsorbExplainer({
             : s.focusArea === 'naive'
               ? { x: 284, y: 46, w: 374, h: 88, label: 'Naive 解压膨胀（Decode 禁用）' }
               : s.focusArea === 'absorb_q'
-                ? { x: 212, y: 188, w: 176, h: 94, label: '前吸收 q_t^C · W_UK^T' }
+                ? { x: 212, y: 188, w: 176, h: 94, label: '前吸收 q_C · W_UK_T' }
                 : s.focusArea === 'mqa'
                   ? { x: 402, y: 188, w: 148, h: 94, label: '1 头 576d MQA 点积' }
                   : { x: 14, y: 306, w: 652, h: 248, label: '每层 KV 字节账本' };
@@ -155,7 +151,7 @@ export default function MlaAbsorbExplainer({
               h={38}
               tone="blue"
               name="128 头 MHA 注意力"
-              shape="q [128,192] · K_C+k^R"
+              shape="q [128,192] · K_C+k_R"
               active={s.activeNaive}
               muted={!s.activeNaive}
             />
@@ -170,7 +166,7 @@ export default function MlaAbsorbExplainer({
               tone="green"
               name="联合潜缓存 [S, 576]"
               shape="512 NoPE + 64 RoPE"
-              splits={[{ ratio: 512 / 576, leftLabel: 'c^KV 512', rightLabel: 'k^R 64' }]}
+              splits={[{ ratio: 512 / 576, leftLabel: 'c_KV 512', rightLabel: 'k_R 64' }]}
               stack={2}
               active={s.phase === 'latent' || s.phase === 'mqa_dot'}
             />
@@ -205,7 +201,7 @@ export default function MlaAbsorbExplainer({
               tone="amber"
               name="吸收查询 [h, 576]"
               shape="512 (abs) + 64 (RoPE)"
-              splits={[{ ratio: 512 / 576, leftLabel: 'q^C·W^UK', rightLabel: 'q^R' }]}
+              splits={[{ ratio: 512 / 576, leftLabel: 'q_C·W_UK', rightLabel: 'q_R' }]}
               active={s.showAbsorbedQ}
               muted={!s.activeAbsorb}
             />
@@ -234,7 +230,7 @@ export default function MlaAbsorbExplainer({
               h={42}
               tone="green"
               name="潜空间输出 u_t"
-              shape="[h, 512] = p · c^KV"
+              shape="[h, 512] = p · c_KV"
               active={s.showMqaResult}
               muted={!s.showMqaResult}
             />
@@ -253,8 +249,8 @@ export default function MlaAbsorbExplainer({
               w={88}
               h={42}
               tone="amber"
-              name="u_t W^UV"
-              shape="[h, 128] → W^O"
+              name="u_t W_UV"
+              shape="[h, 128] → W_O"
               active={s.showVUp}
               muted={!s.showVUp}
             />
@@ -288,7 +284,7 @@ export default function MlaAbsorbExplainer({
               segments={[
                 {
                   value: 512,
-                  label: 'FP8 c^KV (512 B)',
+                  label: 'FP8 c_KV (512 B)',
                   tone: 'green',
                   active: s.phase === 'latent' || s.phase === 'v_up',
                 },
@@ -300,7 +296,7 @@ export default function MlaAbsorbExplainer({
                 },
                 {
                   value: 128,
-                  label: 'BF16 k^R (128 B)',
+                  label: 'BF16 k_R (128 B)',
                   tone: 'blue',
                   active: s.phase === 'mqa_dot' || s.phase === 'v_up',
                 },

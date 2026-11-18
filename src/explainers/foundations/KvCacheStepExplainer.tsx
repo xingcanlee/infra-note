@@ -1,17 +1,12 @@
 import { useMemo } from 'react';
 import { Explainer, Stage, type Step } from 'astro-wisp/explainers';
-import {
-  ActiveFocusFrame,
-  DataFlowArrow,
-  HeatmapMatrix,
-  MetricRow,
-  STAGE_W,
-  SlotStrip,
-  TensorBlock,
-  assertMaxHues,
-  type AnyTone,
-  type SlotItem,
-} from '@/explainers/kit';
+import ActiveFocusFrame from '@/explainers/kit/ActiveFocusFrame';
+import DataFlowArrow from '@/explainers/kit/DataFlowArrow';
+import HeatmapMatrix from '@/explainers/kit/HeatmapMatrix';
+import { MetricRow } from '@/explainers/kit/MetricRow';
+import { SlotStrip, type SlotItem } from '@/explainers/kit/PointerBoard';
+import TensorBlock from '@/explainers/kit/TensorBlock';
+import { STAGE_W, assertMaxHues, type AnyTone } from '@/explainers/kit/motion';
 
 export interface KvCacheStepState {
   stepIndex: number;

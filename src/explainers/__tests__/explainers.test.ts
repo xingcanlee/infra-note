@@ -1,8 +1,19 @@
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import type { ComponentType } from 'react';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import type { Step } from 'astro-wisp/explainers';
 import { describe, expect, it, vi } from 'vitest';
+import ActiveFocusFrame from '../kit/ActiveFocusFrame';
+import ByteLedgerBar from '../kit/ByteLedgerBar';
+import HeatmapMatrix, {
+  DARK_HEAT_STROKE_WEIGHT,
+  HEAT_ALPHA_BASE,
+  HEAT_ALPHA_RANGE,
+} from '../kit/HeatmapMatrix';
+import TensorBlock from '../kit/TensorBlock';
+import { fitTextMetrics } from '../kit/motion';
 
 vi.mock('virtual:wisp/locale', () => ({ lang: 'zh-CN' }));
 
@@ -193,6 +204,148 @@ describe('all 31 interactive SVG explainers', () => {
       expect(markup).not.toMatch(/\bNaN\b/);
       expect(markup).not.toContain('undefined');
       expect(markup).not.toMatch(/#[0-9a-fA-F]{3,8}\b/);
+      expect(markup, `${name} emitted rx="2"`).not.toMatch(/\brx=["']2["']/);
     },
   );
+});
+
+function relativeLuminance(hex: string): number {
+  const n = parseInt(hex.slice(1), 16);
+  const channels = [(n >> 16) & 255, (n >> 8) & 255, n & 255].map((c) => {
+    const v = c / 255;
+    return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4;
+  });
+  return 0.2126 * channels[0] + 0.7152 * channels[1] + 0.0722 * channels[2];
+}
+
+function blendSrgb(topHex: string, bottomHex: string, alpha: number): string {
+  const top = parseInt(topHex.slice(1), 16);
+  const bot = parseInt(bottomHex.slice(1), 16);
+  const parts = [16, 8, 0].map((shift) =>
+    Math.round(((top >> shift) & 255) * alpha + ((bot >> shift) & 255) * (1 - alpha))
+      .toString(16)
+      .padStart(2, '0'),
+  );
+  return `#${parts.join('')}`;
+}
+
+function contrastRatio(hexA: string, hexB: string): number {
+  const l1 = relativeLuminance(hexA);
+  const l2 = relativeLuminance(hexB);
+  return (Math.max(l1, l2) + 0.05) / (Math.min(l1, l2) + 0.05);
+}
+
+describe('explainer kit primitive invariants', () => {
+  it('ByteLedgerBar renders all <polyline> leader lines before label <text> elements in DOM order', () => {
+    const svg = renderToStaticMarkup(
+      createElement(
+        'svg',
+        null,
+        createElement(ByteLedgerBar, {
+          x: 24,
+          y: 40,
+          w: 632,
+          segments: [
+            { value: 1152, label: 'MLA BF16 1152 B', tone: 'green', active: true },
+            { value: 2944, label: 'GQA-8 4096 B', tone: 'blue' },
+            { value: 28672, label: 'MHA 32768 B', tone: 'slate' },
+          ],
+        }),
+      ),
+    );
+
+    const lastPolylineIdx = svg.lastIndexOf('<polyline');
+    const firstCalloutLabelIdx = svg.indexOf('MLA BF16 1152 B');
+    const secondCalloutLabelIdx = svg.indexOf('GQA-8 4096 B');
+    const insideLabelIdx = svg.indexOf('MHA 32768 B');
+    expect(lastPolylineIdx).toBeGreaterThan(-1);
+    expect(firstCalloutLabelIdx).toBeGreaterThan(lastPolylineIdx);
+    expect(secondCalloutLabelIdx).toBeGreaterThan(lastPolylineIdx);
+    expect(insideLabelIdx).toBeGreaterThan(lastPolylineIdx);
+    expect(svg).not.toMatch(/\brx=["']2["']/);
+  });
+
+  it('TensorBlock never silently omits narrow split labels and ActiveFocusFrame exposes data-focus-target', () => {
+    const svg = renderToStaticMarkup(
+      createElement(
+        'svg',
+        null,
+        createElement(TensorBlock, {
+          x: 28,
+          y: 40,
+          w: 132,
+          h: 42,
+          tone: 'green',
+          splits: [{ ratio: 512 / 576, leftLabel: 'c_KV 512', rightLabel: 'k_R 64' }],
+        }),
+        createElement(TensorBlock, {
+          x: 218,
+          y: 40,
+          w: 164,
+          h: 42,
+          tone: 'amber',
+          splits: [{ ratio: 512 / 576, leftLabel: 'q_C·W_UK', rightLabel: 'q_R' }],
+        }),
+        createElement(ActiveFocusFrame, { x: 10, y: 20, w: 120, h: 80, visible: true }),
+      ),
+    );
+    expect(svg).toContain('c_KV 512');
+    expect(svg).toContain('k_R 64');
+    expect(svg).toContain('q_C·W_UK');
+    expect(svg).toContain('q_R');
+    expect(svg).toContain('data-focus-target=""');
+  });
+
+  it('fitTextMetrics clamps minimum font size to 10px and avoids excessive textLength squashing', () => {
+    const small = fitTextMetrics('超长标签测试文本内容', 40, 12, 7.5, 'sans');
+    expect(small.fontSize).toBeGreaterThanOrEqual(10);
+    expect(small.textLength).toBeUndefined();
+
+    const mild = fitTextMetrics('1234567890', 58, 11, 8, 'mono');
+    expect(mild.fontSize).toBe(10);
+    expect(mild.textLength).toBe(58);
+  });
+
+  it('HeatmapMatrix dark-mode blended cell backgrounds achieve WCAG AA (>= 4.5:1) against #e6e6e3 for all 8 hues', () => {
+    const palettePath = resolve(import.meta.dirname, '../../../design/palette.json');
+    const palette = JSON.parse(readFileSync(palettePath, 'utf8')) as {
+      color: {
+        base: { fg: { dark: string } };
+        hue: Record<string, { stroke: { dark: string }; fill: { dark: string } }>;
+      };
+    };
+    const darkFg = palette.color.base.fg.dark;
+    expect(darkFg.toLowerCase()).toBe('#e6e6e3');
+
+    const maxOverlayAlpha = HEAT_ALPHA_BASE + HEAT_ALPHA_RANGE;
+    for (const [hueName, pair] of Object.entries(palette.color.hue)) {
+      if (hueName.startsWith('$')) continue;
+      const darkOverlayColor = blendSrgb(pair.stroke.dark, pair.fill.dark, DARK_HEAT_STROKE_WEIGHT);
+      const blendedBg = blendSrgb(darkOverlayColor, pair.fill.dark, maxOverlayAlpha);
+      const ratio = contrastRatio(darkFg, blendedBg);
+      expect(ratio, `dark heatmap ${hueName} (${blendedBg}) vs ${darkFg}`).toBeGreaterThanOrEqual(
+        4.5,
+      );
+    }
+
+    const heatmapSvg = renderToStaticMarkup(
+      createElement(
+        'svg',
+        null,
+        createElement(HeatmapMatrix, {
+          x: 0,
+          y: 0,
+          tone: 'highlight',
+          values: [
+            [0, 0.5],
+            [0.8, 1.0],
+          ],
+          selected: new Set(['1,1']),
+          showLegend: true,
+        }),
+      ),
+    );
+    expect(heatmapSvg).toContain('color-mix(');
+    expect(heatmapSvg).not.toMatch(/\brx=["']2["']/);
+  });
 });

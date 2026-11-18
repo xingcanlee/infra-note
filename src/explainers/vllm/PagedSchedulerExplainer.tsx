@@ -1,18 +1,15 @@
 import { useMemo } from 'react';
 import { Explainer, Stage, type Step } from 'astro-wisp/explainers';
 
+import ActiveFocusFrame from '@/explainers/kit/ActiveFocusFrame';
+import { MetricRow, SectionBox, type MetricItem } from '@/explainers/kit/MetricRow';
 import {
-  ActiveFocusFrame,
-  MetricRow,
   PointerArcs,
-  SectionBox,
   SlotStrip,
-  STAGE_W,
-  assertMaxHues,
-  type MetricItem,
   type PointerArc,
   type SlotItem,
-} from '@/explainers/kit';
+} from '@/explainers/kit/PointerBoard';
+import { STAGE_W, assertMaxHues } from '@/explainers/kit/motion';
 
 export type ReqStatus = 'waiting' | 'running' | 'preempted' | 'pad';
 

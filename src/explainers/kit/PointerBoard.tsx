@@ -3,6 +3,8 @@ import {
   RADIUS_SM,
   estimateTextWidth,
   fitTextMetrics,
+  fontKindFor,
+  fontVarFor,
   resolveToneFill,
   resolveToneStroke,
   useDiagramMotion,
@@ -77,12 +79,20 @@ export function SlotStrip({
 
         const fill = status === 'empty' ? 'var(--wisp-bg)' : resolveToneFill(tone);
         const stroke = resolveToneStroke(tone);
-        const sw = status === 'selected' || status === 'active' || status === 'error' ? 2 : 1.1;
+        const sw =
+          status === 'selected' || status === 'active' || status === 'error'
+            ? 2
+            : tone === 'neutral'
+              ? 1
+              : 1.25;
         const innerW = Math.max(12, slotW - 4);
-        const lblFit = fitTextMetrics(s.label, innerW, fontSize, 7.5, 'mono');
-        const subFit = s.sub ? fitTextMetrics(s.sub, innerW, 9.5, 7, 'mono') : null;
+        const lblKind = fontKindFor(s.label, 'mono');
+        const subKind = s.sub ? fontKindFor(s.sub, 'mono') : 'mono';
+        const tagKind = s.topTag ? fontKindFor(s.topTag, 'mono') : 'mono';
+        const lblFit = fitTextMetrics(s.label, innerW, fontSize, 10, lblKind);
+        const subFit = s.sub ? fitTextMetrics(s.sub, innerW, 10, 10, subKind) : null;
         const tagFit = s.topTag
-          ? fitTextMetrics(s.topTag, slotW + Math.max(0, gap - 2), 10, 7.5, 'mono')
+          ? fitTextMetrics(s.topTag, slotW + Math.max(0, gap - 2), 10, 10, tagKind)
           : null;
 
         return (
@@ -97,7 +107,7 @@ export function SlotStrip({
                 lengthAdjust={tagFit.textLength ? 'spacingAndGlyphs' : undefined}
                 style={{
                   fill: 'var(--wisp-muted)',
-                  fontFamily: 'var(--wisp-font-mono)',
+                  fontFamily: fontVarFor(s.topTag, 'mono'),
                   fontSize: tagFit.fontSize,
                   fontVariantNumeric: 'tabular-nums',
                 }}
@@ -128,7 +138,7 @@ export function SlotStrip({
               lengthAdjust={lblFit.textLength ? 'spacingAndGlyphs' : undefined}
               style={{
                 fill: status === 'empty' ? 'var(--wisp-muted)' : 'var(--wisp-fg)',
-                fontFamily: 'var(--wisp-font-mono)',
+                fontFamily: fontVarFor(s.label, 'mono'),
                 fontSize: lblFit.fontSize,
                 fontWeight: status === 'selected' || status === 'active' ? 600 : 500,
                 fontVariantNumeric: 'tabular-nums',
@@ -145,8 +155,8 @@ export function SlotStrip({
                 textLength={subFit.textLength}
                 lengthAdjust={subFit.textLength ? 'spacingAndGlyphs' : undefined}
                 style={{
-                  fill: stroke,
-                  fontFamily: 'var(--wisp-font-mono)',
+                  fill: 'var(--wisp-fg)',
+                  fontFamily: fontVarFor(s.sub, 'mono'),
                   fontSize: subFit.fontSize,
                   fontVariantNumeric: 'tabular-nums',
                 }}
@@ -212,7 +222,7 @@ export function PointerArcs({ arcs }: { arcs: readonly PointerArc[] }) {
               d={d}
               fill="none"
               stroke={stroke}
-              strokeWidth={a.active ? 1.75 : 1.1}
+              strokeWidth={a.active ? 2 : 1.25}
               strokeDasharray={a.dashed ? '4 3' : undefined}
             />
             <polygon points={tri} fill={stroke} />
@@ -230,7 +240,11 @@ export function PointerArcs({ arcs }: { arcs: readonly PointerArc[] }) {
             )}
             {a.label &&
               (() => {
-                const alw = Math.max(36, Math.ceil(estimateTextWidth(a.label, 10.5, 'mono')) + 10);
+                const labelKind = fontKindFor(a.label, 'mono');
+                const alw = Math.max(
+                  36,
+                  Math.ceil(estimateTextWidth(a.label, 10.5, labelKind)) + 10,
+                );
                 return (
                   <g>
                     <rect
@@ -238,7 +252,7 @@ export function PointerArcs({ arcs }: { arcs: readonly PointerArc[] }) {
                       y={ly - 8}
                       width={alw}
                       height={16}
-                      rx={3}
+                      rx={RADIUS_SM}
                       fill="var(--wisp-bg)"
                     />
                     <text
@@ -248,7 +262,7 @@ export function PointerArcs({ arcs }: { arcs: readonly PointerArc[] }) {
                       dominantBaseline="central"
                       style={{
                         fill: a.active ? stroke : 'var(--wisp-muted)',
-                        fontFamily: 'var(--wisp-font-mono)',
+                        fontFamily: fontVarFor(a.label, 'mono'),
                         fontSize: 10.5,
                         fontWeight: a.active ? 600 : 500,
                       }}

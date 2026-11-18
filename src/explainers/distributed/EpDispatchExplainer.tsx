@@ -1,18 +1,14 @@
 import { useMemo } from 'react';
 import { Explainer, Stage, type Step } from 'astro-wisp/explainers';
+import { MetricRow, SectionBox, type MetricItem } from '@/explainers/kit/MetricRow';
 import {
-  MetricRow,
   PointerArcs,
-  SectionBox,
   SlotStrip,
-  STAGE_W,
-  TensorBlock,
-  assertMaxHues,
-  type AnyTone,
-  type MetricItem,
   type PointerArc,
   type SlotItem,
-} from '@/explainers/kit';
+} from '@/explainers/kit/PointerBoard';
+import TensorBlock from '@/explainers/kit/TensorBlock';
+import { STAGE_W, assertMaxHues, type AnyTone } from '@/explainers/kit/motion';
 
 export interface EpTensorCard {
   name: string;

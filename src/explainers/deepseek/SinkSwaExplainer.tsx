@@ -1,13 +1,10 @@
 import { useMemo } from 'react';
 import { Explainer, Stage, type Step } from 'astro-wisp/explainers';
-import {
-  ActiveFocusFrame,
-  HeatmapMatrix,
-  MetricRow,
-  ProbabilityBars,
-  STAGE_W,
-  assertMaxHues,
-} from '@/explainers/kit';
+import ActiveFocusFrame from '@/explainers/kit/ActiveFocusFrame';
+import HeatmapMatrix from '@/explainers/kit/HeatmapMatrix';
+import { MetricRow } from '@/explainers/kit/MetricRow';
+import ProbabilityBars from '@/explainers/kit/ProbabilityBars';
+import { STAGE_W, assertMaxHues } from '@/explainers/kit/motion';
 
 export interface SinkSwaState {
   mode: 'full' | 'pure_swa' | 'sink_swa' | 'mid_miss';

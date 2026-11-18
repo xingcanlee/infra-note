@@ -1,6 +1,8 @@
 import { useMemo } from 'react';
 import { Explainer, Stage, type Step, type Tone } from 'astro-wisp/explainers';
-import { MetricRow, SectionBox, SwimlaneTimeline, assertMaxHues } from '@/explainers/kit';
+import { MetricRow, SectionBox } from '@/explainers/kit/MetricRow';
+import SwimlaneTimeline from '@/explainers/kit/SwimlaneTimeline';
+import { assertMaxHues } from '@/explainers/kit/motion';
 
 export interface ClusterDboSynthState {
   stepIndex: number;

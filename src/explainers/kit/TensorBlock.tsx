@@ -2,7 +2,11 @@ import { TexLabel } from 'astro-wisp/explainers';
 import { motion } from 'motion/react';
 import {
   RADIUS,
+  RADIUS_SM,
+  estimateTextWidth,
   fitTextMetrics,
+  fontKindFor,
+  fontVarFor,
   resolveToneFill,
   resolveToneStroke,
   useDiagramMotion,
@@ -74,7 +78,7 @@ export default function TensorBlock({
   const { stepTransition } = useDiagramMotion();
   const fill = muted ? 'var(--wisp-surface)' : resolveToneFill(tone);
   const stroke = muted ? 'var(--wisp-muted)' : resolveToneStroke(tone);
-  const strokeWidth = active ? 2.25 : tone === 'neutral' ? 1 : 1.25;
+  const strokeWidth = active ? 2 : tone === 'neutral' ? 1 : 1.25;
   const effectiveAlpha = fillOpacity ?? (muted ? 0.55 : 1);
 
   const stackLayers = stack > 1 ? Array.from({ length: stack - 1 }, (_, i) => stack - 1 - i) : [];
@@ -98,13 +102,15 @@ export default function TensorBlock({
 
       <motion.rect
         initial={false}
-        animate={{ x, y, width: w, height: h }}
+        x={x}
+        y={y}
+        width={w}
+        height={h}
+        animate={{ fillOpacity: effectiveAlpha, strokeWidth }}
         transition={stepTransition}
         rx={RADIUS}
         fill={fill}
-        fillOpacity={effectiveAlpha}
         stroke={stroke}
-        strokeWidth={strokeWidth}
         strokeDasharray={dashed ? '4 3' : undefined}
       />
 
@@ -121,7 +127,7 @@ export default function TensorBlock({
               y2={y + h - 2}
               stroke={stroke}
               strokeOpacity={0.28}
-              strokeWidth={0.85}
+              strokeWidth={1}
             />
           );
         })}
@@ -139,7 +145,7 @@ export default function TensorBlock({
               y2={gy}
               stroke={stroke}
               strokeOpacity={0.28}
-              strokeWidth={0.85}
+              strokeWidth={1}
             />
           );
         })}
@@ -147,9 +153,93 @@ export default function TensorBlock({
       {splits?.map((sp, i) => {
         const axis = sp.axis ?? 'x';
         if (axis === 'x') {
-          const sx = x + w * sp.ratio;
+          const leftKind = sp.leftLabel ? fontKindFor(sp.leftLabel, 'mono') : 'mono';
+          const rightKind = sp.rightLabel ? fontKindFor(sp.rightLabel, 'mono') : 'mono';
+          const minLeftW = sp.leftLabel
+            ? Math.max(38, Math.ceil(estimateTextWidth(sp.leftLabel, 10, leftKind)) + 8)
+            : 0;
+          const minRightW = sp.rightLabel
+            ? Math.max(38, Math.ceil(estimateTextWidth(sp.rightLabel, 10, rightKind)) + 8)
+            : 0;
+          const rawSx = x + w * sp.ratio;
+          const sx =
+            (sp.leftLabel || sp.rightLabel) && minLeftW + minRightW <= w
+              ? Math.max(x + minLeftW, Math.min(x + w - minRightW, rawSx))
+              : rawSx;
           const lw = sx - x;
           const rw = x + w - sx;
+
+          const renderSplitLabel = (
+            text: string,
+            partX: number,
+            partW: number,
+            side: 'left' | 'right',
+            kind: 'mono' | 'sans',
+          ) => {
+            if (partW >= 30 && h >= 22) {
+              const fit = fitTextMetrics(text, partW - 6, 10.5, 10, kind);
+              return (
+                <text
+                  x={partX + partW / 2}
+                  y={y + h / 2}
+                  textAnchor="middle"
+                  dominantBaseline="central"
+                  textLength={fit.textLength}
+                  lengthAdjust={fit.textLength ? 'spacingAndGlyphs' : undefined}
+                  style={{
+                    fill: 'var(--wisp-fg)',
+                    fontFamily: fontVarFor(text, 'mono'),
+                    fontSize: fit.fontSize,
+                    fontVariantNumeric: 'tabular-nums',
+                  }}
+                >
+                  {text}
+                </text>
+              );
+            }
+            const badgeW = Math.max(32, Math.ceil(estimateTextWidth(text, 10, kind)) + 10);
+            const anchorX = partX + partW / 2;
+            const badgeY = side === 'left' ? y - 16 : y + h + 16;
+            const tickY0 = side === 'left' ? y : y + h;
+            const tickY1 = side === 'left' ? badgeY + 7 : badgeY - 7;
+            return (
+              <g>
+                <line
+                  x1={anchorX}
+                  y1={tickY0}
+                  x2={anchorX}
+                  y2={tickY1}
+                  stroke={stroke}
+                  strokeWidth={1}
+                />
+                <rect
+                  x={anchorX - badgeW / 2}
+                  y={badgeY - 7}
+                  width={badgeW}
+                  height={14}
+                  rx={RADIUS_SM}
+                  fill="var(--wisp-bg)"
+                  stroke={stroke}
+                  strokeWidth={1}
+                />
+                <text
+                  x={anchorX}
+                  y={badgeY}
+                  textAnchor="middle"
+                  dominantBaseline="central"
+                  style={{
+                    fill: 'var(--wisp-fg)',
+                    fontFamily: fontVarFor(text, 'mono'),
+                    fontSize: 10,
+                    fontVariantNumeric: 'tabular-nums',
+                  }}
+                >
+                  {text}
+                </text>
+              </g>
+            );
+          };
+
           return (
             <g key={i}>
               <line
@@ -158,57 +248,11 @@ export default function TensorBlock({
                 x2={sx}
                 y2={y + h - 1}
                 stroke={stroke}
-                strokeWidth={1.35}
+                strokeWidth={1.25}
                 strokeDasharray="4 3"
               />
-              {sp.leftLabel &&
-                lw >= 30 &&
-                h >= 22 &&
-                (() => {
-                  const lf = fitTextMetrics(sp.leftLabel, lw - 6, 10.5, 7.5, 'mono');
-                  return (
-                    <text
-                      x={x + lw / 2}
-                      y={y + h / 2}
-                      textAnchor="middle"
-                      dominantBaseline="central"
-                      textLength={lf.textLength}
-                      lengthAdjust={lf.textLength ? 'spacingAndGlyphs' : undefined}
-                      style={{
-                        fill: 'var(--wisp-fg)',
-                        fontFamily: 'var(--wisp-font-mono)',
-                        fontSize: lf.fontSize,
-                        fontVariantNumeric: 'tabular-nums',
-                      }}
-                    >
-                      {sp.leftLabel}
-                    </text>
-                  );
-                })()}
-              {sp.rightLabel &&
-                rw >= 30 &&
-                h >= 22 &&
-                (() => {
-                  const rf = fitTextMetrics(sp.rightLabel, rw - 6, 10.5, 7.5, 'mono');
-                  return (
-                    <text
-                      x={sx + rw / 2}
-                      y={y + h / 2}
-                      textAnchor="middle"
-                      dominantBaseline="central"
-                      textLength={rf.textLength}
-                      lengthAdjust={rf.textLength ? 'spacingAndGlyphs' : undefined}
-                      style={{
-                        fill: 'var(--wisp-fg)',
-                        fontFamily: 'var(--wisp-font-mono)',
-                        fontSize: rf.fontSize,
-                        fontVariantNumeric: 'tabular-nums',
-                      }}
-                    >
-                      {sp.rightLabel}
-                    </text>
-                  );
-                })()}
+              {sp.leftLabel && renderSplitLabel(sp.leftLabel, x, lw, 'left', leftKind)}
+              {sp.rightLabel && renderSplitLabel(sp.rightLabel, sx, rw, 'right', rightKind)}
             </g>
           );
         }
@@ -223,7 +267,7 @@ export default function TensorBlock({
               x2={x + w - 1}
               y2={sy}
               stroke={stroke}
-              strokeWidth={1.35}
+              strokeWidth={1.25}
               strokeDasharray="4 3"
             />
             {sp.leftLabel && th >= 18 && w >= 36 && (
@@ -234,7 +278,7 @@ export default function TensorBlock({
                 dominantBaseline="central"
                 style={{
                   fill: 'var(--wisp-fg)',
-                  fontFamily: 'var(--wisp-font-mono)',
+                  fontFamily: fontVarFor(sp.leftLabel, 'mono'),
                   fontSize: 10.5,
                 }}
               >
@@ -249,7 +293,7 @@ export default function TensorBlock({
                 dominantBaseline="central"
                 style={{
                   fill: 'var(--wisp-fg)',
-                  fontFamily: 'var(--wisp-font-mono)',
+                  fontFamily: fontVarFor(sp.rightLabel, 'mono'),
                   fontSize: 10.5,
                 }}
               >
@@ -279,7 +323,7 @@ export default function TensorBlock({
                 textAnchor="middle"
                 dominantBaseline="central"
                 style={{
-                  fill: active ? stroke : 'var(--wisp-fg)',
+                  fill: 'var(--wisp-fg)',
                   fontFamily: 'var(--wisp-font-sans)',
                   fontSize: 12.5,
                   fontWeight: 600,
@@ -297,7 +341,7 @@ export default function TensorBlock({
               dominantBaseline="central"
               style={{
                 fill: 'var(--wisp-muted)',
-                fontFamily: 'var(--wisp-font-mono)',
+                fontFamily: fontVarFor(shape, 'mono'),
                 fontSize: 11,
                 fontVariantNumeric: 'tabular-nums',
               }}
@@ -312,8 +356,8 @@ export default function TensorBlock({
               textAnchor="middle"
               dominantBaseline="central"
               style={{
-                fill: stroke,
-                fontFamily: 'var(--wisp-font-mono)',
+                fill: 'var(--wisp-muted)',
+                fontFamily: fontVarFor(detail, 'mono'),
                 fontSize: 10.5,
                 fontVariantNumeric: 'tabular-nums',
               }}
@@ -326,7 +370,7 @@ export default function TensorBlock({
         <>
           {name &&
             (() => {
-              const nf = fitTextMetrics(name, Math.max(20, w - 8), 12.5, 8, 'sans');
+              const nf = fitTextMetrics(name, Math.max(20, w - 8), 12.5, 10, 'sans');
               return (
                 <text
                   x={x + w / 2}
@@ -348,7 +392,8 @@ export default function TensorBlock({
             })()}
           {shape &&
             (() => {
-              const sf = fitTextMetrics(shape, Math.max(20, w - 8), 11, 7.5, 'mono');
+              const shapeKind = fontKindFor(shape, 'mono');
+              const sf = fitTextMetrics(shape, Math.max(20, w - 8), 11, 10, shapeKind);
               return (
                 <text
                   x={x + w / 2}
@@ -359,7 +404,7 @@ export default function TensorBlock({
                   lengthAdjust={sf.textLength ? 'spacingAndGlyphs' : undefined}
                   style={{
                     fill: 'var(--wisp-muted)',
-                    fontFamily: 'var(--wisp-font-mono)',
+                    fontFamily: fontVarFor(shape, 'mono'),
                     fontSize: sf.fontSize,
                     fontVariantNumeric: 'tabular-nums',
                   }}

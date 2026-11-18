@@ -1,13 +1,10 @@
 import { useMemo } from 'react';
 import { Explainer, Stage, type Step, type Tone } from 'astro-wisp/explainers';
-import {
-  DataFlowArrow,
-  HeatmapMatrix,
-  MetricRow,
-  STAGE_W,
-  TensorBlock,
-  assertMaxHues,
-} from '@/explainers/kit';
+import DataFlowArrow from '@/explainers/kit/DataFlowArrow';
+import HeatmapMatrix from '@/explainers/kit/HeatmapMatrix';
+import { MetricRow } from '@/explainers/kit/MetricRow';
+import TensorBlock from '@/explainers/kit/TensorBlock';
+import { STAGE_W, assertMaxHues } from '@/explainers/kit/motion';
 
 export interface CausalAttentionState {
   stepIndex: number;

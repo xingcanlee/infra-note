@@ -44,14 +44,28 @@ export default function ActiveFocusFrame({
       transition={stepTransition}
       style={{ pointerEvents: 'none' }}
     >
+      {/* 静态定位框：确保步切换首帧 getBoundingClientRect() 立即反映目标边界，供移动端自动居中 */}
+      <rect
+        x={x}
+        y={y}
+        width={w}
+        height={h}
+        fill="none"
+        stroke="none"
+        data-focus-target={visible ? '' : undefined}
+      />
       <motion.rect
         initial={false}
+        x={x}
+        y={y}
+        width={w}
+        height={h}
         animate={{ x, y, width: w, height: h }}
         transition={stepTransition}
         rx={RADIUS}
         fill="none"
         stroke={stroke}
-        strokeWidth={2.25}
+        strokeWidth={2}
         strokeDasharray={dashed ? '5 3' : undefined}
       />
       {label && (

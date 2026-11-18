@@ -1,16 +1,10 @@
 import { useMemo } from 'react';
 import { Explainer, Stage, type Step } from 'astro-wisp/explainers';
-import {
-  ActiveFocusFrame,
-  HeatmapMatrix,
-  MetricRow,
-  ProbabilityBars,
-  STAGE_W,
-  assertMaxHues,
-  resolveToneStroke,
-  type AnyTone,
-  type ProbBarSeriesItem,
-} from '@/explainers/kit';
+import ActiveFocusFrame from '@/explainers/kit/ActiveFocusFrame';
+import HeatmapMatrix from '@/explainers/kit/HeatmapMatrix';
+import { MetricRow } from '@/explainers/kit/MetricRow';
+import ProbabilityBars, { type ProbBarSeriesItem } from '@/explainers/kit/ProbabilityBars';
+import { STAGE_W, assertMaxHues, resolveToneStroke, type AnyTone } from '@/explainers/kit/motion';
 
 export interface OutlierQuantState {
   stepIndex: number;
