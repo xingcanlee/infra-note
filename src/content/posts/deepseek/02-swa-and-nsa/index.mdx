@@ -1,6 +1,6 @@
 ---
-title: '02 原生稀疏注意力（NSA）：从滑动窗口、汇聚点到三路硬件对齐稀疏'
-description: '从长文本 KV 带宽崩溃与 StreamingLLM 注意力汇聚点出发，拆解事后稀疏为何无法稳定反向传播并饿死 Tensor Core；精讲 DeepSeek NSA 三分支门控融合与 GQA 组共享块稀疏的硬件对齐设计。'
+title: '02 原生稀疏注意力（NSA）：从滑动窗口、Attention Sink 到三路硬件对齐稀疏'
+description: '从长文本注意力延迟瓶颈与 StreamingLLM Attention Sink 出发，解释事后稀疏的梯度断裂与 GQA 并集读取开销，再拆解 DeepSeek NSA 的三分支门控融合与组共享块稀疏设计。'
 series: { id: deepseek, order: 3 }
 pubDate: 2026-11-05
 tags: [DeepSeek, Sparse Attention, NSA, KV Cache, FlashAttention, vLLM]
@@ -11,77 +11,107 @@ toc: true
 import SinkSwaExplainer from '../../../../explainers/deepseek/SinkSwaExplainer';
 import NsaThreeBranchExplainer from '../../../../explainers/deepseek/NsaThreeBranchExplainer';
 
-在 [01 MLA](../01-mla/) 中，我们把每个词元的 KV 缓存压缩到了单头潜在向量；但在上下文推向 `64K` 乃至 `128K` 时，注意力计算本身的二次方预填充算力与全盘扫描延迟依然卡死吞吐——NSA 论文测算在 `64K` 长度下，注意力会吃掉高达 **`70%–80%`** 的解码总延迟[^nsa]。
+在[01 多头潜在注意力（MLA）](../01-mla/)中，每层每个 token 的 KV 缓存被压成了 576 维单头潜向量，显著降低了单 token 的显存占用与搬运开销。但随着上下文扩展到 64K 甚至 128K，注意力算子本身的序列长度开销仍随 $L$ 增长：NSA 论文测算在 64K 长度下，Softmax 注意力会占到单步 Decode 总延迟的 70%–80%[^nsa]。
 
-经验观察表明，成熟大模型里超过 `95%` 的历史词元权重微乎其微。但工程实践已经反复证明：**直接删掉旧词元（纯滑动窗口）**或**训完再按打分挑（事后稀疏）**都会踩进致命陷阱。本文围绕四个主线展开：
+观测表明，成熟语言模型在长文本中超过 95% 的历史 token 分配到的注意力权重接近于零。然而工程实践已经证明，无论是直接丢弃早期 token 的纯滑动窗口，还是先预训练稠密模型再按阈值剪枝的事后稀疏，都很难兼顾精度与真实的硬件加速。
 
-1. **为什么纯滑动窗口会引发权重崩塌**：开头词元充当 Softmax 的注意力汇聚点（Attention Sink），删掉它会导致局部噪音权重暴涨二十余倍、困惑度发散。
-2. **为什么事后稀疏与逐词挑选饿死硬件**：离散采样不可微，且 GQA 组内各头独立选块会引爆共享 KV 的并集读取灾难。
-3. **DeepSeek NSA 如何原生对齐硬件**：并行设置 `cmp` 粗览压缩、`slc` 组共享连续块挑选与 `win` 局部滑窗，用可学习 Sigmoid 门控融为一体。
-4. **GPU 与昇腾 NPU 上的现行落地**：对照 `vllm` 与 `vllm-ascend` 如何原生接入 `sinks` / `learnable_sink` 滑窗内核，以及为何 DeepSeek 随后转向基于 MLA 的稀疏路线。
+## 滑动窗口失效与 Attention Sink
 
-## 先看一个例子：8×8 热图里的 Softmax 泄洪与中段遗忘
+为什么把历史缓存截断为固定宽度滑动窗口时，只要丢掉序列开头的几个 token，语言模型困惑度就会急剧恶化？StreamingLLM 论文指出了背后的两个代数与自回归特性[^sink]。
 
-假设序列长 `8` 个词元（$t = 0 \dots 7$），设查询 $q_7$ 对所有历史位置的原始打分为 $z = [6.0,\, 0.2,\, 0.1,\, 0.0,\, 1.0,\, 1.2,\, 1.5,\, 2.0]$，现在开启宽为 $W = 3$ 的局部滑动窗口（保留最近位置 `[5, 6, 7]`）。通过**图 1** 的四步 `8×8` 注意力热图演化，可以看到三套截断策略与一个边界盲区：
+一方面，Softmax 强制所有可见位置权重之和必须等于 1（$\sum_{j \le t} p_{t,j} = 1$）；当当前查询在历史上下文里找不到强语义匹配时，注意力头无法把权重全设为零，只能找一个位置倾倒多余的概率预算。另一方面，在因果掩码下，序列起始位置（如 $t_0$ 及前几个 token）对**所有**后续位置全局可见，梯度下降会自然把这些全局锚点训练成全网络共用的概率吸收位，即 **Attention Sink**。
 
-<SinkSwaExplainer client:visible title="图 1：8×8 因果注意力热图演化：纯滑窗坍缩与 Sink 稳态锚点" />
+拿一个长度为 8 的因果序列（$t = 0 \dots 7$）来手算这一效应。设末尾查询 $q_7$ 对所有历史位置的原始打分为 $z = [6.0,\, 0.2,\, 0.1,\, 0.0,\, 1.0,\, 1.2,\, 1.5,\, 2.0]$，局部滑动窗口宽度为 $W = 3$（仅保留最近位置 $5, 6, 7$）。在全量因果掩码下，$e^{6.0} \approx 403.4$ 主导了分母，语义上不承载有效信息的起始位置 $t_0$ 吸走了 95.6% 的权重，而局部窗口 $[5, 6, 7]$ 合计仅占 3.58%。
 
-顺着**图 1** 核对真实概率：在完整因果矩阵下，语义上毫无信息的起始符 $t_0$ 凭借 $z_0 = 6.0$ 吸走了 **`95.6%`** 的概率质量，把不想关注局部噪声时的多余预算安全泄进分母；而一旦开启无 Sink 纯滑窗（丢掉 $t_0$），`[5, 6, 7]` 局部总重从 **`3.58%`** 暴涨到 **`100.00%`**（放大 **`27.9×`**），产生严重的输出漂移。
+一旦开启无 Sink 的纯滑动窗口（丢掉 $t_0$），分母失去 $e^{6.0}$，仅剩 $e^{1.2} + e^{1.5} + e^{2.0} \approx 15.2$；Softmax 将位置 $[5, 6, 7]$ 的总权重重归一化到 100.00%，局部权重被放大了 27.9 倍，导致输出表征显著偏移。而只要把第 0 列重新加回因果掩码形成 **L 型掩码**（$t_0$ 配 $W = 3$），$t_0$ 立刻恢复吸收 96.37% 的分母质量，局部窗口总重回落至 3.63%。
 
-把第 `0` 列重新加回因果掩码形成 **L 型掩码**（`sink=1 + W=3`）后，$t_0$ 立刻接管 `96.37%` 分母质量，局部窗口总重回落至 `3.63%`。StreamingLLM[^sink] 也验证了类似现象：Llama-2-13B 在 `65K` 长文本下 `0+1024` 滑窗困惑度高达 `5158.07`，而只留 `4` 个初始锚点（`4+1020`）便立刻稳回 `5.40`；若再把分母替换成不占用序列槽位的可学习偏置 $\exp(z'_h)$，效果同样成立。
+图 1 展示了这组 8×8 注意力矩阵在四种掩码状态下的权重热图、$q_7$ 分布柱状图及输出偏移指标，可点击逐步切换查看数值变化。
 
-但看一眼**图 1** 的步骤 4 就能发现 L 型掩码的死穴：一旦真正关键的记忆事实落在滑窗之外的中段 $t_2$（全量时权重占 `81%`），`Sink + SWA` 会毫不留情地将其归零。我们需要跨任意距离动态取回中段重要块的能力。
+<SinkSwaExplainer
+  client:visible
+  title="图 1：8×8 因果注意力热图演化：纯滑窗分布失真与 Attention Sink 稳态锚点"
+/>
 
-## 为什么事后稀疏训不动，也喂不饱矩阵核心
+StreamingLLM 在 Llama-2-13B 的 65K PG-19 长文本评测中也验证了同一规律：纯滑窗（$0 + 1024$）的困惑度高达 5158.07，而只要保留开头的 4 个初始锚点（$4 + 1020$），困惑度立刻稳回 5.40；即便把开头 4 个 token 全部替换成不承载语义信息的换行符，困惑度仍维持在 5.60[^sink]。
 
-在 NSA 论文第二章[^nsa]中，作者指出了训练后（Post-hoc）与逐词随机选词的两道硬件死墙：
+除了保留前导槽位，StreamingLLM 还揭示了两项关键细节[^sink]。
 
-1. **阶段割裂与不可微**：只砍 Decode 不砍 Prefill 无法加速首字延迟；基于聚类或哈希的离散选词阻塞端到端反向传播，导致底层表示从未针对稀疏视图优化。
-2. **硬件访存错位与 GQA 并集灾难**：按单一词元位置跳跃读取会打断连续 TMA / 异步块加载；更严重的是在 GQA 中，同一组内的 $G_q$ 个 Query 头共享同一份物理 KV 缓存，一旦允许各头独立选 Top-$n$ 块，底层计算单元被迫读取所有头选中块的**并集**，实际带宽访问几乎退化成全量扫描。
+第一是 RoPE 的旋转时机。配合旋转位置编码使用滑动窗口时，写入缓存的 Key 必须先保留旋转前的原始状态，等到计算注意力时再按**缓存内连续位置**（例如 $[0, 1, 2, 3, 4, 5, 6, 7]$）而非原文绝对位置（$[0, 1, 2, 3, 6, 7, 8, 9]$）施加旋转，否则前导锚点与滑窗衔接处会出现相对距离跳变。
 
-## DeepSeek NSA：三分支门控与 GQA 组共享硬件对齐
+第二是专用 `Sink` 偏置参数的引入。相比单纯在 Softmax 分母加常数 1（Zero Sink，$\text{SoftMax}_1$），在预训练样本开头固定插入一个**可学习的专用 `Sink token`** 能让单槽位稳定承接多余权重：在 160M 模型实验下，Zero Sink 在 $1 + 1023$ 配置的困惑度仍为 19.90，而 Learnable Sink 可降至 18.01。
 
-DeepSeek **NSA（Native Sparse Attention）**[^nsa] 把第 $t$ 步的注意力拆成三条互不共享键值参数的三路支线（$c \in \{\text{cmp},\, \text{slc},\, \text{win}\}$），由当前隐状态生成 Sigmoid 门控 $g_t^c \in (0, 1)$ 加权汇总：
+但 L 型掩码也存在清晰的能力边界：当真正关键的历史事实落在滑窗之外的中段位置（如图 1 步骤 4 中设定的 $t_2$，全量掩码下占 81% 权重），静态 Sink + SWA 会直接将其置零。长上下文推理既需要 `Sink` 偏置锚点，也需要跨任意距离动态取回中段重要块的能力。
+
+## 事后稀疏的训练与硬件访存瓶颈
+
+在 NSA 论文第二章中[^nsa]，作者总结了传统训练后（Post-hoc）稀疏方案在算法与硬件上的两重局限。
+
+首先是阶段割裂与不可微。例如 H2O 只在 Decode 阶段裁剪缓存，Prefill 仍需全量扫描而无法缩短首字延迟（TTFT）；MInference 则主要加速 Prefill 而未减少 Decode 访存。同时，诸如 k-means 聚类或 SimHash 这类离散筛选操作会切断梯度反向传播，导致模型底层表征从未针对稀疏注意力联合优化，事后截取前 20% 注意力分数往往只能覆盖全量注意力的约 70%。
+
+更大的约束来自现代加速器的访存粒度与 GQA 分组结构。即便是可训练的稀疏注意力，如果按单个 token 离散跳读，也会频繁打断 GPU TMA 或 NPU DMA 的连续大块搬运流水线；而在多 Query 头共享 KV 的 GQA 架构里，按头独立选块还会触发严重的**并集读取放大**。
+
+以 4 组 64 头、每组 $G = 16$ 个查询头共享同一份物理 KV 的配置为例：若每个头各自挑选 $n = 16$ 个互异历史块，共享计算单元就被迫从 HBM 读出所有 16 个头选中块的**并集**——最坏情况可达 $16 \times 16 = 256$ 块离散读取，几乎退化成全量扫描。与此同时，各头独立读块会把矩阵乘的查询高度压到 $M = 1$（退化为向量-矩阵乘），无法填满 Tensor Core 或达芬奇 Cube 要求的 $M \ge 16$ 块矩阵乘指令，硬件算力随之闲置[^nsa]。
+
+## DeepSeek NSA 的三路门控与组共享对齐
+
+DeepSeek 提出的原生稀疏注意力（Native Sparse Attention，NSA）[^nsa] 在第 $t$ 步并行构建三条带有独立投影参数的注意力分支（$c \in \{\text{cmp},\, \text{slc},\, \text{win}\}$），再由当前隐状态生成 Sigmoid 门控 $g_t^c \in (0, 1)$ 加权汇总：
 
 $$
 \mathbf{o}_t^* = \sum_{c \in \{\text{cmp},\, \text{slc},\, \text{win}\}} g_t^c \cdot \operatorname{Attn}\!\left(\mathbf{q}_t,\, \tilde{K}_t^c,\, \tilde{V}_t^c\right)
 $$
 
-**图 2** 通过五步动画拆解这三条分支的协作顺序与硬件对齐约束：
+图 2 将三条分支从粗粒度压缩打分、空间重叠累加到 GQA 组共享选块与门控融合拆成五个阶段演示，可按步骤切换观察各分支数据流。
 
 <NsaThreeBranchExplainer
   client:visible
   title="图 2：DeepSeek NSA 三分支硬件对齐稀疏计算与 Sigmoid 门控融合"
 />
 
-对照**图 2** 的五步过程，NSA 的算法设计直接咬合了 GPU / NPU 的计算颗粒度：
+第一条分支是**粗粒度块压缩**（`cmp`）。它以窗长 $l = 32$、滑动步长 $d = 16$ 对历史 Key 和 Value 分段，通过带块内位置编码的可学习 MLP $\varphi$ 把每段 32 个 token 折叠成 1 条粗粒度表示 $\tilde{K}_t^{\text{cmp}}, \tilde{V}_t^{\text{cmp}}$。
 
-1. **粗粒度压缩 `cmp`（块长 $l=32$，步长 $d=16$）**：用带块内位置编码的可学习 MLP $\varphi$ 折叠连续词元生成 $\tilde{K}_t^{\text{cmp}}, \tilde{V}_t^{\text{cmp}}$，以重叠步长减少信息碎片。
-2. **零额外开销的重要性诱导 `slc`**：直接复用压缩分支的注意力分数 $\mathbf{p}_t^{\text{cmp}}$，按块跨度对齐累加到宽度 $l'=64$ 的选块分数 $\mathbf{p}_t^{\text{slc}}$，再沿整个 **GQA 组（$G=16$ 个头）求和聚合**：
+由于步长 $d = 16$ 小于块长 $l = 32$，相邻压缩块之间留有 50% 的重叠区域（第 0 块覆盖 $[0, 31]$，第 1 块覆盖 $[16, 47]$）。这种交错排布既避免了非重叠切块导致的边界信息割裂，也在选块之前把全局序列先压缩了约 16 倍。
 
-   $$
-   \bar{\mathbf{p}}_t^{\text{slc}} = \sum_{h=1}^{G} \mathbf{p}_t^{\text{slc},(h)}, \qquad \mathcal{I}_t = \operatorname{Top-}n\bigl(\bar{\mathbf{p}}_t^{\text{slc}}\bigr)
-   $$
+第二条分支是**组共享块选择**（`slc`）。为了不额外训练一套选块打分网络，NSA 直接复用 `cmp` 分支的注意力概率 $\mathbf{p}_t^{\text{cmp}} = \operatorname{Softmax}(\mathbf{q}_t^\top \tilde{K}_t^{\text{cmp}})$。
 
-   整组 `16` 个查询头共享唯一选块下标 $\mathcal{I}_t$。如**图 3** 所示，这不仅根除了独立选块的并集灾难，还确保每次把 $Q_g \in \mathbb{R}^{16 \times d_k}$ 装入片上 SRAM / UB 后，只需从 HBM 流式读取 $n$ 块连续宽瓦片 $[B_k=64, d_k]$，让矩阵乘高度 $M = 16$ 跨过 Tensor Core 与达芬奇 Cube 的算术强度拐点。
+当精筛块宽取 $l' = 64$（满足 $d \mid l$ 且 $d \mid l'$）时，每个待选块 $j$ 覆盖 $l'/d = 4$ 个步长为 16 的槽位，而每个槽位落在 $l/d = 2$ 个重叠压缩窗口中；只需把空间重叠的压缩分数按索引累加，再沿整个 GQA 组（$G = 16$ 个头）求和即可得到整组唯一的 Top-$n$ 选块下标 $\mathcal{I}_t$[^nsa]：
 
-3. **独立局部滑窗 `win`（$w=512$）**：保留独立 $W_K^{\text{win}}, W_V^{\text{win}}$ 隔离强梯度局部句法，不干扰长程学习。在论文 `64K` 配置下（$l=32, d=16, l'=64, n=16, w=512$），活跃 KV 从 `65,536` 压到约 `5,632`，访存直降 `11.6×`，A100 上跑出 `9.0×` 前向与 `6.0×` 反向加速[^nsa]。
+$$
+\mathbf{p}_t^{\text{slc}}[j] = \sum_{m=0}^{\frac{l'}{d}-1} \sum_{n=0}^{\frac{l}{d}-1} \mathbf{p}_t^{\text{cmp}}\!\left[\frac{l'}{d} j - m - n\right], \qquad
+\bar{\mathbf{p}}_t^{\text{slc}} = \sum_{h=1}^{G} \mathbf{p}_t^{\text{slc},(h)}, \qquad
+\mathcal{I}_t = \operatorname{Top-}n\bigl(\bar{\mathbf{p}}_t^{\text{slc}}\bigr)
+$$
 
-![GQA 组共享选块 vs 独立并集灾难，及 SRAM/UB 连续块 MMA 调度](./diagrams/02-nsa-gqa-tile-arch.drawio '图 3：GQA 组共享选块 vs 独立并集灾难，及 SRAM/UB 连续块 MMA 调度')
+带入具体尺寸即可看清这一对齐关系：单个宽度 $l' = 64$ 的选块内部包含 4 个步长槽位，每个槽位又同时落在 2 个相邻重叠压缩块之内。把这些空间对应的压缩概率相加后，无需额外参数就完成了粗粒度摘要到精筛块权重的映射。
 
-## GPU 与昇腾 NPU 生产生态中的 Sink 与稀疏调度坐标
+整组 16 个查询头随后共享同一套 $\mathcal{I}_t$，直接消除了上文提到的 $16 \times 16$ 并集放大。如图 3 所示，算子 Kernel 一次性将整组查询 $Q_g \in \mathbb{R}^{16 \times d_k}$ 装入片上 SRAM 或 UB，再顺序流式预取 $n$ 个连续分块（`Tile`，$[B_k = 64, d_k]$），使矩阵乘高度 $M = 16$ 跨过 Tensor Core 与达芬奇 Cube 的算术强度拐点。
 
-对照 `vllm@bb23c0a8`[^vllm-fa] 与 `vllm-ascend@3649b8ff`[^vllm-ascend] 的当前主干代码，可以清楚看清两条落地路径：
+![GQA 组共享选块 vs 独立选块并集膨胀，及 SRAM/UB 连续块 MMA 调度](./diagrams/02-nsa-gqa-tile-arch.drawio '图 3：GQA 组共享选块 vs 独立选块并集膨胀，及 SRAM/UB 连续块 MMA 调度')
 
-| 机制模块                  | `vllm` GPU（`vllm@bb23c0a8`）                                                                            | `vllm-ascend` NPU（`vllm-ascend@3649b8ff`）                                                     |
-| :------------------------ | :------------------------------------------------------------------------------------------------------- | :---------------------------------------------------------------------------------------------- |
-| **带 Sink 的滑动窗口**    | `flash_attn.py` 中 `FlashAttentionBackend` 透传 `sliding_window` 与 `sinks`（`has_sinks` 需 SM90+ 支撑） | `attention_v1.py` 判断 `self.sinks is not None` 后调度 `npu_fused_infer_attention_score_v2`     |
-| **掩码与 Sink 传参形态**  | 向内核下发 `window_size` 与 `s_aux` 可学习汇聚项，不占用历史序列槽位                                     | `sparse_mode = 4`、`pre_tokens = self.sliding_window`、`input_layout="TND"` 与 `learnable_sink` |
-| **DeepSeek 生产稀疏演进** | 未引入通用 GQA-NSA，而是将稀疏选词直接叠加在单头 MLA 之上（`v32` DSA 与 `v4`/`v41` 混合压缩）            | 由 `AscendSFAImpl`（`sfa_v1.py`）与 `AscendDSAV41Impl`（`dsa_v41.py`）承接单头稀疏注意力        |
+第三条分支是**独立局部滑窗**（`win`，$w = 512$）。滑窗分支保留独立的 KV 投影权重，与 `cmp`/`slc` 投影参数隔离：局部邻近模式在早期训练阶段会产生较大的梯度幅值，独立投影可防止近端句法梯度压制模型对长程稀疏块的学习[^nsa]。
 
-## PyTorch 参考实现：Sink 滑窗与分块在线 Softmax
+拆出独立的 $W_K^{\text{win}}, W_V^{\text{win}}$ 并配合 Sigmoid 门控混合后，三条分支分别承担全局粗览、组共享精筛与局部精细建模。在 27B 规模、64K 上下文的评测配置下（$l = 32, d = 16, l' = 64, n = 16$ 含 1 个起始块与 2 个局部块，$w = 512$），活跃读取的 KV 等效长度从 65,536 降至约 5,632（访存量缩减 11.6 倍），Triton Kernel 在 A100 上相比 FlashAttention-2 取得了 9.0 倍前向与 6.0 倍反向加速。
 
-下面这段自包含的 PyTorch 核心实现一并验证两件事：（1）`8` 词元下纯 `W=3` 滑窗坍缩与 `t=0` 汇聚点挽救数值；（2）`G=16` GQA 组共享选块下，`B_k=32` 片上分块 Online Softmax 与标准 `scaled_dot_product_attention` 的误差为机器极限 `0`：
+与此同时，NSA 在 9 项通用基准中的 7 项持平或超越全量基线，在 64K 大海捞针评测中全部命中，LongBench 多跳问答（HPQ 与 2Wiki）亦分别提升 8.7 与 5.1 个百分点[^nsa]。
+
+## GPU 与昇腾 NPU 中的 Sink 与稀疏演进
+
+在 `vLLM`[^vllm-fa] 与 `vllm-ascend`[^vllm-ascend] 等现代推理引擎中，Attention Sink 直接通过算子接口传入每头可学习的偏置标量（`vLLM` 称为 `s_aux`，`vllm-ascend` 称为 `learnable_sink`），免去在分页 KV Cache 中常驻锁定物理 $t_0$ 槽位。
+
+具体执行时，算子 Kernel 在 Online Softmax 初始化或归约阶段把 $\exp(z'_h)$ 直接计入分母总和 $l_s$，而不参与任何 Value 加权。把 `Sink` 偏置项留在模型权重里（独立于物理 KV 块），既省去了分页表里的特殊固定页锁定，也能在滑窗驱逐或前缀缓存分片调度时保持任意序列偏移下的数值一致。
+
+下表汇总了 Sink 滑动窗口与生产稀疏注意力在两条硬件生态中的对应调度方式：
+
+| 机制维度             | `vLLM` GPU                                | `vllm-ascend` NPU                           |
+| :------------------- | :---------------------------------------- | :------------------------------------------ |
+| Sink 滑窗调度入口    | `FlashAttentionBackend`（需 SM90+ 支撑）  | `AscendAttentionBackendImpl` 调 FIA v2 算子 |
+| 掩码与 Sink 偏置传参 | 传入 `window_size` 与可学习偏置 `s_aux`   | `sparse_mode=4` 配 `learnable_sink`         |
+| DeepSeek 生产稀疏线  | 在单头 MLA 上叠加 DSA（V3.2）与 CSA（V4） | `AscendSFAImpl` 与 `AscendDSAV41Impl` 承接  |
+
+## PyTorch 参考实现与数值核验
+
+下面的自包含 PyTorch 脚本同时验证两部分核心算术：其一是 8 token 序列下纯 $W = 3$ 滑窗分布失真与 $t_0$ Attention Sink 对分布的恢复；其二是 $G = 16$ 的 GQA 组共享选块下的硬件对齐归约。
+
+在 `nsa_group_shared_tile_attn` 中，我们按组内 16 个头的压缩分数总和选出连续块索引后，按片上分块（`Tile`）$B_k = 32$ 逐块迭代，利用校正因子 $\alpha = \exp(m_{\text{old}} - m_{\text{new}})$ 把旧分块的累积和与分子重缩放到新的行极值基线上，最终在无需展开完整注意力矩阵的前提下与 PyTorch 原生 `scaled_dot_product_attention` 精确对齐：
 
 ```python
 import math
@@ -113,7 +143,7 @@ def nsa_group_shared_tile_attn(
     k_slc = torch.cat([k_all[b * l_p : (b + 1) * l_p] for b in grp_idx.tolist()], dim=0)
     v_slc = torch.cat([v_all[b * l_p : (b + 1) * l_p] for b in grp_idx.tolist()], dim=0)
 
-    # 2. 片上分块 Online Softmax：逐瓦片迭代更新行最大值 m_s、归一化分母 l_s 与未归一分子 o_s
+    # 2. 片上分块 Online Softmax：逐 Tile 迭代更新行最大值 m_s、归一化分母 l_s 与未归一分子 o_s
     m_s = torch.full((g_q, 1), -float("inf"), dtype=q_group.dtype)
     l_s = torch.zeros((g_q, 1), dtype=q_group.dtype)
     o_s = torch.zeros((g_q, d_v), dtype=q_group.dtype)
@@ -135,13 +165,13 @@ def nsa_group_shared_tile_attn(
 if __name__ == "__main__":
     torch.manual_seed(42)
 
-    # 验证 1：8 词元 Sink + SWA (W=3: [5, 6, 7])——对比全量因果、无 Sink 坍缩与 L 型掩码
+    # 验证 1：8 token Sink + SWA (W=3: [5, 6, 7])——对比全量因果、无 Sink 失真与 L 型掩码
     z = torch.tensor([6.0, 0.2, 0.1, 0.0, 1.0, 1.2, 1.5, 2.0], dtype=torch.float64)
     p_full = F.softmax(z, dim=-1)
     p_win = torch.zeros(8, dtype=torch.float64)
-    p_win[5:] = F.softmax(z[5:], dim=-1)                  # 丢掉 t=0 汇聚点：局部权重被强行放大到 1.0
+    p_win[5:] = F.softmax(z[5:], dim=-1)                      # 丢掉 t=0 Attention Sink：局部权重重归一化至 1.0
     p_sink = torch.zeros(8, dtype=torch.float64)
-    p_sink[[0, 5, 6, 7]] = F.softmax(z[[0, 5, 6, 7]], dim=-1)  # 保留 t=0 泄洪分母：局部占比回落至 3.63%
+    p_sink[[0, 5, 6, 7]] = F.softmax(z[[0, 5, 6, 7]], dim=-1)  # 保留 t=0 Sink 偏置分母：局部占比回落至 3.63%
     assert torch.isclose(p_win.sum(), torch.tensor(1.0, dtype=torch.float64))
     assert torch.isclose(p_sink.sum(), torch.tensor(1.0, dtype=torch.float64))
     print(f"full_w3={p_full[5:].sum():.4f} pure_w3={p_win[5:].sum():.4f} sink_w3={p_sink[5:].sum():.4f} t0={p_sink[0]:.4f}")
@@ -160,51 +190,19 @@ if __name__ == "__main__":
     print(f"K_slc={tuple(K_slc.shape)} O_tile_diff={diff:.2e}")
 ```
 
-直接执行输出的真实核验值如下，片上分块在线归约与全局参考输出仅差 `1.94e-16`：
+在双精度下运行上述验证脚本，输出与理论值及标准 SDPA 参考解一致：
 
 ```text
 full_w3=0.0358 pure_w3=1.0000 sink_w3=0.0363 t0=0.9637
 K_slc=(256, 24) O_tile_diff=1.94e-16
 ```
 
-## 代价与边界
+从双端对照表也能看到，DeepSeek-V3.2 的生产主干并未直接套用这套 GQA-NSA。原因在于两点结构约束：NSA 的三分支独立投影与压缩网络 $\varphi$ 需要从头预训练联合收敛，且强依赖多组 Query 共享 KV 的 GQA 分组形式；而 DeepSeek-V3 早已通过 MLA 把缓存压缩为单头共享潜向量。要在既有 128K 底座上通过短周期继续预训练平滑演化出细粒度稀疏筛选能力，稀疏选择必须直接建立在单头 MLA 之上，这正是下一篇 [03 DeepSeek 稀疏注意力（DSA）](../03-dsa/) 的核心问题。
 
-- **Sink + SWA 无法单独支撑长程检索**：一旦重要线索滑出局部窗口，固定 L 型掩码便直接归零；生产中 SWA 主要作为混合架构的局部支或高频状态层使用。
-- **NSA 强绑定 GQA 与从头预训练**：三分支独立投影及 $\varphi$ 压缩参数需要在预训练第一天联合收敛，且必须依赖 GQA 的「多 Query 共享 1 KV」结构。对于已经采用极窄单头潜向量的 DeepSeek-V3/V3.1 存量底座，若想通过较短的继续预训练接入细粒度稀疏检索，就需要下一章主角——**[03 DeepSeek 稀疏注意力（DSA）](../03-dsa/)**。
+[^sink]: Guangxuan Xiao 等，“Efficient Streaming Language Models with Attention Sinks”，ICLR 2024。[arXiv:2309.17453](https://arxiv.org/abs/2309.17453)，§3.1–3.3 与表 1。
 
-## 自测
+[^nsa]: Jingyang Yuan 等，“Native Sparse Attention: Hardware-Aligned and Natively Trainable Sparse Attention”，2025。[arXiv:2502.11089](https://arxiv.org/abs/2502.11089)，§2–5 式 (5)–(12)。
 
-1. 为什么在 `Sink + SWA` 实验里如果把所有位置原始打分同时加上 `+10.0`，`t=0` 依然能保住泄洪作用而局部权重比例丝毫不变？
+[^vllm-fa]: `vLLM` 项目，`vllm/v1/attention/backends/flash_attn.py`（`FlashAttentionBackend.supports_sink` 与 `FlashAttentionImpl` 向内核透传 `window_size`、`s_aux`），commit `bb23c0a8`。[GitHub](https://github.com/vllm-project/vllm/tree/bb23c0a81779ba733923a7dab9b840b4e533f6a5)。
 
-<details>
-<summary>参考答案</summary>
-
-因为 Softmax 满足平移不变性，分子分母同乘 $e^{10}$ 后相互约去，决定概率配比的只有差值 $z_0 - z_k$；一旦移除 $t=0$，分母失去最大主导项，剩余局部词元被迫彼此瓜分 100% 权重而导致信号失真。
-
-</details>
-
-2. NSA 为什么要为 `cmp`、`slc`、`win` 分配三套独立的 KV 投影权重，而不是共享同一套 KV 张量？
-
-<details>
-<summary>参考答案</summary>
-
-因为近期句法规律学习速度远快于长程检索特征；如果共用底层键值投影，训练初期来自滑窗分支的强梯度会主导参数更新方向，抑制压缩分支和选择分支去学习长程摘要特征（即论文所称的快捷方式劫持）。
-
-</details>
-
-3. 既然 NSA 在 A100 上跑出了最高 `9.0×` 前向加速，为什么 DeepSeek-V3.2 在生产引擎中转向了基于闪电索引器的 DSA 而非直接沿用 GQA-NSA？
-
-<details>
-<summary>参考答案</summary>
-
-因为 DeepSeek-V3 底座采用单头潜在缓存的 MLA（推理吸收后等价于 `128` 个查询头共享 `1` 份 `576` 维潜缓存），一方面天然拉满了矩阵乘高度无需退回 GQA，另一方面需要支持在已训练好的 128K 底座上通过短周期继续预训练平滑演化出细粒度词元级选词能力。
-
-</details>
-
-[^sink]: Xiao et al., [Efficient Streaming Language Models with Attention Sinks (`arXiv:2309.17453`)](https://arxiv.org/abs/2309.17453), 2023.
-
-[^nsa]: Yuan et al., [Native Sparse Attention: Hardware-Aligned and Natively Trainable Sparse Attention (`arXiv:2502.11089`)](https://arxiv.org/abs/2502.11089), 2025, Section 2–3.
-
-[^vllm-fa]: `vllm@bb23c0a8`: `vllm/v1/attention/backends/flash_attn.py`（`FlashAttentionBackend.supports_sink` 与 `FlashAttentionImpl` 对 `window_size`、`has_sinks` 的调度）。
-
-[^vllm-ascend]: `vllm-ascend@3649b8ff`: `vllm_ascend/attention/attention_v1.py`（`AscendAttentionBackendImpl` 通过 `npu_fused_infer_attention_score_v2` 传入 `sparse_mode=4`、`pre_tokens=self.sliding_window` 与 `learnable_sink=self.sinks`）。
+[^vllm-ascend]: `vllm-ascend` 项目，`vllm_ascend/attention/attention_v1.py`（`AscendAttentionBackendImpl.forward_fused_infer_attention` 调度 `npu_fused_infer_attention_score_v2`，传入 `sparse_mode=4`、`pre_tokens=self.sliding_window` 与 `learnable_sink=self.sinks`），commit `3649b8ff`。[GitHub](https://github.com/vllm-project/vllm-ascend/tree/3649b8ff7fd69e707db2c634073d2b4c40eadf15)。

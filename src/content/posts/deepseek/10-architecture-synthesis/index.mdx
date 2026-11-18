@@ -1,6 +1,6 @@
 ---
 title: '10 串珠成链：从 DeepSeek-V2 到 V4.1 的单步全链路与双硬件全景'
-description: '把单层算子与集群通信串成一条线：DeepSeek-V4.1 单 token 解码六阶段与 288 B KV 字节账本、V2 到 V4.1-Flash 五代演进，以及 Dual-Microbatch (DBO) 与异步 Engram 预取双硬件协同。'
+description: '把单层算子与集群通信串成一条线：DeepSeek-V4.1 单步四流张量流转、V2 到 V4.1-Flash 的 890 B/token 整网 KV 账本、双微批 DBO 与异步 Engram 协同及双硬件执行栈对照。'
 series: { id: deepseek, order: 11 }
 pubDate: 2026-11-13
 featured: true
@@ -12,110 +12,163 @@ toc: true
 import V41LayerStepExplainer from '../../../../explainers/deepseek/V41LayerStepExplainer';
 import ClusterDboSynthExplainer from '../../../../explainers/deepseek/ClusterDboSynthExplainer';
 
-前九篇把 Roofline 访存模型、MLA 潜空间吸收、稀疏索引与压缩、DeepSeekMoE、Engram 静态记忆、mHC 多分支超连接和 MTP/DSpark 一块块拆开了。到了真正上线服务的那一刻，这些部件必须严丝合缝地跑在同一个静态图与通信排期里。
+前九篇把 Roofline 访存模型、MLA 潜空间吸收、稀疏索引与序列压缩、DeepSeekMoE、Engram 条件记忆、mHC 多分支超连接和 MTP/DSpark 逐一拆解清楚。进入在线推理服务后，这些部件共同运行在同一套静态图捕获与多流调度边界之内，在张量形状、KV 内存账本与跨卡通信时序上紧密耦合。
 
-本篇用三幅全景图把所有拼图串成整机视图：先看 **1 个解码 token** 在单个 DeepSeek-V4.1 层内走完的六阶段字节账本；再拉高视角，核对 V2 到 V4.1 五代架构的 KV Cache 与参数收敛轨迹；最后进入 `UBatchContext`（DBO）双微批集群流水线，对比 NVIDIA GPU（`vllm@bb23c0a8`）与昇腾 NPU（`vllm-ascend@3649b8ff`）的完整落地闭环[^vllm-synth][^ascend-synth]。
+本篇沿三条主线串联整套设计：首先顺着四分支残差张量 `[T, 4, d]` 走完 DeepSeek-V4.1 单步解码全链路；随后建立从标准 MHA 到 V4.1-Flash 的五代整网 KV 字节账本；最后进入集群级双微批重叠（DBO）与异步 Engram 预取流水线，对照 NVIDIA GPU（`vllm`）与华为昇腾 NPU（`vllm-ascend`）的完整实现[^vllm-synth][^ascend-synth]。
 
-## 单 Token 解码全景：V4.1 层内六阶段与字节账本
+## V4.1 单步解码全链路与多流张量流转
 
-跟普通 Transformer 单流残差不同，DeepSeek-V4.1 的主干在层间传递四条并行流形残差 `[T, 4, d]`。为了压榨 HBM 带宽并控制算力屋脊，每走完一个解码层，张量都要经过严格编排的「聚合—稀疏检索—记忆合流—分散—回写」六步闭环（图 1）：
+DeepSeek-V4.1 主干在层间始终维护四条并行流形残差 `[T, 4, d]`，替代了传统 Transformer 的单流残差传递。图 1 用六阶段交互视图展示了单步解码期间张量形状、字节流向与算子边界，点击步进即可逐段追踪层内执行状态。
 
 <V41LayerStepExplainer
   client:visible
-  title="图 1：DeepSeek-V4.1 单 Token 解码六阶段全景与字节账本追踪"
+  title="图 1：DeepSeek-V4.1 单 token 解码六阶段全景与字节账本追踪"
 />
 
-结合图 1 与 `vllm/models/deepseek_v41/nvidia/model.py`（`L560-725`）及 `vllm_ascend/models/deepseek_v41/model.py`（`L772-940`），六个阶段的张量流转与算子绑定如下：
+顺着 `[T, 4, d]` 的生命周期走完单层解码全链路。进入子层时，首先由 `Mega-mHC` 边界把上一子层的残差写回（`post_mix` 与 `res_mix`）和本子层错位时移的输入聚合权重 $A_{l-1}$ 及 `RMSNorm` 合并成单遍读写（访存 $10d$），将四条流聚合成单流 BF16 激活 `[T, d]` 送入注意力分支（SM100 走 `mhc_shifted_post_pre_deep_gemm`、昇腾走 `npu_hc_pre_v3`），同时靠 20 轮 FP32 Sinkhorn 保证深层连乘下的信号增益受控[^vllm-synth][^ascend-synth]。
 
-1. **阶段 1：`mHC Pre-Mix`（`[T, 4, d] -> [T, d]`）**：先用 Sinkhorn 双随机权重从 $4$ 条分支残差聚合成单流输入。未开启 DBO 且 `hidden_size % 1024 == 0` 时，GPU 由 `mhc_shifted_post_pre_deep_gemm` 融合上一层 post 与本层 pre（单遍读写），NPU 调 `torch.ops._C_ascend.npu_hc_pre_v3`[^vllm-synth][^ascend-synth]。
-2. **阶段 2：`CSA / Sparse MLA`（`288 B` Paged KV Gather）**：在 `DeepseekV4SparseMLABackend`（GPU）与 `AscendDSAV41Impl`（NPU）中，头部维度收缩到 `512 = 448 NoPE + 64 RoPE`。经压缩器与闪电索引器（`DeepseekV4Indexer` / `npu_quant_lightning_indexer_v3`）按候选块过滤出稀疏历史槽位后，每层仅按 **`288 B/token`**（NVFP4 压缩记录）读取高频长文槽位。
-3. **阶段 3：`Async Engram Gate Add`（第 `1`、`14` 层特定旁路）**：这两层在 `mhc_post` 回写四分支之后、下一层 `mhc_pre` 之前原位介入。由于行索引在第 $0$ 层前已由奇数乘数与 $K=8$ 素数哈希确定，计算流只需等待异步预取事件（`cuda.Event` 或 `torch.npu.ExternalEvent`），再用 `4d:1d` 投影与有符号开方 `RMSNorm` 门控更新 `[T, 4, d]`。
-4. **阶段 4：`DeepSeekMoE`（共享 + `Top-8` 路由 Dispatch / GMM / Combine）**：门控路由带无辅损动态偏置 `e_score_correction_bias` 选出热点均衡的少数细粒度专家，与常驻共享专家并跑。跨卡走 `DeepEP` `EPBuffer` 或昇腾 `TokenDispatcherWithMC2`（`npu_moe_distribute_dispatch_v2`），本地对齐分块后调用分组矩阵乘再归位。
-5. **阶段 5：`mHC Post-Mix`（`[T, d] -> [T, 4, d]`）**：将 MoE 输出按流形约束权重 `H_post` 与双随机转移矩阵 `H_res` 写回四条残差通道，保证跨越几十层连乘后的信号范数 `Amax` 始终受控在安全区间（见[08 流形受限超连接（mHC）](../08-mhc/)）。
-6. **阶段 6：`DSpark Draft`（单次 3 层 SWA + 低秩马尔可夫验证头）**：主干多层隐状态通过 `context_wkv_proj` 送入 3 层滑动窗口草稿网络并行产 logits，再由 `r=256` 的 `DSparkMarkovHead` 与 `DSparkConfidenceHead` 连采并按全局配额截断，最后经无损拒绝采样一次步进多 token[^v41-flash]。
+注意力侧执行 CSA2 / Sparse MLA（`DeepseekV4MegaAttnAttention` / `DeepseekV4SparseMLABackend` 与昇腾 `AscendDSAV41Impl`），40 层按静态 Full / Reindex / Reuse 拓扑（`is_kv_source`、`is_index_source` 与 `DeepseekV41LayerRole`）复用全局缓存[^v41-flash][^vllm-synth][^ascend-synth]。在需要重新选词的 Full 与 Decoder Reindex 层，512 维潜向量（448 NoPE + 64 RoPE）经压缩器与分层稀疏索引器（HSI）在 16,384 个候选槽位内选出 Top-512 条目，每槽仅按 288 B 的 NVFP4 格式读取；Reuse 层则跳过投影与打分直接消费上游缓存与索引。由于压缩条目同时充当 Key 与 Value 并携带绝对位置旋转，注意力输出末尾 64 维在输出投影 `wo_a / wo_b` 之前还要施加逆旋转 $R_{-t}$ 以恢复相对位置依赖。
 
-## 从 V2 到 V4.1-Flash：五代演进与双硬件闭环
+在第 1、14 层（0-indexed `layers.1` 与 `layers.14`），计算流会在层入口处——位于上一层收尾的 `mhc_post` 之后、本层开头的 `mhc_pre` 与注意力计算之前——先并入异步预取的 Engram 静态记忆[^v41-flash][^vllm-synth][^ascend-synth]。由于哈希行索引早在第 0 层前已由输入 token 序列确定，后台流通过 UVA 或 RDMA 提前把主机表行搬至设备缓存；计算流只需等待跨流事件（`cuda.Event` 或 `ExternalEvent`）就绪，将 1280 维（V4.1-Flash 扩至 $\{2, 3, 4\}$ 阶共 2048 维）向量投影成 4:1 的分支 Key 与共享 Value，经有符号开方 `RMSNorm` 门控原位写回 `[T, 4, d]`。在 GPU 上，这要求第 1、14 层显式拆开跨子层融合（`mhc_post_tilelang -> engram -> mhc_pre`）；而 NPU 因为每子层尾已由 `npu_hc_post` 物化四流，可以直接原位注入。
 
-拉回全局视角，DeepSeek 每一代模型几乎都在围着同一个系统目标转：**在不损长上下文推理能力的条件下，同时打穿 KV Cache 容量墙与 Decode HBM 带宽墙**。图 2 用等比字节尺标汇总了五代演进与两大算力底座的对应实现：
+随后单流激活进入 DeepSeekMoE，在无辅助损失偏置 `e_score_correction_bias` 引导下选出 Top-K 细粒度路由专家，并与 1 个常驻共享专家并发执行——共享专家的投影计算趁 `DeepEP` 或 `TokenDispatcherWithMC2` 执行跨卡 `Dispatch` 时完成，计算后经对称 `Combine` 归位并由 mHC Post-Mix 写回 `[T, 4, d]`。整网最后一层归并回 `[T, d]` 后，抽取若干辅助层隐状态送入 DSpark（3 层 $n_{\text{win}} = 128$ SWA 并行 Draft 模型 + 秩 256 `DSparkMarkovHead` + 置信度头），由无损拒绝采样在下一步验证并步进多 token[^v41-flash]。
 
-![DeepSeek 五代 KV Cache 与双硬件执行全貌](./diagrams/10-five-gen-ledger.drawio '图 2：从 V2 到 V4.1-Flash 每词元 KV 字节账本演化与 SM100 / Ascend 910 双硬件闭环')
+下表对照 NVIDIA SM100 与华为昇腾两套生态在各模块的对应实现映射：
 
-对照图 2 中的核心指标与源码约束，五代技术路线的协同关系一目了然：
+| 执行环节       | NVIDIA SM100（`vllm`）             | 华为昇腾 NPU（`vllm-ascend`）                |
+| -------------- | ---------------------------------- | -------------------------------------------- |
+| 残差混合边界   | `Mega-mHC` / CuTe 延迟融合         | `npu_hc_pre_v3` + `npu_hc_post` 成对边界     |
+| 稀疏注意与逆旋 | `FlashMLAMegaAttn` 融合逆 RoPE     | `AscendDSAV41Impl` + `packed_cache_ops`      |
+| 条件记忆卸载   | `DPSharedEngramStorage` / `DeepEP` | `HostUvaBuffer` $2^{22}$ 分块与 IPC          |
+| MoE 通信分组   | `EPBuffer` + `DeepGEMM`            | `AscendMoERunner` + `TokenDispatcherWithMC2` |
+| 动态推测采样   | `all_to_all_vocab_shards` 请求转置 | `LmheadTPDraftSamplingMixin` 容量对齐        |
+| 静态图同步     | `FULL` CUDA Graph + `cuda.Event`   | `ACLGraphWrapper` + `ExternalEvent`          |
 
-| 模型代际                    | 注意力与 KV 压缩机制                      | 单层每 Token KV 字节               | 稀疏与推测关键机制                                                         |
-| --------------------------- | ----------------------------------------- | ---------------------------------- | -------------------------------------------------------------------------- |
-| **V2 / V3 / R1**            | MLA（`512` latent + `64` RoPE，BF16）     | **`1,152 B`**                      | V2 细粒度 MoE；V3 无辅损偏置 + 因果 MTP 链                                 |
-| **V3.2**                    | MLA + DSA 闪电索引器（`index_topk` 选块） | **`576 B`**（FP8 裸负载）[^v32-kv] | `Dense -> Sparse` 选块注意力；Hopper tile 实装含标尺为 `656 B`[^v32-kv]    |
-| **V4 / V4.1（生产 634B+）** | 压缩器 + 稀疏 MLA（`448 NoPE + 64 RoPE`） | **`288 B`**（NVFP4 压缩记录）      | 4 流 `mHC` + 两层主机卸载 `Engram` + `DSpark`（V4.1-Flash 扩至 `196B` 表） |
+## 五代演进与整网 KV 字节账本收敛
 
-- **每 token KV 足足压到四分之一**：从 BF16 MLA 的 `1,152 B`（`576 * 2 B`），经 FP8 稀疏化降到 `576 B`，再到 V4.1 的 NVFP4 `288 B`（`448 / 2 = 224 B` 载荷 + `64 B` 缩放与 RoPE）。再叠加共享 KV 源层（`is_kv_source` / `DeepseekV41Topology`）后，超长上下文下的单并发内存压力降幅可达数量级。
-- **双硬件的等语义闭环**：NVIDIA SM100 路线依靠 FP4/FP8 `DeepGEMM`、CuTe mHC 边界核、`DeepEP` RDMA/对称内存直读与 `FULL` CUDA Graph；华为 Ascend 路线则由 `AscendDSAV41Impl`、`npu_hc_pre_v3`、`TokenDispatcherWithMC2`、$2^{22}$ 分块 UVA 主机表（`HostUvaBuffer`）和 `ACLGraphWrapper` + `ExternalEvent` 组成对等生态。
+DeepSeek 五代架构演化始终围绕同一个系统目标推进：在保持长上下文检索与推理精度的同时，压缩单并发 KV 缓存容量与 Decode 阶段 HBM 带宽占用。图 2 用比例尺对比了从 V2/V3 到 V4.1-Flash 的字节账本缩减轨迹、参数存储分工以及两大硬件执行栈。
 
-## 集群级 DBO（Dual-Microbatch）与异步 Engram 时间线
+![DeepSeek 五代 KV Cache 字节账本与双硬件执行栈](./diagrams/10-five-gen-ledger.drawio '图 2：从 V2 到 V4.1-Flash 每 token KV 字节账本演化与 Hopper/Blackwell / Ascend 910 双硬件执行栈')
 
-单卡算子做完融合之后，多机多卡 EP 推理的最大头疼问题是**通信裸露时间**：如果整个批一次性跑完 Attention 再堵在 `All-to-All` Dispatch 上等数据跨机搬运，期间昂贵的矩阵计算单元只能干等。
+下表汇总五代方案的**单层 / 单槽位字节**与**整网每 token 总缓存**，与图 2 及第 01、03、05 篇账本完全对齐：
 
-`vllm/v1/worker/ubatching.py`（`L1-90, 165-254`）与 `vllm/models/deepseek_v41/nvidia/model.py`（`L781-805, 1151`）把每个全局批切分成一对乒乓微批 **`uBatch 0`（`μB0`）与 `uBatch 1`（`μB1`）**，用两条 CUDA 流与事件屏障把通信完全盖在计算下面。图 3 按严格毫秒等比刻度展示了这一调度切换过程：
+| 模型代际                    | 注意力与压缩配置                        | 单层 / 单槽位字节                         | 整网每 token 总缓存                           |
+| --------------------------- | --------------------------------------- | ----------------------------------------- | --------------------------------------------- |
+| 标准 MHA（基准）            | 61 层，128 KV 头，BF16                  | 65,536 B / 层                             | 3,997,696 B（约 4.00 MB，见第 01 篇）         |
+| DeepSeek-V2 / V3 / R1       | 61 层 BF16 MLA（512 潜维 + 64 RoPE）    | 1,152 B / 层                              | 70,272 B（约 70.3 KB）                        |
+| DeepSeek-V3.2（DSA）        | 61 层 FP8 MLA + 128 维 FP8 索引键       | 656 B + 132 B = 788 B / 槽位[^v32-kv]     | 48,068 B（约 48.1 KB，纯裸负载 576 B/层）     |
+| DeepSeek-V4-Flash           | 43 层交错 CSA（$m=4$）/ HCA（$m'=128$） | 按序列比例折叠（含 SWA 缓存）             | 1M 下全局与 SWA 降至 V3.2 的约 7%             |
+| DeepSeek-V4.1-Flash（CSA2） | 40 层三维 CSA2 + CED + NVFP4            | 主 KV 288 B（2x 折均摊 144 B）+ 68 B 索引 | **890 B**（2.5 份 × 356 B，较 V3 降约 79 倍） |
+
+把整网全局缓存从 V3 的 70,272 B 压到 V4.1-Flash 的 890 B（降幅约 79 倍，较 V3.2 的 48,068 B 也降低约 54 倍），靠的是三条维度上的乘法联合压缩：单槽位精度从 1,152 B 降至 656 B 再到 NVFP4 的 288 B；Encoder 18 层实施 $m = 2$ 序列折叠使单主层均摊降至 144 B；跨层复用让 40 层收敛至仅保留 2.5 份全局主 KV（720 B）与 2.5 份 MXFP4 HSI 索引（170 B）[^v41-flash]。
+
+为了同步削减重填充计算并把持久化缓存压到最低，V4.1-Flash 将非对称因果编码-解码（CED）与 SWA 有界重放绑定在一起：前 20 层编码器跑完长序列后，后 20 层直接由第 20 层顶输出投影得到全局 KV；而仅在分钟级热内存池中短驻留的 SWA 缓存一旦过期，只需按末尾 128 个 token 做有界重放恢复即可，从而将 SSD 持久化前缀池体积压缩至 V4 的 1/8[^v41-flash]。
+
+## 集群级 DBO 双微批与异步 Engram 协同
+
+即使单卡 Kernel 已经高度融合，多卡 EP 推理仍面临跨节点 `All-to-All` 通信裸露的问题：如果整批算完注意力再集体停下来等 `Dispatch` 与 `Combine` 返回，计算单元会在网络等待期间大量空转。`vLLM` 的 `UBatchContext` 将一个全局批拆成交替推进的乒乓微批 μB0 与 μB1，用计算流与通信流的硬件事件屏障把网络传输藏进矩阵计算窗口[^vllm-synth]。图 3 按毫秒等比刻度展示了这一调度切换过程。
 
 <ClusterDboSynthExplainer
   client:visible
   title="图 3：集群级 Dual-Microbatch (DBO) 与异步 Engram 预取毫秒等比时间线"
 />
 
-顺着图 3 的毫秒刻度看清三个工程要点：
+结合图 3 的时序刻度来看，串行执行两份微批加上同步等待 Engram 查表共耗时 15.2 ms。切入稳态 DBO 后，计算流先执行 μB0 注意力，就在 μB0 进入 1.8 ms 的 Dispatch 通信瞬间，计算流立刻切换去执行 μB1 注意力（1.4 ms）；紧接着 μB0 的 MoE GEMM 掩盖 μB1 Dispatch，μB1 的 MoE GEMM 掩盖 μB0 Combine，而最后一段 μB1 Combine（7.6–9.4 ms）则由下一层的 μB0 注意力接管掩盖，使单层稳态步长收敛到 9.4 ms（较串行基线提速 1.62 倍）。
 
-1. **计算流与通信流的毫秒级错峰互掩**：串行基线依次执行两份微批与预取等待共耗时 **`15.2 ms`**。切入 DBO 稳态后，`μB0 Dispatch`（`1.4..3.2 ms`）掩盖在 `μB1 Attention` 下，随后通信流接力 `μB1 Dispatch`、`μB0 Combine` 与 **`μB1 Combine A2A`（`7.6..9.4 ms`）** 并分别由 `MoE` 与下层 `Attention` 遮掩，稳态步长压至 **`9.4 ms`（提速 `1.62x`）**。
-2. **异步 Engram 预取贴身同行**：由于第 `1`、`14` 层的 Engram 哈希在层前即已知，后台流早在第 $0$ 层开始的同时就把 `6.0 ms` 主机表 DMA 搬运放飞，完美藏进多层计算与微批间隙里；同时 `EngramModelState` 与 `attn_metadata` 按 `dbo_current_ubatch_id()` 严格隔离 `ubatch_idx = 0 / 1`，避免双微批串写。
-3. **DBO 开启时的算子退避规则**：正如 `vllm/models/deepseek_v41/nvidia/ops/mhc.py`（`L57`）所示，当 `parallel_config.use_ubatching` 开启时，引擎主动关闭跨层 `mhc_shifted_post_pre` 融合——因为 `μB0` 与 `μB1` 在 MoE 边界交错让路，不能在单微批内把上一层 post 和本层 pre 绑成同一段静态流水。
+与此同时，由于第 1、14 层的 Engram 索引早在第 0 层启动前已经计算完毕，后台流在首层计算启动时就同步发出主机内存预取（图 3 中 6.0 ms 的传输窗口被前序层的注意力与 MoE 计算完全掩盖）；为了防止两个并发微批互相踩踏静态查表缓冲与注意力元信息，`DeepseekV4Model` 与昇腾 `EngramModelState` 均按 `dbo_current_ubatch_id()` 严格隔离 `ubatch_idx`（取值为 0 或 1）[^vllm-synth][^ascend-synth]。
 
-## Python 核心验证：五代 KV 字节与 DBO 时序核算
+开启 DBO 时存在一条硬性退避规则：在 `vLLM` 的 GPU 实现中，一旦 `use_ubatching` 开启，`supports_mhc_overlap` 会主动返回 `False`，关闭跨子层异步系数重叠与延迟融合 `AllReduce`（即关闭跨越层边界延迟收尾的 `mhc_shifted_post_pre` 跨层融合重排）[^vllm-synth]。正常单批模式下，上一层的 MoE `Combine` 和张量并行 `AllReduce` 可以延后到下一层的 `mhc_shifted_post_pre` 入口一并合并；而开启 DBO 后，μB0 与 μB1 在 MoE 边界频繁交错切换计算流与通信流事件，跨越层边界延迟收尾会与交替进场的另一微批在 `compute_stream` 与 `comm_stream` 上发生同步冲突。因此，启用 DBO 时每个微批必须在当前层内同步完成 MoE 写回与集合通信后再让出执行权。
 
-下面这段自包含 Python 脚本精确复算了图 2 的三档 KV 字节规格与图 3 的串行/DBO 毫秒级调度加速比：
+## PyTorch 端到端参考实现：MiniV41DecodeStep
+
+下面的自包含 PyTorch `MiniV41DecodeStep` 参考实现把整套单步全链路微缩进可运行模型中：串联 `[B, 4, d]` 双随机 Sinkhorn 多流残差混合、Full / Reuse 跨层 2 倍折叠 KV 共享与输出端逆旋转 $R_{-t}$、边界门控 Engram 注入与分组 MoE，最后将 $B = 4$ 批拆成 μB0 与 μB1 两个微批对比执行，验证双微批计算等价性与 890 B/token 整网 KV 账本。
 
 ```python
-import math
+import math, torch, torch.nn as nn, torch.nn.functional as F
+rms = lambda t: t * torch.rsqrt(t.square().mean(-1, keepdim=True) + 1e-6)
 
-# 1. 五代单层每 Token 主 KV 字节演进（BF16 -> FP8 -> NVFP4）
-kv_v23_bf16 = 512 * 2 + 64 * 2   # 1152 B/layer
-kv_v32_fp8 = 512 * 1 + 64 * 1    # 576 B/layer
-kv_v41_fp4 = 448 // 2 + 64       # 224 B FP4 + 64 B scale/RoPE = 288 B/layer
-assert kv_v23_bf16 == 1152 and kv_v32_fp8 == 576 and kv_v41_fp4 == 288
+def sinkhorn(logits: torch.Tensor, iters: int = 20) -> torch.Tensor:
+    m = torch.exp(logits - logits.amax(dim=(-2, -1), keepdim=True))
+    for _ in range(iters):
+        m = m / (m.sum(dim=-2, keepdim=True) + 1e-12)
+        m = m / (m.sum(dim=-1, keepdim=True) + 1e-12)
+    return m
 
-# 2. 双微批 DBO 流水线稳态耗时核算（单位：ms，对应图 3 时间线）
-attn, disp, gmm, comb, engram_wait = 1.4, 1.8, 2.2, 1.8, 0.8
-serial_2mb = 2 * (attn + disp + gmm + comb) + engram_wait
-dbo_2mb = 9.4  # uB0/uB1 Attn(0..2.8) + wait(0.4) + uB0/uB1 MoE(3.2..7.6) + hidden uB1 Comb(7.6..9.4)
-speedup = serial_2mb / dbo_2mb
-assert math.isclose(serial_2mb, 15.2) and speedup > 1.6
-print(
-    f"[10-synthesis] kv_bytes=(V2/3:{kv_v23_bf16}B, V3.2:{kv_v32_fp8}B, V4.1:{kv_v41_fp4}B), "
-    f"serial_ms={serial_2mb:.1f}, dbo_ms={dbo_2mb:.1f}, speedup={speedup:.2f}x"
-)
+def partial_rope(x: torch.Tensor, pos: torch.Tensor, d_rope: int = 4, inv: bool = False) -> torch.Tensor:
+    ang = pos.float().unsqueeze(-1) / (10000.0 ** (torch.arange(0, d_rope // 2, device=x.device) / (d_rope // 2)))
+    c, s, t1, t2 = ang.cos(), (-ang.sin() if inv else ang.sin()), x[..., -d_rope::2], x[..., -d_rope + 1::2]
+    return torch.cat([x[..., :-d_rope], torch.stack([t1 * c - t2 * s, t2 * c + t1 * s], dim=-1).flatten(-2)], dim=-1)
+
+class MiniV41Layer(nn.Module):
+    def __init__(self, is_kv_src: bool = True, has_eg: bool = False):
+        super().__init__()
+        self.d, self.d_kv, self.d_rope, self.is_kv_src = 16, 12, 4, is_kv_src
+        self.phi, self.wq, self.wo = nn.Linear(64, 24, bias=False), nn.Linear(16, 12, bias=False), nn.Linear(12, 16, bias=False)
+        self.wkv = nn.Linear(16, 12, bias=False) if is_kv_src else None
+        self.eg_emb, self.eg_wkv = (nn.Embedding(17, 16), nn.Linear(16, 80, bias=False)) if has_eg else (None, None)
+        self.router, self.shared, self.experts = nn.Linear(16, 4, bias=False), nn.Linear(16, 16, bias=False), nn.Linear(16, 64, bias=False)
+
+    def forward(self, H, prefix, tok_ids, pos, shared_kv=None, topk_idx=None):
+        def mhc(X):  # 双随机流形混合：产出 pre、post 与 Sinkhorn res 系数
+            p, q, r = self.phi(rms(X.flatten(-2))).split([4, 4, 16], dim=-1)
+            return torch.sigmoid(p).unsqueeze(-2), 2.0 * torch.sigmoid(q).unsqueeze(-2), sinkhorn(r.unflatten(-1, (4, 4)))
+        pre_a, post_a, res_a = mhc(H)
+        q = partial_rope(self.wq((pre_a @ H).squeeze(-2)), pos, self.d_rope)
+        if self.is_kv_src:  # Full 层做 2x 序列折叠并产出共享压缩 KV 与 Top-K 索引
+            kv_c = self.wkv(prefix.unflatten(1, (-1, 2)).mean(dim=2))
+            shared_kv = partial_rope(kv_c, torch.arange(kv_c.shape[1], device=H.device).unsqueeze(0), self.d_rope)
+            topk_idx = torch.topk((q.unsqueeze(1) * shared_kv).sum(-1), 4, dim=-1).indices
+        kv_sel = torch.gather(shared_kv, 1, topk_idx.unsqueeze(-1).expand(-1, -1, self.d_kv))
+        attn_w = F.softmax((q.unsqueeze(1) @ kv_sel.transpose(-1, -2)).squeeze(1) / math.sqrt(self.d_kv), dim=-1)
+        ctx = partial_rope((attn_w.unsqueeze(1) @ kv_sel).squeeze(1), pos, self.d_rope, inv=True)  # 逆旋恢复相对位置编码
+        H = res_a @ H + post_a.transpose(-1, -2) * self.wo(ctx).unsqueeze(-2)
+        if self.eg_emb is not None:  # 边界门控注入 Engram（4:1 K/V 与有符号开方）
+            ek, ev = self.eg_wkv(self.eg_emb(tok_ids % 17)).split([64, 16], dim=-1)
+            z = (rms(H) * rms(ek.unflatten(-1, (4, 16)))).sum(-1) / 4.0
+            H = H + torch.sigmoid(z.sign() * z.abs().clamp_min(1e-6).sqrt()).unsqueeze(-1) * ev.unsqueeze(-2)
+        pre_m, post_m, res_m = mhc(H)
+        xm = (pre_m @ H).squeeze(-2)
+        w, ids = torch.topk(torch.sigmoid(self.router(xm)), 2, dim=-1)
+        e_out = self.experts(xm).view(-1, 4, 16).gather(1, ids.unsqueeze(-1).expand(-1, -1, 16))
+        moe = self.shared(xm) + ((w / w.sum(dim=-1, keepdim=True)).unsqueeze(-1) * e_out).sum(dim=1)
+        return res_m @ H + post_m.transpose(-1, -2) * moe.unsqueeze(-2), shared_kv, topk_idx
+
+class MiniV41DecodeStep(nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.l1, self.l2 = MiniV41Layer(is_kv_src=True, has_eg=True), MiniV41Layer(is_kv_src=False)
+    def forward(self, H, prefix, tok_ids, pos):
+        H, skv, idx = self.l1(H, prefix, tok_ids, pos)
+        return self.l2(H, prefix, tok_ids, pos, skv, idx)[0].mean(dim=-2)
+
+if __name__ == "__main__":
+    torch.manual_seed(10)
+    m, H, pre, tids, pos = MiniV41DecodeStep().eval(), torch.randn(4, 4, 16), torch.randn(4, 16, 16), torch.tensor([101, 205, 308, 412]), torch.full((4,), 8)
+    with torch.no_grad():
+        out_full, out_dbo = m(H, pre, tids, pos), torch.cat([m(H[:2], pre[:2], tids[:2], pos[:2]), m(H[2:], pre[2:], tids[2:], pos[2:])], dim=0)
+        dbo_diff = (out_full - out_dbo).abs().max().item()
+        assert dbo_diff < 1e-5 and int((3 * 0.5 + 1.0) * (512 * 0.5 + 32 + 68)) == 890
+    print(f"[10-synthesis] out_shape={tuple(out_full.shape)}, dbo_max_diff={dbo_diff:.2e}, net_kv=(V3:{61*1152}B, V3.2:{61*788}B, V4.1:890B)")
 ```
 
-实测输出：
+运行输出：
 
 ```text
-[10-synthesis] kv_bytes=(V2/3:1152B, V3.2:576B, V4.1:288B), serial_ms=15.2, dbo_ms=9.4, speedup=1.62x
+[10-synthesis] out_shape=(4, 16), dbo_max_diff=5.96e-07, net_kv=(V3:70272B, V3.2:48068B, V4.1:890B)
 ```
 
-## 代价与边界：全链路耦合下的工程权衡
+校验结果显示，整批前向与拆成 μB0、μB1 两个微批独立执行的输出最大误差仅为 5.96e-07（源于浮点矩阵分块归约次序），验证了共享权重与只读压缩 KV 在微批拆分下的数学一致性；同时 V4.1-Flash 整网每 token 全局缓存 890 B 相比 V3 整网 70,272 B 收敛约 79 倍，与前文账本严格对齐。
 
-- **图捕获与微批切分必须严守静态形状**：`vllm/v1/worker/gpu/cudagraph_utils.py` 明确限制 DBO（`num_ubatches > 1`）只能跑在 `FULL` 静态图模式并禁止回落 `PIECEWISE`；一旦批内请求数不足以切出均衡微批，切分和事件同步开销就会反过来拖慢吞吐。
-- **跨部件状态一致性校验不可省**：在 V4.1 同一层内并存 `CompressorStateCache`（循环缓冲）、`topk_indices_buffer`（跨层共享）、`EngramModelState`（双微批独立查表缓冲）和 `DSpark` 回滚槽位；昇腾侧也必须用 `ExternalEvent` 与 `valid_token_count` 守卫图内空跑卡，任何一环越界或脏内存都会沿 `4` 条 `mHC` 通道放大。
-- **硬件假设与实测口径边界**：本系列文中引用的毫秒调度示例（`15.2 ms` vs `9.4 ms`）与硬件特性边界（如 SM100 `288 B` NVFP4 记录与 GB200 排序阈值、昇腾 A5 vs 910B INT8/MXFP8 降级）均对照 `vllm@bb23c0a8`、`FlashMLA@395cb3af`、`DeepEP@f6aa38fe` 与 `vllm-ascend@3649b8ff` 静态源码及公开技术报告核验，不同网络拓扑（NVLink vs HCCS vs RoCE）下的绝对加速比仍需以真机实测剖析为准。
+把这么多部件放进同一张执行图之后，全链路的稳定就取决于几条必须同时成立的系统耦合前提。第一，在 `vLLM` 里只要启用了 `num_ubatches > 1` 的 DBO 微批重叠，执行期就必须保持 `FULL` 静态图捕获而禁止回退到分段图（`PIECEWISE`），同时请求批内必须凑够可均衡拆分的计算量，否则切换微批和事件同步的额外开销会超过通信掩盖收益[^vllm-synth]。第二，多卡部署时 `PipelineRelay`、上下文并行与分段编译都受限于状态跨界传递约束，微批启用后引擎还需同步关闭跨级缓存接力和有界解码重放等依赖全局一致批长的优化路径[^vllm-synth]。
 
-## 自测
+第三，单步之内同时并存着环形尾缓存、跨层 `topk_indices_buffer`、双微批隔离的 `EngramModelState` 以及 DSpark 回滚槽位，昇腾图模式还依赖 `ExternalEvent` 与 `valid_token_count` 边界检查同步空跑卡，任何一处指针越界或脏状态残留都会沿着 4 条 mHC 残差通道向深层传播。
 
-1. 对照图 1 的六阶段链路，为什么 V4.1 把 `Engram` 放在上一层 `mhc_post` 与本层 `mhc_pre` 之间，而不是等注意力算完之后再查表相加？
-2. 对照图 2 与数值验证，从 DeepSeek-V2/V3 的 `1,152 B/layer` 降到 V4.1 的 `288 B/layer`，节省的四分之三 KV 字节具体来自哪些结构与精度变化？
-3. 在图 3 的 DBO 双微批稳态时间线里，为什么必须要求 `num_ubatches = 2` 且各自持有独立事件与 `ubatch_idx` 状态，而不能随意使用一个微批或让 `uB1 Combine A2A` 留在层内串行等待？
-4. 在 `vllm` 与 `vllm-ascend` 两套代码中，当打开 `use_ubatching` 或 `enable_adaptive_verification` 时，各自有哪些算子融合（例如 `mhc_shifted_post_pre` 或 `FULL` ACLGraph）会主动降级或重编？为什么？
+到这里，我们完成了从 DeepSeek-V2 到 V4.1-Flash 模型层架构与单步全链路的拆解。接下来要把这套复杂模型真正拉起为高并发在线服务，工程主战场转向请求调度、`torch.compile` 分段图与静态图捕获编排——请继续阅读 [系列四：vLLM 与昇腾推理引擎](../../vllm/)。
 
-[^vllm-synth]: `vLLM`（commit `bb23c0a8`）：`vllm/models/deepseek_v41/nvidia/model.py`（`DeepseekV4MegaAttnAttention` `288 B` NVFP4 记录、`DeepseekV4DecoderLayer.forward`、`dbo_current_ubatch_id`）、`vllm/models/deepseek_v41/sparse_mla.py`（`supported_head_sizes=[512]` = `448 NoPE + 64 RoPE`）、`vllm/models/deepseek_v41/nvidia/ops/mhc.py`（`use_ubatching` 禁用 `mhc_shifted_post_pre`）、`vllm/v1/worker/ubatching.py`（`UBatchContext`、`make_ubatch_contexts`）与 `vllm/v1/worker/gpu/cudagraph_utils.py`（`num_ubatches > 1` 的 `FULL` 图断言）。
+[^vllm-synth]: `vLLM` 仓库（commit `bb23c0a8`）：`vllm/models/deepseek_v41/nvidia/model.py`（`L540-719, 853-975, 1151` `DeepseekV4MegaAttnAttention`、`DeepseekV4DecoderLayer`、`dbo_current_ubatch_id`）、`sparse_mla.py`、`nvidia/ops/mhc.py`（`L46-58` `supports_mhc_overlap` 检查 `not use_ubatching`）、`vllm/v1/worker/ubatching.py`（`L20-254` `UBatchContext`）与 `vllm/v1/worker/gpu/cudagraph_utils.py`（`num_ubatches > 1` 的 `FULL` 图断言）。
 
-[^ascend-synth]: `vllm-ascend`（commit `3649b8ff`）：`vllm_ascend/models/deepseek_v41/model.py`（`DeepseekV41DecoderLayer`、`npu_hc_pre_v3`、`npu_hc_post`、`ExternalEvent` 同步）、`vllm_ascend/models/deepseek_v41/engram/model_state.py`（`ubatch_idx` 隔离）、`vllm_ascend/attention/dsa_v41.py`（`AscendDSAV41Impl`）、`vllm_ascend/ops/fused_moe/fused_moe.py`（`AscendMoERunner`）与 `vllm_ascend/ops/fused_moe/token_dispatcher.py`（`TokenDispatcherWithMC2`）。
+[^ascend-synth]: `vllm-ascend` 仓库（commit `3649b8ff`）：`vllm_ascend/models/deepseek_v41/model.py`（`L772-940, 1467-1722` `DeepseekV41DecoderLayer`、`npu_hc_pre_v3`、`npu_hc_post`、`ExternalEvent` 同步）、`engram/model_state.py`、`vllm_ascend/attention/dsa_v41.py`（`AscendDSAV41Impl`）、`ops/fused_moe/fused_moe.py`（`AscendMoERunner`）与 `token_dispatcher.py`（`TokenDispatcherWithMC2`）。
 
-[^v32-kv]: `FlashMLA`（commit `395cb3af`）`docs/20250929-hopper-fp8-sparse-deep-dive.md`：纯 FP8 潜变量+RoPE 裸载荷为 `576 B`（`512 + 64` 字节），Hopper `FP8` 稀疏分页 tile 实装格式连带 `4` 个 `float32` scale 与 `64` 维 `bf16` RoPE 合计 `656 B/token`。
+[^v41-flash]: DeepSeek-AI, _DeepSeek-V4.1-Flash Technical Report_, [arXiv:2609.19969](https://arxiv.org/abs/2609.19969)（2026-09），§2.2–2.4 与 §3.2 阐述 40 层 552B 骨干 + 196B Engram、288 B NVFP4 主 KV 与 890 B/token 全网账本、CED 与 SWA 有界重放、10d Mega-mHC 及 DSpark 组合。
 
-[^v41-flash]: DeepSeek-AI, _DeepSeek-V4.1-Flash Technical Report_, [arXiv:2609.19969](https://arxiv.org/abs/2609.19969)（V4.1-Flash 全栈组合：`4`-流 mHC、196B Engram 主机内存异步预取、DSpark 并行草稿与动态截断验证）。
+[^v32-kv]: `FlashMLA` 仓库（commit `395cb3af`）：`docs/20250929-hopper-fp8-sparse-deep-dive.md`，记录纯 FP8 潜变量加 RoPE 裸载荷为 576 B，Hopper 稀疏分页格式连带 4 个 `float32` scale 与 64 维 BF16 RoPE 合计 656 B/token。

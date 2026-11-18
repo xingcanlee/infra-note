@@ -1,6 +1,6 @@
 ---
 title: '03 MoE 跨卡通信与通算融合：从 DeepEP 双模式、昇腾 MC2 到双微批重叠（DBO）'
-description: '拆解 MoE 专家并行 All-to-All 通信气泡根源，对比 NVIDIA DeepEP（HT/LL 到 v2 统一 EPBuffer）与昇腾 HCCL MC2、FlashComm，并落到双微批重叠（DBO）与共享专家异步流实现。'
+description: '拆解 MoE 专家并行 All-to-All 通信阻塞根源，对比 NVIDIA DeepEP 统一底座与昇腾 HCCL MC2、编译融合及共享专家流，并对照双微批重叠实现。'
 series: { id: distributed, order: 4 }
 pubDate: 2026-11-14
 tags: [MoE, DeepEP, MC2, DBO, All-to-All, NVIDIA, Ascend]
@@ -10,170 +10,122 @@ toc: true
 
 import DboTimelineExplainer from '../../../../explainers/distributed/DboTimelineExplainer';
 
-前两章拆解了长序列与多机跨节点的并行底座，本篇聚焦 MoE 推理里最吃通信带宽的专家并行（EP，Expert Parallelism）。在一个大型 MoE 层里，计算量本就随着 Top-$K$ 稀疏激活下降了数倍，真正拖垮端到端吞吐与尾延迟的，往往是把词元送到目标专家卡、算完再收归原卡的那两趟跨卡 `All-to-All`。
+在大型混合专家（MoE）模型中，每 token 的激活前馈计算量经稀疏路由大幅压缩后，把 token 送往目标专家卡、算完再收归原卡的两趟跨卡 `All-to-All` 通信直接成为端到端吞吐与尾延迟的主要瓶颈。同时，单批次内部的算子依赖会让计算核心在网络传输飞行窗口内处于等待空转状态。
 
-更棘手的是，即便网卡和 NVLink 跑满理论带宽，单个批次在算子图上的串行依赖依然会把 Tensor Core 或 AI Core 锁死在通信气泡里。本篇沿着“先算清痛点—再看 NVIDIA 与昇腾双路线拆解—最后跨批重叠消气泡”的脉络，回答四个核心工程问题：
+## 专家并行 All-to-All 通信的阻塞根源
 
-- 为什么通用 `AllToAllV` 在稀疏路由与热点专家下会变成算力“饿死器”？
-- NVIDIA DeepEP 如何从 Prefill 高吞吐（HT）与 Decode 低延迟（LL）双模式，演进到 v2 统一 `EPBuffer`？
-- 昇腾 NPU 的 HCCL MC2 如何靠 `HCCL_BUFFSIZE` 与核内切片流水把通信和计算揉成一体，又如何借助 `MatmulReduceScatterFusionPass` 隐藏 TP 侧通信？
-- 双微批重叠（DBO）怎样用“乒乓流”消掉单批内串行气泡，它与昇腾 `AscendSharedExperts` 辅助流异步重叠在工程边界上有何取舍？
-
-## 为什么 EP All-to-All 会饿死计算引擎
-
-为了看清 `AllToAllV` 究竟卡在哪里，我们不先看代码，而是用手算追踪一个 4 卡、4 词元、Top-2 路由的最小 EP 例子。
-
-设集群共有 `world_size = 4`（Rank 0 到 Rank 3），全局 4 个专家均匀放在各卡上（每卡独占 1 个专家：$E_r$ 位于 Rank $r$）。初始时刻，每张卡各自持有 1 个输入词元 $t_0, t_1, t_2, t_3$，路由器为每个词元给出 Top-2 专家及归一化权重：
-
-- $t_0$（位于 Rank 0）选定 $(E_0: 0.7,\; E_1: 0.3)$；
-- $t_1$（位于 Rank 1）选定 $(E_1: 0.6,\; E_2: 0.4)$；
-- $t_2$（位于 Rank 2）选定 $(E_1: 0.8,\; E_0: 0.2)$；
-- $t_3$（位于 Rank 3）选定 $(E_1: 0.5,\; E_2: 0.5)$。
-
-一共 4 个输入词元，乘以 Top-2 就衍生出 8 份词元激活副本。接下来，一次完整的 EP MoE 前向必须串行闯过三道关口：
-
-1. **Dispatch（按专家重分发）**：每张卡先做一次轻量元数据握手（交换每对 rank 间要发送的词元数 `send_splits` / `recv_splits`），再调用变长集合通信 `AllToAllV`。各卡实际收到的词元数目立刻分化：$E_0$ 收 2 个（$t_0, t_2$），热点专家 $E_1$ 独占 4 个（$t_0, t_1, t_2, t_3$），$E_2$ 收 2 个（$t_1, t_3$），冷门专家 $E_3$ 收到 0 个。
-2. **局部专家 GEMM（受限于最慢卡）**：由于每张卡收到的切片长度 `[2, 4, 2, 0]` 变长且不齐，硬件不得不执行变长 Grouped GEMM 或补零对齐。此时 Rank 3 的计算单元整段空转，Rank 0 和 Rank 2 早早算完 2 个词元，却无法进入下一层——它们必须干等持有 4 个词元的热点卡 Rank 1 算完。
-3. **Combine（加权归还原卡）**：所有卡在屏障前会合后，再触发第二次 `AllToAllV`，把 8 份专家输出矢量发回各自的源卡，并在源卡上按路由权重相加：$y_0 = 0.7 E_0(t_0) + 0.3 E_1(t_0)$，$y_1 = 0.6 E_1(t_1) + 0.4 E_2(t_1)$，以此类推。
+承接第 02 章对 `Attention DP + MoE EP` 路由轨迹的追踪，当偏斜路由把大批请求集中送往少数热点专家时，通用变长 `All-to-All（AllToAllV）` 原语的控制与数据流向如图 1 所示。两条支路分别对应传统串行等待与双硬件栈的通算融合及流水重叠路径。
 
 ```mermaid caption="图 1：4 卡 MoE EP 分发计算归还流与双栈卸载路径"
 flowchart TD
     R["DP Ranks 输入 [1,D]"] --> G["Top-2 门控选路与计数"]
-    G --> S["传统 AllToAllV<br/>串行等待"]
+    G --> S["传统 AllToAllV 串行等待"]
     G --> O["双栈通算融合与重叠"]
-    S --> L["热点 E1 拖慢<br/>全组算力"]
-    O --> N["GPU DeepEP v2<br/>+ DBO"]
-    O --> A["昇腾 MC2 +<br/>共享专家流"]
+    S --> L["热点专家拖慢全组算力"]
+    O --> N["GPU DeepEP v2 + DBO"]
+    O --> A["昇腾 MC2 + 共享专家流"]
     N --> E["局部 Grouped GEMM 计算"]
     A --> E
     E --> C["逆向 Combine 加权还原"]
 ```
 
-把图 1 的执行流摊在时间轴上，通用 `AllToAllV` 的三重病灶就一目了然：
+沿图 1 左侧的传统路径拆解，通用 `AllToAllV` 的性能损耗主要源自三个系统层面约束。
 
-- **两次主机同步与元信息阻塞**：Dispatch 前要先同步接收长度表，在 Decode 仅几十个词元的场景里，CPU 侧发射算子与集合通信栅栏的毫秒级抖动甚至高于数据传输本身；
-- **跨机慢链路拖垮机内快总线**：标准集合通信把跨机低带宽 RDMA 与机内高带宽 NVLink 混为一谈，且按最大负载 Rank 对齐，放大长尾等待；
-- **单批串行锁死算力**：计算流（Compute Stream）在 Dispatch 与 Combine 两段通信期间几乎完全闲置，越是增大 EP 并行度，算力利用率掉得越惨。
+第一是主机端元数据同步栅栏。在发起变长分发之前，各卡必须先交换彼此准备发送的 token 数量表，确认接收长度后才能为接收缓冲区分配偏移；在每卡只有数个到数十个 token 的 Decode 阶段，CPU 侧发射同步 Kernel 与集合通信栅栏的开销常常高于字节搬运本身，同时也阻断了静态计算图的端到端捕获。
 
-为了治好这三类病灶，NVIDIA（DeepEP）与华为昇腾（HCCL MC2 / FlashComm）选择了截然不同的硬件破局路线，接着再到框架调度层用双微批重叠（DBO）彻底打通计算流与通信流。
+第二是跨机慢网与机内快网混用。当专家并行跨越多个计算节点时，标准集合通信把跨机低带宽 RDMA 与机内高带宽 NVLink 或 HCCS 视为平坦对等网络；如果同一个 token 被路由到对端节点上的多个专家，就会在跨机网卡上重复发送冗余副本，并且整组通信必须等待负载最重的热点卡与跨机尾延迟一同对齐。
 
-## NVIDIA 路线：从 DeepEP 双模式到 v2 统一 EPBuffer
+第三是单流串行执行造成计算气泡。在单一计算流上，Attention 计算完成前 Dispatch 无法发射，而 Dispatch 与 Combine 在网络飞行期间计算引擎几乎完全空转；随着专家并行规模增大，通信耗时占比持续上升，计算核心的有效利用率随之下降。
 
-### 为什么早期需要 HT 与 LL 两套引擎
+## NVIDIA DeepEP 的双模式演进与统一底座
 
-在早期 `vllm` 与 DeepEP 的工程演进里，Prefill（大词元吞吐敏感）和 Decode（小词元延迟敏感）的硬件瓶颈完全不同，强行共用同一个内核只会两头不讨好，于是衍生出了 High-Throughput（HT）和 Low-Latency（LL）两种独立模式。
+### 高吞吐与低延迟双模式的分化动因
 
-**HT 模式（`deepep_ht.py`）专治多机 Prefill 大吞吐。** 当输入词元成千上万时，如果让每个专家副本直接走跨节点 RDMA 网卡点对点发往目标机各卡，同一份词元被广播给目标节点多张卡上的专家，就会重复占用稀缺的跨机 NIC 带宽。
+在早期 `vllm` 与 `DeepEP` 的演化中，由于预填充（大批量吞吐受限）和解码（小批量延迟受限）对硬件资源的诉求截然不同，系统曾拆分出高吞吐（HT，High-Throughput）与低延迟（LL，Low-Latency）两套独立通信引擎。
 
-DeepEP HT 的核心策略是**非对称两级中继（Scale-out $\rightarrow$ Scale-up）**：跨节点先走 RDMA 把同一词元只发一份到目标机器对应编号的转发卡，到达节点内部后，再利用机内超高带宽 NVLink 广播拷贝给实际驻留专家的目标卡[^deepep-hybrid]。
+高吞吐模式在 `vllm` 中由 `DeepEPHTPrepareAndFinalize` 封装，面向多机 Prefill 大载荷，核心在于采用非对称两级中继（先跨机 RDMA 中继、后机内 NVLink 扇出）消除跨机冗余流量：跨节点先通过 RDMA 将同一 token 仅发一份到目标机器的对应转发卡，到达目标节点内部后再借由高带宽 NVLink 广播分发给具体驻留专家的目标卡[^deepep-hybrid]。为对齐硬件事务粒度，发送端对隐藏维按 512 字节原子块对齐；但因为每次前向接收到的 token 总数随动态路由实时变化，开启数据并行时该模式无法锁定固定张量形状，编译配置不得不强制禁用 CUDA Graph[^vllm-ht]。
 
-在 `vllm` 的 `DeepEPHTPrepareAndFinalize` 实现中，所有传输矩阵按 512 字节原子对齐（`xfer_atom_size = 512`）[^vllm-ht-atom]。但这套高吞吐方案在工程上有个硬伤：**每次前向分发出来的接收词元数都是路由实时决定的动态张量**，因此 `vllm` 编译配置在 `all2all_backend == "deepep_high_throughput"` 且开启 DP 时，会强制把 CUDA Graph 模式降级为 `CUDAGraphMode.NONE`[^vllm-ht-nocg]。
+低延迟模式在 `vllm` 中对应 `DeepEPLLPrepareAndFinalize`，针对 Decode 阶段对 $\alpha$ 固定延迟与图捕获的严格要求，完全切换至 **IBGDA（GPU 侧直驱 RDMA）**：GPU 线程束跳过 CPU 调度，直接在设备端拼装 RDMA 工作请求并将 token 写入对端预注册的对称显存槽位。配合 `return_recv_hook=True` 异步发射与在 `dbo_maybe_run_recv_hook` 中触发的接收轮询钩子，系统可以在数据飞行期间把计算控制权先交还其他算子，同时以静态容量上限与定长隐藏层检查保持与 CUDA Graph 兼容[^vllm-ll]。
 
-**LL 模式（`deepep_ll.py`）专治 Decode 低延迟与 CUDA Graph 兼容。** Decode 阶段每卡往往只有数个到数十个词元，带宽不是瓶颈，CPU 启动内核、等待主机元数据回传的开销才是致命杀手。
+### 统一 EPBuffer 的双态收敛与显存映射
 
-LL 模式切到纯 **IBGDA（GPU 侧直驱 RDMA）**：GPU 内核跳过 CPU，自己拼装 RDMA WR 直接把词元写入远端卡预注册的对称显存槽位。配合 `return_recv_hook=True`，`prepare_async` 可以先发完数据立刻把控制权还给其他算子，等真正要消费数据时再触发零 SM 占用的后台信号轮询钩子[^vllm-ll-hook]。静态预分配上限、定长隐藏层检查（如 `SUPPORTED_HIDDEN_SIZES` 涵盖 2048 到 8192[^vllm-ll-hidden]），让 LL 模式成功跑进 CUDA Graph。
+分别维护 HT 与 LL 两套缓冲区与调度接口，会增加混合批处理和共部署实例的内存与状态管理复杂度。为此新版 `DeepEP` 与 `vllm` 将两条路径收敛进了统一的 `DeepEPV2PrepareAndFinalize` 底座（如图 2 左侧所示）：`DeepEP@f6aa38fe` v2.5 已将统一通信缓冲从 `ElasticBuffer` 重构拆分为 `EPBuffer` 并移除 v1 接口[^deepep-epbuffer]，而当前基线 `vllm@bb23c0a8` 中的 `DeepEPV2All2AllManager` 与 `DeepEPV2PrepareAndFinalize` 仍过渡绑定 `ElasticBuffer` 接口[^vllm-v2-cg]。
 
-### DeepEP v2 统一 EPBuffer：一套底座吃透全场景
+![NVIDIA DeepEP 与华为昇腾 HCCL MC2 通算融合架构对照](./diagrams/03-deepep-vs-mc2-arch.drawio '图 2：NVIDIA DeepEP v2 统一 EPBuffer 与华为昇腾 HCCL MC2 通算融合架构对比')
 
-维护两套独立的 Buffer、两套内核调优参数给多实例共部署和混合调度带来沉重负担。因此在最新的 `DeepEP`（`deep_ep/buffers/ep.py`）与 `vllm` 的 `deepep_v2.py` 中，双模式被收敛成了一套统一的 `EPBuffer`[^deepep-epbuffer]。
+统一底座通过四项工程折中将两种运行形态揉入同一套接口。首先，底层发射器依据跨节点数自动选择单机直连或两级中继 Kernel，并根据链路与显存带宽模型推算所需的流式多处理器（SM）与网卡队列对（QP）配额[^deepep-qps]。其次，在编译与调度策略上用动态展开与主机同步开关区分阶段：非图模式下的 Prefill 允许按实际接收量动态展开激活以节省显存，而开启 CUDA Graph 的 Decode 路径关闭一切主机同步，并将每卡最大 token 上限向上取整到 2 的幂，防止输入长度微小波动引发 JIT 重编译抖动[^vllm-v2-cg]。
 
-![NVIDIA DeepEP 演进路线与昇腾 MC2 及 FlashComm 架构对照](./diagrams/03-deepep-vs-mc2-arch.drawio '图 2：NVIDIA DeepEP v2 统一 EPBuffer 与昇腾 MC2 + FlashComm 架构对比')
+由于关闭了主机同步，CPU 线程在发射阶段并不知晓本次实际收到了多少有效 token；为此框架在 GPU 上追加一个轻量 Triton Kernel `_globalize_recv_topk_idx`，直接读取设备侧前缀和数组的末尾计数，将越界填充槽位或非本地专家索引原地标记为 `-1`，全程无需回传主机[^vllm-v2-triton]。
 
-拆开 `EPBuffer` 与 `DeepEPV2PrepareAndFinalize`，可以看到它靠四组精巧开关把 Prefill 和 Decode 拧进了同一条代码路径：
+此外，分发句柄会缓存目标槽位索引以便在 Combine 阶段跳过通知阶段[^deepep-cached]，尾段拷贝启用可编程依赖启动（PDL）实现核间尾波重叠，而 MXFP8 缩放因子也被紧凑打包进 4 字节整型随 token 一并传输[^vllm-v2-mxfp8]。支撑这一切无 CPU 干预直写能力的底层基石，是基于 CUDA 驱动虚拟内存映射构建的弹性对称显存：通过预留连续虚拟地址并跨进程导出文件描述符句柄，同机多进程无需额外拷贝即可直接向对端物理内存写入数据[^deepep-symm]。
 
-- **同一内核双形态分流**：底层 `launch_dispatch` 与 `launch_combine` 统一根据 `num_scaleout_ranks` 决定走单机直连（`dispatch_impl`）还是多机中继（`hybrid_dispatch_impl`），并通过 `get_theoretical_num_sms` 与 `get_theoretical_num_qps` 自动推导所需 SM 与 QP 配额（混合模式下 `num_qps = num_sms * 16 + 1`）[^deepep-qps]。
-- **`do_expand` 与 `do_cpu_sync` 解耦动态与静态**：当 `use_cudagraph=False`（Prefill 态）时，`DeepEPV2PrepareAndFinalize` 传入 `do_expand=True, do_cpu_sync=True`，允许按需动态展开激活并由主机读取接收总数；当 `use_cudagraph=True`（Decode 图态）时，改为 `do_expand=False, do_cpu_sync=False`，禁止任何主机同步，并将每卡最大词元上限向上取到 2 的幂（`1 << max(n - 1, 0).bit_length()`），防止输入微调触发 DeepEP JIT `cicc` 重编译风暴[^vllm-v2-cg]。
-- **核上局部索引全局化（`_globalize_recv_topk_idx`）**：在 `do_cpu_sync=False` 时，主线程根本不知道收到了多少合法词元。`deepep_v2.py` 用一个轻量的 Triton 内核在 GPU 内部直接读取前向接收计数前缀和的末位元素 `psum_ptr[P - 1]`，把超出真实接收长度的槽位或非本卡专家索引原地标记为 `-1`，全流程不下 GPU[^vllm-v2-triton]。
-- **`cached_mode`、PDL 与 MXFP8 打包**：`EPHandle` 缓存了上次分发的 `dst_buffer_slot_idx` 等槽位索引，结合 `cached_mode` 可在 Combine 等已知映射阶段直接跳过 `kNumNotifyWarps` 通知阶段（`num_notify_warps = 0`）[^deepep-cached]；尾段拷贝与归约内核通过 `.enable_pdl = true` 启用尾波重叠（Programmatic Dependent Launch）；量化侧由 `_pack_mxfp8_scale` 把 `[M, K/32]` 的 `uint8` 缩放因子紧凑打包为 `[M, K/128]` 的 `int32` 随词元一并跨机传输[^vllm-v2-mxfp8]。
+## 华为昇腾 MC2 通算融合与编译期通信消除
 
-支撑这套零 CPU 干预通信的底座，是 `csrc/kernels/comm/symmetric.hpp` 中的弹性对称显存抽象（`ElasticSymmetricMemory` 与 `HybridElasticSymmetricMemory`）：底层基于 CUDA Driver API 虚拟地址预留与物理页映射（`cuMemAddressReserve` / `cuMemCreate` / `cuMemMap`），节点内通过 `pidfd_open` 与 `pidfd_getfd` 跨进程导入 POSIX FD 内存句柄，实现真正的零拷贝跨卡直写[^deepep-symm]。
+### 通信路径分级策略与容量阈值
 
-## 昇腾路线：HCCL MC2 通算融合与编译器级 FlashComm
+与 GPU 将通信下沉至用户态 PTX 与网卡直驱不同，华为昇腾 NPU 选择了“核内切片流水”加“编译期融合”的技术路径（如图 2 右侧所示）。在 `vllm-ascend` 中，引擎在框架层显式注册了四档 MoE 通信策略——`AllGather`、`AlltoAll`、`MC2` 与 `FusedMC2`[^ascend-comm-setup]，并在每次前向传播前依据当前批大小、EP 并行规模与硬件特性动态选路[^ascend-select]。
 
-### 四档路由策略与严格确定性容量边界
+当开启了 LoRA 微调适配器且启用 EP，或者单卡 token 数超过融合算子容量上限时，系统稳妥回退到通用的变长 `All-to-All`（`AlltoAll` 策略）；当 EP 并行规模不大于每 token 激活的专家数时，由于几乎每个 token 都会命中所有卡上的专家，先做一次全量 `AllGather` 反而比离散点对点路由搬运的总字节更少；只有当单卡载荷落在受控容量区间内（标准 `MC2` 与三合一路径上限为每卡 512 个 token，而较新的 CANN `MegaMoe` 路径将上限放宽到 16,384 个 token）[^ascend-limits]，引擎才会切入真正的通算融合算子。
 
-与 GPU 侧把通信下沉到用户态 PTX/IBGDA 轮询不同，昇腾 NPU 走的是**“通信与计算同核切片流水”加上“编译期大算子融合”**两条腿走路的方案。
+### 核内切片流水与三合一算子融合
 
-在 `vllm-ascend`（`ops/fused_moe/moe_comm_method.py`）中，MoE 通信路径被显式注册成四档策略：`AllGatherCommImpl`、`AlltoAllCommImpl`、`MC2CommImpl` 和 `FusedMC2CommImpl`[^ascend-comm-setup]。每次前向传播前，`ascend_forward_context.py` 的 `select_moe_comm_method` 会根据当前批次大小、EP 世界规模与专家密度动态选路[^ascend-select]：
+MC2（Matmul-Communication Fusion）之所以能够消除大部分通信气泡，关键在于把原本必须首尾相接的整块大算子切碎为细粒度 **Slice（数据块）**。在两步融合的 `MC2` 路径下，调度器先把各序列并行或数据并行分片的输入填充对齐并生成掩码以屏蔽无效占位[^ascend-prep-mc2]，随后依次调用 `npu_moe_distribute_dispatch_v2` 与 `npu_moe_distribute_combine_v2`[^ascend-disp-mc2]。
 
-- 当启用了 LoRA 且带 EP，或每卡词元数超出容量上限时，稳妥降级回 `AlltoAllCommImpl`；
-- 当 `ep_world_size <= num_experts_per_tok`（词元几乎必命中所有卡，做 AllGather 反而比离散点对点更省通信量）时，切到 `AllGatherCommImpl`；
-- 当单卡容量落在 `MC2` 与 `FusedMC2` 黄金区间时，才启用真正的通算融合算子（代码内常量上限为 `_MC2_TOKENS_PER_RANK_LIMIT = 512`、`_DISPATCH_FFN_COMBINE_TOKENS_PER_RANK_LIMIT = 512`，而新版 CANN `MegaMoe` 路径将上限放宽到了 `_MEGA_MOE_TOKENS_PER_RANK_LIMIT = 16384`[^ascend-limits]）。
+在 NPU 内部，AICPU 与 HCCL 引擎按 Slice 粒度流水推进：每收满一个 Slice 的数据就立刻送入矩阵或向量单元计算，使跨卡传输、核内 INT8/MXFP 动态量化与矩阵计算逐块接力完成。
 
-### MC2 核内切块流水与 `FusedMC2CommImpl` 三合一
+更进一步的 `FusedMC2` 路径则调用 `dispatch_ffn_combine` 或 CANN `MegaMoe` 对称缓冲区引擎，将 Dispatch、SwiGLU 专家双次分组矩阵乘与 Combine 乃至共享专家权重一并装进单个融合算子内完成[^ascend-fusedmc2]。
 
-为什么开启 MC2（Matmul-Communication Fusion）就能大幅消掉通信等待气泡？关键在于把原本串联的整块大算子切成了细粒度 **Slice（数据块）**：
+高度集成的核内融合也引入了两项必须严格遵守的缓冲区约束。其一，标准 MC2 算子直接根据环境变量 `HCCL_BUFFSIZE` 划分通信与计算共享内存段，因此通信组创建逻辑在遇到 MC2 组时会刻意跳过独立的组选项配置，以免破坏算子内部的静态地址切分基线[^ascend-hccl-pg]；同理，`MegaMoe` 对称缓冲区也要求所有 EP 卡传入完全一致的编译期容量上限，否则会触发远程一致性错误[^ascend-507057]。
 
-- **`TokenDispatcherWithMC2`（两步融合流水）**：调度器在 `PrepareAndFinalizeWithMC2` 阶段先把各 SP/DP 分片的输入填齐到统一的 `padded_num_tokens` 并构造 `mc2_mask` 屏蔽填充位[^ascend-prep-mc2]，随后调用 `torch_npu.npu_moe_distribute_dispatch_v2`（支持 `quant_mode=2` INT8 与 `4` MXFP 在分发时同步量化）和 `npu_moe_distribute_combine_v2`[^ascend-disp-mc2]。在 NPU 内部，AICPU/HCCL 不再等所有卡全数收齐才启动 AI Core，而是每收满一个 Slice 的词元数据就立刻喂给矩阵/向量单元计算，收发与计算在同一个大核内部按 Slice 接力推进。
-- **`FusedMC2CommImpl`（三步合一极限压缩）**：更进一步，`FusedMC2CommImpl` 在适配硬件上直接把 Dispatch、SwiGLU 专家双次 GMM 与 Combine 打包进单个融合算子 `torch.ops._C_ascend.dispatch_ffn_combine(..., max_output_size=65536)`，或交给 CANN `MegaMoe` 引擎（`_apply_cann_mega_moe`）执行，并在 A5 等架构支持把共享专家权重 `shared_l1_weights` / `shared_l2_weights` 一并揉进同一核函数[^ascend-fusedmc2]。
+其二，为了防止推理途中临时分配对称缓冲区引发显存溢出，模型启动阶段在正式测算 KV Cache 可用空间前会先检查预热样本规模：只要常规预热步数未能覆盖 `mc2_tokens_capacity`，执行器就会额外补跑一次 `Dummy Run`（空跑预热），提前分配并固定 MC2 所需的峰值对称缓冲区[^ascend-profile]。
 
-不过，高集成度的核内融合带来了一个极易踩坑的硬件约束：**确定性缓冲区预先占满与严禁乱改通信组配置**。
+### 张量并行侧的矩阵乘与 ReduceScatter 融合
 
-1. **`HCCL_BUFFSIZE` 独占且禁传 `pg_options`**：MC2 算子内部直接依据环境变量 `HCCL_BUFFSIZE` 划定通信与计算共享内存段。在 `vllm_ascend/utils.py` 的 `get_hccl_config_for_pg_options` 中，一旦识别到 `"mc2" in group_name` 就会刻意返回 `None`，因为额外传入细粒度 `pg_options` 会打乱 HCCL 的内存切分基线，导致地址错位或运行时崩溃[^ascend-hccl-pg]。同理，`MegaMoe` 的对称缓冲区 `_init_mega_moe_symm_buffer` 严格要求各卡使用完全一致的 `num_max_tokens_per_rank`，否则会触发 HCCL 错误码 `507057`[^ascend-507057]。
-2. **必须提前 `profile_run` 预占**：在 `NPUModelRunner.profile_run` 启动阶段、正式分配 KV Cache 显存之前，如果发现当前配置开启了 MC2/FusedMC2 且常规预热词元数没达到 `mc2_tokens_capacity`，引擎会专门补跑一次 `_dummy_run(mc2_tokens_capacity, skip_attn=True, ...)`，提前把 MC2 对称缓冲区的峰值显存锁死，防止推理途中突然 OOM[^ascend-profile]。
+通算融合同样延伸到张量并行与序列并行链路。在 Attention 输出投影或前馈网络行并行收尾处的 `Matmul -> ReduceScatter` 序列中，如果等整张输出矩阵乘完才发起跨卡归约，仍会暴露一段纯通信延迟。
 
-### FlashComm / TP 侧：`MatmulReduceScatterFusionPass`
+为此 `vllm-ascend` 在 FX 图编译阶段引入了 `MatmulReduceScatterFusionPass`[^ascend-mmrs]：当 TP 规模为 2、4 或 8，数据类型为 `bfloat16` 或 `float16`，且归约维度满足 `256 <= K < 65535` 时，模式匹配器会自动捕获紧接在行并行矩阵乘（含输入填充节点）之后的 `ReduceScatter`，将填充折叠进输入并用融合原语 `npu_mm_reduce_scatter_base`（或量化变体）替换整段子图。算子一边产出输出行分片一边发起 `ReduceScatter` 传输，把 TP 侧通信隐藏在矩阵乘法计算窗口内。
 
-通算融合并不只发生在 EP 侧。对于序列并行（SP）或 Attention 输出侧的 `Matmul -> ReduceScatter`，如果老老实实等整张输出矩阵乘完再发跨卡归约，照样留下一大块纯通信气泡。
+## 双微批重叠与共享专家异步流
 
-`vllm-ascend` 在图编译层提供了 `MatmulReduceScatterFusionPass`（`mm_reduce_scatter_fusion_pass.py`）：当 `tp_size in (2, 4, 8)`、`bfloat16`/`float16` 且归约维度 `256 <= K < 65535` 时，编译 Pass 会自动匹配紧跟在 `unquantized_gemm`（或带 `CatPadded`/`ConstantPadded`）之后的 `reduce_scatter` 节点[^ascend-mmrs]。
-
-匹配成功后，框架把填充逻辑折叠进输入并将整条子图替换为融合原语 `npu_mm_reduce_scatter_base`（量化场景下对应 `npu_quant_mm_reduce_scatter`）；算子按输出行分片一边算 Matmul 一边吐出 ReduceScatter，直接把 TP 侧的集合通信时间埋进矩阵乘法窗口。
-
-## 打破单批依赖：双微批重叠（DBO）与共享专家异步流
-
-无论是 DeepEP 的 IBGDA 还是昇腾的 MC2，都把单次通信或 MoE 内部压缩到了硬件物理极限。然而，只要整批数据（Batch）走在同一条顺序依赖链上，**Attention 算完前 Dispatch 无米下炊，MoE Dispatch 飞行期间同一微批后续层也动弹不得**——单微批内部的因果链不可能无中生有地拆出并发。
-
-打破这堵物理依赖墙的办法非常朴素：**把一个大 Batch 对半劈成 Microbatch A 和 Microbatch B，用两拨数据在同一批计算与网络资源上打“乒乓球”**，这就是 **Dual-Batch Overlap（DBO / TBO）**。
+即便单个通信 Kernel 的带宽利用率已经逼近硬件链路上限，只要整批请求运行在同一条顺序依赖链上，Attention 计算完成前 Dispatch 依然无法启动，Dispatch 飞行期间后续算子也只能停滞。将整批输入（例如 $B = 1024$ 个 token）对半切分为两个微批 $\mu B_0$ 与 $\mu B_1$（每份 512 个 token），让两个微批在计算流与通信流之间交替错峰推进，便是**双微批重叠（DBO，Dual-Batch Overlap）**的核心机制。可以通过图 3 的步进控件依次观察串行基准、GPU 双微批乒乓模式以及昇腾单批 MC2 辅助流流水线的对比。
 
 <DboTimelineExplainer
   client:visible
-  title="图 3：双微批重叠（DBO / TBO）与 DeepEP / MC2 毫秒级流水线推演"
+  title="图 3：双微批重叠（DBO）与昇腾 MC2 异步流毫秒级流水线推演"
 />
 
-如 **图 3** 所示，在严格按毫秒等比例对齐的泳道中，双微批把原本暴露在主路上的 3.10 ms 通信等待压缩为连续算力，使有效算力利用率从 54.1% 跃升至 85.2%。
+如图 3 所示，在严格按毫秒比例对齐的泳道中，串行单批完成一层共耗时 8.50 ms（有效计算 4.60 ms，算力利用率 54.1%）；GPU 端对半切分后，$\mu B_1$ 的注意力槽位恰好填满了 $\mu B_0$ 的跨卡分发等待，后续 $\mu B_1$ 分发与 $\mu B_0$ 专家计算交叉推进，将单层耗时降至 5.40 ms，算力活跃度提高到 85.2%；而昇腾端则保留完整单批，在主流执行 MC2 算子内 Slice 流水的同时，由辅助计算流并发执行共享专家。
 
-### `vllm` 的多线程单控 DBO 状态机
+### NVIDIA 栈的双微批状态机与图边界
 
-在 `vllm` 的 `v1/worker/ubatching.py` 与 `gpu/ubatch_utils.py` 中，DBO 并不是“开两个 CUDA Stream 然后随便异步扔算子”那么简单，因为如果两个线程同时抢 CPU 发射权和 CUDA Graph 上下文，立刻就会竞态乱序。
+在 `vllm` 的执行器实现中，DBO 依靠主控线程交替接力，避免两条主机线程同时向流中并发投放算子导致 Kernel 入队乱序或破坏图捕获。
 
-`UBatchRunner` 固定采用 `_NUM_UBATCHES = 2`，在初始化时建立一条独立通信流 `self.comm_stream` 和捕获流 `self.capture_stream`[^vllm-ubatch-runner]。运行时只允许一条 CPU 线程处于活跃发射状态，两条微批线程通过 `UBatchContext` 中的事件组（`cpu_wait_event`、`cpu_signal_event`、`gpu_compute_done_event`、`gpu_comm_done_event`）精准交接控制权[^vllm-ubatch-ctx]：
+`UBatchRunner` 固定维护两条微批线程，共享一条计算流与一条通信流[^vllm-ubatch-runner]，但在任意时刻只允许一条 CPU 线程处于活跃发射状态：当微批 A 算完注意力并抵达 `DeepEP` 分发入口时，它先在计算流上记录完成事件，再通过线程同步状态机交出 CPU 控制权并唤醒微批 B；微批 B 随即在计算流推进注意力算子，与通信流上飞行中的微批 A 分发操作真正实现硬件并发[^vllm-ubatch-ctx]。
 
-1. Microbatch A 在计算流算完 Attention 后，进入 `DeepEPHTPrepareAndFinalize._do_dispatch` 或 `DeepEPLLPrepareAndFinalize.prepare_async`；
-2. A 记录下计算完成事件，随即调用 `dbo_yield_and_switch_from_compute_to_comm()` 在 `comm_stream` 上发起跨卡 `Dispatch`，并把 CPU 发射接力棒交给 Microbatch B；
-3. B 趁着 A 的词元正在 RDMA / NVLink 上飞行，立刻占用 `compute_stream` 算完 B 的 Attention；当 B 也来到 Dispatch 门口时，A 的远程数据多半已经到达（或通过 `dbo_maybe_run_recv_hook` 收尾），B 再把计算核心还给 A 执行 MoE GEMM。
+这套多线程单控状态机在部署时受两项工程约束限制。一方面，当 `DeepEP` 高吞吐模式在通信流执行打包与跨节点中继时会占用一部分 GPU SM，因此运行前需要通过 `VLLM_DBO_COMM_SMS` 静态划出通信专用 SM 配额并等额缩减矩阵乘可用 SM，避免两条流在硬件上互相抢占资源[^vllm-dbo-sm]。
 
-这套机制还有两道必须牢记的工程约束：
+另一方面，因为流切换事件必须完整录进同一份设备重放图中，DBO 与分段捕获模式天然互斥，只能绑定全图捕获模式 `CUDAGraphMode.FULL` 生成双微批孪生图[^vllm-dbo-fullcg]；同时引擎设置了 Prefill 与 Decode 最小 token 阈值，避免在极小批下对半拆分反而拉低矩阵乘效率[^vllm-dbo-thresh]。
 
-- **SM 静态隔离**：如果 `DeepEP HT` 在 `comm_stream` 上运行，它本身也会吃掉部分 SM 做打包与中继。`create_sm_control_context` 会按 `VLLM_DBO_COMM_SMS` 环境变量把通信所需 SM 预先抠出来，剩下的 `total_sms - comm_sms` 才交给 DeepGEMM，防止通信抢光算子 SM 引发隐形卡顿[^vllm-dbo-sm]；
-- **严格绑定 FULL CUDA Graph**：在 `cudagraph_utils.py` 中，DBO 与分段捕获（`PIECEWISE`）天然互斥——因为每个微批需要把切换事件也整块录进同一个 Replay 图里，源码直接断言 `cg_mode != CUDAGraphMode.PIECEWISE`（否则报错 `"DBO does not support PIECEWISE cudagraphs"`），只有开启 `CUDAGraphMode.FULL` 时才会通过 `_maybe_ubatch_twin` 捕获双微批孪生图[^vllm-dbo-fullcg]。同时只有当批次词元数跨过 `dbo_decode_token_threshold` 或 `dbo_prefill_token_threshold` 时才会激活 DBO，避免极小 Batch 下反而被拆半降效率[^vllm-dbo-thresh]。
+### 昇腾栈的共享专家异步重叠路径
 
-### 昇腾路径为何不用 DBO，而是做 SharedExperts 异步流
+与 NVIDIA 路线不同，当前 `vllm-ascend` 在模型状态机中显式禁用了 DBO[^ascend-nodbo]。背后的工程原因十分直接：首先，昇腾 MC2 已经在单一融合核内部按 Slice 粒度把自身的通信与计算重叠完毕；其次，将原本不大的批尺寸对半再切分，容易让单微批滑离 DaVinci Cube 核的高效矩阵分块区间，甚至掉出融合算子的最优工作点。
 
-仔细对照 `vllm-ascend@3649b8ff` 的代码库，会发现一个与 NVIDIA 截然不同的现实：**当前昇腾路线明确禁用 DBO**（`model_states` 中显式断言 `assert ubatch_idx == 0, "DBO is not supported on Ascend"`，平台层也会把 `ubatch_size` 重置为 `0`）。
+为此，昇腾路径转而利用现代 MoE 模型自带的**常驻共享专家（Shared Experts）**特性——共享专家不依赖稀疏门控路由，所有 token 一律参与计算。在 `AscendMoERunner` 的调度编排中，一旦路由器输出就绪，引擎立即把共享专家的 Gate-Up 投影投递到专门的辅助计算流上，利用共享专家的计算去填补主流上路由 Top-K 排序与 `Dispatch` 的网络等待时间；待路由计算推进至激活与 Combine 里程碑时，两条流再完成结果汇合，而当 `MegaMoe` 启用核内全融合时则会直接跳过外部辅助流调用[^ascend-shared]。
 
-原因很现实：一方面昇腾 MC2 本身已经在算子内部用 Slice 切块把 MoE 自己的 Dispatch / GEMM / Combine 重叠掉了；另一方面，把原本就不充裕的小 Batch 再对半切开，会直接把单微批推离高效 Cube 矩阵分块尺寸（甚至落出 MC2/FusedMC2 最优窗口）。
+### 双硬件栈 MoE 通信方案对照
 
-取而代之的，是利用 DeepSeek-V3 等模型自带**常驻共享专家（Shared Experts）**的结构红利——共享专家没有任何稀疏路由依赖，所有词元一律照算！在 `AscendMoERunner._forward_impl`（`fused_moe.py` 与 `shared_experts.py`）中，引擎走出了漂亮的异步辅助流编排[^ascend-shared]：
+| 工程维度         | NVIDIA 栈（`DeepEP` + `vllm`）   | 昇腾栈（`vllm-ascend` + CANN）     |
+| :--------------- | :------------------------------- | :--------------------------------- |
+| **核心通信原语** | 统一 `EPBuffer` 与 IBGDA 直驱    | MC2 核内切片与三合一融合算子       |
+| **通算重叠粒度** | 线程接力切换双微批计算流与通信流 | 核内切片流水配合共享专家异步流     |
+| **显存管理约束** | 虚拟内存对称映射与 2 的幂对齐    | 独占缓冲区与 `Dummy Run` 预占      |
+| **量化协同打包** | 缩放因子打包为四字节整型随传     | 核内边传边量化与量化归约融合       |
+| **静态图兼容性** | 关闭主机同步后支持全图模式捕获   | 静态填充配掩码入图且禁用双微批     |
+| **张量并行融合** | 对称显存直写配合尾波依赖启动     | 编译期融合矩阵乘与 `ReduceScatter` |
 
-1. 一旦路由器算出输出里程碑 `router_output_ready`，立刻把 `AscendSharedExperts` 的 Gate-Up 投影投递到专用的辅助流 `shared_experts_calculation_stream()` 上（`enqueue_gate_up_after_router`）；
-2. 主流与此同时去跑路由专家的 Top-K 重排与 `Dispatch` 网络发送——恰好把共享专家算力塞进路由调度与网络气泡里；
-3. 主流等到 `shared_activation_overlap_start` 与 `routed_combine_start` 等事件点时，再把共享专家的激活与 Down 投影结果和路由路径汇合（而在 `MegaMoe` 启用核内全融合时，则直接置位 `_megamoe_shared_expert_fused` 并跳过外部独立流调用）。
+## 专家并行等价性与双流流水仿真
 
-### 工程全景对照表：NVIDIA DeepEP vs 昇腾 MC2 / FlashComm
-
-| 工程维度              | NVIDIA 方案（`DeepEP` + `vllm`）                                                       | 昇腾方案（`vllm-ascend` + CANN）                                                                                               |
-| :-------------------- | :------------------------------------------------------------------------------------- | :----------------------------------------------------------------------------------------------------------------------------- |
-| **核心通信原语**      | `EPBuffer.dispatch / combine`（HT 两级中继；LL 纯 IBGDA）                              | `npu_moe_distribute_dispatch_v2 / combine_v2`、三合一 `dispatch_ffn_combine`、`MegaMoe`                                        |
-| **通算重叠粒度**      | 层级流并发：**DBO 双微批乒乓**（`UBatchRunner` 切换 `compute_stream` / `comm_stream`） | 核内 + 旁路并发：**MC2 Slice 核内流水** + **`shared_experts_calculation_stream` 辅助流** + **TP `npu_mm_reduce_scatter_base`** |
-| **显存管理约束**      | `ElasticSymmetricMemory` + `pidfd_getfd`；图模式下上限向上对齐 2 的幂防 JIT            | 独占 `HCCL_BUFFSIZE`（禁 `pg_options`）；`profile_run` 提前 `_dummy_run` 预占 `mc2_tokens_capacity`                            |
-| **量化协同打包**      | `_pack_mxfp8_scale` 把缩放因子打进 `int32` 随 Dispatch 传输                            | `dispatch_v2` 支持 `quant_mode=2/4` 核内边传边量化；TP 侧提供 `npu_quant_mm_reduce_scatter`                                    |
-| **CUDA / NPU 图兼容** | HT+DP 禁用图；LL / `deepep_v2` 配合 `do_cpu_sync=False` 全兼容；DBO 仅支持 `FULL` 图   | 由 `MoECommMethod` 按上限切分路线，结合静态 padding 与 `mc2_mask` 兼容图模式（禁用 DBO）                                       |
-| **TP / SP 侧融合**    | 依赖 NCCL UserBuffer / SymmMem 或自定义 Triton epilogue（PDL）                         | 编译 Pass `MatmulReduceScatterFusionPass` 自动融合，支持输入 Padding 折叠                                                      |
-
-## PyTorch / NumPy 核心实现：4 卡 EP 等价性与 DBO 双流仿真
-
-下面的自洽 NumPy 核心实现一并验证两件事：第一，4 卡 Top-2 偏斜路由 `[2, 4, 2, 0]` 经过 `Dispatch -> 局部计算 -> Weighted Combine` 后，与单卡直接聚集的误差在机器精度量级；第二，对应 **图 3** 的双流离散时钟模拟器对比单批串行与双微批 DBO 的真实端到端加速比：
+下面的自包含 NumPy 脚本同时完成两项验证：第一部分在 4 卡 Top-2 偏斜路由下核对 `Dispatch -> 局部专家计算 -> 加权 Combine` 与单卡参考实现的数值等价性；第二部分基于图 3 的离散时间参数，模拟串行单批与双微批重叠的理论流水线耗时：
 
 ```python
 import numpy as np
@@ -206,6 +158,7 @@ for src_rank, eid, pos, w in meta:
 assert y_dist.shape == (4, 8) and np.allclose(y_dist, y_ref, atol=1e-12)
 print(f"EP counts={counts} max_diff={np.max(np.abs(y_dist - y_ref)):.2e}")
 
+
 def sim_stream(attn=2.20, moe=2.40, disp=2.00, comb=1.50, sync=0.20, ev=0.05):
     t_serial = attn + (disp + sync) + moe + (comb + sync)
     comp, comm = 0.0, 0.0
@@ -219,119 +172,72 @@ def sim_stream(attn=2.20, moe=2.40, disp=2.00, comb=1.50, sync=0.20, ev=0.05):
     c1 = max(m1 + ev, comm) + comb / 2; comm = c1
     return t_serial, max(comp, comm), attn + moe
 
+
 ts, td, tc = sim_stream()
 print(f"Serial={ts:.2f}ms ({100 * tc / ts:.1f}%) | DBO={td:.2f}ms ({100 * tc / td:.1f}%)")
 ```
 
-使用 `uv run --with numpy python` 执行后，实测输出如下：
+运行脚本可得数值校验与理论流水线耗时对比：
 
 ```text
 EP counts=[2, 4, 2, 0] max_diff=3.33e-16
 Serial=8.50ms (54.1%) | DBO=5.40ms (85.2%)
 ```
 
-分析这组与 **图 3** 严格吻合的数值模型结果可以看出：在 `Prefill` 大批载荷下，双微批重叠用 `μB1` 的 Attention 槽填满 `μB0` 的 Dispatch，再把 `μB1` 的 Dispatch 与 `μB0` 的 MoE 交叉掩盖，把单层总延迟从 8.50 ms 压低到 5.40 ms（算力活跃率从 54.1% 拉升至 85.2%）；而在 `Decode` 极小批场景下，把本就不大的矩阵再次对半切分反而会损失 Tensor Core / Cube 分块效率，这正解释了为什么两家体系分别演进出了 **GPU IBGDA / DeepEP LL 模式** 与 **昇腾核内 Slice MC2 + 共享专家辅助流**。
+从仿真结果可以看出，在 Prefill 大批载荷下，双微批交错排程能够有效掩盖中间两段通信气泡并显著拉高算力活跃度；但在 Decode 小批场景下，把原本就很小的矩阵再次拆半会损伤矩阵乘计算核的分块效率，这也是为什么生产系统分别演进出了 GPU 侧的 IBGDA 低延迟 Kernel 以及昇腾侧的核内 Slice 流水与共享专家异步流。同时上线配置时仍需算清两笔账：第一，对称内存与静态缓冲区本质上都在用预占显存换取零同步开销，过度拉大缓冲上限会直接挤压并发 KV Cache 空间；第二，通算重叠只能藏住通信时间，无法消除热点专家引发的计算木桶效应，负载倾斜本身依然要靠无辅助损失偏置和冗余专家负载均衡去缓解。
 
-## 工程代价与真实落地边界
+至此，[《分布式并行与跨卡通信》](../)已从物理互连、多维切分与通算重叠三个层面拆解完毕。但通信层优化无法改变模型激活与路由的固有分布，若要进一步压缩缓存字节体积并从算法源头缓解专家倾斜，请继续阅读[《DeepSeek 架构演进》](../../deepseek/)。
 
-把通算融合与双微批重叠推上生产集群时，以下几条边界往往决定上线成败，而非单纯的纸面峰值：
+[^deepep-hybrid]: 见 `DeepEP@f6aa38fe`：`csrc/kernels/ep/dispatch.hpp` L31–166（`launch_dispatch` 区分单机 `dispatch_impl` 与多机 `hybrid_dispatch_impl`）及 `csrc/kernels/ep/combine.hpp` L24–146（`hybrid_combine_impl` 两级转发）。
 
-- **显存与预热代价倍增**：无论 `DeepEP` 的对称缓冲区还是昇腾的 `HCCL_BUFFSIZE` 与 `mc2_tokens_capacity`，本质上都是在用静态保留显存换取运行时零锁零分配。当集群上同机部署多个 MoE 副本或混合序列长度服务时，HCCL / RDMA 缓冲池一旦按高并发水位预先拉大，就会直接挤占 KV Cache 空间。
-- **热点专家长尾依旧会戳穿重叠窗口**：哪怕完美把 Microbatch A 的通信与 Microbatch B 的算力对齐，如果某一两个热门专家像手算例子里的 $E_1$ 那样独占超过一半的激活副本，B 算完之后仍然得在同步点干等。通算融合解决的是“通信与计算彼此互锁”，而负载失衡本身仍需要路由偏置调控、副本冗余（EPLB）去配合消化。
-- **调试难度与图模式脆性**：一旦开了 `do_cpu_sync=False`、`return_recv_hook` 或核内 Slice 流水，普通的算子级 Profiler 时间线就不再直白。如果忘记关闭 DeepEP HT + DP 的 CUDA Graph，或者在昇腾 MC2 通信组误传 `pg_options`，往往直接触发静默死锁、重复重编译抖动或错误码 `507057`。
+[^vllm-ht]: 见 `vllm@bb23c0a8`：`vllm/model_executor/layers/fused_moe/prepare_finalize/deepep_ht.py` L47–211（`DeepEPHTPrepareAndFinalize` 对齐 `xfer_atom_size = 512` 字节并实现 `_do_dispatch`）；`vllm/config/compilation.py` L1403–1418（`deepep_high_throughput` 与 `data_parallel_size > 1` 组合时强制 `CUDAGraphMode.NONE`）。
 
-## 自测与实战串联
+[^vllm-ll]: 见 `vllm@bb23c0a8`：`vllm/model_executor/layers/fused_moe/prepare_finalize/deepep_ll.py` L29、L51–58（`DeepEPLLPrepareAndFinalize` 定义 `DEEPEP_QUANT_BLOCK_SIZE = 128` 与 `SUPPORTED_HIDDEN_SIZES` `[2048..8192]`）、L238–335（`prepare_async` 启用 `return_recv_hook=True`）及 L383–421（`_finalize` 触发 `dbo_maybe_run_recv_hook`）。
 
-做三道紧扣源码细节的自测题检验吸收程度：
+[^deepep-epbuffer]: 见 `DeepEP@f6aa38fe`：`README.md` L11–32 及 `deep_ep/buffers/ep.py` L208–906（v2.5 将原 `ElasticBuffer` 拆分为 `EPBuffer` 并移除 v1 `Buffer` 接口，统一 `dispatch` 与 `combine`）。
 
-**1. 为什么在 `vllm` 的 `DeepEPV2PrepareAndFinalize` 开启 CUDA Graph（`use_cudagraph=True`）时，要把每卡最大词元容量 `num_max_tokens_per_rank` 向上对齐到 2 的幂，并用 Triton 在 GPU 上执行 `_globalize_recv_topk_idx`？**
+[^vllm-v2-cg]: 见 `vllm@bb23c0a8`：`vllm/distributed/device_communicators/all2all.py` L1191–1273（`DeepEPV2All2AllManager` 仍绑定 `deep_ep.ElasticBuffer`）与 `vllm/model_executor/layers/fused_moe/prepare_finalize/deepep_v2.py` L73–232（`DeepEPV2PrepareAndFinalize` 在图模式下置 `do_expand=False, do_cpu_sync=False`，并按 `1 << max(n - 1, 0).bit_length()` 对齐 `num_max_tokens_per_rank` 防 `cicc` 重编译）。
 
-<details>
-<summary>参考答案</summary>
+[^deepep-qps]: 见 `DeepEP@f6aa38fe`：`deep_ep/buffers/ep.py` L431–560（`get_theoretical_num_sms` 与 `get_theoretical_num_qps` 根据 `num_scaleout_ranks` 推导 SM 与 QP 配额，混合模式下 `num_qps = num_sms * 16 + 1`）。
 
-1. **防 JIT 重编译风暴**：DeepEP 底层核函数会把最大词元槽位数作为编译期模板或常量尺度参数；如果不向上对齐到 2 的幂（`1 << max(n - 1, 0).bit_length()`），每遇到一个没见过的批次大小都会触发一次冗长的 `nvcc/cicc` 编译卡顿与重复 Graph 捕获。
-2. **严禁图内 CPU 同步**：CUDA Graph 录制阶段绝不允许主机读取设备端真实收到的词元数量（即不能 `do_cpu_sync=True`）。`_globalize_recv_topk_idx` 直接在 GPU 上读取前置接收计数前缀和的末位 `psum_ptr[P - 1]`，把越界槽位原地标为 `-1`，从而在完全不打断 Graph 重放的前提下完成合法词元过滤。
+[^vllm-v2-triton]: 见 `vllm@bb23c0a8`：`vllm/model_executor/layers/fused_moe/prepare_finalize/deepep_v2.py` L568–612（`_globalize_recv_topk_idx` Triton 内核读取设备端 `psum_ptr[P - 1]` 就地筛选合法专家索引）。
 
-</details>
+[^deepep-cached]: 见 `DeepEP@f6aa38fe`：`csrc/kernels/ep/dispatch.hpp` L64–65（`cached_mode` 将 `num_notify_warps` 置为 `0` 并复用 `dst_buffer_slot_idx`）及 L207–214（`.enable_pdl = true` 启用尾波依赖启动）。
 
-**2. 在 `vllm-ascend` 中，为什么 `NPUModelRunner.profile_run` 要抢在 KV Cache 内存计算前单独补一次 `mc2_tokens_capacity` 的哑跑（Dummy Run），且严禁对带 `"mc2"` 名称的通信组设置 `pg_options`？**
+[^vllm-v2-mxfp8]: 见 `vllm@bb23c0a8`：`vllm/model_executor/layers/fused_moe/prepare_finalize/deepep_v2.py` L42–70（`_pack_mxfp8_scale` 与 `_unpack_mxfp8_scale` 将 `[M, K/32]` 缩放因子打包为 `[M, K/128]` 的 `int32`）。
 
-<details>
-<summary>参考答案</summary>
+[^deepep-symm]: 见 `DeepEP@f6aa38fe`：`csrc/kernels/comm/symmetric.hpp` L139–300（`ElasticSymmetricMemory` 与 `HybridElasticSymmetricMemory` 基于 `cuMemAddressReserve` / `cuMemCreate` / `cuMemMap` 与 `pidfd_open` / `pidfd_getfd` 实现零拷贝跨进程映射）。
 
-1. **提前封顶固定显存**：MC2 与 `FusedMC2` 算子底层要在设备上按最大容量划出对称缓冲区；`profile_run` 先以 `mc2_tokens_capacity` 触发一次哑跑，能把这笔峰值通信显存实打实地压出来并锁进已用基线，这样后续算出来的可用 KV Cache 配额才不会在真正大并发推理时 OOM。
-2. **防止 `HCCL_BUFFSIZE` 切分错位**：CANN 的 MC2 算子严格依赖 `HCCL_BUFFSIZE` 全局环境变量划分核内与卡间缓冲切片；`get_hccl_config_for_pg_options` 若对 `"mc2"` 通信组下发额外 `pg_options` 覆写缓冲策略，会打破算子内部假定的对称内存偏移布局。
+[^ascend-comm-setup]: 见 `vllm-ascend@3649b8ff`：`vllm_ascend/ops/fused_moe/moe_comm_method.py` L68–75（`setup_moe_comm_method` 注册四类 MoE 通信实现）。
 
-</details>
+[^ascend-select]: 见 `vllm-ascend@3649b8ff`：`vllm_ascend/ascend_forward_context.py` L381–445（`select_moe_comm_method` 与 `_MOE_COMM_SELECTORS` 动态选路逻辑）。
 
-**3. 对比 `vllm` 开启 `num_ubatches > 1`（DBO）时为何要求必须是 `CUDAGraphMode.FULL`，而昇腾 `vllm-ascend` 又为何直接禁用 DBO？**
+[^ascend-limits]: 见 `vllm-ascend@3649b8ff`：`vllm_ascend/ascend_forward_context.py` L51–53（`_MC2_TOKENS_PER_RANK_LIMIT = 512`、`_DISPATCH_FFN_COMBINE_TOKENS_PER_RANK_LIMIT = 512` 与 `_MEGA_MOE_TOKENS_PER_RANK_LIMIT = 16384`）。
 
-<details>
-<summary>参考答案</summary>
+[^ascend-prep-mc2]: 见 `vllm-ascend@3649b8ff`：`vllm_ascend/ops/fused_moe/prepare_finalize.py` L239–303（`PrepareAndFinalizeWithMC2` 对齐 `padded_num_tokens` 并生成 `mc2_mask`）。
 
-1. **FULL Graph 刚性要求**：`PIECEWISE` 图模式只针对 Attention 之外的片段局部捕获、并在主机侧穿插动态切分逻辑；而 DBO 需要把双微批之间的 `gpu_compute_done_event` / `gpu_comm_done_event` 跨流事件与孪生执行流（`_maybe_ubatch_twin`）完整固化在一张整图里高速重放，因此源码显式禁止 `PIECEWISE`。
-2. **昇腾为何禁用**：MC2 已通过核内 Slice 流水重叠了 MoE 内部通信；对于 Decode 或中小 Batch 场景，把原本不大的输入再对半拆成两微批会导致 Cube GEMM 效率大幅滑坡甚至跌出 MC2 高效区，因此改用 `shared_experts_calculation_stream()` 异步并行跑共享专家来吞掉路由和分发气泡。
+[^ascend-disp-mc2]: 见 `vllm-ascend@3649b8ff`：`vllm_ascend/ops/fused_moe/token_dispatcher.py` L175–354（`TokenDispatcherWithMC2` 调用 `npu_moe_distribute_dispatch_v2` 支持 `quant_mode=2/4` 及 `npu_moe_distribute_combine_v2`）。
 
-</details>
+[^ascend-fusedmc2]: 见 `vllm-ascend@3649b8ff`：`vllm_ascend/ops/fused_moe/moe_comm_method.py` L482–695（`FusedMC2CommImpl` 通过 `_apply_cann_mega_moe` 与 `torch.ops._C_ascend.dispatch_ffn_combine` 执行三合一融合）。
 
-**参数改动验证实验**：将上方核心代码块中的两处参数改动后重跑即可直观观察敏感度：第一，把 `routes` 改造成均匀分布 `[2, 2, 2, 2]`（每专家 2 个 Token），观察 `counts` 与热点长尾消除效果；第二，把 `sim_stream` 中的 `disp`、`comb` 通信延迟翻倍模拟跨机慢网卡，观察 `DBO` 与串行模式之间的时延差如何进一步拉大。
+[^ascend-hccl-pg]: 见 `vllm-ascend@3649b8ff`：`vllm_ascend/utils.py` L1242–1264（`get_hccl_config_for_pg_options` 识别到 `"mc2"` 组名时返回 `None`，保留 `HCCL_BUFFSIZE` 独立划分）。
 
----
+[^ascend-507057]: 见 `vllm-ascend@3649b8ff`：`vllm_ascend/ops/fused_moe/moe_comm_method.py` L384–480（`_init_mega_moe_symm_buffer` 统一各卡 `num_max_tokens_per_rank` 以避免 HCCL 错误码 `507057`）。
 
-至此，**系列二：分布式推理与通信内核**的跨机、张量与专家并行三部曲已经全部拼合完毕。当你真正动手配置集群并行度时，EP 路由算法与模型结构本身怎么联动减通信（如 DeepSeek-V2/V3 的无辅助损失负载均衡与共享专家划分）就成为下一道必答题——请接着阅读 [系列三：DeepSeek 架构演进](../../deepseek/)。
+[^ascend-profile]: 见 `vllm-ascend@3649b8ff`：`vllm_ascend/worker/v2/model_runner.py` L781–815（`NPUModelRunner.profile_run` 执行 `_dummy_run(mc2_tokens_capacity, skip_attn=True)` 预占对称缓冲区）。
 
-[^deepep-hybrid]: 见 `DeepEP@f6aa38fe`：`csrc/kernels/ep/dispatch.hpp` L31-166（`launch_dispatch` 区分单机 `dispatch_impl` 与多机 `hybrid_dispatch_impl`）及 `csrc/kernels/ep/combine.hpp` L24-146（`hybrid_combine_impl` 两级转发）。
+[^ascend-mmrs]: 见 `vllm-ascend@3649b8ff`：`vllm_ascend/compilation/passes/mm_reduce_scatter_fusion_pass.py` L24–300（`MatmulReduceScatterFusionPass` 捕获 `unquantized_gemm` 及其 `CatPadded` / `ConstantPadded` 变体并与 `reduce_scatter` 融合为 `npu_mm_reduce_scatter_base` 或量化版本）。
 
-[^vllm-ht-atom]: 见 `vllm@bb23c0a8`：`vllm/model_executor/layers/fused_moe/prepare_finalize/deepep_ht.py` L51-64（`xfer_atom_size = 512`）与 L122-211（`_do_dispatch`）。
+[^vllm-ubatch-runner]: 见 `vllm@bb23c0a8`：`vllm/v1/worker/gpu/ubatch_utils.py` L303–355（`UBatchRunner` 建立 `comm_stream`、`capture_stream` 与 `ready_barrier`）。
 
-[^vllm-ht-nocg]: 见 `vllm@bb23c0a8`：`vllm/config/compilation.py` L1403-1418（`deepep_high_throughput` 与 `data_parallel_size > 1` 组合时强制 `CUDAGraphMode.NONE`）。
+[^vllm-ubatch-ctx]: 见 `vllm@bb23c0a8`：`vllm/v1/worker/ubatching.py` L1–254（`UBatchContext` 通过 `_NUM_UBATCHES = 2`、`cpu_wait_event`、`cpu_signal_event`、`gpu_compute_done_event` 与 `gpu_comm_done_event` 实现单活跃线程流切换及 `dbo_yield_and_switch_from_compute_to_comm`）。
 
-[^vllm-ll-hook]: 见 `vllm@bb23c0a8`：`vllm/model_executor/layers/fused_moe/prepare_finalize/deepep_ll.py` L238-335（`prepare_async` 启用 `return_recv_hook=True`）及 L383-421（`_finalize` 触发 `dbo_maybe_run_recv_hook`）。
+[^vllm-dbo-sm]: 见 `vllm@bb23c0a8`：`vllm/v1/worker/ubatch_utils.py` L82–125（`create_sm_control_context` 读取 `VLLM_DBO_COMM_SMS` 为通信保留 SM 配额）。
 
-[^vllm-ll-hidden]: 见 `vllm@bb23c0a8`：`vllm/model_executor/layers/fused_moe/prepare_finalize/deepep_ll.py` L29（`DEEPEP_QUANT_BLOCK_SIZE = 128`）与 L58（`SUPPORTED_HIDDEN_SIZES`）。
+[^vllm-dbo-fullcg]: 见 `vllm@bb23c0a8`：`vllm/v1/worker/gpu/cudagraph_utils.py` L262–288（`_maybe_ubatch_twin`）及 L791–796（显式断言 `cg_mode != CUDAGraphMode.PIECEWISE`）。
 
-[^deepep-epbuffer]: 见 `DeepEP@f6aa38fe`：`deep_ep/buffers/ep.py` L208-906（`EPBuffer` 统一 `dispatch` 与 `combine` 接口）。
+[^vllm-dbo-thresh]: 见 `vllm@bb23c0a8`：`vllm/v1/worker/ubatch_utils.py` L139–148（`check_ubatch_thresholds` 校验 `dbo_decode_token_threshold` 与 `dbo_prefill_token_threshold`）。
 
-[^deepep-qps]: 见 `DeepEP@f6aa38fe`：`deep_ep/buffers/ep.py` L431-560（`get_theoretical_num_sms` 与 `get_theoretical_num_qps`）。
+[^ascend-nodbo]: 见 `vllm-ascend@3649b8ff`：`vllm_ascend/worker/v2/model_states/default.py` L430–431（`assert ubatch_idx == 0, "DBO is not supported on Ascend"`）。
 
-[^vllm-v2-cg]: 见 `vllm@bb23c0a8`：`vllm/model_executor/layers/fused_moe/prepare_finalize/deepep_v2.py` L207-215（`num_max_tokens_per_rank` 向上对齐 2 的幂及图模式下置 `do_expand=False, do_cpu_sync=False`）。
-
-[^vllm-v2-triton]: 见 `vllm@bb23c0a8`：`vllm/model_executor/layers/fused_moe/prepare_finalize/deepep_v2.py` L568-612（`_globalize_recv_topk_idx` Triton 内核读取 `psum_ptr[P - 1]`）。
-
-[^deepep-cached]: 见 `DeepEP@f6aa38fe`：`csrc/kernels/ep/dispatch.hpp` L64-65（`cached_mode` 将 `num_notify_warps` 置 `0` 并复用槽位）与 L168-226（`.enable_pdl = true`）。
-
-[^vllm-v2-mxfp8]: 见 `vllm@bb23c0a8`：`vllm/model_executor/layers/fused_moe/prepare_finalize/deepep_v2.py` L42-70（`_pack_mxfp8_scale` 与 `_unpack_mxfp8_scale`）。
-
-[^deepep-symm]: 见 `DeepEP@f6aa38fe`：`csrc/kernels/comm/symmetric.hpp` L139-300（`ElasticSymmetricMemory` 与 `HybridElasticSymmetricMemory` 基于 `cuMemMap` 与 `pidfd_getfd`）。
-
-[^ascend-comm-setup]: 见 `vllm-ascend@3649b8ff`：`vllm_ascend/ops/fused_moe/moe_comm_method.py` L68-75（`setup_moe_comm_method` 注册四类路由实现）。
-
-[^ascend-select]: 见 `vllm-ascend@3649b8ff`：`vllm_ascend/ascend_forward_context.py` L381-445（`select_moe_comm_method` 与 `_MOE_COMM_SELECTORS` 路由逻辑）。
-
-[^ascend-limits]: 见 `vllm-ascend@3649b8ff`：`vllm_ascend/ascend_forward_context.py` L51-53（`_MEGA_MOE_TOKENS_PER_RANK_LIMIT = 16384`、`_DISPATCH_FFN_COMBINE_TOKENS_PER_RANK_LIMIT = 512`、`_MC2_TOKENS_PER_RANK_LIMIT = 512`）。
-
-[^ascend-prep-mc2]: 见 `vllm-ascend@3649b8ff`：`vllm_ascend/ops/fused_moe/prepare_finalize.py` L239-303（`PrepareAndFinalizeWithMC2` 对齐 `padded_num_tokens` 并生成 `mc2_mask`）。
-
-[^ascend-disp-mc2]: 见 `vllm-ascend@3649b8ff`：`vllm_ascend/ops/fused_moe/token_dispatcher.py` L251 与 L352（`npu_moe_distribute_dispatch_v2` 与 `npu_moe_distribute_combine_v2`）。
-
-[^ascend-fusedmc2]: 见 `vllm-ascend@3649b8ff`：`vllm_ascend/ops/fused_moe/moe_comm_method.py` L482-688（`_apply_cann_mega_moe` 与 `torch.ops._C_ascend.dispatch_ffn_combine`）。
-
-[^ascend-hccl-pg]: 见 `vllm-ascend@3649b8ff`：`vllm_ascend/utils.py` L1234-1264（`get_hccl_config_for_pg_options` 对 `"mc2"` 组返回 `None`）。
-
-[^ascend-507057]: 见 `vllm-ascend@3649b8ff`：`vllm_ascend/ops/fused_moe/moe_comm_method.py` L384-480（`_init_mega_moe_symm_buffer` 统一对齐各卡容量避开 507057 报错）。
-
-[^ascend-profile]: 见 `vllm-ascend@3649b8ff`：`vllm_ascend/worker/v2/model_runner.py` L781-815（`NPUModelRunner.profile_run` 执行 `mc2_tokens_capacity` 哑跑预占）。
-
-[^ascend-mmrs]: 见 `vllm-ascend@3649b8ff`：`vllm_ascend/compilation/passes/mm_reduce_scatter_fusion_pass.py` L268-300（`MatmulReduceScatterFusionPass` 融合规则与 `npu_mm_reduce_scatter_base`）。
-
-[^vllm-ubatch-runner]: 见 `vllm@bb23c0a8`：`vllm/v1/worker/gpu/ubatch_utils.py` L303-355（`UBatchRunner` 建立 `comm_stream`、`capture_stream` 与 `ready_barrier`）。
-
-[^vllm-ubatch-ctx]: 见 `vllm@bb23c0a8`：`vllm/v1/worker/ubatching.py` L1-254（`UBatchContext` 线程状态与双事件同步流切换）。
-
-[^vllm-dbo-sm]: 见 `vllm@bb23c0a8`：`vllm/v1/worker/ubatch_utils.py`（`create_sm_control_context` 读取 `VLLM_DBO_COMM_SMS` 隔离通信 SM）。
-
-[^vllm-dbo-fullcg]: 见 `vllm@bb23c0a8`：`vllm/v1/worker/gpu/cudagraph_utils.py` L270（`_maybe_ubatch_twin`）及 L792-794（显式断言 DBO 不支持 `PIECEWISE` CUDA Graph）。
-
-[^vllm-dbo-thresh]: 见 `vllm@bb23c0a8`：`vllm/v1/worker/ubatch_utils.py`（`check_ubatch_thresholds` 检查 `dbo_decode_token_threshold` 与 `dbo_prefill_token_threshold`）。
-
-[^ascend-shared]: 见 `vllm-ascend@3649b8ff`：`vllm_ascend/ops/fused_moe/fused_moe.py` L541-602（`AscendMoERunner._forward_impl`）及 `shared_experts.py` L866-1084（`shared_experts_calculation_stream()` 异步重叠投递与归位）。
+[^ascend-shared]: 见 `vllm-ascend@3649b8ff`：`vllm_ascend/ops/fused_moe/fused_moe.py` L507–602（`AscendMoERunner._forward_impl` 编排 `router_output_ready`、`shared_activation_overlap_start` 与 `_megamoe_shared_expert_fused`）及 `shared_experts.py` L866–1084（`shared_experts_calculation_stream()` 异步投递 Gate-Up 与汇合）。

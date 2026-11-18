@@ -1,6 +1,6 @@
 ---
-title: '02 自注意力与旋转位置编码（RoPE）：词元之间如何交换上下文'
-description: '从词元检索直觉出发，推导因果多头自注意力与 1/sqrt(d_k) 缩放；用二维几何旋转讲透 RoPE 如何把绝对位置编码成相对距离，以及 NeoX/GPT-J 内存布局与 YaRN 长上下文外推。'
+title: '02 自注意力与旋转位置编码（RoPE）：token 之间如何交换上下文'
+description: '从检索直觉推导因果多头自注意力与缩放因子，用二维几何旋转讲透 RoPE 如何把绝对位置折叠为相对距离，并展开通道布局等价性、YaRN 分频外推及双硬件缓存优化。'
 series: { id: foundations, order: 3 }
 pubDate: 2026-11-15
 tags: [DeepSeek, Transformer, Attention, RoPE, vLLM, Ascend]
@@ -12,119 +12,114 @@ import CausalAttentionExplainer from '../../../../explainers/foundations/CausalA
 import RopeRotationExplainer from '../../../../explainers/foundations/RopeRotationExplainer';
 import YarnSpectrumExplainer from '../../../../explainers/foundations/YarnSpectrumExplainer';
 
-上一篇里的 RMSNorm 与 SwiGLU 全部是**逐词元独立计算**：把「猫 坐在 垫 上」四个字打乱成「上 垫 坐在 猫」，第 3 号向量独自穿过前馈网络后依然产出完全一样的结果。语言模型如果只靠线性层与门控前馈，本质上还停留在「词袋」阶段——词元之间没有任何上下文交换。
+上一篇的 RMSNorm 与 SwiGLU 全部在单个 token 内部独立完成：把“猫 坐在 垫 上”四个字打乱成“上 垫 坐在 猫”，第 3 号向量独自穿过前馈网络后产出依然完全不变。只依赖逐位置运算，语言模型就停留在“词袋”阶段，无法在前后词之间交换语义。
 
-**自注意力（Self-Attention）**负责打通横向信息流，让当前词元按内容相关性去加权读取历史词元；而 **旋转位置编码（RoPE）** 则用一把极其精巧的二维几何尺子，把「绝对位置」悄无声息地折叠进点积里的「相对距离」。到了长上下文场景，再由 **YaRN** 把高、中、低频通道分层拉长，防止视野一翻倍就失焦。
+**自注意力（Self-Attention）**负责打通序列内部的横向信息流，让当前 token 按内容相关性加权聚合历史信息；**旋转位置编码（RoPE）**通过二维正交旋转把绝对坐标折叠进点积里的相对位移；而 **YaRN** 则在长上下文外推时按频段分层缩放旋转速度，防止上下文窗口翻倍后注意力分布失焦。
 
-读完这一篇，你可以亲手回答以下 4 个问题：
+## 因果自注意力检索与数值推演
 
-- 4 个词元如何通过 $Q$、$K$、$V$、因果掩码和 Softmax 完成一次严格防偷看的上下文读取？
-- 为什么点积必须除以 $\sqrt{d_k}$，而不是直接用原始内积进 Softmax？
-- RoPE 怎样靠二维旋转让点积只依赖相对距离 $n - m$？`rotate_neox`、`rotate_gptj` 与 DeepSeek-V4 的尾切片各有何工程差异？
-- 为什么朴素线性插值（PI）会糊掉近邻词序，而 YaRN 用分频斜坡掩码与 `mscale` 就能平稳外推到 `128K`？
+可以把自注意力看作一次向量检索：每个 token 同时投影出三个向量——代表当前寻找目标的**查询（Query，$Q$）**、挂在身上供他人匹配的**索引标签（Key，$K$）**，以及匹配成功后被聚合取走的内容**值（Value，$V$）**。
 
-## 先看一个例子：4 个词元如何通过 Q/K/V 检索
-
-把注意力想象成一次图书检索：每个词元同时生成三个向量——自己正在找什么的**查询（Query, $Q$）**、自己身上挂着供别人匹配的**索引标签（Key, $K$）**，以及匹配成功后真正被搬运走的信息内容**值（Value, $V$）**。
-
-我们来看一句 4 个词元的话：`["猫", "坐在", "垫", "上"]`（位置索引 $t = 0, 1, 2, 3$），取单头特征维度 `d_k = 4`（此时缩放因子 $\sqrt{d_k} = \sqrt{4} = 2$，口算极简）。点击图 1 的单步控制条，观察 `QK^T` 打分如何被因果掩码拦截并在归一化后汇聚为上下文输出。
+考虑由 4 个 token 组成的短句 `["猫", "坐在", "垫", "上"]`（位置索引 $t = 0, 1, 2, 3$），设单头特征维度 $d_k = 4$（因此缩放因子 $\sqrt{d_k} = \sqrt{4} = 2$）。为了不用查表就能直接口算缩放点积，我们构造正交缩放后的键矩阵 $K = 2 I_4$（即四行分别为 $[2,0,0,0]$、$[0,2,0,0]$、$[0,0,2,0]$、$[0,0,0,2]$），取查询行 $q_2 = [0.5, 1.0, 0.5, 1.0]$、$q_3 = [1.0, 0.5, 0.5, 1.0]$，并设值矩阵四行分别为 $v_0 = [1.0, 0, 0.5, 0]$、$v_1 = [0, 1.0, 0, 0.5]$、$v_2 = [0.5, 0.5, 1.0, 0]$、$v_3 = [0, 0, 0.5, 1.0]$。图 1 步进演示了这组张量经缩放打分、因果掩码、逐行归一化到最终输出聚合的数值变化。
 
 <CausalAttentionExplainer
   client:visible
-  title="图 1：4 词元因果自注意力缩放、上三角掩码与加权聚合数值演进"
+  title="图 1：4 个 token 因果自注意力缩放、上三角掩码与加权聚合数值演进"
 />
 
-逐行追踪图 1 最后两个位置（$t=2$ 与 $t=3$）的数值变化：
+因为特意选取了 $K = 2 I_4$，除以 $\sqrt{4} = 2$ 后恰好有 $Q K^\top / 2 = Q$，于是第 $t=2$ 行（“垫”）对四个位置的缩放打分无需手算内积就能直接读出为 $q_2 = [0.5, 1.0, 0.5, 1.0]$。其中末位得分 1.0 来自尚未生成的未来位置 $t=3$（“上”）；若直接做归一化，生成模型就会读取到未来的词。
 
-1. **缩放打分（$S = QK^T / \sqrt{4}$）**：第 $t=2$ 行（「垫」）原本和四个位置的点积除以 2 之后是 `[0.5, 1.0, 0.5, 1.0]`——注意最后一个 `1.0` 来自未来的 $t=3$（「上」），如果直接算权重就会偷看答案！
-2. **因果掩码（$+ M_{\text{triu}}$）**：生成式模型只能看自己及左侧历史，因此在计算 Softmax 之前，先把行号小于列号（严格上三角）的所有未来位置加上 $-\infty$。于是 $t=2$ 行的分数变成 `[0.5, 1.0, 0.5, -inf]`。
-3. **逐行 Softmax 归一化**：经过 $e^{-\infty} = 0$，未来权重被彻底清零。$t=2$ 行变成 `[0.2741, 0.4519, 0.2741, 0.0000]`（最关注 $t=1$「坐在」）；$t=3$ 行位于句尾，可以看全 4 个词，权重为 `[0.3112, 0.1888, 0.1888, 0.3112]`（同时锁定「猫」和自身「上」）。
-4. **加权聚合输出（$O = P \cdot V$）**：把 Softmax 权重乘上对应行的 $V$ 并相加，得到 $O_2 = [0.4111, 0.5889, 0.4111, 0.2259]$ 与 $O_3 = [0.4056, 0.2832, 0.5000, 0.4056]$。这步过后，位置 3 的向量已经融合了句首主语「猫」的语义。
+为了严格保持单向因果性，在送入 Softmax 之前，必须在严格上三角（所有行号小于列号的未来单元）加上因果掩码矩阵 $M_{\text{triu}}$（未来单元置为 $-\infty$，其余为 0），将 $t=2$ 行的分数变为 $[0.5, 1.0, 0.5, -\infty]$。随后逐行做 Softmax 归一化，由于 $e^{-\infty} = 0$，未来权重归零：$t=2$ 行权重为 $[0.2741, 0.4519, 0.2741, 0.0000]$（重点落在 $t=1$“坐在”上），而处于句尾的 $t=3$ 行可以看全 4 个词，权重为 $[0.3112, 0.1888, 0.1888, 0.3112]$，同时锚定句首主语“猫”和自身“上”。
 
-## 因果多头自注意力与 1/sqrt(d_k) 缩放推导
+最后按 $O = P V$ 对四行值向量加权求和，得到 $O_2 = [0.4111, 0.5889, 0.4111, 0.2259]$ 与 $O_3 = [0.4056, 0.2832, 0.5000, 0.4056]$。经过这一层聚合，末尾位置的表征已经融合了句首主语的上下文信息。
 
-把 4 词元的直觉写回张量形式，先列出完整形状与符号表：
+## 因果多头自注意力与缩放因子
 
-| 符号              | 含义                                                   | 张量形状   | 所在角色                                   |
-| :---------------- | :----------------------------------------------------- | :--------- | :----------------------------------------- |
-| $T$               | 序列长度（例图中 $T = 4$）                             | 标量       | 词元数                                     |
-| $H,\,d_k$         | 注意力头数与每头特征维                                 | 标量       | 多头划分：$d_{\text{model}} = H \cdot d_k$ |
-| $Q,\,K,\,V$       | 查询、键、值矩阵（单头切片）                           | `[T, d_k]` | 线性投影输出                               |
-| $M_{\text{triu}}$ | 因果掩码矩阵（上三角 $-\infty$，下三角含对角线为 $0$） | `[T, T]`   | 防未来信息泄露[^ds_causal]                 |
+将上述 4 个 token 的运算写成一般张量形式，先确定符号定义与形状：
+
+| 符号              | 含义                                                   | 张量形状   | 所在角色                                  |
+| :---------------- | :----------------------------------------------------- | :--------- | :---------------------------------------- |
+| $T$               | 序列长度（上例中 $T = 4$）                             | 标量       | 输入 token 数                             |
+| $H,\,d_k$         | 注意力头数与单头维度                                   | 标量       | 多头划分 $d_{\text{model}} = H \cdot d_k$ |
+| $Q,\,K,\,V$       | 查询、键、值矩阵（单头切片）                           | `[T, d_k]` | 线性投影输出                              |
+| $M_{\text{triu}}$ | 因果掩码（严格上三角为 $-\infty$，下三角含对角线为 0） | `[T, T]`   | 阻断未来信息泄露[^ds_causal]              |
 
 单头缩放点积因果自注意力的计算公式为[^vaswani2017]：
 
 $$
-\text{Attention}(Q, K, V) = \text{Softmax}\!\left(\frac{Q K^T}{\sqrt{d_k}} + M_{\text{triu}}\right) V
+\operatorname{Attention}(Q, K, V) = \operatorname{softmax}\!\left(\frac{Q K^\top}{\sqrt{d_k}} + M_{\text{triu}}\right) V
 $$
 
-为什么非除以 $\sqrt{d_k}$ 不可？假设 $q$ 与 $k$ 的每个分量互独立、均值为 `0`、方差为 `1`，那么单维乘积 $q_j k_j$ 的均值为 `0`、方差为 $\text{Var}(q_j k_j) = \mathbb{E}[q_j^2]\mathbb{E}[k_j^2] = 1$。将 $d_k$ 个独立同分布项相加后，方差线性累加：
+分母上的 $\sqrt{d_k}$ 用于抵消点积方差随特征维度 $d_k$ 的线性放大。假定 $q$ 和 $k$ 的各分量彼此独立，且均值为 0、方差为 1，则单维乘积 $q_j k_j$ 的方差为 $\operatorname{Var}(q_j k_j) = \mathbb{E}[q_j^2]\mathbb{E}[k_j^2] = 1$；把 $d_k$ 个独立项相加后，未缩放点积的方差膨胀为 $d_k$：
 
 $$
-\text{Var}(q \cdot k) = \sum_{j=1}^{d_k} \text{Var}(q_j k_j) = d_k \quad\Longrightarrow\quad \text{Var}\!\left(\frac{q \cdot k}{\sqrt{d_k}}\right) = \frac{d_k}{(\sqrt{d_k})^2} = 1
+\operatorname{Var}(q \cdot k) = \sum_{j=1}^{d_k} \operatorname{Var}(q_j k_j) = d_k \quad\Longrightarrow\quad \operatorname{Var}\!\left(\frac{q \cdot k}{\sqrt{d_k}}\right) = \frac{d_k}{(\sqrt{d_k})^2} = 1
 $$
 
-当头维度从玩具例子的 `4` 放大到主流模型的 `64` 或 `128` 时，未缩放点积的典型幅度会膨胀到 $\pm\sqrt{64} = \pm 8$ 甚至更大。Softmax 对极端大数极度敏感：一旦某个位置领先几分，指数函数就会把概率权重压成近似 `[1.0, 0.0, 0.0, ...]` 的尖刺，导致其余位置梯度接近零而难以更新。乘以 $1/\sqrt{d_k}$ 恰好把输入 Softmax 的方差拉回稳定的 `1.0`（在 vLLM 的 `DeepseekAttention` 中对应 `self.scaling = self.head_dim**-0.5`[^vllm_dsv2_attn]）。
+在主流大模型中，$d_k$ 往往取 64 或 128。若不除以 $\sqrt{d_k}$，原始内积的典型波动幅度会扩至 $\pm\sqrt{64} = \pm 8$ 甚至更大；指数函数会把领先几分的位置压成接近 `[1.0, 0.0, 0.0, ...]` 的尖峰分布，导致其余位置的梯度接近于零而难以训练。乘以 $1/\sqrt{d_k}$ 恰好把 Softmax 输入方差拉回稳定的 1.0，在 vLLM 的注意力实现中对应缩放系数 `self.scaling = self.head_dim**-0.5`[^vllm_dsv2_attn]。
 
-**多头（Multi-Head）的直觉**：如果全句只用一套 $Q/K$ 打分，就像整间图书馆只允许按「书名拼音」排一次序，很难同时兼顾「主谓呼应」「指代消解」和「标点匹配」。多头把 $d_{\text{model}}$ 拆成 $H$ 组独立的 `[T, d_k]` 子空间并行做注意力和加权求和，最后再把 $H$ 份结果沿着最后一维拼回 `[T, H * d_k]` 并乘一次输出投影 $W_O$——相当于让多位专注不同角度的检索员各找各的，最后汇总成一句话。
+如果整句话只用一套 $Q/K$ 打分，就像图书检索只允许按单一种指标排序，很难同时兼顾主谓搭配、代词指代和标点边界。**多头注意力（Multi-Head Attention，MHA）**将总维度 $d_{\text{model}}$ 拆成 $H$ 组独立的 `[T, d_k]` 子空间并行计算注意力和加权求和，再沿最后一维拼接回 `[T, H * d_k]` 并乘以输出投影矩阵 $W_O$ 汇总，让不同注意力头各自负责不同粒度的语义关联。
 
-## 旋转位置编码（RoPE）：用二维旋转把绝对坐标写成相对偏移
+## 旋转位置编码与通道布局等价性
 
-纯粹的自注意力虽然能交换上下文，但依然是**置换等变**的：同时把 $Q, K, V$ 的行按相同顺序打乱，输出也只是跟着打乱，模型分不清谁紧贴谁。要注入词序，Su 等人在 2021 年提出了 **RoPE（Rotary Position Embedding）**[^su2021]：不再把位置向量直接**加**到词向量上，而是按词元位置 $m$ 对 $Q$ 和 $K$ 做**正交旋转**。
+仅靠点积和加权求和，自注意力依然具有**置换等变性**：同时打乱输入行的顺序，输出也只是跟着换位置，模型分不清谁紧挨着谁。Su 等人在 2021 年提出的 **RoPE（Rotary Position Embedding）**[^su2021] 按 token 所在位置 $m$ 对 $Q$ 和 $K$ 施加正交旋转，将位置信息直接编码进注意力内积的相位差里，取代了把位置向量直接加到输入嵌入上的做法。
 
-先看二维平面上的单对坐标 $(x_0, x_1)$：位置为 $m$ 的词元转过角度 $m\theta_i$，旋转矩阵 $R_{\theta_i, m}$ 与 $d$ 维整体旋转频率 $\theta_i$ 定义为：
+在二维平面上取一对通道 $(x_0, x_1)$，让位置 $m$ 的向量转过角度 $m\theta_i$，旋转矩阵 $R_{\theta_i, m}$ 与随维度索引 $i$ 指数衰减的角频率 $\theta_i$ 定义如下：
 
 $$
 R_{\theta_i, m} = \begin{pmatrix} \cos m\theta_i & -\sin m\theta_i \\ \sin m\theta_i & \cos m\theta_i \end{pmatrix}, \qquad \theta_i = \text{base}^{-2i/d},\quad i \in \left\{0, 1, \dots, \frac{d}{2}-1\right\}
 $$
 
-由于二维旋转矩阵满足正交转置性质 $R_{\theta_i, m}^T = R_{\theta_i, -m}$ 且角度可加 $R_{\theta_i, a} R_{\theta_i, b} = R_{\theta_i, a+b}$，当位置 $m$ 的查询与位置 $n$ 的键算内积时，绝对位置奇迹般地相消成纯粹的相对位移 $n - m$：
+二维旋转矩阵是正交矩阵，满足转置即逆角 $R_{\theta_i, m}^\top = R_{\theta_i, -m}$ 且旋转角可加 $R_{\theta_i, a} R_{\theta_i, b} = R_{\theta_i, a+b}$。因此位置 $m$ 的查询与位置 $n$ 的键算内积时，绝对位置坐标在正交乘法中直接消去，点积仅取决于两者的相对距离 $n - m$：
 
 $$
-(R_{\theta, m} q)^T (R_{\theta, n} k) = q^T R_{\theta, m}^T R_{\theta, n} k = q^T R_{\theta, n - m} k
+(R_{\theta, m} q)^\top (R_{\theta, n} k) = q^\top R_{\theta, m}^\top R_{\theta, n} k = q^\top R_{\theta, n - m} k
 $$
 
-图 2 用交互圆盘与多频率热力图把这一不变性可视化：无论词对位于句首 `(m=2, n=5)` 还是整体后移至 `(m=19, n=22)`，只要间距不变，夹角与点积便严丝合缝。同时可以看到最快通道 $\theta_0 = 1.0\;\text{rad/token}$ 捕捉近邻词序，最慢通道 $\theta_3 = 0.001\;\text{rad/token}$ 承载远距离依赖。
+图 2 从几何圆周和频谱相位两方面演示了这一相对不变性：当词对从 $(m=2, n=5)$ 整体平移至 $(m=19, n=22)$ 时，两个向量在圆周上同步转过 $17\;\text{rad}$（约 $2.71$ 圈），夹角与全 8 维点积（$0.668685$）保持严格相等；同时高频通道 $\theta_0 = 1.0\;\text{rad/token}$ 紧盯近邻词序，低频通道 $\theta_3 = 0.001\;\text{rad/token}$ 则跨越上千位置缓慢旋转以承载远距离依赖。
 
 <RopeRotationExplainer client:visible title="图 2：RoPE 二维旋转相对不变性与多通道角频率衰减机制" />
 
-生产代码里真正容易踩坑的，不是三角函数公式，而是**哪两个通道配成一对二维平面**：
+工程落地时，公式之外最容易出岔子的是**哪两个通道配成一对二维平面**，以及**只旋转部分维度时切片落在哪一段**。
 
-- **NeoX 跨半段配对（`rotate_neox`）**：vLLM 默认路线[^vllm_rope_common]，把第 `i` 维与第 `i + d/2` 维配成对（如 `(x_0, x_4)`），用 `[-x_{d/2:}, x_{:d/2}]` 就能向量化算出正交旋转，不打散连续访存对齐。
-- **GPT-J / DeepSeek-V3 相邻交错配对（`rotate_gptj`）**：相邻偶奇维 `(x_{2i}, x_{2i+1})` 直接配成复数实部和虚部[^vllm_rope_common][^ds_rope]，DeepSeek-V3 参考代码直接用 `torch.view_as_complex` 做复数乘法实现。只要初始化加载权重时按索引置换重排一次 `Q/K` 投影行，两种写法数值**逐位等价**。
-- **DeepSeek-V4 尾切片与可逆旋转**：vLLM 标准层只切片前 `rotary_dim` 维（`:rotary_dim`）旋转[^vllm_rope_base]；但 `DeepseekV4ScalingRotaryEmbedding` 把不旋转的语义维度放在前头，专门切片**末尾** `rotary_dim` 通道做旋转（偏移量 `rope_dim_offset = head_size - rotary_dim`），同时全程保留 `float32` 正余弦表、支持 `key=None` 单输入，并额外提供 `inverse=True` 对 `sin` 取反把向量旋回原坐标[^vllm_dsv4_rope]。在模型配置入口 `build_deepseek_v4_rope` 中，全注意力 `"main"` 分支走 YaRN，局部滑动窗口 `"compress"` 分支固定回退 `factor=1.0` 普通 RoPE 且显式关闭 `mscale`[^vllm_dsv4_builder]。
+在通道配对上，开源框架常见两种内存布局：vLLM 默认采用的 NeoX 风格（`rotate_neox`）把前半段第 $i$ 维与后半段第 $i + d/2$ 维配成对，按 `[-x_{d/2:}, x_{:d/2}]` 向量化计算即可保持半段连续访存[^vllm_rope_common]；而 GPT-J 及部分大模型采用相邻交错配对（`rotate_gptj`），把偶奇相邻维 $(x_{2i}, x_{2i+1})$ 当作复数的实部和虚部成对旋转[^vllm_rope_common][^ds_rope]。这两种布局在数学上只是对 $d$ 个特征通道做了一次固定的置换重排：只要在模型权重加载阶段同步重排投影矩阵的输出行顺序，NeoX 与 GPT-J 两种实现算出的旋转内积逐位等价。
 
-## 长上下文外推与 YaRN：为什么不能把频率一刀切
+在部分旋转（Partial RoPE，即 $d_{\text{rotary}} < d_{\text{head}}$）场景下，一个头内只有一部分通道承载位置旋转，其余通道保留纯内容特征。标准实现通常旋转头向量前部切片 `:rotary_dim`[^vllm_rope_base]，也有架构将非旋转语义维放在前面、专门对末尾 `-rotary_dim:` 区间做旋转（对应向 Kernel 传入偏移量 `head_size - rotary_dim`）[^vllm_dsv4_rope]。无论选择哪一段，权重切分与运行时 RoPE 算子的切片区间必须严格对齐，一旦把切片起止或 `is_neox_style` 标志配反，注意力分数就会退化成乱码。
 
-如果模型训练时只见过最大长度 $L = 4096$，推理硬塞进 `32K` 或 `128K` 文本，低频端会出现训练期从未见过的夹角，注意力瞬间崩溃。怎么把 $L$ 温和撑大 $s$ 倍（如 DeepSeek-V3 从 `4K` 外推到 `128K` 时取缩放因子 $s = 40$[^ds2412_yarn]）？历史上有两条过渡方案和最终的 **YaRN**：
+## 长上下文外推与 YaRN 分频缩放
 
-1. **线性位置插值（PI）**：把所有位置压缩为 $m / s$（等效所有频率同乘 $1/s$）。缺陷是连原本转得很快的高频近邻通道也被除以 40，相邻两个字的夹角变得紧挨在一起、局部词序变糊。
-2. **NTK-Aware 缩放**：按比例抬高公式里的基数 $\text{base}$，让高频少动、低频拉慢，但各维度缩放仍被单调公式死锁，边界维度往往微调不足。
-3. **YaRN（Yet another RoPE extensioN）**：Peng 等人在 2023 年直接按「在训练长度 $L$ 内转了多少整圈」来精确划分频段[^peng2023]。
+如果模型预训练只覆盖到窗口长度 $L = 4096$，推理直接送入 32K 或 128K 长序列时，低频通道会遇到训练从未出现过的相位角，导致注意力打分大幅失真。要把上下文窗口扩展到原来的 $s$ 倍（例如从 4K 延展到 128K 级长上下文，DeepSeek-V3 取缩放因子 $s = 40$[^ds2412_yarn]），早期外推方案各有局限：直接线性位置插值（PI）把所有位置同除以 $s$，连高频近邻通道也跟着缩小 40 倍，使得相邻两个字在旋转角上挤成一团、损害局部语序判别；NTK-Aware 缩放通过抬高底数 $\text{base}$ 减缓高频压缩，但所有频率仍被一条单调曲线耦合，中低频边界往往补偿不足。
 
-设第 $i$ 对通道的波长为 $\lambda_i = 2\pi / \theta_i = 2\pi \cdot \text{base}^{2i/d}$，它在原训练窗口 $L$ 内完整转过的圈数为 $r_i = L / \lambda_i$。设高频阈值 $\beta_{\text{fast}} = 32$、低频阈值 $\beta_{\text{slow}} = 1$，算出斜坡掩码与外推保留系数 $\text{extrap}_i = 1 - \text{ramp}_i$，最终有效频率与温度补偿为[^vllm_rope_yarn]：
+**YaRN（Yet another RoPE extensioN）**[^peng2023] 改按“在原始训练窗口 $L$ 内到底转过多少整圈”来精确划分频段。第 $i$ 对通道的波长为 $\lambda_i = 2\pi / \theta_i = 2\pi \cdot \text{base}^{2i/d}$，它在原训练窗口 $L$ 内转过的圈数为 $r_i = L / \lambda_i$。设定高频整圈阈值 $\beta_{\text{fast}} = 32$ 与低频整圈阈值 $\beta_{\text{slow}} = 1$，把两道阈值映射回通道对索引下界 $\text{low}$ 与上界 $\text{high}$（在 $d_{\text{rotary}} = 64$、$L = 4096$、$\text{base} = 10000$ 时算出 $\text{low} = 10$、$\text{high} = 23$），即可定义分段斜坡函数 $\text{ramp}_i$ 与外推保留系数 $\text{extrap}_i$[^vllm_rope_yarn]：
+
+$$
+\text{ramp}_i = \operatorname{clip}\!\left(\frac{i - \text{low}}{\text{high} - \text{low}},\ 0,\ 1\right), \qquad \text{extrap}_i = 1 - \text{ramp}_i
+$$
+
+利用这组分段系数，将需要插值的低频项 $\theta_i / s$ 与保持原速的高频项 $\theta_i$ 平滑混合，并配合对数温度补偿系数 $\text{mscale}$[^peng2023][^vllm_rope_yarn]：
 
 $$
 \theta'_i = (1 - \text{extrap}_i) \cdot \frac{\theta_i}{s} + \text{extrap}_i \cdot \theta_i, \qquad \text{mscale} = 0.1 \ln(s) + 1.0
 $$
 
-图 3 交互式对比了 PI 统一压缩与 YaRN 三频段斜坡划分，以及 GPU 与昇腾端侧查表缓存差异：
+拉长序列并改写频谱后，点积方差和注意力熵往往会轻微发散。如果在生成旋转表时把 $\cos$ 与 $\sin$ 同乘 $\text{mscale}$，等价于同时把旋转后的 $Q$ 与 $K$ 各自放大 $\text{mscale}$ 倍；展开点积即可看出，这与保持 $Q, K$ 幅值不变、只把注意力的缩放系数乘以 $\text{mscale}^2$ 完全等价：
+
+$$
+\frac{(\text{mscale} \cdot q)^\top (\text{mscale} \cdot k)}{\sqrt{d_k}} = \left(\frac{\text{mscale}^2}{\sqrt{d_k}}\right) q^\top k
+$$
+
+在 $s = 40$ 时算得 $\text{mscale} = 1.3689$，因此推理框架也可以选择把 $\text{mscale}^2 \approx 1.8739$ 直接合入注意力的 `softmax_scale` 标量里[^ds_mla_scale]。图 3 展示了 32 对旋转通道在 4K 原生窗、PI 均匀插值与 YaRN 三频段斜坡之间的频谱差异，以及 GPU 与昇腾侧频率表的排布方式。
 
 <YarnSpectrumExplainer
   client:visible
-  title="图 3：YaRN NTK-by-parts 三频段斜坡混合器、mscale 修正与双后端缓存布局"
+  title="图 3：YaRN 分频斜坡外推（low=10, high=23）、mscale 修正与 GPU/昇腾缓存排布"
 />
 
-对照图 3 三条频段看数值边界（以 `rotary_dim=64`、$L=4096$、$s=40$ 为例）：
+对照图 3 中的 32 对通道可以看到三段各自的分工：索引 $i \le 10$（`i=0..10`）的高频短波段在 4K 训练窗内已转过超过 32 圈，相位规律训练充分，令 $\text{extrap}_i = 1.0$ 完全保留原频率，近邻词序分辨力毫不受损；索引 $i \ge 23$ 的低频长波段在原窗口内连一整圈都未转完，令 $\text{extrap}_i = 0.0$ 缩放到 $\theta_i / s$，把长距离位置表征撑开；中间 $10 < i < 23$ 的过渡区则沿着斜坡函数线性衔接，避免频谱在边界发生突变。若未经长序列继续预训练而直接将外推倍数 $s$ 零样本拉高几十倍，YaRN 在中频密集检索上仍会出现衰减；而只关注局部近邻的滑动窗口注意力层则会直接锁定 `factor = 1.0`，保持原生频率不外推。
 
-- **高频短波段（`i <= 10`，圈数 $> 32$）**：在 4K 训练窗内已来回转过三十多圈，早就被训练得极其充分。令 $\text{extrap}_0 = 1.0$，完全保留原始频率 $\theta_i$，紧邻词元的相位分辨力一分不动。
-- **中频斜坡过渡区（`10 < i < 23`，圈数介于 `1` 与 `32` 之间）**：通过 `yarn_linear_ramp_mask` 在高频与低频之间线性过渡，避免频谱在交界处突变跳变。
-- **低频长波段（`i >= 23`，圈数 $< 1$）**：连完整一圈都没转完过的长波长维度直接执行安全线性插值 $\theta_i / s$（$\text{extrap} = 0.0$），平稳撑开全局视野。
-- **温度补偿 `mscale`**：拉长序列并改频谱后，点积方差与注意力熵会轻微发散。YaRN 用 $\text{mscale} = 0.1\ln(s) + 1$ 收紧温度；当 $s = 40$ 时算出 `mscale = 1.3689`，DeepSeek-V3 在 `MLA` 初始化中把注意力缩放因数额外乘以 `mscale * mscale = 1.8739`（详见[系列三 DeepSeek 01：MLA](../../deepseek/01-mla/)），相当于只修正 $q \cdot k$ 温度而不用修改 $Q$ 和 $K$ 向量本身[^ds_mla_scale]。
+## NumPy 验证与双硬件源码对照
 
-## NumPy 核心实现与双硬件源码对照
-
-下面的独立 NumPy 脚本同时复现图 1 的 4 词元因果注意力权重与输出、图 2 的 RoPE 相对距离严格不变性，以及图 3 的 `mscale^2 = 1.8739` 温度系数：
+下面的自包含 NumPy 脚本同时验证图 1 的 4-token 因果注意力权重与输出、图 2 的 RoPE 相对距离严格不变性，以及图 3 中 $s = 40$ 时的 $\text{mscale}^2 = 1.8739$ 数值：
 
 ```python
 import math
@@ -157,7 +152,7 @@ assert abs(d1 - d2) < 1e-12
 print(f"RoPE dot(2,5)={d1:.6f} == dot(19,22)={d2:.6f}, mscale^2={(0.1 * math.log(40.0) + 1.0) ** 2:.4f}")
 ```
 
-实测打印：
+脚本运行输出如下：
 
 ```text
 t=2 weights: [0.2741 0.4519 0.2741 0.    ] -> O_2: [0.4111 0.5889 0.4111 0.2259]
@@ -165,7 +160,7 @@ t=3 weights: [0.3112 0.1888 0.1888 0.3112] -> O_3: [0.4056 0.2832 0.5    0.4056]
 RoPE dot(2,5)=0.668685 == dot(19,22)=0.668685, mscale^2=1.8739
 ```
 
-在生产代码中，`vLLM` GPU 与 `vllm-ascend` 围绕频率表生成与融合算子路由形成了清晰分工[^vllm_rope_yarn][^ascend_rope]：
+对照上游 `vLLM` 与华为昇腾 `vllm-ascend` 的实现，两套硬件围绕频率表生成、交错布局适配与片上容量分块走出了各自针对性的执行路径[^vllm_rope_yarn][^ascend_rope]：
 
 ```python
 # vllm/model_executor/layers/rotary_embedding/yarn_scaling_rope.py:67-84 (vllm@bb23c0a8)
@@ -183,58 +178,40 @@ if out_dtype is None:
 return torch.ops.vllm.npu_rotary_embedding(*rope_args, out_dtype=out_dtype)
 ```
 
-| 机制模块                       | DeepSeek-V3 参考代码（`9b4e9788`）                                         | `vLLM` GPU 实现（`bb23c0a8`）                                                                                                  | `vllm-ascend` 昇腾实现（`3649b8ff`）                                                                                                          | 关键工程差异                                                             |
-| :----------------------------- | :------------------------------------------------------------------------- | :----------------------------------------------------------------------------------------------------------------------------- | :-------------------------------------------------------------------------------------------------------------------------------------------- | :----------------------------------------------------------------------- |
-| **标准 / YaRN RoPE 计算**      | `precompute_freqs_cis` 与复数乘法 `apply_rotary_emb`（`model.py:297-393`） | `RotaryEmbeddingBase` 与 `YaRNScalingRotaryEmbedding` 预缓存 `cos_sin_cache` 并调 CUDA / FlashInfer 融合核（`base.py:80-252`） | `AscendRotaryEmbedding` 与 `AscendYaRNRotaryEmbedding` 调度 `torch_npu.npu_rotary_embedding` 与 `npu_rotary_mul`（`rotary_embedding.py:303`） | 昇腾按 `HardwareCapability.FUSED_ROTARY_MUL_INTERLEAVE` 分发融合交错算子 |
-| **DeepSeek 交错 layout 适配**  | 原生按相邻偶奇配对（GPT-J 风格）                                           | `DeepseekScalingRotaryEmbedding` 在 `ApplyRotaryEmb` 设 `interleaved = not is_neox_style`（`common.py:234`）                   | `AscendDeepseekScalingRotaryEmbedding` 先转置成 `(d//2, 2)` 再调 `is_neox_style=True` 的 `npu_rotary_embedding`（`473-644`）                  | 昇腾融合核原语偏好 NeoX 布局，借轻量重排复用高速算子                     |
-| **DeepSeek-V4 尾切片与逆旋转** | —                                                                          | `DeepseekV4ScalingRotaryEmbedding` 切片 `query[..., -rotary_dim:]`，维护 `fp32` 缓存与 `inverse=True`（`224-337`）             | 通用分支或 Triton NPU RoPE 核动态调度                                                                                                         | 尾切片要求精确传入 `rope_dim_offset = head_size - rotary_dim`            |
-| **片上 UB 限制与表查优化**     | 无专门内存分块考虑                                                         | 直接进 CUDA Register 与 SMEM                                                                                                   | Triton 核 `_compute_rope_block_size_head` 按 `192 KB` UB 估算 `8~10` 个张量上限；`get_cos_and_sin_mla` 预建 `_cos_sin_flat` 适配 ACL Graph    | 昇腾显式 `192 KB` UB 容量决定单次头部通道与批大小分块                    |
+| 机制维度         | `vLLM` GPU（`bb23c0a8`）      | `vllm-ascend` NPU（`3649b8ff`） | 关键工程差异                 |
+| :--------------- | :---------------------------- | :------------------------------ | :--------------------------- |
+| 频率表与融合算子 | 预缓存表直调 CUDA 融合 Kernel | 交错表按能力选融合算子或 Triton | NPU 显式区分图缓冲与查表算子 |
+| 交错布局适配     | 传入 `interleaved` 原位旋转   | 转置 `(d//2, 2)` 借道 NeoX 算子 | 避开交错 3D 视图高片上开销   |
+| 片上缓冲与分块   | 依赖寄存器与 SMEM             | 按 192 KB UB 估算头部块大小     | 防止 FP32 中间态触发溢出     |
 
-## 代价与边界
+`vllm-ascend` 围绕 NPU 硬件约束做了两处关键适配。第一处是面向 GPT-J 交错布局的维度转置：因为昇腾底层的 `npu_rotary_embedding` 高速通路偏好连续半段（NeoX 风格）读取，遇到 `is_neox_style=False` 的输入时，`AscendDeepseekScalingRotaryEmbedding` 先把最后一维重塑为 `(d//2, 2)` 并转置成偶维在前、奇维在后的连续半段布局，借道 `is_neox_style=True` 的高速融合算子完成旋转[^ascend_rope]。由于 $Q$ 与 $K$ 经历了完全相同的正交通道置换，且它们在注意力里只做内积而不直接混入 $V$，内积结果对共同置换天然不变，因此这里甚至免去了再转置还原的拷贝步骤（若下游算子依赖原通道顺序，再执行一次逆转置即可复原）。第二处是片上 `UB` 容量控制：在 Triton 旋转 Kernel 中，调度辅助函数会预先统计内循环峰值常驻的 `float32` 张量数量——NeoX 路径同时存活 8 个半宽张量，而直接操作 3D 交错对 `(BLOCK, d//2, 2)` 的路径要同时存活 10 个全宽张量——再从 192 KB `UB` 中划出 50% 安全余量反推出每批处理的最大头数块大小，防止编译或运行时发生 `UB` 溢出[^ascend_triton_rope]；同时对常用频率表预建连续交错视图 `_cos_sin_flat` 与固定地址缓冲，既避免了逐次索引触发全表物化拷贝，也保证了静态图重放的指针稳定性[^ascend_rope]。
 
-1. **标准自注意力的显存与算力随序列长 $T$ 二次方膨胀**：虽然这里只推导了 4 词元算术，但完整 $QK^T$ 矩阵占 `O(T^2)` 计算与中间存储；到了工业级解码阶段，如果每次生成新词都重复重算所有历史 $K$ 和 $V$，带宽成本会彻底失控——这也是为什么要引入 **KV Cache**。
-2. **YaRN 的无感外推存在倍增与领域边界**：经验表明，在原长 `4K` 模型上借助 YaRN 做短期微调可将窗口平滑扩展至 `32K` 到 `128K`，但若未经继续预训练直接零样本硬拉几十倍，或者在局部精确检索密集的代码任务中 `s` 过大导致中频混叠，精度仍会出现回落；而 DeepSeek-V4 在滑动窗口分支故意设 `factor=1.0` 不缩放，正是为了隔离局部窗口与全局窗口的失真。
-3. **跨框架迁移必须核对 RoPE 配对规范与切片位置**：把训练权重搬运到推理引擎时，哪怕三角公式写得完全正确，只要搞反 `is_neox_style`（前/后半段 vs 奇/偶相邻）或切片位置（头切片 `:rotary_dim` vs 尾切片 `-rotary_dim:`），模型的困惑度（PPL）就会立刻炸裂成乱码。
+到这里为止，刚才的 4-token 算术里还有一笔关键开销没有展开：生成第 $T + 1$ 个 token 时，前面 $T$ 个历史 token 的 $K$、$V$ 向量和上一步算出来的完全一样，每次生成都重新计算全前缀会引入大量冗余开销。下一章 [03 KV Cache 与头共享妥协：从显存带宽账本到 MQA 与 GQA](../03-kv-cache-and-gqa/) 就来拆解历史键值的缓存复用，以及在显存与头数之间做折中的 MQA 和 GQA。
 
-## 下一章预告
+[^ds_causal]: DeepSeek-AI 项目，[`inference/model.py`](https://github.com/deepseek-ai/DeepSeek-V3/blob/9b4e9788e4a3a731f7567338ed15d3ec549ce03b/inference/model.py#L789)，commit `9b4e9788`（MIT）。构造严格上三角 $-\infty$ 因果掩码。
 
-这一章里每次算出全句 `K` 和 `V` 之后，只要接着生成第 `T+1` 个新词，我们明明已经算过前 `T` 个词元的键向量和值向量了——难道每吐一个字都要把前面十万个字的 $K$、$V$ 全部重算一遍吗？当然不！
+[^vaswani2017]: Ashish Vaswani 等，“Attention Is All You Need”，NeurIPS 2017。[arXiv:1706.03762](https://arxiv.org/abs/1706.03762)，§3.2.1。
 
-下一篇 [03 KV Cache 与头共享妥协：从显存带宽账本到 MQA 与 GQA](../03-kv-cache-and-gqa/) 将正面拆解如何把历史 $K/V$ 缓存在 HBM 里增量复用，为什么标准 MHA 很快会把显存容量与带宽吃光，以及 **MQA/GQA** 如何靠分组共享在容量与算术强度之间做妥协，为第 4 章的 **FlashAttention 融合内核**与[系列三 DeepSeek 的 **MLA**](../../deepseek/01-mla/) 做好铺垫。
+[^vllm_dsv2_attn]: vLLM 项目，[`vllm/model_executor/models/deepseek_v2.py`](https://github.com/vllm-project/vllm/blob/bb23c0a81779ba733923a7dab9b840b4e533f6a5/vllm/model_executor/models/deepseek_v2.py#L154-L247)，commit `bb23c0a8`（Apache-2.0）。初始化 `self.scaling = self.head_dim**-0.5`。
 
-## 自测
+[^su2021]: Jianlin Su 等，“RoFormer: Enhanced Transformer with Rotary Position Embedding”，2021。[arXiv:2104.09864](https://arxiv.org/abs/2104.09864)，§3.2 式 (11)–(16) 与式 (34)。
 
-1. 在图 1 的 4 词元因果自注意力中，如果我们去掉上三角 $-\infty$ 掩码，第 $t=1$ 个词元（「坐在」）算出来的输出向量还会不会受第 $t=3$ 个词元（「上」）的影响？为什么这在自回归生成阶段是绝对禁止的？
-2. 设某模型注意力单头维度 $d_k = 128$，而工程实现时误写成除以 $d_k$ 而非 $\sqrt{d_k}$。输入 Softmax 前的点积方差会变成多少？对注意力的聚焦程度与训练梯度有什么反面后果？
-3. 假设你手里有一份按 `rotate_neox` 配对训练出的权重矩阵 `W_q` 与 `W_k`，现在你想直接跑在只支持 `rotate_gptj`（相邻偶奇配对）的推理内核上而不重新训练，该如何无损转换权重？
-4. 对照图 3 中 YaRN 的三个频段，如果把外推尺度 $s = 40$ 全量套用到最高频的 `i = 0` 维度（等价于最基础的线性插值 PI），`1` 个词元与 `2` 个词元之间的相对相位差会缩小成原来的几分之一？为什么这会损伤近邻词序？
-5. 在 `DeepseekV4ScalingRotaryEmbedding` 里，为什么需要显式支持 `inverse=True`（即对 `sin` 取反），而普通推理单向加位置却不需要？提示：思考某些需要把带位置键向量还原或做跨段位置重对齐的张量变换需求。
-6. **动手推演**：将上文代码中的 `freqs` 替换为 $s=40$ 的 YaRN 混合频率表，保持相对距离 $n - m = 3$ 不变测试 `m=2, n=5` 与 `m=50000, n=50003` 的点积。思考为何即使经过分频缩放，任意两位置点积对相对位移 $n - m$ 的平移不变性依然严格成立？
+[^vllm_rope_common]: vLLM 项目，[`vllm/model_executor/layers/rotary_embedding/common.py`](https://github.com/vllm-project/vllm/blob/bb23c0a81779ba733923a7dab9b840b4e533f6a5/vllm/model_executor/layers/rotary_embedding/common.py#L19-L238)，commit `bb23c0a8`（Apache-2.0）。定义 `rotate_neox`、`rotate_gptj` 与 `interleaved = not self.is_neox_style`。
 
-[^ds_causal]: DeepSeek-AI, [DeepSeek-V3 Inference `model.py`](https://github.com/deepseek-ai/DeepSeek-V3/blob/9b4e9788/inference/model.py#L789)（`torch.full(..., float("-inf")).triu_(1)` 构造严格上三角因果掩码）。
+[^ds_rope]: DeepSeek-AI 项目，[`inference/model.py`](https://github.com/deepseek-ai/DeepSeek-V3/blob/9b4e9788e4a3a731f7567338ed15d3ec549ce03b/inference/model.py#L297-L393)，commit `9b4e9788`（MIT）。以复数视图 `view_as_complex` 实现交错旋转。
 
-[^vaswani2017]: Ashish Vaswani et al., [Attention Is All You Need](https://arxiv.org/abs/1706.03762)（NeurIPS 2017, `arXiv:1706.03762` §3.2.1 推导缩放点积 $1/\sqrt{d_k}$ 与多头注意力）。
+[^vllm_rope_base]: vLLM 项目，[`vllm/model_executor/layers/rotary_embedding/base.py`](https://github.com/vllm-project/vllm/blob/bb23c0a81779ba733923a7dab9b840b4e533f6a5/vllm/model_executor/layers/rotary_embedding/base.py#L80-L252)，commit `bb23c0a8`（Apache-2.0）。默认对前 `:rotary_dim` 维切片执行旋转。
 
-[^vllm_dsv2_attn]: vLLM Project, [`deepseek_v2.py`](https://github.com/vllm-project/vllm/blob/bb23c0a8/vllm/model_executor/models/deepseek_v2.py#L154-L247)（`DeepseekAttention` 初始化 `self.scaling = self.head_dim**-0.5` 与注意力分发）。
+[^vllm_dsv4_rope]: vLLM 项目，[`vllm/model_executor/layers/rotary_embedding/deepseek_scaling_rope.py`](https://github.com/vllm-project/vllm/blob/bb23c0a81779ba733923a7dab9b840b4e533f6a5/vllm/model_executor/layers/rotary_embedding/deepseek_scaling_rope.py#L224-L337)，commit `bb23c0a8`（Apache-2.0）。演示了面向尾切片 `-rotary_dim:`（偏移 `rope_dim_offset = head_size - rotary_dim`）的 Partial RoPE 实现。
 
-[^su2021]: Jianlin Su et al., [RoFormer: Enhanced Transformer with Rotary Position Embedding](https://arxiv.org/abs/2104.09864)（2021, `arXiv:2104.09864` 式 (11)–(16) 与式 (34) 线性复杂实现）。
+[^ds2412_yarn]: DeepSeek-AI，“DeepSeek-V3 Technical Report”，2024。[arXiv:2412.19437](https://arxiv.org/abs/2412.19437)，§4.3（记载从 4K 逐步扩展至 128K 的 YaRN 超参 $s=40,\,\alpha=1,\,\beta=32$）。
 
-[^vllm_rope_common]: vLLM Project, [`rotary_embedding/common.py`](https://github.com/vllm-project/vllm/blob/bb23c0a8/vllm/model_executor/layers/rotary_embedding/common.py#L19-L234)（`rotate_neox`、`rotate_gptj` 与 `ApplyRotaryEmb` 中 `interleaved = not self.is_neox_style` 逻辑）。
+[^peng2023]: Bowen Peng 等，“YaRN: Efficient Context Window Extension of Large Language Models”，2023。[arXiv:2309.00071](https://arxiv.org/abs/2309.00071)，§3.2 式 (11) 与式 (15)。
 
-[^ds_rope]: DeepSeek-AI, [DeepSeek-V3 Inference `model.py`](https://github.com/deepseek-ai/DeepSeek-V3/blob/9b4e9788/inference/model.py#L297-L393)（`precompute_freqs_cis` 与复数视图 `apply_rotary_emb`）。
+[^vllm_rope_yarn]: vLLM 项目，[`yarn_scaling_rope.py`](https://github.com/vllm-project/vllm/blob/bb23c0a81779ba733923a7dab9b840b4e533f6a5/vllm/model_executor/layers/rotary_embedding/yarn_scaling_rope.py#L51-L85) 与 [`common.py`](https://github.com/vllm-project/vllm/blob/bb23c0a81779ba733923a7dab9b840b4e533f6a5/vllm/model_executor/layers/rotary_embedding/common.py#L34-L76)，commit `bb23c0a8`（Apache-2.0）。
 
-[^vllm_rope_base]: vLLM Project, [`rotary_embedding/base.py`](https://github.com/vllm-project/vllm/blob/bb23c0a8/vllm/model_executor/layers/rotary_embedding/base.py#L80-L252)（`RotaryEmbedding.forward_static` 切片 `:rotary_dim`）。
+[^ds_mla_scale]: DeepSeek-AI 项目，[`inference/model.py`](https://github.com/deepseek-ai/DeepSeek-V3/blob/9b4e9788e4a3a731f7567338ed15d3ec549ce03b/inference/model.py#L434-L437)，commit `9b4e9788`（MIT）。初始化时将注意力缩放因子乘以 `mscale * mscale`。
 
-[^vllm_dsv4_rope]: vLLM Project, [`rotary_embedding/deepseek_scaling_rope.py`](https://github.com/vllm-project/vllm/blob/bb23c0a8/vllm/model_executor/layers/rotary_embedding/deepseek_scaling_rope.py#L224-L337)（`DeepseekV4ScalingRotaryEmbedding` 尾切片 `-self.rotary_dim:`、`rope_dim_offset`、`fp32` 缓存及 `inverse=True`）。
+[^ascend_rope]: vLLM Ascend 项目，[`vllm_ascend/ops/rotary_embedding.py`](https://github.com/vllm-project/vllm-ascend/blob/3649b8ff7fd69e707db2c634073d2b4c40eadf15/vllm_ascend/ops/rotary_embedding.py#L95-L645)，commit `3649b8ff`（Apache-2.0）。包含 `get_cos_and_sin_mla`、`_cos_sin_flat` 与 `AscendDeepseekScalingRotaryEmbedding` 转置复用逻辑。
 
-[^vllm_dsv4_builder]: vLLM Project, [`models/deepseek_v41/common/rope.py`](https://github.com/vllm-project/vllm/blob/bb23c0a8/vllm/models/deepseek_v41/common/rope.py#L1-L53)（`build_deepseek_v4_rope` 分别构造 `"main"` 与 `"compress"` 旋转参数并固定 `mscale=0`、`is_neox_style=False`）。
-
-[^ds2412_yarn]: DeepSeek-AI, [DeepSeek-V3 Technical Report](https://arxiv.org/abs/2412.19437)（2024, `arXiv:2412.19437` §4.3 记载从 `4K -> 32K -> 128K` 的 YaRN 长上下文扩展超参 $s=40,\,\alpha=1,\,\beta=32$）。
-
-[^peng2023]: Bowen Peng et al., [YaRN: Efficient Context Window Extension of Large Language Models](https://arxiv.org/abs/2309.00071)（2023, `arXiv:2309.00071` §3.2 NTK-by-parts 分频斜坡与式 (14)–(15) 温度补偿）。
-
-[^vllm_rope_yarn]: vLLM Project, [`rotary_embedding/yarn_scaling_rope.py`](https://github.com/vllm-project/vllm/blob/bb23c0a8/vllm/model_executor/layers/rotary_embedding/yarn_scaling_rope.py#L51-L85) 与 [`common.py`](https://github.com/vllm-project/vllm/blob/bb23c0a8/vllm/model_executor/layers/rotary_embedding/common.py#L34-L76)（`yarn_find_correction_range`、`yarn_linear_ramp_mask` 与 `yarn_get_mscale`）。
-
-[^ds_mla_scale]: DeepSeek-AI, [DeepSeek-V3 Inference `model.py`](https://github.com/deepseek-ai/DeepSeek-V3/blob/9b4e9788/inference/model.py#L434-L437)（`MLA.__init__` 对 `softmax_scale` 乘以 `mscale * mscale`）。
-
-[^ascend_rope]: `vllm-ascend`（`vllm-ascend@3649b8ff`）：`vllm_ascend/ops/rotary_embedding.py:95-217, 303-644, 756-813`（`get_cos_and_sin_mla`、`_cos_sin_flat` 交错排布、`AscendRotaryEmbedding` 与 `AscendDeepseekScalingRotaryEmbedding`）及 `vllm_ascend/ops/triton/rope.py:93-160`（`_compute_rope_block_size_head`）。
+[^ascend_triton_rope]: vLLM Ascend 项目，[`vllm_ascend/ops/triton/rope.py`](https://github.com/vllm-project/vllm-ascend/blob/3649b8ff7fd69e707db2c634073d2b4c40eadf15/vllm_ascend/ops/triton/rope.py#L44-L160)，commit `3649b8ff`（Apache-2.0）。`_compute_rope_block_size_head` 按 8/10 个驻留 `float32` 张量与 50% `UB` 余量计算分块上限。
