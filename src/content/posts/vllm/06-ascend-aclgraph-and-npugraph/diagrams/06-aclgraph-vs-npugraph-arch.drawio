@@ -19,7 +19,7 @@
         <mxCell id="a2" value="update_stream 热更新 Tiling&lt;br&gt;graph_task_update_begin 原位刷新 seq_kv" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#fbf2df;strokeColor=#7b5518;strokeWidth=2;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
           <mxGeometry x="24" y="216" width="288" height="64" as="geometry"/>
         </mxCell>
-        <mxCell id="a3" value="ExternalEvent 跨流同步闭环&lt;br&gt;event.record() 放行主流且防并发踩踏" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#f4f4f2;strokeColor=#5c6067;strokeWidth=1;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+        <mxCell id="a3" value="ExternalEvent 跨流事件同步&lt;br&gt;event.record() 放行主流且防并发踩踏" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#f4f4f2;strokeColor=#5c6067;strokeWidth=1;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
           <mxGeometry x="24" y="304" width="288" height="64" as="geometry"/>
         </mxCell>
         <mxCell id="e_a0" value="" style="endArrow=classic;startArrow=none;html=1;strokeColor=#1d1d1f;strokeWidth=1.25;edgeStyle=orthogonalEdgeStyle;rounded=1;" edge="1" parent="1" source="a0" target="a1">
@@ -37,7 +37,7 @@
         <mxCell id="n1" value="npugraph_ex (回退 torchair)&lt;br&gt;FX 下沉 GE 计算图 + 静态核编译选项" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e3f5f3;strokeColor=#0f766e;strokeWidth=2;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
           <mxGeometry x="384" y="128" width="288" height="64" as="geometry"/>
         </mxCell>
-        <mxCell id="n2" value="编译缓存防踩坑守卫&lt;br&gt;检测到 triton_kernel_wrapper 即跳过写缓存" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#fbf2df;strokeColor=#7b5518;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+        <mxCell id="n2" value="含 Triton 算子时跳过图缓存&lt;br&gt;检测到 triton_kernel_wrapper 不写磁盘" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#fbf2df;strokeColor=#7b5518;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
           <mxGeometry x="384" y="216" width="288" height="64" as="geometry"/>
         </mxCell>
         <mxCell id="n3" value="适用强静态图与全局算子融合&lt;br&gt;与 ACLGraphWrapper 在分段处协同工作" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#f4f4f2;strokeColor=#5c6067;strokeWidth=1;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">

@@ -111,7 +111,7 @@ export function buildCausalAttentionSteps(): Step<CausalAttentionState>[] {
         focusRowText: 't=2 与未来 t=3 点积高达 2.0',
       },
       caption:
-        '4 个词元经投影得到 $Q, K, V \\in \\mathbb{R}^{4 \\times 4}$。先算原始相似度矩阵 $Q K^\\top$：若不做缩放，独立向量内积的方差会随 $d_k$ 线性膨胀到 $d_k$ 倍，直接把 Softmax 推向饱和区。',
+        '4 个 token 经投影得到 $Q, K, V \\in \\mathbb{R}^{4 \\times 4}$。先算原始相似度矩阵 $Q K^\\top$：若不做缩放，独立向量内积的方差会随 $d_k$ 线性膨胀到 $d_k$ 倍，把 Softmax 推向饱和区。',
     },
     {
       state: {
@@ -129,7 +129,7 @@ export function buildCausalAttentionSteps(): Step<CausalAttentionState>[] {
         focusRowText: 'S[2] = [0.5, 1.0, 0.5, 1.0]',
       },
       caption:
-        '整体除以 $\\sqrt{d_k} = 2$ 后方差回归稳定的 $1.0$（对应 vLLM 中 self.scaling = $d_k^{-0.5}$）。但看第 2 行「垫」：$S[2, 3] = 1.00$ 说明此时仍能偷看未来词元「上」。',
+        '整体除以 $\\sqrt{d_k} = 2$ 后方差回归稳定的 $1.0$（对应 vLLM 中 self.scaling = $d_k^{-0.5}$）。第 2 行「垫」上 $S[2, 3] = 1.00$，表明此时仍能读取未来 token「上」。',
     },
     {
       state: {
@@ -147,7 +147,7 @@ export function buildCausalAttentionSteps(): Step<CausalAttentionState>[] {
         focusRowText: 'S[2] -> [0.5, 1.0, 0.5, -inf]',
       },
       caption:
-        '加上严格上三角因果掩码 $M_{\\text{triu}}$，把所有 $j > i$ 的 6 个未来单元设为 $-\\infty$（虚线格）。第 $t=2$ 行只保留 $[0.5, 1.0, 0.5, -\\infty]$，彻底切断未来信息泄露。',
+        '加上严格上三角因果掩码 $M_{\\text{triu}}$，把所有 $j > i$ 的 6 个未来单元设为 $-\\infty$（虚线格）。第 $t=2$ 行只保留 $[0.5, 1.0, 0.5, -\\infty]$，阻断未来信息泄露。',
     },
     {
       state: {
@@ -180,18 +180,18 @@ export function buildCausalAttentionSteps(): Step<CausalAttentionState>[] {
         outputValues: OUT_O,
         outputSelected: row3Focus,
         scaleFormula: 'O = P @ V',
-        varianceText: '4 词元上下文向量融合完成',
+        varianceText: '4 个 token 上下文融合完成',
         maskCountText: '复杂度 O(T^2): 长序列需 Flash/KV',
         focusRowText: 't=3 输出 [0.406, 0.283, 0.500, 0.406]',
       },
       caption:
-        '最后由 $O = P \\cdot V$ 将各历史词元的值向量按权重聚合，写出输出矩阵 $O \\in \\mathbb{R}^{4 \\times 4}$。行末位置「上」的输出 $[0.406, 0.283, 0.500, 0.406]$ 已完整融入主语「猫」的语义。',
+        '最后由 $O = P \\cdot V$ 将各历史 token 的值向量按权重聚合，写出输出矩阵 $O \\in \\mathbb{R}^{4 \\times 4}$。行末位置「上」的输出 $[0.406, 0.283, 0.500, 0.406]$ 已融入主语「猫」的语义。',
     },
   ];
 }
 
 export default function CausalAttentionExplainer({
-  title = '图 1：4 词元因果自注意力计算全链路（QK^T / sqrt(d_k) -> Mask -> Softmax -> PV）',
+  title = '图 1：4 个 token 因果自注意力计算全链路（QK^T / sqrt(d_k) -> Mask -> Softmax -> PV）',
 }: {
   title?: string;
 }) {
@@ -205,7 +205,7 @@ export default function CausalAttentionExplainer({
         const fmt = s.stepIndex >= 3 ? fmtProb : fmtScore;
 
         return (
-          <Stage width={STAGE_W} height={378} label="4词元因果自注意力逐步推演">
+          <Stage width={STAGE_W} height={378} label="4 个 token 因果自注意力逐步推演">
             {/* Left inputs Q, K, V */}
             <TensorBlock
               x={14}

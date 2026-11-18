@@ -10,7 +10,7 @@
         <mxCell id="g_prefill" value="Prefill 实例池 (算力密集)" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f2fb;strokeColor=#2f5783;strokeWidth=1.25;verticalAlign=top;align=left;spacingLeft=12;spacingTop=6;fontFamily=Inter;fontSize=12;fontStyle=1;fontColor=#2f5783;container=0;" vertex="1" parent="1">
           <mxGeometry x="0" y="80" width="184" height="304" as="geometry"/>
         </mxCell>
-        <mxCell id="p_cfg" value="高 TP 并行 (TP4 / TP8)&lt;br&gt;低批并发压榨首字算力" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f2fb;strokeColor=#2f5783;strokeWidth=2;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+        <mxCell id="p_cfg" value="高 TP 并行 (TP4 / TP8)&lt;br&gt;低批并发吃满 Prefill 算力" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f2fb;strokeColor=#2f5783;strokeWidth=2;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
           <mxGeometry x="16" y="112" width="152" height="48" as="geometry"/>
         </mxCell>
         <mxCell id="p_comp" value="1. 长 Prompt 全序列计算&lt;br&gt;生成首字 (TTFT) + KV" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#f4f4f2;strokeColor=#5c6067;strokeWidth=1;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
@@ -40,7 +40,7 @@
         <mxCell id="d_kv__s1" value="" style="rounded=1;absoluteArcSize=1;arcSize=8;html=1;fillColor=#f4f4f2;strokeColor=#5c6067;strokeWidth=1;" vertex="1" parent="1">
           <mxGeometry x="528" y="184" width="144" height="64" as="geometry"/>
         </mxCell>
-        <mxCell id="d_kv" value="远端注册 HBM 槽位&lt;br&gt;单向 RDMA Write 落盘" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#f4f4f2;strokeColor=#5c6067;strokeWidth=1;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+        <mxCell id="d_kv" value="远端注册 HBM 槽位&lt;br&gt;单向 RDMA Write 直写 HBM" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#f4f4f2;strokeColor=#5c6067;strokeWidth=1;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
           <mxGeometry x="520" y="192" width="144" height="64" as="geometry"/>
         </mxCell>
         <mxCell id="d_gen" value="2. 持续自回归 Decode&lt;br&gt;稳态低抖动 TPOT 输出" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#f4f4f2;strokeColor=#5c6067;strokeWidth=1;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">

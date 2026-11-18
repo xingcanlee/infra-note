@@ -56,7 +56,7 @@ export function buildSpecDecVerifySteps(): Step<SpecDecVerifyState>[] {
       state: {
         stepIndex: 1,
         phaseLabel: 'Step 2 · 接受准则 r <= min(1, p(x)/q(x))',
-        slotStatuses: ['selected', 'error', 'masked', 'masked', 'empty'],
+        slotStatuses: ['selected', 'active', 'masked', 'masked', 'empty'],
         slotTones: ['done', 'highlight', 'neutral', 'neutral', 'neutral'],
         slotSubs: ['k=1 接受', 'k=2 拒绝', '废弃', '废弃', '无 Bonus'],
         showResidual: false,
@@ -73,7 +73,7 @@ export function buildSpecDecVerifySteps(): Step<SpecDecVerifyState>[] {
       state: {
         stepIndex: 2,
         phaseLabel: 'Step 3 · 归一化正残差分布 norm(max(0, p - q))',
-        slotStatuses: ['selected', 'error', 'masked', 'masked', 'empty'],
+        slotStatuses: ['selected', 'active', 'masked', 'masked', 'empty'],
         slotTones: ['done', 'highlight', 'neutral', 'neutral', 'neutral'],
         slotSubs: ['已接收 A', '重采样位置', '截断', '截断', '跳过'],
         showResidual: true,
@@ -98,7 +98,7 @@ export function buildSpecDecVerifySteps(): Step<SpecDecVerifyState>[] {
         acceptRatio: 'min(p,q)+max(0,p-q)',
         decisionText: '采样出 A (补正)',
         tvDistance: 'ΔTV = 0.0000',
-        emittedTokens: '单步产出 2 tokens',
+        emittedTokens: '单步产出 2 token',
       },
       caption:
         '对任意词 $x$，直接接受概率 $\\min(p(x), q(x))$ 与“拒绝后从残差重采中 $x$”的概率 $0.25 \\times \\frac{\\max(0,p(x)-q(x))}{0.25}$ 相加恒等于 $p(x)$，严格无损。',
@@ -106,7 +106,7 @@ export function buildSpecDecVerifySteps(): Step<SpecDecVerifyState>[] {
     {
       state: {
         stepIndex: 4,
-        phaseLabel: 'Step 5 · 全接收情景与第 K+1 个 Bonus Token',
+        phaseLabel: 'Step 5 · 全接收情景与第 K+1 个 Bonus token',
         slotStatuses: ['selected', 'selected', 'selected', 'selected', 'selected'],
         slotTones: ['done', 'done', 'done', 'done', 'done'],
         slotSubs: ['t+1: A', 't+2: B', 't+3: C', 't+4: D', 't+5: Bonus'],

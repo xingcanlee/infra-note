@@ -6,7 +6,7 @@
 
 站点将通用硬件、算子与分布式通信基础彻底从 DeepSeek 专题中解耦，形成**「异构硬件与量化基础 → 分布式并行与通信 → DeepSeek 模型架构演进 → vLLM 与昇腾运行时引擎」**四步递进路线。
 
-每篇正文章遵循「开头导读 → 微例直觉与交互式/矢量可视化 → 一般原理与架构 → PyTorch / NumPy 核心参考实现 → NVIDIA GPU（`vLLM`/`FlashMLA`/`DeepEP`）与昇腾 NPU（`vllm-ascend`/CANN）源码对照 → 代价与边界 → 自测与衔接」。
+每篇正文章遵循「问题切入 → 微型数字直觉与可视化 → 机制推导与架构 → PyTorch / NumPy 参考实现与双硬件源码对照 → 自然收束与过渡」的问题流向，所有前提、硬件限制与演进取舍随上下文自然展开，不设教案八股栏目。
 
 首页 `summarizeSeries` 按系列内最新 `pubDate` 降序排列，时间锚定使首页按学习顺序精确呈现 **`foundations`（1）→ `distributed`（2）→ `deepseek`（3）→ `vllm`（4）**。
 
@@ -78,4 +78,4 @@
 
 - **四选一可视化与零遗留**：全站 `29` 篇文章按需组合 `Mermaid`、`Draw.io`、`Excalidraw` 与交互式 `<Explainer>` 组件，所有 `diagrams/` 目录零孤立未引用文件，`pnpm diagram lint --strict` 与 `pnpm diagram build` 零告警通过。
 - **交互组件与实现测试**：`src/explainers/__tests__/explainers.test.ts` 验证全部交互组件的步骤边界、公式配对与零硬编码 `#hex` SSR 渲染；全站无外部 `toy.py` 脚本，正文中均附 PyTorch/NumPy 参考实现与 `vllm` / `vllm-ascend` 源码对照。
-- **写作与构建门禁**：`check_post.py --all --strict` 返回 `0 error / 0 warning / 0 info`；`pnpm format:check`、`pnpm check` 与 `pnpm build` 全部通过。
+- **写作与构建门禁**：`check_post.py --all --strict` 返回 `0 error / 0 warning`；`pnpm format:check`、`pnpm check` 与 `pnpm build` 全部通过。

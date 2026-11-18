@@ -59,16 +59,13 @@
           <mxGeometry x="120" y="16" width="80" height="64" as="geometry"/>
         </mxCell>
         <mxCell id="pf__b0_1" value="Layer 0 全层计算&lt;br&gt;(mHC + Attn + MoE)" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f2fb;strokeColor=#2f5783;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
-          <mxGeometry x="200" y="16" width="160" height="64" as="geometry"/>
+          <mxGeometry x="200" y="16" width="200" height="64" as="geometry"/>
         </mxCell>
-        <mxCell id="pf__b0_2" value="Layer 1&lt;br&gt;Attn" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f2fb;strokeColor=#2f5783;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
-          <mxGeometry x="360" y="16" width="80" height="64" as="geometry"/>
+        <mxCell id="pf__b0_2" value="wait +&lt;br&gt;L1 Engram" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#fbf2df;strokeColor=#7b5518;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="400" y="16" width="80" height="64" as="geometry"/>
         </mxCell>
-        <mxCell id="pf__b0_3" value="wait&lt;br&gt;L1 门控" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#fbf2df;strokeColor=#7b5518;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
-          <mxGeometry x="440" y="16" width="72" height="64" as="geometry"/>
-        </mxCell>
-        <mxCell id="pf__b0_4" value="Layer 1 MoE + L2..L13" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f2fb;strokeColor=#2f5783;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
-          <mxGeometry x="504" y="16" width="184" height="64" as="geometry"/>
+        <mxCell id="pf__b0_3" value="Layer 1 Attn + MoE&lt;br&gt;-&amp;gt; L2..L13" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f2fb;strokeColor=#2f5783;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="480" y="16" width="208" height="64" as="geometry"/>
         </mxCell>
         <mxCell id="pf__ln1" value="Prefetch Stream&lt;br&gt;PCIe / HCCS 预取" style="text;html=1;whiteSpace=wrap;align=right;verticalAlign=middle;fontFamily=Inter;fontSize=12;fontStyle=1;fontColor=#1d1d1f;" vertex="1" parent="1">
           <mxGeometry x="0" y="96" width="112" height="64" as="geometry"/>
@@ -76,14 +73,14 @@
         <mxCell id="pf__bg1" value="" style="rounded=1;absoluteArcSize=1;arcSize=8;html=1;fillColor=#f4f4f2;strokeColor=#e2e2dd;strokeWidth=1;" vertex="1" parent="1">
           <mxGeometry x="120" y="96" width="568" height="64" as="geometry"/>
         </mxCell>
-        <mxCell id="pf__b1_0" value="Host DDR 100B 异步读取 -&amp;gt; staged_rows&lt;br&gt;(副流预取 / NPU UVA 零拷贝)" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#fbf2df;strokeColor=#7b5518;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
-          <mxGeometry x="200" y="96" width="216" height="64" as="geometry"/>
+        <mxCell id="pf__b1_0" value="Host DDR 异步预取&lt;br&gt;-&amp;gt; staged_rows" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#fbf2df;strokeColor=#7b5518;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="200" y="96" width="160" height="64" as="geometry"/>
         </mxCell>
         <mxCell id="pf__b1_1" value="Event" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#fbf2df;strokeColor=#7b5518;strokeWidth=1.25;dashed=1;dashPattern=4 4;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
-          <mxGeometry x="416" y="96" width="48" height="64" as="geometry"/>
+          <mxGeometry x="360" y="96" width="40" height="64" as="geometry"/>
         </mxCell>
-        <mxCell id="pf__b1_2" value="L14 Engram 查表&lt;br&gt;与 WKV 提前预热" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#fbf2df;strokeColor=#7b5518;strokeWidth=1.25;dashed=1;dashPattern=4 4;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
-          <mxGeometry x="504" y="96" width="184" height="64" as="geometry"/>
+        <mxCell id="pf__b1_2" value="L14 Engram 异步预取&lt;br&gt;与主机查表预热" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#fbf2df;strokeColor=#7b5518;strokeWidth=1.25;dashed=1;dashPattern=4 4;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="480" y="96" width="208" height="64" as="geometry"/>
         </mxCell>
         <mxCell id="hw_note" value="双硬件 Host DDR 驻留与零拷贝预取机理" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#f4f4f2;strokeColor=#5c6067;strokeWidth=1.25;dashed=1;verticalAlign=top;align=left;spacingLeft=12;spacingTop=6;fontFamily=Inter;fontSize=12;fontStyle=1;fontColor=#5c6067;container=0;" vertex="1" parent="1">
           <mxGeometry x="0" y="208" width="688" height="128" as="geometry"/>

@@ -44,7 +44,7 @@ export function buildForwardPassSteps(): Step<ForwardPassState>[] {
         stepIndex: 0,
         activeStage: 'norm1',
         focusFrame: { x: 16, y: 18, w: 184, h: 104, label: 'Stage 1 · 输入与 RMSNorm' },
-        opClass: 'Vector 规约+逐元素',
+        opClass: 'Vector 归约+逐元素',
         tensorShape: 'X -> X_hat [2, 4, 8]',
         flopsText: '192 FLOPs',
         ioPattern: '内存带宽主导 (1:1 读写)',
@@ -67,7 +67,7 @@ export function buildForwardPassSteps(): Step<ForwardPassState>[] {
         totalBytesLabel: 'QKV 投影参数 + 激活 ~448 B',
       },
       caption:
-        '随后 $\\hat{X}$ 乘以 $W_Q, W_K, W_V$：按照 2:1 GQA 比例，$Q$ 宽度保持 $[2,4,8]$（64 px 宽），而 $K, V$ 等比例缩半为 $[2,4,4]$（32 px 宽），投影总浮点量 $2 \\times 8 \\times 8 \\times (8+4+4) = 2048$ FLOPs。',
+        '随后 $\\hat{X}$ 乘以 $W_Q, W_K, W_V$：按照 2:1 GQA 比例，$Q$ 宽度保持 $[2,4,8]$，$K, V$ 宽度减半为 $[2,4,4]$，投影总浮点量 $2 \\times 8 \\times 8 \\times (8+4+4) = 2048$ FLOPs。',
     },
     {
       state: {
@@ -97,7 +97,7 @@ export function buildForwardPassSteps(): Step<ForwardPassState>[] {
         totalBytesLabel: 'SwiGLU 激活中间流 768 B (宽度翻倍)',
       },
       caption:
-        '经过第二层 RMSNorm 后，特征进入 SwiGLU：Gate 与 Up 将宽度等比例放大 $2\\times$ 至 $[2,4,16]$（128 px 宽），经 $\\text{SiLU}(g) \\cdot u$ 门控融合（vLLM 调 _C.silu_and_mul，昇腾调 npu_swiglu）再由 Down 压回 $[2,4,8]$。',
+        '经过第二层 RMSNorm 后，特征进入 SwiGLU：Gate 与 Up 将宽度按比例放大 $2\\times$ 至 $[2,4,16]$，经 $\\text{SiLU}(g) \\cdot u$ 门控融合（vLLM 调 _C.silu_and_mul，昇腾调 npu_swiglu）再由 Down 压回 $[2,4,8]$。',
     },
     {
       state: {
@@ -116,7 +116,7 @@ export function buildForwardPassSteps(): Step<ForwardPassState>[] {
         totalBytesLabel: '整层 GEMM 算力 >95%，Vector 决定零碎搬运上限',
       },
       caption:
-        '最终残差相加输出 $Y \\in \\mathbb{R}^{2 \\times 4 \\times 8}$。从计算与字节账本看：GEMM 算子吃掉全层绝大多数 FLOPs（由 Tensor Core / Cube 承担），而 Norm/SiLU/Residual 却频繁决定片上 SRAM / UB 的读写压力。',
+        '最终残差相加输出 $Y \\in \\mathbb{R}^{2 \\times 4 \\times 8}$。从计算与字节账本看：GEMM 算子占全层绝大多数 FLOPs（由 Tensor Core / Cube 承担），而 Norm/SiLU/Residual 频繁触发片上 SRAM / UB 的读写带宽开销。',
     },
   ];
 }

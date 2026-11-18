@@ -58,7 +58,7 @@ export function buildCudaGraphBoundariesSteps(): Step<CudaGraphBoundariesState>[
         unjoinedStream: false,
       },
       caption:
-        '第 1 步（静态捕获）：预热后在 B_cap=4 上捕获 CUDA/ACL Graph，计算图将输入 0x7f00_1000、0x7f00_2000 与输出 0x7f00_3000 的虚拟地址硬编码进内核参数。',
+        '第 1 步（静态捕获）：预热后在 B_cap=4 上捕获 CUDA/ACL Graph，计算图将输入 0x7f00_1000、0x7f00_2000 与输出 0x7f00_3000 的虚拟地址硬编码进 Kernel 参数。',
       focus: ['capture'],
     },
     {
@@ -89,11 +89,11 @@ export function buildCudaGraphBoundariesSteps(): Step<CudaGraphBoundariesState>[
     },
     {
       state: {
-        stepTag: '3. 铁律一失效：地址漂移',
-        batchDesc: 'ptr mismatch!',
+        stepTag: '3. 约束一失效：地址漂移',
+        batchDesc: 'ptr mismatch',
         inputPtr: '0x7f00_9000 (漂移)',
         shapeCheck: 'FAIL (stale ptr)',
-        streamStatus: '读到陈旧旧值',
+        streamStatus: '读到旧地址快照',
         slots: [
           { id: 's-0', label: 'req0', sub: 'at 9000', tone: 'error', status: 'error' },
           { id: 's-1', label: 'req1', sub: 'at 9000', tone: 'error', status: 'error' },
@@ -104,24 +104,24 @@ export function buildCudaGraphBoundariesSteps(): Step<CudaGraphBoundariesState>[
         bufInTone: 'error',
         bufSlotTone: 'active',
         bufOutTone: 'error',
-        streamNote: 'Graph 仍死读 0x7f00_1000，新张量在 0x7f00_9000 被忽略',
+        streamNote: 'Graph 持续读取旧地址 0x7f00_1000，新张量在 0x7f00_9000 被忽略',
         stalePointerBug: true,
         shapeOverflow: false,
         unjoinedStream: false,
       },
       caption:
-        '第 3 步（铁律一：内存地址必须恒定）：若重放前用 hidden_states = torch.empty(...) 重新赋值，新地址 0x7f00_9000 不会被图读取，Graph 静默消费 0x7f00_1000 的脏数据。',
+        '第 3 步（约束一：内存地址必须恒定）：若重放前用 hidden_states = torch.empty(...) 重新赋值，新地址 0x7f00_9000 不会被图读取，Graph 静默消费 0x7f00_1000 的旧数据。',
       focus: ['ptr-drift'],
     },
     {
       state: {
-        stepTag: '4. 铁律二/三失效：越界与 Host 同步',
+        stepTag: '4. 约束二/三失效：越界与 Host 同步',
         batchDesc: 'B=5 > B_cap=4',
         inputPtr: '0x7f00_1000',
         shapeCheck: 'FAIL (B=5 / .item)',
         streamStatus: 'Capture Crash',
         slots: [
-          { id: 's-0', label: 'req0', sub: 'B=5!', tone: 'error', status: 'error' },
+          { id: 's-0', label: 'req0', sub: 'B=5 超桶', tone: 'error', status: 'error' },
           { id: 's-1', label: 'req1', sub: 'overflow', tone: 'error', status: 'error' },
           { id: 's-2', label: 'req2', sub: 'or', tone: 'error', status: 'error' },
           { id: 's-3', label: 'req3..4', sub: '.item()', tone: 'error', status: 'error' },
@@ -130,26 +130,26 @@ export function buildCudaGraphBoundariesSteps(): Step<CudaGraphBoundariesState>[
         bufInTone: 'active',
         bufSlotTone: 'error',
         bufOutTone: 'error',
-        streamNote: '形状未入桶或捕获期触发 cudaStreamSynchronize 同步陷阱',
+        streamNote: '形状未入桶或 Stream Capture 期间触发同步错误',
         stalePointerBug: false,
         shapeOverflow: true,
         unjoinedStream: false,
       },
       caption:
-        '第 4 步（铁律二/三：静态形状与零 Host 控制流）：若输入超桶（$B=5 > 4$）且未降级或垫平，或在捕获区执行 .item() / torch.nonzero()，硬件直接抛出捕获非法异常。',
+        '第 4 步（约束二/三：静态形状与零 Host 控制流）：若输入超桶（$B=5 > 4$）且未降级或垫平，或在 Stream Capture 区间执行 .item() / torch.nonzero()，硬件直接抛出捕获非法异常。',
       focus: ['shape-sync'],
     },
     {
       state: {
-        stepTag: '5. 铁律四失效：跨流未闭环与通信池',
+        stepTag: '5. 约束四失效：跨流未汇合与通信池',
         batchDesc: 'Unjoined copy_stream',
         inputPtr: '0x7f00_1000',
         shapeCheck: 'PASS (shape OK)',
         streamStatus: 'Unjoined Stream',
         slots: [
           { id: 's-0', label: 'req0', sub: 'fork', tone: 'highlight', status: 'active' },
-          { id: 's-1', label: 'req1', sub: 'no join!', tone: 'error', status: 'error' },
-          { id: 's-2', label: 'req2', sub: 'no join!', tone: 'error', status: 'error' },
+          { id: 's-1', label: 'req1', sub: 'no join', tone: 'error', status: 'error' },
+          { id: 's-2', label: 'req2', sub: 'no join', tone: 'error', status: 'error' },
           { id: 's-3', label: 'comm', sub: 'nccl_pool', tone: 'highlight', status: 'masked' },
         ],
         bufInPtr: '0x7f00_1000',
@@ -162,7 +162,7 @@ export function buildCudaGraphBoundariesSteps(): Step<CudaGraphBoundariesState>[
         unjoinedStream: true,
       },
       caption:
-        '第 5 步（铁律四：副流闭环与通信内存池隔离）：捕获末尾若有旁路流未通过 Event 汇回主流，即报错退出；跨卡通信则须切入 nccl_symm_mem_context 独立注册对称窗。',
+        '第 5 步（约束四：副流汇合与通信内存池隔离）：捕获末尾若有旁路流未通过 Event 汇回主流，即报错退出；跨卡通信则须切入 nccl_symm_mem_context 独立注册对称窗。',
       focus: ['stream-pool'],
     },
   ];
@@ -178,14 +178,14 @@ export function buildCudaGraphBoundariesSteps(): Step<CudaGraphBoundariesState>[
 }
 
 export default function CudaGraphBoundariesExplainer({
-  title = '图 1：静态图 Capture 与 Replay 的四大铁律推演',
+  title = '图 1：CUDA Graph 捕获、重放与四道边界条件推演',
 }: {
   title?: string;
 }) {
   const steps = useMemo(() => buildCudaGraphBoundariesSteps(), []);
 
   return (
-    <Explainer steps={steps} title={title} label="CUDA Graph 四大边界条件推演" wide>
+    <Explainer steps={steps} title={title} label="CUDA Graph 四道边界条件推演" wide>
       {(step) => {
         const s = step.state;
         const arcs: PointerArc[] = s.stalePointerBug

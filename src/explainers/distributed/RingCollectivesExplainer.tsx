@@ -176,10 +176,10 @@ export function buildRingCollectivesSteps(): Step<RingCollectivesState>[] {
         transfers: ['c3=8', 'c0=6', 'c1=8', 'c2=6'],
         cumLatency: '6·α + 1.50·S·β',
         treeCompare: 'vs Tree 4·α + 4·S·β',
-        bwEfficiency: '75% = (P-1)/P 满带宽',
+        bwEfficiency: '75% = (P-1)/P 带宽效率',
       },
       caption:
-        'AllGather 第 3 跳收敛：4 张卡均得到完整的全局规约向量 $[6, 8, 6, 8]$；大消息下 Ring 带宽项 $2\\frac{P-1}{P}S\\beta = 1.5S\\beta$ 远低于 Tree 的 $2(\\log_2 P)S\\beta = 4S\\beta$，但延迟项 $6\\alpha$ 随卡数线性增长。',
+        'AllGather 第 3 跳收敛：4 张卡均得到完整的全局归约向量 $[6, 8, 6, 8]$；大消息下 Ring 带宽项 $2\\frac{P-1}{P}S\\beta = 1.5S\\beta$ 远低于 Tree 的 $2(\\log_2 P)S\\beta = 4S\\beta$，但延迟项 $6\\alpha$ 随卡数线性增长。',
     },
   ];
 }

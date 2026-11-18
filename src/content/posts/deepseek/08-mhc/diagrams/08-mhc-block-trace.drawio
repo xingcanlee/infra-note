@@ -89,13 +89,13 @@
         <mxCell id="eb10" value="" style="endArrow=classic;startArrow=none;html=1;strokeColor=#1d1d1f;strokeWidth=1.25;edgeStyle=orthogonalEdgeStyle;rounded=1;exitX=0.5;exitY=0.0;exitDx=0;exitDy=0;entryX=0.5;entryY=1.0;entryDx=0;entryDy=0;" edge="1" parent="1" source="s2_add" target="b_out">
           <mxGeometry relative="1" as="geometry"/>
         </mxCell>
-        <mxCell id="g_trace" value="单子层数值走查（取 n=4 分支首维，初值均值 = 25.0）" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f2fb;strokeColor=#2f5783;strokeWidth=1.25;dashed=1;verticalAlign=top;align=left;spacingLeft=12;spacingTop=6;fontFamily=Inter;fontSize=12;fontStyle=1;fontColor=#2f5783;container=0;" vertex="1" parent="1">
+        <mxCell id="g_trace" value="单子层数值推演（取 n=4 分支首维，初值均值 = 25.0）" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f2fb;strokeColor=#2f5783;strokeWidth=1.25;dashed=1;verticalAlign=top;align=left;spacingLeft=12;spacingTop=6;fontFamily=Inter;fontSize=12;fontStyle=1;fontColor=#2f5783;container=0;" vertex="1" parent="1">
           <mxGeometry x="288" y="8" width="400" height="440" as="geometry"/>
         </mxCell>
         <mxCell id="tr_in" value="输入 4 分支 \(\mathbf{x}_l = [10.0,\ 20.0,\ 30.0,\ 40.0]^\top\)&lt;br&gt;（4 分支求和 = 100.0，均值 = 25.0）" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#f4f4f2;strokeColor=#5c6067;strokeWidth=1;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
           <mxGeometry x="304" y="40" width="368" height="48" as="geometry"/>
         </mxCell>
-        <mxCell id="tr_res" value="① 主干 Res Mapping&lt;br&gt;\(\mathcal{H}_l^{\mathrm{res}}\) (4×4 双随机)&lt;br&gt;&lt;br&gt;[19.0, 24.0, 26.0, 31.0]&lt;br&gt;总和 = 100 · 均值 = 25.0&lt;br&gt;极值收拢，均值严格守恒" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f5e9;strokeColor=#2c522d;strokeWidth=2;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+        <mxCell id="tr_res" value="① 主干 Res Mapping&lt;br&gt;\(\mathcal{H}_l^{\mathrm{res}}\) (4×4 双随机)&lt;br&gt;&lt;br&gt;[19.0, 24.0, 26.0, 31.0]&lt;br&gt;总和 = 100 · 均值 = 25.0&lt;br&gt;极值收敛，均值严格守恒" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f5e9;strokeColor=#2c522d;strokeWidth=2;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
           <mxGeometry x="304" y="112" width="176" height="136" as="geometry"/>
         </mxCell>
         <mxCell id="tr_sub" value="② 支路 Pre → \(\mathcal{F}\) → Post&lt;br&gt;Pre [0.5, 0.2, 0.2, 0.1]&lt;br&gt;→ 单流 \(h_l^{\mathrm{in}} = 19.0\)&lt;br&gt;→ Layer \(\mathcal{F}\) 输出 +4.0&lt;br&gt;Post [1.2, 0.8, 0.5, 1.5]&lt;br&gt;得 [+4.8, +3.2, +2.0, +6.0]" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f2fb;strokeColor=#2f5783;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">

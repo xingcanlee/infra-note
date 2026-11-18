@@ -276,7 +276,7 @@ export function buildKvCacheStepSteps(): Step<KvCacheStepState>[] {
         focusRect: { x: 266, y: 12, w: 256, h: 202, label: '单步重算下三角', tone: 'k' },
       },
       caption:
-        '若关闭 KV Cache，仅在 $t=4$ 这一步就必须重算全部 $[4, d]$ 的 $Q/K/V$ 与下三角 $10$ 格（前 3 行算完即丢弃）。开启缓存虽节省巨量计算，却将 Decode 推向读取 $K_{1:t}, V_{1:t}$ 的 HBM 带宽瓶颈。',
+        '若关闭 KV Cache，仅在 $t=4$ 这一步就必须重算全部 $[4, d]$ 的 $Q/K/V$ 与下三角 $10$ 格（前 3 行算完即丢弃）。开启缓存大幅节省计算量，同时将 Decode 推向读取 $K_{1:t}, V_{1:t}$ 的 HBM 带宽瓶颈。',
     },
   ];
 }

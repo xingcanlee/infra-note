@@ -68,41 +68,56 @@ def build_06_moe_arch() -> None:
 
 
 def build_07_engram_layer() -> None:
-    """11-engram-layer.drawio：修复 K [5120]=4d 与 V [1280]=1d 严格 4:1 比例。"""
+    """11-engram-layer.drawio：左列 V4.1 L1/L14 层内顺序 + 右列 K [5120]=4d 与 V [1280]=1d 严格 4:1 比例。"""
     c = DrawioCanvas(page_name="engram-layer", diagram_id="ds-07-engram-layer", width=688)
 
-    # 顶部输入张量
-    c.node("in_h", 24, 8, 280, 40, "HC 多流隐藏状态 H_t [B, T, 4, 1280]", tone="neutral", emphasis=True, font_size=12)
-    c.node("in_e", 384, 8, 280, 40, "多头查表拼接 e_t [B, T, 1280]", tone="active", emphasis=True, font_size=12)
+    # 左列：V4.1 L1 / L14 层内注入顺序（x=0..168）
+    c.group("g_left", 0, 8, 168, 392, "V4.1 L1 / L14 层内顺序", tone="neutral", dashed=False)
+    c.node("l_post", 16, 40, 136, 40, "上一层 mhc_post\n输出四分支状态", tone="done", font_size=12)
+    c.node("l_h4", 16, 104, 136, 40, "H_t [T, 4, d]\n四分支残差张量", tone="neutral", emphasis=True, font_size=12)
+    c.node("l_eng", 16, 168, 136, 48, "Engram 原位更新\nH_t' = H_t + α_t ⊙ V_t", tone="highlight", emphasis=True, font_size=12)
+    c.node("l_pre", 16, 240, 136, 40, "本层 mhc_pre\n聚合四流 → 单流", tone="done", font_size=12)
+    c.node("l_h1", 16, 304, 136, 32, "[T, d] 单流激活", tone="neutral", font_size=12)
+    c.node("l_attn", 16, 352, 136, 32, "本层 Attention → MoE", tone="active", emphasis=True, font_size=12)
 
-    # 投影与严格 4:1 比例块 (K: 320px = 4*80px; V: 80px = 1*80px)
-    c.node("proj", 384, 72, 280, 32, "合并投影 wkv: e_t -> (hc_mult + 1) × d", tone="active", font_size=12)
+    c.connect("e_l1", "l_post", "l_h4", tone="fg")
+    c.connect("e_l2", "l_h4", "l_eng", tone="fg")
+    c.connect("e_l3", "l_eng", "l_pre", tone="fg")
+    c.connect("e_l4", "l_pre", "l_h1", tone="fg")
+    c.connect("e_l5", "l_h1", "l_attn", tone="fg")
+
+    # 右列：Engram 模块投影、4:1 比例块与门控写回（x=184..688）
+    c.group("g_right", 184, 8, 504, 392, "Engram 模块投影与 4:1 门控写回", tone="neutral", dashed=True)
+    c.node("in_h", 200, 40, 208, 40, "HC 多流状态 H_t [B, T, 4, 1280]", tone="neutral", emphasis=True, font_size=12)
+    c.node("in_e", 432, 40, 240, 40, "多头查表拼接 e_t [B, T, 1280]", tone="active", emphasis=True, font_size=12)
+
+    c.node("proj", 432, 104, 240, 32, "合并投影 wkv: e_t → (hc_mult+1)×d", tone="active", font_size=12)
     c.connect("e_p1", "in_e", "proj", tone="fg")
 
-    # 严格 4:1 视觉宽度比：K 占 4 格共 256px (4 × 64px = 5120)，V 占 1 格共 64px (1280)
-    c.group("g_ratio", 192, 128, 488, 104, "", tone="neutral", dashed=True)
-    c.text("g_ratio_lbl", 200, 132, 176, 24, "K/V 严格 4:1 比例对比", size=12, tone="fg", align="left", bold=True)
+    # 严格 4:1 视觉宽度比：K 占 4 格共 192px (4 × 48px = 5120)，V 占 1 格共 48px (1280)
+    c.group("g_ratio", 200, 152, 472, 96, "", tone="neutral", dashed=True)
+    c.text("g_ratio_lbl", 208, 156, 160, 24, "K / V 严格 4:1 比例", size=12, tone="fg", align="left", bold=True)
     for m in range(4):
-        c.node(f"k_stream_{m}", 208 + m * 64, 160, 64, 40, f"K_{m}\n1280", tone="active", font_size=12)
-    c.text("k_bracket", 272, 204, 192, 24, "W_K e_t: 4 × 1280 = 5120 (4d)", size=12, tone="fg", align="left")
-    c.text("v_bracket", 480, 160, 88, 40, "W_V e_t:\n1d = 1280", size=12, tone="fg", align="right")
-    c.node("v_stream", 576, 160, 64, 40, "V_t\n1280", tone="highlight", emphasis=True, font_size=12)
+        c.node(f"k_stream_{m}", 216 + m * 48, 184, 48, 40, f"K_{m}\n1280", tone="active", font_size=12)
+    c.text("k_bracket", 272, 224, 160, 24, "W_K e_t: 4d = 5120", size=12, tone="fg", align="left")
+    c.text("v_bracket", 496, 184, 104, 40, "W_V e_t:\n1d = 1280", size=12, tone="fg", align="right")
+    c.node("v_stream", 608, 184, 48, 40, "V_t\n1280", tone="highlight", emphasis=True, font_size=12)
 
-    c.connect("e_pk", "proj", "k_stream_3", tone="fg", exit_xy=(0.17, 1.0), entry_xy=(0.5, 0.0))
-    c.connect("e_pv", "proj", "v_stream", tone="fg", exit_xy=(0.8, 1.0), entry_xy=(0.5, 0.0))
+    c.connect("e_pk", "proj", "k_stream_3", tone="fg", exit_xy=(0.15, 1.0), entry_xy=(0.5, 0.0))
+    c.connect("e_pv", "proj", "v_stream", tone="fg", exit_xy=(5 / 6, 1.0), entry_xy=(0.5, 0.0))
 
     # 门控与调制
-    c.node("gate", 160, 264, 256, 48, "RMSNorm(H_t) · RMSNorm(K_t) / √d\n-> sign(z)√|z| -> σ = α_t [B, T, 4, 1]", tone="active", font_size=12)
-    c.node("mul", 464, 264, 184, 48, "门控加权共享值\nα_t ⊙ V_t -> [B, T, 4, 1280]", tone="highlight", font_size=12)
+    c.node("gate", 200, 264, 256, 48, "RMSNorm(H_t) · RMSNorm(K_t) / √d\n→ sign(z)√|z| → σ = α_t [B, T, 4, 1]", tone="active", font_size=12)
+    c.node("mul", 480, 264, 192, 48, "门控加权共享值\nα_t ⊙ V_t → [B, T, 4, 1280]", tone="highlight", font_size=12)
 
-    c.connect("e_hg", "in_h", "gate", tone="fg", exit_xy=(0.5, 1.0), entry_xy=(0.15, 0.0))
-    c.connect("e_kg", "k_stream_0", "gate", tone="fg", exit_xy=(0.5, 1.0), entry_xy=(0.3125, 0.0))
+    c.connect("e_hg", "in_h", "gate", tone="fg", exit_xy=(0.0, 0.5), entry_xy=(0.0, 0.5), points=[(192, 60), (192, 288)])
+    c.connect("e_kg", "k_stream_0", "gate", tone="fg", exit_xy=(0.5, 1.0), entry_xy=(40 / 256, 0.0))
     c.connect("e_gm", "gate", "mul", tone="fg")
-    c.connect("e_vm", "v_stream", "mul", tone="fg", exit_xy=(0.5, 1.0), entry_xy=(0.5, 0.0))
+    c.connect("e_vm", "v_stream", "mul", tone="fg", exit_xy=(0.5, 1.0), entry_xy=(152 / 192, 0.0))
 
     # ShortConv 演进分支与写回
-    c.node("conv_note", 160, 336, 256, 40, "V3.5 论文: + ShortConv(δ=3, SiLU)\nV4.1 工程化: 无状态化移除卷积", tone="neutral", dashed=True, font_size=12)
-    c.node("res_add", 464, 336, 184, 40, "残差相加写回 4 路流\nH_t' = H_t + Y_t", tone="done", emphasis=True, font_size=12)
+    c.node("conv_note", 200, 336, 256, 48, "V3.5 论文: + ShortConv(δ=3, SiLU)\nV4.1 工程化: 无状态化移除卷积", tone="neutral", dashed=True, font_size=12)
+    c.node("res_add", 480, 336, 192, 48, "残差写回 4 路流\nH_t' = H_t + α_t ⊙ V_t", tone="done", emphasis=True, font_size=12)
     c.connect("e_mr", "mul", "res_add", tone="fg")
     c.connect("e_cr", "conv_note", "res_add", tone="muted", dashed=True)
 
@@ -147,28 +162,27 @@ def build_07_shortconv_dilation() -> None:
     for gi, (idx, lbl, tone) in enumerate(taps):
         ex.add_node(f"grp_b_{gi}", x0 + idx * pitch, row2_y + 48, slot_w, 32, lbl, color=tone, size="note", emphasis=True)
 
-    ex.add_text(x0, row2_y + 96, "注：DeepSeek-V4.1 在线上推理移除了 ShortConv 以保证 Engram 层彻底无状态与可图化。", size="note", color="muted")
+    ex.add_text(x0, row2_y + 96, "注：DeepSeek-V4.1 在线上推理移除了 ShortConv 以保证 Engram 层无状态执行与可图化。", size="note", color="muted")
 
     out = POSTS_ROOT / "07-engram" / "diagrams" / "11-shortconv-dilation.excalidraw"
     ex.build(out, also_build_svg=True, strict=True)
 
 
 def build_07_engram_runtime() -> None:
-    """11-engram-runtime.drawio：Host DDR 100B 大表异步预取隐藏时序（单页）。"""
+    """11-engram-runtime.drawio：Host DDR 大表异步预取隐藏时序（单页）。"""
     c = DrawioCanvas(page_name="engram-runtime-prefetch", diagram_id="ds-07-engram-prefetch", width=688)
 
     lanes = [
         ("Main Stream\n主干解码流", [
             (0.0, 1.4, "Embed +\nHash", "active", False),
-            (1.4, 2.8, "Layer 0 全层计算\n(mHC + Attn + MoE)", "active", False),
-            (4.2, 1.4, "Layer 1\nAttn", "active", False),
-            (5.6, 1.2, "wait\nL1 门控", "highlight", False),
-            (6.8, 3.2, "Layer 1 MoE + L2..L13", "active", False),
+            (1.4, 3.5, "Layer 0 全层计算\n(mHC + Attn + MoE)", "active", False),
+            (4.9, 1.4, "wait +\nL1 Engram", "highlight", False),
+            (6.3, 3.7, "Layer 1 Attn + MoE\n-> L2..L13", "active", False),
         ]),
         ("Prefetch Stream\nPCIe / HCCS 预取", [
-            (1.4, 3.8, "Host DDR 100B 异步读取 -> staged_rows\n(副流预取 / NPU UVA 零拷贝)", "highlight", False),
-            (5.2, 0.9, "Event", "highlight", True),
-            (6.8, 3.2, "L14 Engram 查表\n与 WKV 提前预热", "highlight", True),
+            (1.4, 2.8, "Host DDR 异步预取\n-> staged_rows", "highlight", False),
+            (4.2, 0.7, "Event", "highlight", True),
+            (6.3, 3.7, "L14 Engram 异步预取\n与主机查表预热", "highlight", True),
         ]),
     ]
     c.horizontal_lanes(
@@ -215,11 +229,11 @@ def build_07_engram_dist_lookup() -> None:
     c = DrawioCanvas(page_name="engram-dist-lookup", diagram_id="ds-07-engram-dist", width=688)
 
     c.group("r0", 8, 8, 200, 144, "Rank 0 (本地仅存 Head 0..3)", tone="active", dashed=False)
-    c.node("r0_tok", 24, 40, 168, 32, "本地 Token hash_ids", tone="neutral", font_size=12)
+    c.node("r0_tok", 24, 40, 168, 32, "本地 token hash_ids", tone="neutral", font_size=12)
     c.node("r0_tab", 24, 104, 168, 32, "本地分片表 H0..H3 (Host)", tone="active", font_size=12)
 
     c.group("r1", 480, 8, 200, 144, "Rank 1 (本地仅存 Head 4..7)", tone="activation", dashed=False)
-    c.node("r1_tok", 496, 40, 168, 32, "本地 Token hash_ids", tone="neutral", font_size=12)
+    c.node("r1_tok", 496, 40, 168, 32, "本地 token hash_ids", tone="neutral", font_size=12)
     c.node("r1_tab", 496, 104, 168, 32, "本地分片表 H4..H7 (Host)", tone="activation", font_size=12)
 
     c.group("a2a", 232, 8, 224, 144, "All-to-All / SymmMem 交换", tone="highlight", dashed=False)
@@ -338,7 +352,7 @@ def build_08_mhc_arch_comp() -> None:
 
 
 def build_08_mhc_block_trace() -> None:
-    """08-mhc-block-trace.drawio：Transformer 双子层展开（对应 V4 Fig. 2）与 n=4 单子层数值走查。"""
+    """08-mhc-block-trace.drawio：Transformer 双子层展开（对应 V4 Fig. 2）与 n=4 单子层数值推演。"""
     c = DrawioCanvas(page_name="mhc-block-trace", diagram_id="ds-08-mhc-block-trace", width=688)
 
     # 左栏：1 个 Transformer 层 = 2 个 mHC 子层（自下而上）
@@ -364,8 +378,8 @@ def build_08_mhc_block_trace() -> None:
     c.connect("eb9", "s2_moe", "s2_add", tone="fg", exit_xy=(0.5, 0.0), entry_xy=(1.0, 0.5), points=[(200, 112)])
     c.connect("eb10", "s2_add", "b_out", tone="fg", exit_xy=(0.5, 0.0), entry_xy=(0.5, 1.0))
 
-    # 右栏：单子层数值走查（取 4 分支第 0 维示例）
-    c.group("g_trace", 288, 8, 400, 440, "单子层数值走查（取 n=4 分支首维，初值均值 = 25.0）", tone="active", dashed=True)
+    # 右栏：单子层数值推演（取 4 分支第 0 维示例）
+    c.group("g_trace", 288, 8, 400, 440, "单子层数值推演（取 n=4 分支首维，初值均值 = 25.0）", tone="active", dashed=True)
     c.node(
         "tr_in",
         304,
@@ -385,7 +399,7 @@ def build_08_mhc_block_trace() -> None:
         r"① 主干 Res Mapping"
         + "\n"
         + r"\(\mathcal{H}_l^{\mathrm{res}}\) (4×4 双随机)"
-        + "\n\n[19.0, 24.0, 26.0, 31.0]\n总和 = 100 · 均值 = 25.0\n极值收拢，均值严格守恒",
+        + "\n\n[19.0, 24.0, 26.0, 31.0]\n总和 = 100 · 均值 = 25.0\n极值收敛，均值严格守恒",
         tone="done",
         emphasis=True,
         font_size=12,
@@ -511,7 +525,7 @@ def build_08_mhc_single_pass() -> None:
             (5, "Pre 混入 5d", "active", False),
             (2, "Norm 2d", "neutral", False),
         ],
-        title=r"1. 朴素分立 4 内核 \((4n+4)d = 20d\)：每个子层反复把 [T, 4, d] 搬进搬出 HBM",
+        title=r"1. 朴素分立 4 个 Kernel \((4n+4)d = 20d\)：每个子层反复把 [T, 4, d] 搬进搬出 HBM",
         total_label="20d (基准)",
     )
 
@@ -571,7 +585,7 @@ def build_08_mhc_single_pass() -> None:
         ly + 64,
         lw,
         48,
-        "SM100 分级加速内核\nDeepGEMM mega_mhc / CuTe / Lamport AR",
+        "SM100 分级融合 Kernel\nDeepGEMM mega_mhc / CuTe / Lamport AR",
         tone="active",
         emphasis=True,
         font_size=12,
@@ -594,7 +608,7 @@ def build_08_mhc_single_pass() -> None:
         ry,
         rw,
         48,
-        "npu_hc_pre_v3 算子内接上层 pre_mix\n单算子融合输入坍缩与 Sinkhorn 迭代",
+        "npu_hc_pre_v3 算子内接上层 pre_mix\n单算子融合输入聚合与 Sinkhorn 迭代",
         tone="highlight",
         font_size=12,
     )
@@ -639,7 +653,7 @@ def build_09_mtp_runtime() -> None:
         "NVIDIA GPU (vLLM V1 Spec Decode)",
         "Huawei Ascend NPU (vllm-ascend V2)",
         y=8,
-        h=312,
+        h=328,
         total_w=688,
         gap=16,
         left_tone="active",
@@ -648,13 +662,13 @@ def build_09_mtp_runtime() -> None:
 
     c.node("g_hier", lx, ly, lw, 56, "Speculator 继承体系 (重构自 EagleProposer)\nTargetDependentARSpeculator -> MTPSpeculator\nDFlashSpeculator -> DSparkSpeculator", tone="active", font_size=12)
     c.node("g_dspark", lx, ly + 72, lw, 64, "DSparkDraft & Markov 采样\n_sample_sequential / All-to-All 按请求分片\n_fuse_markov_bias 融进 Gumbel 采样核", tone="highlight", font_size=12)
-    c.node("g_graph", lx, ly + 152, lw, 48, "CUDA Graph 全图重放\nshare_mtp_topk_indices 跳过重复 Indexer", tone="active", font_size=12)
-    c.node("g_rej", lx, ly + 216, lw, 48, "Triton 无损拒绝校验\nrejection_sampler.py + 局部 LogSumExp 归约", tone="active", emphasis=True, font_size=12)
+    c.node("g_graph", lx, ly + 152, lw, 56, "CUDA Graph 全图重放\nshare_mtp_topk_indices 跳过重复 Indexer", tone="active", font_size=12)
+    c.node("g_rej", lx, ly + 224, lw, 48, "Triton 无损拒绝校验\nrejection_sampler.py + 局部 LogSumExp 归约", tone="active", emphasis=True, font_size=12)
 
     c.node("a_hier", rx, ry, rw, 56, "Ascend 混合扩展栈\nAscendTargetDependentARSpeculator\nAscendMTPSpeculator / AscendDSparkSpeculator", tone="activation", font_size=12)
-    c.node("a_dspark", rx, ry + 72, rw, 64, "LMHead TP 对齐包装\nLmheadTPDraftSamplingMixin 将行填充至\nmax_num_reqs × num_speculative_steps 防卡死", tone="highlight", font_size=12)
-    c.node("a_graph", rx, ry + 152, rw, 48, "ACLGraph + AscendDSASWA 缓存\nAutoRegressiveAclGraphManager + 线性物理槽散射", tone="activation", font_size=12)
-    c.node("a_rej", rx, ry + 216, rw, 48, "NPU 校验与重采样核\n_probabilistic_rejection_kernel + resample.py", tone="activation", emphasis=True, font_size=12)
+    c.node("a_dspark", rx, ry + 72, rw, 64, "LMHead TP 对齐（对齐集合通信形状）\nLmheadTPDraftSamplingMixin 将行填充至\nmax_num_reqs × num_speculative_steps", tone="highlight", font_size=12)
+    c.node("a_graph", rx, ry + 152, rw, 56, "ACLGraph + AscendDSASWA 缓存\nAutoRegressiveAclGraphManager\n+ 线性物理槽位 Scatter 写入", tone="activation", font_size=12)
+    c.node("a_rej", rx, ry + 224, rw, 48, "NPU 校验与重采样 Kernel\n_probabilistic_rejection_kernel + resample.py", tone="activation", emphasis=True, font_size=12)
 
     c.connect("eg1", "g_hier", "g_dspark", tone="fg")
     c.connect("eg2", "g_dspark", "g_graph", tone="fg")
@@ -668,7 +682,7 @@ def build_09_mtp_runtime() -> None:
 
 
 def build_10_five_gen_ledger() -> None:
-    """10-five-gen-ledger.drawio：V2 -> V3 -> R1 -> V3.2 -> V4 -> V4.1 KV 字节账本与双硬件总览。"""
+    """10-five-gen-ledger.drawio：V2 -> V3 -> R1 -> V3.2 -> V4.1-Flash KV 字节账本、参数分工与双硬件执行栈。"""
     c = DrawioCanvas(page_name="five-gen-ledger", diagram_id="ds-10-five-gen-ledger", width=688)
 
     c.proportional_strip(
@@ -676,12 +690,12 @@ def build_10_five_gen_ledger() -> None:
         8,
         32,
         672,
-        32,
+        40,
         [
-            (1024, "V2/V3 BF16 Latent c_t (512×2B = 1024 B)", "active", False),
-            (128, "k_rope\n(128 B)", "highlight", False),
+            (1024, "V2 / V3 / R1 BF16 c_t^KV (1024 B)", "active", False),
+            (128, "k_t^R\n(128 B)", "highlight", False),
         ],
-        title="1. DeepSeek-V2/V3/R1 BF16 MLA：每层 1152 B（比 MHA 省 ~98%）",
+        title="1. V2 / V3 / R1 BF16 MLA：1024 B c_t^KV + 128 B k_t^R（61 层整网 70,272 B/tok）",
         total_label="1152 B/层",
     )
 
@@ -689,58 +703,81 @@ def build_10_five_gen_ledger() -> None:
         "kv_v32",
         8,
         112,
-        336,
-        32,
+        464,
+        40,
         [
-            (512, "V3/V3.2 FP8 Latent (512 B)", "active", False),
-            (64, "RoPE 64B", "highlight", False),
+            (656, "V3.2 FP8 主缓存 (656 B)", "active", False),
+            (132, "索引器\n(132 B)", "highlight", False),
         ],
-        title="2. DeepSeek-V3.2 FP8 MLA + DSA Indexer：带宽减半且仅取 Top-K 页",
-        total_label="576 B/层 (50%)",
+        title="2. V3.2 FP8 MLA + DSA Indexer：656 B 主缓存 + 132 B 索引器（解码仅读 Top-2048）",
+        total_label="788 B/层",
+    )
+    c.node(
+        "kv_v32_note",
+        488,
+        112,
+        192,
+        40,
+        "解码仅读 Top-2048 槽位\n61 层整网 48,068 B/tok",
+        tone="neutral",
+        dashed=True,
+        font_size=12,
     )
 
     c.proportional_strip(
         "kv_v41",
         8,
-        224,
-        168,
-        32,
+        192,
+        208,
+        40,
         [
-            (224, "V4/V4.1 NVFP4 (224B)", "done", True),
-            (64, "64B RoPE+Sc", "highlight", True),
+            (288, "288 B 主 KV\n(256B E2M1+32B)", "done", True),
+            (68, "68 B HSI", "highlight", True),
         ],
-        title="3. DeepSeek-V4/V4.1 Sparse：288 B/层（448 NoPE + 64 RoPE）",
-        total_label="288 B/层 (25%)",
+        title="3. V4.1-Flash CSA2 + CED：全局层 288 B 主 KV + 68 B HSI",
+        total_label="均摊 890 B/tok",
+    )
+    c.node(
+        "kv_v41_note",
+        240,
+        192,
+        440,
+        40,
+        "40 层全模型净均摊 2.5 × 356 = 890 B/tok（较 V3 降约 79×）\n288 B 主 KV (256B E2M1 + 32B E4M3 缩放) + 68 B HSI (MXFP4)",
+        tone="done",
+        dashed=True,
+        align="left",
+        font_size=12,
     )
 
     c.proportional_strip(
         "param_ratio",
         8,
-        336,
+        312,
         672,
-        32,
+        40,
         [
-            (37, "激活 37B", "done", True),
-            (634, "HBM 稀疏专家总容量 634B (仅 Top-8 活跃)", "active", False),
-            (100, "Host 100B Engram", "highlight", False),
+            (16, "16B 在线激活", "done", True),
+            (536, "536B HBM 未激活专家 (与 16B 共构 552B 主干)", "active", False),
+            (196, "196B Host DRAM Engram\n(Layers 1 & 14)", "highlight", False),
         ],
-        title="4. V4.1 容量与算力分工：37B 在线算力 / 671B HBM MoE / 100B Host DDR 记忆",
-        total_label="771B 全图谱",
+        title="4. V4.1-Flash 参数与存储分工：16B 激活 + 536B HBM 未激活 + 196B Host DRAM",
+        total_label="748B 总规模",
     )
 
     (lx, ly, lw, _), (rx, ry, rw, _) = c.swimlane_pair(
         "synth",
-        "NVIDIA SM100 旗舰硬件闭环",
-        "Huawei Ascend 910B/910C 硬件闭环",
-        y=432,
+        "NVIDIA Hopper / Blackwell 执行栈",
+        "Huawei Ascend 910B / 910C 执行栈",
+        y=416,
         h=112,
         total_w=688,
         gap=16,
         left_tone="active",
         right_tone="highlight",
     )
-    c.node("gpu_end", lx, ly, lw, 64, "• DeepseekV4MegaAttnAttention (288B 融合)\n• mega_mhc 单遍融合 + DeepEP DBO\n• EngramPeerExchange + DSparkSpeculator", tone="active", font_size=12, align="left")
-    c.node("npu_end", rx, ry, rw, 64, "• AscendDSAImpl + packed_cache_ops\n• npu_hc_pre_v3 + AscendMoERunner (MC2)\n• UVA Engram 直读 + AscendDSparkSpeculator", tone="highlight", font_size=12, align="left")
+    c.node("gpu_end", lx, ly, lw, 64, "• DeepseekV4MegaAttnAttention (288B NVFP4)\n• mega_mhc 单遍融合 + DeepEP DBO\n• EngramPeerExchange + DSparkSpeculator", tone="active", font_size=12, align="left")
+    c.node("npu_end", rx, ry, rw, 64, "• AscendDSAV41Impl + packed_cache_ops\n• npu_hc_pre_v3 + AscendMoERunner (MC2)\n• UVA Engram 直读 + AscendDSparkSpeculator", tone="highlight", font_size=12, align="left")
 
     out = POSTS_ROOT / "10-architecture-synthesis" / "diagrams" / "10-five-gen-ledger.drawio"
     c.save(out, strict=True, build_svg=True)

@@ -10,13 +10,13 @@
         <mxCell id="comp_right" value="Ascend NPU · AscendCompiler + npugraph_ex" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e3f5f3;strokeColor=#0f766e;strokeWidth=1.25;verticalAlign=top;align=left;spacingLeft=12;spacingTop=6;fontFamily=Inter;fontSize=12;fontStyle=1;fontColor=#0f766e;container=0;" vertex="1" parent="1">
           <mxGeometry x="360" y="0" width="336" height="384" as="geometry"/>
         </mxCell>
-        <mxCell id="gi0" value="TorchCompileWithNoGuardsWrapper&lt;br&gt;跳过动态 Shape Guards 防重追踪" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#f4f4f2;strokeColor=#5c6067;strokeWidth=1;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+        <mxCell id="gi0" value="TorchCompileWithNoGuardsWrapper&lt;br&gt;跳过动态 Shape Guard 防重追踪" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#f4f4f2;strokeColor=#5c6067;strokeWidth=1;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
           <mxGeometry x="24" y="40" width="288" height="64" as="geometry"/>
         </mxCell>
         <mxCell id="gi1" value="VllmBackend + split_graph&lt;br&gt;按 splitting_ops 切出分段 FX 子图" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f2fb;strokeColor=#2f5783;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
           <mxGeometry x="24" y="128" width="288" height="64" as="geometry"/>
         </mxCell>
-        <mxCell id="gi2" value="TorchInductor FX Fusion&lt;br&gt;自动生成并编译 Triton PTX 融合内核" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f2fb;strokeColor=#2f5783;strokeWidth=2;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+        <mxCell id="gi2" value="TorchInductor FX Fusion&lt;br&gt;自动生成并编译 Triton 融合 Kernel" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f2fb;strokeColor=#2f5783;strokeWidth=2;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
           <mxGeometry x="24" y="216" width="288" height="64" as="geometry"/>
         </mxCell>
         <mxCell id="gi3" value="CUDAGraphWrapper (PIECEWISE)&lt;br&gt;捕获各分段静态序列供低开销重放" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#fbf2df;strokeColor=#7b5518;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
@@ -37,10 +37,10 @@
         <mxCell id="ni1" value="AscendCompiler.compile&lt;br&gt;oot_compiler (use_inductor=False)" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e3f5f3;strokeColor=#0f766e;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
           <mxGeometry x="384" y="128" width="288" height="64" as="geometry"/>
         </mxCell>
-        <mxCell id="ni2" value="npugraph_ex (兜底 torchair)&lt;br&gt;FX 下沉 GE 图；含 Triton Wrapper 时跳过缓存" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e3f5f3;strokeColor=#0f766e;strokeWidth=2;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+        <mxCell id="ni2" value="npugraph_ex (FULL) / GraphFusionPass (PW)&lt;br&gt;下沉 GE 图或模式匹配算子融合" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e3f5f3;strokeColor=#0f766e;strokeWidth=2;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
           <mxGeometry x="384" y="216" width="288" height="64" as="geometry"/>
         </mxCell>
-        <mxCell id="ni3" value="ACLGraphWrapper / GraphFusionPass&lt;br&gt;驱动昇腾静态内核与 aclmdlRI 重放" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#fbf2df;strokeColor=#7b5518;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+        <mxCell id="ni3" value="ACLGraphWrapper / UpdatableGraph&lt;br&gt;驱动 aclmdlRI 静态图捕获与热更新重放" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#fbf2df;strokeColor=#7b5518;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
           <mxGeometry x="384" y="304" width="288" height="64" as="geometry"/>
         </mxCell>
         <mxCell id="e_ni0" value="" style="endArrow=classic;startArrow=none;html=1;strokeColor=#1d1d1f;strokeWidth=1.25;edgeStyle=orthogonalEdgeStyle;rounded=1;" edge="1" parent="1" source="ni0" target="ni1">

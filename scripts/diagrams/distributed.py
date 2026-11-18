@@ -53,7 +53,7 @@ def build_01_nvlink_vs_hccs() -> None:
         ly,
         lw - 16,
         24,
-        "Tier 1 · 卡内计算与片上显存",
+        "Tier 1 · 卡内计算与封装内 HBM 显存",
         size=12,
         tone="muted",
         bold=True,
@@ -75,7 +75,7 @@ def build_01_nvlink_vs_hccs() -> None:
         ry,
         rw - 16,
         24,
-        "Tier 1 · 卡内计算与片上显存",
+        "Tier 1 · 卡内计算与封装内 HBM 显存",
         size=12,
         tone="muted",
         bold=True,
@@ -108,7 +108,7 @@ def build_01_nvlink_vs_hccs() -> None:
         ly + 136,
         lw - 48,
         64,
-        "机内 8 卡 NVLink 4/5 + NVSwitch\n900 / 1800 GB/s 全交叉 · NVLS 规约",
+        "机内 8 卡 NVLink 4/5 + NVSwitch\n900 / 1800 GB/s 全交叉 · NVLS 硬件归约",
         tone="active",
         emphasis=True,
         font_size=12,
@@ -140,7 +140,7 @@ def build_01_nvlink_vs_hccs() -> None:
         ry + 136,
         rw - 48,
         64,
-        "机内 910B HCCS 全连接环\n392 GB/s 对等直连 · SDMA 零拷贝",
+        "机内 910B HCCS 对等直连拓扑\n392 GB/s 带宽 · SDMA 零拷贝",
         tone="activation",
         emphasis=True,
         font_size=12,
@@ -151,7 +151,7 @@ def build_01_nvlink_vs_hccs() -> None:
         ry + 232,
         rw - 48,
         72,
-        "超节点 CloudMatrix 384 (UB 总线)\n384 卡统一编址 · 机柜级对等内存池",
+        "超节点 CloudMatrix 384 (Unified Bus 总线)\n384 卡统一编址 · 机柜级对等内存池",
         tone="activation",
         font_size=12,
     )
@@ -204,7 +204,7 @@ def build_01_nvlink_vs_hccs() -> None:
     c.connect("l_e3", "l_su", "l_so", label="跨机 RDMA", tone="muted", dashed=True, exit_xy=(0.5, 1.0), entry_xy=(0.5, 0.0))
 
     c.connect("r_e1", "r_t1", "r_su", tone="fg", exit_xy=(0.5, 1.0), entry_xy=(0.5, 0.0))
-    c.connect("r_e2", "r_su_node", "r_su_pod", label="UB 扩展", tone="fg", exit_xy=(0.5, 1.0), entry_xy=(0.5, 0.0))
+    c.connect("r_e2", "r_su_node", "r_su_pod", label="Unified Bus", tone="fg", exit_xy=(0.5, 1.0), entry_xy=(0.5, 0.0))
     c.connect("r_e3", "r_su", "r_so", label="跨机 RoCE", tone="muted", dashed=True, exit_xy=(0.5, 1.0), entry_xy=(0.5, 0.0))
 
     out_path = (
@@ -231,7 +231,7 @@ def build_02_tp_sp_sharding() -> None:
         0,
         CANVAS_W,
         160,
-        title="1. Megatron 张量并行 (TP = 2)：Column 切列 + Row 切行，层内仅 1 次 AllReduce",
+        title="1. Megatron 张量并行 (TP = 2)：Column 切列 + Row 切行，每子层仅 1 次 AllReduce（每层 2 次）",
         tone="active",
         dashed=True,
     )
@@ -485,7 +485,7 @@ def build_02_pd_disaggregation() -> None:
         112,
         152,
         48,
-        "高 TP 并行 (TP4 / TP8)\n低批并发压榨首字算力",
+        "高 TP 并行 (TP4 / TP8)\n低批并发吃满 Prefill 算力",
         tone="active",
         emphasis=True,
         font_size=12,
@@ -576,7 +576,7 @@ def build_02_pd_disaggregation() -> None:
         144,
         64,
         name="远端注册 HBM 槽位",
-        shape="单向 RDMA Write 落盘",
+        shape="单向 RDMA Write 直写 HBM",
         tone="neutral",
         stack=2,
         font_size=12,
@@ -625,7 +625,7 @@ def build_03_deepep_vs_mc2() -> None:
         0,
         CANVAS_W,
         24,
-        "MoE EP 通信与算子卸载：GPU DeepEP 无阻塞内核 vs 昇腾 MC2 AIV-AICore-RDMA 全核融合",
+        "MoE EP 通信与算子卸载：GPU DeepEP 无阻塞 Kernel vs 昇腾 MC2 AIV-AICore-RDMA 全核融合",
         size=12,
         tone="muted",
         align="center",
@@ -633,8 +633,8 @@ def build_03_deepep_vs_mc2() -> None:
 
     (lx, ly, lw, lh), (rx, ry, rw, rh) = c.swimlane_pair(
         "ep",
-        "NVIDIA DeepEP + vLLM EPBuffer v2",
-        "华为昇腾 HCCL MC2 + FlashComm",
+        "NVIDIA DeepEP (EPBuffer) + vLLM",
+        "华为昇腾 HCCL MC2 通算融合",
         y=32,
         h=480,
         total_w=CANVAS_W,
@@ -660,7 +660,7 @@ def build_03_deepep_vs_mc2() -> None:
         ly + 32,
         lw - 48,
         64,
-        "NVLink 机内汇聚 + RDMA 跨机转发\n先机内去重再跨网，压榨 NVLink 带宽",
+        "RDMA 单份跨机中继 + NVLink 机内扇出\n跨机只传 1 份副本，节省网卡带宽",
         tone="active",
         font_size=12,
     )
@@ -681,7 +681,7 @@ def build_03_deepep_vs_mc2() -> None:
         ly + 176,
         lw - 48,
         72,
-        "GPU Warp 直接写网卡 Doorbell (IBGDA)\n绕过 CPU 与 Host 中转，微批零气泡",
+        "GPU Warp 直接写网卡 Doorbell (IBGDA)\n绕过 CPU 与 Host 中转，压低启动延迟",
         tone="highlight",
         emphasis=True,
         font_size=12,
@@ -693,7 +693,7 @@ def build_03_deepep_vs_mc2() -> None:
         ly + 296,
         lw - 16,
         120,
-        "vLLM DeepEP v2 / Async Worker\n• DeepEPLLPrepareAndFinalize (双微批钩子)\n• 共享专家与路由专家跨卡独立并行",
+        "vLLM DeepEP v2 / Async Worker\n• DeepEPV2PrepareAndFinalize (CUDA Graph / 异步)\n• v1 HT/LL 路径提供 DBO recv_hook 双微批机制",
         tone="neutral",
         font_size=12,
     )
@@ -715,7 +715,7 @@ def build_03_deepep_vs_mc2() -> None:
         ry + 32,
         rw - 48,
         64,
-        "AIV 向量核打包 + 窗口化 HCCS/SDMA/RDMA\n通信与量化融合在单一融合核内完成",
+        "AIV 向量核打包 + 窗口化 HCCS/SDMA/RDMA\n通信与量化融合在单一融合算子内完成",
         tone="activation",
         emphasis=True,
         font_size=12,
@@ -727,7 +727,7 @@ def build_03_deepep_vs_mc2() -> None:
         ry + 144,
         rw - 16,
         56,
-        "AICore GroupedMatmul (GMM)\n接收即算，按专家偏移直喂矩阵核",
+        "AICore GroupedMatmul (GMM)\n接收即算，按专家偏移直接启动矩阵计算",
         tone="neutral",
         font_size=12,
     )
@@ -748,7 +748,7 @@ def build_03_deepep_vs_mc2() -> None:
         ry + 264,
         rw - 48,
         56,
-        "专家回传后原地 Top-K 加权规约\n省去独立 ReduceScatter 与临时缓冲",
+        "专家回传后原地 Top-K 加权归约\n省去独立 ReduceScatter 与临时缓冲",
         tone="highlight",
         font_size=12,
     )
@@ -759,14 +759,14 @@ def build_03_deepep_vs_mc2() -> None:
         ry + 360,
         rw - 16,
         56,
-        "A2 HCCS / A3 UB-SDMA\nDispatch-FFN-Combine 算子级通算融合",
+        "A2 HCCS / A3 Unified Bus SDMA\nDispatch-FFN-Combine 算子级通算融合",
         tone="activation",
         font_size=12,
     )
 
     c.connect("l_e1", "l_ht", "l_ll", label="模式切换", tone="fg", exit_xy=(0.5, 1.0), entry_xy=(0.5, 0.0))
     c.connect("l_e2", "l_ll", "l_v2", tone="fg", exit_xy=(0.5, 1.0), entry_xy=(0.5, 0.0))
-    c.connect("r_e1", "r_disp", "r_gmm", label="UB 直喂", tone="fg", exit_xy=(0.5, 1.0), entry_xy=(0.5, 0.0))
+    c.connect("r_e1", "r_disp", "r_gmm", label="按偏移传给 GMM", tone="fg", exit_xy=(0.5, 1.0), entry_xy=(0.5, 0.0))
     c.connect("r_e2", "r_gmm", "r_comb", label="回传", tone="fg", exit_xy=(0.5, 1.0), entry_xy=(0.5, 0.0))
     c.connect("r_e3", "r_comb", "r_mc2", tone="fg", exit_xy=(0.5, 1.0), entry_xy=(0.5, 0.0))
 

@@ -104,7 +104,7 @@ export function buildDpDispatchConsensusSteps(): Step<DpDispatchConsensusState>[
         rank1Summary: 'PIECEWISE(T=20)',
         agreedMode: 'MISMATCH',
         agreedTokens: '4 ≠ 20',
-        collectiveRisk: 'NCCL/HCCL 死锁!',
+        collectiveRisk: 'NCCL/HCCL 死锁',
         rankSlots: [
           {
             id: 'r0',
@@ -140,7 +140,7 @@ export function buildDpDispatchConsensusSteps(): Step<DpDispatchConsensusState>[
               {
                 start: 1.2,
                 dur: 2.8,
-                label: 'All2All 4 vs 20 -> 无限卡死',
+                label: 'All2All 4 vs 20 -> 通信挂死',
                 tone: 'error',
                 kind: 'error',
                 active: true,
@@ -151,7 +151,7 @@ export function buildDpDispatchConsensusSteps(): Step<DpDispatchConsensusState>[
             title: 'DP Host Sync',
             subtitle: '缺失协商',
             blocks: [
-              { start: 1.2, dur: 2.8, label: '集体通信形状错位', tone: 'error', kind: 'error' },
+              { start: 1.2, dur: 2.8, label: '集合通信形状错位', tone: 'error', kind: 'error' },
             ],
           },
           {
@@ -184,7 +184,7 @@ export function buildDpDispatchConsensusSteps(): Step<DpDispatchConsensusState>[
         playhead: 2.4,
       },
       caption:
-        '第 2 步（若不对齐的死锁后果）：Rank 0 走 FULL 图（4 token）率先撞上 MoE EP All-to-All，而 Rank 1 还在 PIECEWISE 路径执行（20 token），集合通信长度错配直接引发死锁或看门狗超时。',
+        '第 2 步（若不对齐的死锁后果）：Rank 0 走 FULL 图（4 token）率先进入 MoE EP All-to-All，而 Rank 1 还在 PIECEWISE 路径执行（20 token），集合通信长度错配直接引发死锁或看门狗超时。',
       focus: ['sync'],
     },
     {
@@ -399,7 +399,7 @@ export function buildDpDispatchConsensusSteps(): Step<DpDispatchConsensusState>[
               {
                 start: 3.0,
                 dur: 0.9,
-                label: '齐步零死锁',
+                label: '对齐零死锁',
                 tone: 'done',
                 active: true,
               },
@@ -421,7 +421,7 @@ export function buildDpDispatchConsensusSteps(): Step<DpDispatchConsensusState>[
         playhead: 3.9,
       },
       caption:
-        '第 5 步（安全齐步）：Rank 0 虽是 Decode 却遵从共识跳过 FULL 外壳，只命中内层 CUDAGraphWrapper(PIECEWISE)；两卡以相同 (20, H) 形态并发完成 MoE 通信。',
+        '第 5 步（对齐执行）：Rank 0 虽是 Decode 却遵从共识跳过 FULL 外壳，只命中内层 CUDAGraphWrapper(PIECEWISE)；两卡以相同 (20, H) 形态并发完成 MoE 通信。',
       focus: ['sync'],
     },
   ];

@@ -58,7 +58,7 @@ def build_01_gpu_vs_npu_arch() -> None:
         ly + 16,
         col_w,
         56,
-        "SIMT Warp 调度器 + PrivateUse1=False\n原生 CUDA 分发 -> forward_cuda",
+        "SIMT Warp 调度器 + DispatchKey::CUDA\n原生 CUDA 分发 -> forward_cuda",
         tone="neutral",
         font_size=12,
     )
@@ -213,7 +213,7 @@ def build_03_mqa_gqa_arch() -> None:
         0,
         CANVAS_W,
         24,
-        "固定 8 个 Query 头 (总宽 512px = 100%)，KV Cache 实体宽度严格按 8 : 2 : 1 等比例缩放",
+        "固定 8 个 Query 头 (100% 基准)，KV Cache 实体按 8 : 2 : 1 等比例缩放",
         size=12,
         tone="muted",
         align="center",
@@ -223,9 +223,9 @@ def build_03_mqa_gqa_arch() -> None:
     track_w = 512  # 8 * 64px, exact multiple of 8
 
     rows = [
-        ("mha", "MHA (8:8, g=1)\n100% KV 容量\nAI ≈ 1.0 FLOP/B", 8, "neutral", False, "100% 物理 KV (8 组独立头 · 512px)"),
-        ("gqa", "GQA-2 (8:2, g=4)\n25% KV 容量\nAI 提升 ~4x", 2, "active", True, "25% KV (2 组 · 128px) -> 节省 75% (384px)"),
-        ("mqa", "MQA (8:1, g=8)\n12.5% KV 容量\nAI 提升 ~8x", 1, "done", True, "12.5% KV (1 组 · 64px) -> 节省 87.5% (448px)"),
+        ("mha", "MHA (8:8, g=1)\n100% KV 容量\nAI ≈ 1.0 FLOP/B", 8, "neutral", False, "100% 物理 KV (8 组独立头)"),
+        ("gqa", "GQA-2 (8:2, g=4)\n25% KV 容量\nAI 提升 ~4x", 2, "active", True, "25% KV (2 组) -> 节省 75%"),
+        ("mqa", "MQA (8:1, g=8)\n12.5% KV 容量\nAI 提升 ~8x", 1, "done", True, "12.5% KV (1 组) -> 节省 87.5%"),
     ]
 
     cur_y = 32
@@ -560,7 +560,7 @@ def build_04_sram_tiling_arch() -> None:
     c.group("hbm", 8, 32, CANVAS_W - 16, 128, title="片外 HBM 显存 (大容量 · 低带宽: H800 3.35 TB/s)", tone="neutral", dashed=False)
     c.node("hbm_q", 24, 72, 120, 64, "完整 Q [N, d]\n按块 Br 分片读一次", tone="active", font_size=12)
     c.node("hbm_kv", 168, 72, 160, 64, "完整 K, V [N, d]\n分块 Bc 顺序流式读取", tone="highlight", font_size=12)
-    c.node("hbm_no_sp", 352, 72, 168, 64, "已消除: S, P [N, N]\nO(N^2) 中间矩阵永不写回 HBM", tone="muted", dashed=True, font_size=12)
+    c.node("hbm_no_sp", 352, 72, 168, 64, "已消除: S, P [N, N]\nO(N^2) 中间矩阵不写回 HBM", tone="muted", dashed=True, font_size=12)
     c.node("hbm_o", 560, 72, 104, 64, "最终 O [N, d]\n仅循环末尾写回一次", tone="done", font_size=12)
 
     # Bottom Zone: On-chip SRAM / Register / Ascend UB+L0C
@@ -588,7 +588,7 @@ def build_04_sram_tiling_arch() -> None:
     )
 
     c.node("sram_q", 32, 264, 104, 64, "常驻切片 Q_i\n[B_r, d]", tone="active", emphasis=True, font_size=12)
-    c.node("sram_kv", 32, 376, 104, 72, "当前瓦片 K_j, V_j\n[B_c, d] (双缓冲覆写)", tone="highlight", emphasis=True, font_size=12)
+    c.node("sram_kv", 32, 376, 104, 72, "当前分块 Tile K_j, V_j\n[B_c, d] (双缓冲覆写)", tone="highlight", emphasis=True, font_size=12)
 
     c.node("sram_s", 168, 264, 144, 80, "局部矩阵乘 S_ij\n= Q_i K_j^T / sqrt(d)\n仅占 [B_r, B_c] 用完即丢", tone="neutral", font_size=12)
     c.node("sram_sm", 168, 368, 144, 88, "片上统计更新\nm_new = max(m, rowmax)\nalpha = exp(m_old - m_new)", tone="highlight", font_size=12)

@@ -33,7 +33,7 @@ export function buildCsa2HsiSteps(): Step<Csa2HsiState>[] {
   ];
   const fullMasks = fullMatrix.map((r) => r.map(() => false));
 
-  // L1 粗块海选保留 B1, B3, B5（后续 Reindex 层完全跳过其余 5 块）
+  // L1 粗块筛选保留 B1, B3, B5（后续 Reindex 层完全跳过其余 5 块）
   const candMatrix: (number | null)[][] = [
     [1.2, 4.9, 0.8, 3.6, 1.5, 5.4, 0.6, 2.1],
     [null, 4.5, null, 3.8, null, 5.1, null, null],
@@ -77,7 +77,7 @@ export function buildCsa2HsiSteps(): Step<Csa2HsiState>[] {
         focusArea: 'hsi',
       },
       caption:
-        '步骤 3（HSI L1 粗块海选池）：解码器首层 L20 (Full) 全扫描时顺便按每 $8$ 槽位取块内最大值，挑选 Top-2048 粗块拼成固定容量 $16,384$ 的共享候选池（示意中选中 B1, B3, B5）。',
+        '步骤 3（HSI L1 粗块候选池）：解码器首层 L20 (Full) 全扫描时同步按每 $8$ 槽位取块内最大值，挑选 Top-2048 粗块拼成固定容量 $16,384$ 的共享候选池（示意中选中 B1, B3, B5）。',
     },
     {
       state: {
@@ -99,7 +99,7 @@ export function buildCsa2HsiSteps(): Step<Csa2HsiState>[] {
         focusArea: 'inv',
       },
       caption:
-        '步骤 5（输出逆 RoPE $R_{-n}$ 与 CED 减半）：主注意力输出末 $64$ 维乘 $R_{-n}$ 恢复相对位置；配合 CED 后半 $20$ 层由 $H_{L/2}$ 直接投影全局 KV 及 $n_{\\text{win}}=128$ 有界重放，Prefill 算力砍半。',
+        '步骤 5（输出逆 RoPE $R_{-n}$ 与 CED 减半）：主注意力输出末 $64$ 维乘 $R_{-n}$ 恢复相对位置；配合 CED 后半 $20$ 层由 $H_{L/2}$ 直接投影全局 KV 及 $n_{\\text{win}}=128$ 有界重放，Prefill 算力减半。',
     },
   ];
 }
@@ -119,7 +119,7 @@ export default function Csa2HsiExplainer({
         const s = step.state;
         const focusRect =
           s.focusArea === 'ledger'
-            ? { x: 14, y: 10, w: 652, h: 110, label: '单槽字节三级压榨：1152 B → 288 B' }
+            ? { x: 14, y: 10, w: 652, h: 110, label: '单槽字节三级压缩：1152 B → 288 B' }
             : s.focusArea === 'modes'
               ? { x: 20, y: 160, w: 224, h: 192, label: '40L Full / Reindex / Reuse' }
               : s.focusArea === 'hsi'

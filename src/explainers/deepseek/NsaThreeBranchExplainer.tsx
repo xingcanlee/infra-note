@@ -56,7 +56,7 @@ export function buildNsaThreeBranchSteps(): Step<NsaThreeBranchState>[] {
         activeBranch: 'cmp',
       },
       caption:
-        '步骤 1（cmp 块压缩分支）：将连续 $l=32$ 词元按步长 $d=16$ 经 MLP $\\varphi$ 折叠成粗粒度压缩块，组内查询点积立刻产生压缩注意力分布 $\\mathbf{p}_t^{\\text{cmp}}$。',
+        '步骤 1（cmp 块压缩分支）：将连续 $l=32$ 个 token 按步长 $d=16$ 经 MLP $\\varphi$ 折叠成粗粒度压缩块，组内查询点积立刻产生压缩注意力分布 $\\mathbf{p}_t^{\\text{cmp}}$。',
     },
     {
       state: {
@@ -78,7 +78,7 @@ export function buildNsaThreeBranchSteps(): Step<NsaThreeBranchState>[] {
         activeBranch: 'slc',
       },
       caption:
-        '步骤 3（slc GQA 组共享连续块挑选）：将同一 GQA 组内 $G=16$ 个头的得分求和聚合，选出整组共用的 Top-$n$ 连续块 $\\{b_0, b_1\\}$（每块 $l^{\\prime}=64$），消除独立选块并集灾难。',
+        '步骤 3（slc GQA 组共享连续块挑选）：将同一 GQA 组内 $G=16$ 个头的得分求和聚合，选出整组共用的 Top-$n$ 连续块 $\\{b_0, b_1\\}$（每块 $l^{\\prime}=64$），消除独立选块并集膨胀。',
     },
     {
       state: {
@@ -89,7 +89,7 @@ export function buildNsaThreeBranchSteps(): Step<NsaThreeBranchState>[] {
         activeBranch: 'win',
       },
       caption:
-        '步骤 4（win 独立投影局部滑窗）：近端 $w=512$ 窗口拥有独立的键值投影 $W_K^{\\text{win}}, W_V^{\\text{win}}$，防止强梯度局部语法绑架长程 cmp / slc 表征学习。',
+        '步骤 4（win 独立投影局部滑窗）：近端 $w=512$ 窗口拥有独立的键值投影 $W_K^{\\text{win}}, W_V^{\\text{win}}$，防止强梯度局部句法干扰长程 cmp / slc 表征学习。',
     },
     {
       state: {
@@ -100,7 +100,7 @@ export function buildNsaThreeBranchSteps(): Step<NsaThreeBranchState>[] {
         activeBranch: 'all',
       },
       caption:
-        '步骤 5（Sigmoid 门控三路汇总）：由当前隐状态生成门控标量 $(g_t^{\\text{cmp}}, g_t^{\\text{slc}}, g_t^{\\text{win}}) \\in (0,1)^3$ 加权融合三路输出，$64\\text{K}$ 上下文访存直降 $11.6\\times$。',
+        '步骤 5（Sigmoid 门控三路汇总）：由当前隐状态生成门控标量 $(g_t^{\\text{cmp}}, g_t^{\\text{slc}}, g_t^{\\text{win}}) \\in (0,1)^3$ 加权融合三路输出，$64\\text{K}$ 上下文有效 KV 访存降至 $1/11.6$。',
     },
   ];
 }

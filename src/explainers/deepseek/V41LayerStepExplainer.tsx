@@ -27,9 +27,9 @@ const STAGE_DEFS = [
     tone: 'done' as Tone,
   },
   {
-    name: '2. CSA2 / HCA',
+    name: '2. CSA2 / CED',
     shape: '288 B/tok KV',
-    detail: 'Indexer+Sparse MLA',
+    detail: 'HSI + Sparse MLA',
     tone: 'active' as Tone,
   },
   {
@@ -75,7 +75,7 @@ export function buildV41LayerStepSteps(): Step<V41LayerStepState>[] {
     {
       state: {
         stepIndex: 0,
-        phaseLabel: 'Step 1 · mHC Pre-Mix 与 Shifted RMSNorm 融合坍缩',
+        phaseLabel: 'Step 1 · mHC Pre-Mix 与 Shifted RMSNorm 融合归并',
         activeStage: 0,
         tensorShape: '[B, 4, H] -> [B, H]',
         hbmStageBytes: '10d (Single-Pass)',
@@ -88,15 +88,15 @@ export function buildV41LayerStepSteps(): Step<V41LayerStepState>[] {
     {
       state: {
         stepIndex: 1,
-        phaseLabel: 'Step 2 · CSA2 / HCA 稀疏注意力与 288 B/token Paged Gather',
+        phaseLabel: 'Step 2 · CSA2 / CED 稀疏注意力与 288 B/token HSI 检索',
         activeStage: 1,
-        tensorShape: 'KV Cache: 288 B/tok',
-        hbmStageBytes: '288 B × Top-K_idx',
+        tensorShape: '主 KV 288 B + HSI 68 B',
+        hbmStageBytes: '288 B × Top-512 槽位',
         commPath: 'SP All-Gather / GEMM-RS',
-        totalBudget: '较 V2 降低 ~98% 访存',
+        totalBudget: '40 层均摊 890 B/tok',
       },
       caption:
-        'DeepSeek-V4.1 经 NSA/Lightning Indexer 筛选 Top-K 关键页，每 token 仅拉取压缩到 288 字节的 Paged KV 条目进入 Sparse MLA 计算，显著压缩长上下文 HBM 带宽瓶颈。',
+        'DeepSeek-V4.1-Flash 的 CSA2 经 CED 顶层投影与分层稀疏索引器（HSI）在 16,384 候选槽位中筛选 Top-512 条目，每槽仅按 288 B NVFP4 格式读取并进入 Sparse MLA 计算，将 40 层整网全局 KV 均摊至 890 B/token。',
     },
     {
       state: {
@@ -109,7 +109,7 @@ export function buildV41LayerStepSteps(): Step<V41LayerStepState>[] {
         totalBudget: 'L1 & L14 边界注入',
       },
       caption:
-        '在层边界处（第 1、14 层）等待背景流预取完成，wkv 投影成 K(4d)/V(1d) 并以无状态 Signed-Sqrt 门控 $\\alpha_t$ 写入 4 条残差流，完全避开主计算流同步停顿。',
+        '在第 1、14 层入口（上一层 mhc_post 之后、本层 mhc_pre 与注意力之前）等待背景流预取完成，wkv 投影成 4:1 的分支 Key 与共享 Value，经有符号开方门控 $\\alpha_t$ 原位写入 4 条残差流，避免主计算流同步停顿。',
     },
     {
       state: {
@@ -132,7 +132,7 @@ export function buildV41LayerStepSteps(): Step<V41LayerStepState>[] {
         tensorShape: '[B, H] -> [B, 4, H]',
         hbmStageBytes: '归约与下层 Pre 合并',
         commPath: '可延迟至下层边界融合',
-        totalBudget: '30层连乘 Amax <= 1.6',
+        totalBudget: '40层连乘 Amax <= 1.6',
       },
       caption:
         '若下一层非 Engram 边界，MoE 输出先挂起至下一层 mhc_shifted_post_pre 与 TP/SP All-Reduce 协同完成写回，同时完成下层系数计算。',
@@ -148,13 +148,13 @@ export function buildV41LayerStepSteps(): Step<V41LayerStepState>[] {
         totalBudget: '单轮投机吞吐 ×3~5',
       },
       caption:
-        '全骨干完成后抽取目标辅助层特征送入 DeepseekV41DSparkModel，在单次 3 层 SWA 并行前向与 $r=256$ Markov 链后一次吐出多步候选 token，闭环下一次验证步。',
+        '主干前向完成后抽取目标辅助层特征送入 DeepseekV41DSparkModel，经单次 3 层 SWA 并行前向与 $r=256$ Markov 链一次生成多步候选 token，衔接下一轮并行验证。',
     },
   ];
 }
 
 export default function V41LayerStepExplainer({
-  title = '图 1：DeepSeek-V4.1 单 Token 解码六阶段全景与字节账本追踪',
+  title = '图 1：DeepSeek-V4.1 单 token 解码六阶段全景与字节账本追踪',
 }: {
   title?: string;
 }) {
@@ -294,7 +294,7 @@ export default function V41LayerStepExplainer({
               y={282}
               w={648}
               h={28}
-              title="单 Token Decode 搬运与执行账本构成（比例示意）"
+              title="单 token Decode 搬运与执行账本构成（比例示意）"
               totalLabel={`已推进 ${donePct}%`}
               segments={ledgerSegments}
             />

@@ -91,7 +91,7 @@ export function buildDsaIndexerSteps(): Step<DsaIndexerState>[] {
         focusArea: 'slots',
       },
       caption:
-        '步骤 2（Top-$k$ 离散索引筛选）：对每步打分排序截取前 $k$ 个关键位置（生产环境 $k=2048$，本例示为 $k=3$ 选中 $\\{s_1, s_3, s_7\\}$），细粒度直指关键历史词元而非整块硬切。',
+        '步骤 2（Top-$k$ 离散索引筛选）：对每步打分排序截取前 $k$ 个关键位置（生产环境 $k=2048$，本例示为 $k=3$ 选中 $\\{s_1, s_3, s_7\\}$），细粒度定位关键历史 token，摆脱固定块切分约束。',
     },
     {
       state: {
@@ -109,11 +109,11 @@ export function buildDsaIndexerSteps(): Step<DsaIndexerState>[] {
           'masked',
           'selected',
         ],
-        slotSub: ['跳过', '回捞', '跳过', '回捞', '跳过', '跳过', '跳过', '回捞'],
+        slotSub: ['跳过', '读取', '跳过', '读取', '跳过', '跳过', '跳过', '读取'],
         focusArea: 'heat',
       },
       caption:
-        '步骤 3（FlashMLA 稀疏页式回捞）：主模型 $128$ 个高精度查询头在 MQA 模式下只从 HBM 搬运选中下标对应的潜向量 $[c_s^{KV}; k_s^R]$，核心复杂度从 $O(L^2)$ 降至 $O(Lk)$。',
+        '步骤 3（FlashMLA 稀疏按索引 Gather）：主模型 $128$ 个高精度查询头在 MQA 模式下只从 HBM 搬运选中下标对应的潜向量 $[c_s^{KV}; k_s^R]$，核心复杂度从 $O(L^2)$ 降至 $O(Lk)$。',
     },
     {
       state: {
@@ -153,11 +153,11 @@ export function buildDsaIndexerSteps(): Step<DsaIndexerState>[] {
           'masked',
           'selected',
         ],
-        slotSub: ['跳过', '回捞', '跳过', '回捞', '跳过', '跳过', '跳过', '回捞'],
+        slotSub: ['跳过', '读取', '跳过', '读取', '跳过', '跳过', '跳过', '读取'],
         focusArea: 'cross',
       },
       caption:
-        '步骤 5（长短序列算力交叉点）：序列短于约 $3000$ 词元时非连续 Gather 略慢于稠密 MLA；越过 $3000$ 并推向 $128\\text{K}$ 后，Hopper CTA Cluster 稀疏核跑出 $410\\text{ TFLOPS}$ 全面反超。',
+        '步骤 5（长短序列算力交叉点）：序列短于约 $3000$ 个 token 时非连续 Gather 略慢于稠密 MLA；越过 $3000$ 并推向 $128\\text{K}$ 后，Hopper CTA Cluster 稀疏 Kernel 达到 $410\\text{ TFLOPS}$ 超越稠密基线。',
     },
   ];
 }
@@ -165,7 +165,7 @@ export function buildDsaIndexerSteps(): Step<DsaIndexerState>[] {
 const STAGE_H = 468;
 
 export default function DsaIndexerExplainer({
-  title = '图 1：DeepSeek-V3.2 DSA 闪电索引器、Top-K 回捞与 656 B + 132 B 账本',
+  title = '图 1：DeepSeek-V3.2 DSA 闪电索引器、Top-K 按索引 Gather 与 656 B + 132 B 账本',
 }: {
   title?: string;
 }) {
@@ -197,7 +197,7 @@ export default function DsaIndexerExplainer({
           s.focusArea === 'slots'
             ? { x: 20, y: 48, w: 344, h: 146, label: 'FP8 ReLU 索引筛选 (k=3/2048)' }
             : s.focusArea === 'heat'
-              ? { x: 390, y: 48, w: 268, h: 146, label: 'O(Lk) 稀疏注意力回捞' }
+              ? { x: 390, y: 48, w: 268, h: 146, label: 'O(Lk) 按索引 Gather' }
               : s.focusArea === 'ledger'
                 ? { x: 14, y: 218, w: 652, h: 168, label: '656 B 主缓存 + 132 B 索引缓存' }
                 : { x: 14, y: 396, w: 652, h: 60, label: 'L≈3000 吞吐交叉点与 410 TFLOPS' };
@@ -337,7 +337,7 @@ export default function DsaIndexerExplainer({
                   active: s.phase === 'crossover',
                 },
                 {
-                  label: 'H800 CTA Cluster 实测',
+                  label: 'H800 CTA Cluster 基准',
                   value: '最高 410 TFLOPS',
                   tone: 'green',
                   active: s.phase === 'crossover',

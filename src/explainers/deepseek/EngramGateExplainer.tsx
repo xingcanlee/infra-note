@@ -110,7 +110,7 @@ export function buildEngramGateSteps(): Step<EngramGateState>[] {
         injectDelta: '无状态可 CUDA Graph',
       },
       caption:
-        '原论文在门控后接空洞 $\\delta=3$ 的因果 ShortConv 汇聚无重叠 N-gram；DeepSeek-V4.1 部署去掉卷积使 Engram 彻底无状态，并在多模态图像 token 上置零门控掩码。',
+        '原论文在门控后接空洞 $\\delta=3$ 的因果 ShortConv 汇聚无重叠 N-gram；DeepSeek-V4.1 部署去掉卷积使 Engram 保持无状态执行，并在多模态图像 token 上置零门控掩码。',
     },
   ];
 }
@@ -144,7 +144,7 @@ export default function EngramGateExplainer({
         }));
 
         const selected =
-          s.stepIndex >= 1 ? new Set(['0-3', '1-3', '2-3', '3-3']) : new Set<string>();
+          s.stepIndex >= 1 ? new Set(['0,3', '1,3', '2,3', '3,3']) : new Set<string>();
 
         return (
           <Stage width={680} height={342} label={s.phaseLabel}>

@@ -23,7 +23,7 @@ export function buildCsaRingSteps(): Step<CsaRingState>[] {
     {
       state: { phase: 'ring', focusArea: 'ring' },
       caption:
-        '步骤 1（流式环形尾缓冲 StateCache）：新到词元先投影 $[C^a, C^b, Z^a, Z^b]$，尚未凑满步长 $m=4$ 的尾部行暂存进定长 FP32 环形槽位，凑满整组再触发写回。',
+        '步骤 1（流式环形尾缓冲 StateCache）：新到 token 先投影 $[C^a, C^b, Z^a, Z^b]$，尚未凑满步长 $m=4$ 的尾部行暂存进定长 FP32 环形槽位，凑满整组再触发写回。',
     },
     {
       state: { phase: 'csa_fold', focusArea: 'csa' },
@@ -65,7 +65,7 @@ const COMP_BLOCKS = [
   { id: 'c0', label: 'C0^Comp', sub: 't0..t7 折' },
   { id: 'c1', label: 'C1^Comp', sub: 't4..t7+后' },
   { id: 'hca', label: 'HCA 块', sub: 'm′=128' },
-  { id: 'swa', label: 'SWA 窗', sub: '近 128 词' },
+  { id: 'swa', label: 'SWA 窗', sub: '近 128 token' },
 ];
 
 const STAGE_H = 414;
@@ -286,7 +286,7 @@ export default function CsaRingExplainer({
                   active: s.phase === 'hca_swa',
                 },
                 {
-                  label: 'V4-Flash 43L 1M 实测',
+                  label: 'V4-Flash 43L 1M 报告',
                   value: 'KV 7% · FLOPs 10% (相对 V3.2)',
                   tone: 'amber',
                   active: s.phase === 'ledger',

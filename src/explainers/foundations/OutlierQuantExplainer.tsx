@@ -56,10 +56,10 @@ const SMOOTH_HAD_REC: number[][] = [
 ];
 
 const FP8_1X8_REC: number[][] = [
-  [0.42, -0.04, 0.31, 12.4, -0.45, 0.03, 0.19, -0.28],
-  [-0.03, 0.37, -0.02, -11.8, 0.22, -0.48, -0.04, 0.35],
-  [0.25, -0.39, 0.04, 10.9, -0.03, 0.41, 0.46, -0.02],
-  [-0.44, 0.02, -0.29, -12.4, 0.33, -0.04, -0.36, 0.49],
+  [0.42, -0.04, 0.3, 12.4, -0.44, 0.03, 0.19, -0.28],
+  [-0.03, 0.37, -0.02, -11.8, 0.21, -0.47, -0.04, 0.34],
+  [0.24, -0.39, 0.04, 10.9, -0.03, 0.39, 0.44, -0.02],
+  [-0.44, 0.02, -0.28, -12.4, 0.33, -0.04, -0.36, 0.5],
 ];
 
 const MXFP4_SH_REC: number[][] = [
@@ -145,7 +145,7 @@ export function buildOutlierQuantSteps(): Step<OutlierQuantState>[] {
         sqnrText: '原始参考基线',
       },
       caption:
-        'LLM 激活中常见固定通道离群值（此处列 c3 达 $\\pm 12.4$，其余 7 个正常通道仅在 $\\pm 0.02 \\sim \\pm 0.49$ 之间）：看似只占 1 列，却决定了全张量极大值。',
+        'LLM 激活中常见固定通道离群值（此处列 c3 达 $\\pm 12.4$，其余 7 个正常通道仅在 $\\pm 0.02 \\sim \\pm 0.49$ 之间）：该列仅占 1 维，却决定了全张量极大值。',
     },
     {
       state: {
@@ -163,8 +163,8 @@ export function buildOutlierQuantSteps(): Step<OutlierQuantState>[] {
         focusRect: { x: 14, y: 16, w: 360, h: 212, label: '标红格全部归 0', tone: 'grad' },
         granularityText: 'Per-Tensor INT8',
         peakImpactText: '步长 s = 0.0976',
-        zeroCollapseText: '10/28 正常格坍缩为 0',
-        sqnrText: '20.25 dB (严重受损)',
+        zeroCollapseText: '10/28 正常格归零',
+        sqnrText: '20.25 dB (精度受损)',
       },
       caption:
         '做 Per-Tensor INT8 时，全张量被迫按 $12.4 / 127 = 0.0976$ 放缩：28 个正常元素里有多达 10 个直接掉进 0 桶，其余也只挤在 $-5 \\sim +5$，浪费了 $96\\%$ 的 INT8 刻度。',
@@ -185,7 +185,7 @@ export function buildOutlierQuantSteps(): Step<OutlierQuantState>[] {
         focusRect: { x: 392, y: 16, w: 274, h: 218, label: 'SQNR 跃升至 39.69 dB', tone: 'v' },
         granularityText: '平滑 s3=5.08 + H8',
         peakImpactText: '旋转峰值 1.35 (s=0.011)',
-        zeroCollapseText: '0/28 零桶坍缩',
+        zeroCollapseText: '0/28 零桶截断',
         sqnrText: '39.69 dB (+19.44 dB)',
       },
       caption:
@@ -207,11 +207,11 @@ export function buildOutlierQuantSteps(): Step<OutlierQuantState>[] {
         focusRect: { x: 392, y: 16, w: 274, h: 218, label: 'FP8 免旋转 32.11 dB', tone: 'k' },
         granularityText: 'E4M3 1x8 (DeepSeek 1x128)',
         peakImpactText: '非均匀浮点 4-bit 指数',
-        zeroCollapseText: '0/28 零桶坍缩',
-        sqnrText: '32.11 dB (全矩阵 55.7)',
+        zeroCollapseText: '0/28 零桶截断',
+        sqnrText: '32.11 dB / 29.38 GEMM',
       },
       caption:
-        'FP8（E4M3）自带 4 bit 指数带来的对数动态范围，即使不做离线旋转也能同时罩住 $\\pm 12.4$ 与 $\\pm 0.02$：本例恢复至 $32.11\\;\\text{dB}$，DeepSeek-V3 则直接以 $1\\times 128$ 激活与 $128\\times 128$ 权重分块实现无平滑原生 FP8 GEMM。',
+        'FP8（E4M3）自带 4 bit 指数带来的对数动态范围，即使不做离线旋转也能同时罩住 $\\pm 12.4$ 与 $\\pm 0.02$：本例恢复至 $32.11\\;\\text{dB}$，DeepSeek-V3 则直接以 $1\\times 128$ 激活与 $128\\times 128$ 权重分块实现无平滑原生 FP8 GEMM（$[64,128]$ 输出 SQNR 达 $29.38\\;\\text{dB}$）。',
     },
     {
       state: {
@@ -230,7 +230,7 @@ export function buildOutlierQuantSteps(): Step<OutlierQuantState>[] {
         granularityText: 'E2M1x32 + E8M0 共享指数',
         peakImpactText: '无微缩放 FP4 跌至 0 dB',
         zeroCollapseText: '[64,128] GEMM 达 25.24 dB',
-        sqnrText: '8.60 dB (单行)/25.24 GEMM',
+        sqnrText: '8.60 dB / 25.24 GEMM',
       },
       caption:
         '进入 4 bit E2M1 后仅剩 15 个非均匀刻度：未分级 FP4 的正常通道直接归零（$0.00\\;\\text{dB}$）；依赖 OCP MXFP4（每 32 元素配 1 B E8M0 指数块）叠加平滑旋转后，单张量回升到 $8.60\\;\\text{dB}$，而真实 $[64,128]$ GEMM 输出更从 $15.10$ 拉高到 $25.24\\;\\text{dB}$。',
@@ -239,7 +239,7 @@ export function buildOutlierQuantSteps(): Step<OutlierQuantState>[] {
 }
 
 export default function OutlierQuantExplainer({
-  title = '图 2：离群通道零桶坍缩与旋转 / 块缩放 SQNR 恢复对比',
+  title = '图 2：离群通道零桶截断与旋转 / 块缩放 SQNR 恢复对比',
 }: {
   title?: string;
 }) {

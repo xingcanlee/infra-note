@@ -91,7 +91,7 @@ export function buildProfilerSignaturesSteps(): Step<ProfilerSignatureState>[] {
         fixCommand: '核查 splitting_ops',
         symptomStrip: [
           { id: 'sig-0', label: 'Graph', sub: 'Bypass', tone: 'neutral', status: 'normal' },
-          { id: 'sig-1', label: 'Launch', sub: 'GAP!', tone: 'highlight', status: 'selected' },
+          { id: 'sig-1', label: 'Launch', sub: 'GAP', tone: 'highlight', status: 'selected' },
           { id: 'sig-2', label: 'HostSync', sub: 'OK', tone: 'neutral', status: 'normal' },
           { id: 'sig-3', label: 'DP All2All', sub: 'OK', tone: 'neutral', status: 'normal' },
           { id: 'sig-4', label: 'Pad Slot', sub: 'OK', tone: 'neutral', status: 'normal' },
@@ -142,7 +142,7 @@ export function buildProfilerSignaturesSteps(): Step<ProfilerSignatureState>[] {
         playhead: 2.4,
       },
       caption:
-        '第 2 步（启动受限指纹）：Device 轨出现周期性黑色/空白锯齿气泡，而 Host 轨堆满碎片化内核发射调用，说明请求未命中 Graph 桶并跌回逐算子 Eager 发射。',
+        '第 2 步（启动受限指纹）：Device 轨出现周期性黑色/空白锯齿气泡，而 Host 轨堆满碎片化 Kernel 发射调用，说明请求未命中 Graph 桶并跌回逐算子 Eager 发射。',
       focus: ['sig-1'],
     },
     {
@@ -151,11 +151,11 @@ export function buildProfilerSignaturesSteps(): Step<ProfilerSignatureState>[] {
         hostSignature: 'StreamSync 长条阻塞',
         deviceUtil: '49%',
         rootCause: '隐式主机同步 (.item)',
-        fixCommand: 'sync_guard 拦截捉凶',
+        fixCommand: 'sync_guard 拦截定位',
         symptomStrip: [
           { id: 'sig-0', label: 'Graph', sub: 'Partial', tone: 'neutral', status: 'normal' },
           { id: 'sig-1', label: 'Launch', sub: 'OK', tone: 'neutral', status: 'normal' },
-          { id: 'sig-2', label: 'HostSync', sub: 'STALL!', tone: 'error', status: 'error' },
+          { id: 'sig-2', label: 'HostSync', sub: 'STALL', tone: 'error', status: 'error' },
           { id: 'sig-3', label: 'DP All2All', sub: 'OK', tone: 'neutral', status: 'normal' },
           { id: 'sig-4', label: 'Pad Slot', sub: 'OK', tone: 'neutral', status: 'normal' },
         ],
@@ -212,7 +212,7 @@ export function buildProfilerSignaturesSteps(): Step<ProfilerSignatureState>[] {
         playhead: 2.8,
       },
       caption:
-        '第 3 步（隐式同步指纹）：Host 轨突然出现长条 cudaStreamSynchronize / aclrtSynchronizeStream 与 4 字节 D2H 拷贝，设备排空后只能白白干等 Python 线程苏醒。',
+        '第 3 步（隐式同步指纹）：Host 轨突然出现长条 cudaStreamSynchronize / aclrtSynchronizeStream 与 4 字节 D2H 拷贝，设备排空后只能空闲等待 Python 线程唤醒。',
       focus: ['sig-2'],
     },
     {
@@ -226,7 +226,7 @@ export function buildProfilerSignaturesSteps(): Step<ProfilerSignatureState>[] {
           { id: 'sig-0', label: 'Graph', sub: 'Synced', tone: 'neutral', status: 'normal' },
           { id: 'sig-1', label: 'Launch', sub: 'OK', tone: 'neutral', status: 'normal' },
           { id: 'sig-2', label: 'HostSync', sub: 'OK', tone: 'neutral', status: 'normal' },
-          { id: 'sig-3', label: 'DP All2All', sub: 'WAIT!', tone: 'highlight', status: 'selected' },
+          { id: 'sig-3', label: 'DP All2All', sub: 'WAIT', tone: 'highlight', status: 'selected' },
           { id: 'sig-4', label: 'Pad Slot', sub: 'OK', tone: 'neutral', status: 'normal' },
         ],
         lanes: [
@@ -238,7 +238,7 @@ export function buildProfilerSignaturesSteps(): Step<ProfilerSignatureState>[] {
               {
                 start: 1.0,
                 dur: 2.2,
-                label: '通信轨干等慢卡 Rank 1',
+                label: '通信轨等待慢卡 Rank 1',
                 tone: 'highlight',
                 active: true,
               },
@@ -294,7 +294,7 @@ export function buildProfilerSignaturesSteps(): Step<ProfilerSignatureState>[] {
           { id: 'sig-1', label: 'Launch', sub: 'OK', tone: 'neutral', status: 'normal' },
           { id: 'sig-2', label: 'HostSync', sub: 'OK', tone: 'neutral', status: 'normal' },
           { id: 'sig-3', label: 'DP All2All', sub: 'OK', tone: 'neutral', status: 'normal' },
-          { id: 'sig-4', label: 'Pad Slot', sub: 'DIRTY!', tone: 'error', status: 'error' },
+          { id: 'sig-4', label: 'Pad Slot', sub: 'DIRTY', tone: 'error', status: 'error' },
         ],
         lanes: [
           {
@@ -333,7 +333,7 @@ export function buildProfilerSignaturesSteps(): Step<ProfilerSignatureState>[] {
               {
                 start: 2.75,
                 dur: 1.25,
-                label: '同步点爆出异步错误',
+                label: '同步点触发异步错误',
                 tone: 'error',
                 kind: 'error',
               },
@@ -346,7 +346,7 @@ export function buildProfilerSignaturesSteps(): Step<ProfilerSignatureState>[] {
         playhead: 3.2,
       },
       caption:
-        '第 5 步（脏 Padding 槽踩踏）：当批大小从 $B=4$ 缩至 $B=2$ 时若未把末尾槽位显式刷为 $-1$（PAD_SLOT_ID），重放内核会把第 3、4 槽的随机虚激活写穿上一轮残留 KV 地址，引发乱码甚至昇腾异步错误 507011。',
+        '第 5 步（脏 Padding 槽写穿）：当批大小从 $B=4$ 缩至 $B=2$ 时若未把末尾槽位显式刷为 $-1$（PAD_SLOT_ID），重放 Kernel 会把第 3、4 槽的 Padding 输入写进上一轮残留 KV 地址，引发输出乱码或昇腾异步错误 507011。',
       focus: ['sig-4'],
     },
   ];

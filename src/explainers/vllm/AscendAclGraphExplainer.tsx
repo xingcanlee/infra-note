@@ -176,7 +176,7 @@ export function buildAscendAclGraphSteps(): Step<AscendAclGraphState>[] {
           {
             id: 'b-48',
             label: 'Bucket 48',
-            sub: '33/45 复指!',
+            sub: '33/45 复用',
             topTag: 'REUSE',
             tone: 'highlight',
             status: 'selected',
@@ -288,9 +288,9 @@ export function buildAscendAclGraphSteps(): Step<AscendAclGraphState>[] {
     },
     {
       state: {
-        stepTag: '5. ExternalEvent 跨流闭环',
+        stepTag: '5. ExternalEvent 跨流同步',
         requestSize: '58 -> Bucket 64',
-        bucketSize: '全部安全闭环',
+        bucketSize: '全部跨流对齐',
         streamCost: '防 507011 / 竞争',
         updatePath: 'ev.record -> replay',
         buckets: [
@@ -307,7 +307,7 @@ export function buildAscendAclGraphSteps(): Step<AscendAclGraphState>[] {
               {
                 start: 1.9,
                 dur: 2.0,
-                label: 'FIA_update 安全起飞 -> Step i+1',
+                label: 'FIA_update 对齐执行 -> Step i+1',
                 tone: 'done',
                 active: true,
               },
@@ -323,7 +323,7 @@ export function buildAscendAclGraphSteps(): Step<AscendAclGraphState>[] {
           },
           {
             title: 'ExternalEvent',
-            subtitle: 'Closed Loop',
+            subtitle: 'Cross-Stream Sync',
             blocks: [
               { start: 1.4, dur: 1.2, label: 'ev.record 解锁 wait', tone: 'done', active: true },
             ],
@@ -343,7 +343,7 @@ export function buildAscendAclGraphSteps(): Step<AscendAclGraphState>[] {
         playhead: 3.6,
       },
       caption:
-        '第 5 步（跨流依赖闭合）：update_stream 执行完补丁后触发 event.record(update_stream) 解锁主流 ExternalEvent.wait，且入图前执行流同步防 $i$ 与 $i-1$ 参数踩踏。',
+        '第 5 步（跨流依赖同步）：update_stream 执行完补丁后触发 event.record(update_stream) 解锁主流 ExternalEvent.wait，且入图前执行流同步防 $i$ 与 $i-1$ 参数踩踏。',
       focus: ['b-64'],
     },
   ];
@@ -357,7 +357,7 @@ export function buildAscendAclGraphSteps(): Step<AscendAclGraphState>[] {
 }
 
 export default function AscendAclGraphExplainer({
-  title = '图 1：昇腾 ACLGraph 分桶复用、参数热更新与跨流闭合推演',
+  title = '图 1：昇腾 ACLGraph 稀疏分桶、UpdatableGraph 热更新与跨流同步推演',
 }: {
   title?: string;
 }) {
@@ -408,7 +408,7 @@ export default function AscendAclGraphExplainer({
               laneGap={20}
               gutterW={118}
               playhead={s.playhead}
-              title="Main Stream 与 update_stream 热更新时序闭环"
+              title="Main Stream 与 update_stream 热更新跨流同步时序"
             />
 
             <MetricRow x={12} y={354} w={STAGE_W - 24} h={42} metrics={metrics} />

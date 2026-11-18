@@ -19,7 +19,7 @@
         <mxCell id="g_copy" value="copy_stream + AsyncOutput&lt;br&gt;锁页 D2H -&amp;gt; copy_event.record()" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#fbf2df;strokeColor=#7b5518;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
           <mxGeometry x="24" y="224" width="288" height="64" as="geometry"/>
         </mxCell>
-        <mxCell id="g_wait" value="wait_for_output()&lt;br&gt;准备完 Step N+1 再兑现同步" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#f4f4f2;strokeColor=#5c6067;strokeWidth=1;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+        <mxCell id="g_wait" value="AsyncOutput.get_output()&lt;br&gt;准备完 Step N+1 再兑现同步" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#f4f4f2;strokeColor=#5c6067;strokeWidth=1;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
           <mxGeometry x="24" y="320" width="288" height="64" as="geometry"/>
         </mxCell>
         <mxCell id="e_g0" value="" style="endArrow=classic;startArrow=none;html=1;strokeColor=#1d1d1f;strokeWidth=1.25;edgeStyle=orthogonalEdgeStyle;rounded=1;" edge="1" parent="1" source="g_sched" target="g_comp">

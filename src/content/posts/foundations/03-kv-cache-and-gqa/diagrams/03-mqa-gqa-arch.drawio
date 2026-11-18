@@ -4,7 +4,7 @@
       <root>
         <mxCell id="0"/>
         <mxCell id="1" parent="0"/>
-        <mxCell id="hdr" value="固定 8 个 Query 头 (总宽 512px = 100%)，KV Cache 实体宽度严格按 8 : 2 : 1 等比例缩放" style="text;html=1;whiteSpace=wrap;align=center;verticalAlign=middle;fontFamily=Inter;fontSize=12;fontColor=#5c6067;" vertex="1" parent="1">
+        <mxCell id="hdr" value="固定 8 个 Query 头 (100% 基准)，KV Cache 实体按 8 : 2 : 1 等比例缩放" style="text;html=1;whiteSpace=wrap;align=center;verticalAlign=middle;fontFamily=Inter;fontSize=12;fontColor=#5c6067;" vertex="1" parent="1">
           <mxGeometry x="0" y="0" width="688" height="24" as="geometry"/>
         </mxCell>
         <mxCell id="mha_box" value="" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#f4f4f2;strokeColor=#5c6067;strokeWidth=1.25;verticalAlign=top;align=left;spacingLeft=12;spacingTop=6;fontFamily=Inter;fontSize=12;fontStyle=1;fontColor=#5c6067;container=0;" vertex="1" parent="1">
@@ -61,7 +61,7 @@
         <mxCell id="mha_kv7" value="KV7" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#f4f4f2;strokeColor=#5c6067;strokeWidth=1;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
           <mxGeometry x="592" y="120" width="64" height="40" as="geometry"/>
         </mxCell>
-        <mxCell id="mha_sum" value="100% 物理 KV (8 组独立头 · 512px)" style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;fontFamily=Inter;fontSize=12;fontColor=#5c6067;" vertex="1" parent="1">
+        <mxCell id="mha_sum" value="100% 物理 KV (8 组独立头)" style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;fontFamily=Inter;fontSize=12;fontColor=#5c6067;" vertex="1" parent="1">
           <mxGeometry x="144" y="160" width="512" height="24" as="geometry"/>
         </mxCell>
         <mxCell id="mha_e0" value="" style="endArrow=classic;startArrow=none;html=1;strokeColor=#5c6067;strokeWidth=1.25;exitX=0.5;exitY=1.0;exitDx=0;exitDy=0;entryX=0.5;entryY=0.0;entryDx=0;entryDy=0;" edge="1" parent="1" source="mha_q0" target="mha_kv0">
@@ -124,7 +124,7 @@
         <mxCell id="gqa_kv1" value="KV1" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f2fb;strokeColor=#2f5783;strokeWidth=2;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
           <mxGeometry x="208" y="296" width="64" height="40" as="geometry"/>
         </mxCell>
-        <mxCell id="gqa_saved" value="25% KV (2 组 · 128px) -&amp;gt; 节省 75% (384px)" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#5c6067;strokeWidth=1.25;dashed=1;dashPattern=4 4;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+        <mxCell id="gqa_saved" value="25% KV (2 组) -&amp;gt; 节省 75%" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#5c6067;strokeWidth=1.25;dashed=1;dashPattern=4 4;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
           <mxGeometry x="272" y="296" width="384" height="40" as="geometry"/>
         </mxCell>
         <mxCell id="gqa_e0" value="" style="endArrow=classic;startArrow=none;html=1;strokeColor=#1d1d1f;strokeWidth=1.25;exitX=0.5;exitY=1.0;exitDx=0;exitDy=0;entryX=0.5;entryY=0.0;entryDx=0;entryDy=0;" edge="1" parent="1" source="gqa_q0" target="gqa_kv0">
@@ -184,7 +184,7 @@
         <mxCell id="mqa_kv0" value="KV0" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f5e9;strokeColor=#2c522d;strokeWidth=2;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
           <mxGeometry x="144" y="472" width="64" height="40" as="geometry"/>
         </mxCell>
-        <mxCell id="mqa_saved" value="12.5% KV (1 组 · 64px) -&amp;gt; 节省 87.5% (448px)" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#5c6067;strokeWidth=1.25;dashed=1;dashPattern=4 4;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+        <mxCell id="mqa_saved" value="12.5% KV (1 组) -&amp;gt; 节省 87.5%" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#5c6067;strokeWidth=1.25;dashed=1;dashPattern=4 4;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
           <mxGeometry x="208" y="472" width="448" height="40" as="geometry"/>
         </mxCell>
         <mxCell id="mqa_e0" value="" style="endArrow=classic;startArrow=none;html=1;strokeColor=#1d1d1f;strokeWidth=1.25;exitX=0.5;exitY=1.0;exitDx=0;exitDy=0;entryX=0.5;entryY=0.0;entryDx=0;entryDy=0;" edge="1" parent="1" source="mqa_q0" target="mqa_kv0">

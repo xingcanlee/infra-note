@@ -30,7 +30,7 @@ export function buildFlashMlaSeesawSteps(): Step<FlashMlaSeesawState>[] {
     {
       state: {
         stepIndex: 0,
-        title: '无掩蔽串行基线 (搬运 / 矩阵乘 / Softmax 互相干等)',
+        title: '串行无重叠基线 (搬运 / 矩阵乘 / Softmax 依次等待)',
         lanes: [
           {
             title: 'TMA / MTE 搬运',
@@ -70,10 +70,10 @@ export function buildFlashMlaSeesawSteps(): Step<FlashMlaSeesawState>[] {
         archLabel: '串行无重叠基线',
         accumBufText: '单线阻塞等待',
         overlapText: '有效重叠 < 25%',
-        throughputText: '算力严重饿死',
+        throughputText: '算力单元闲置等待',
       },
       caption:
-        '若不做异步流水线掩蔽，搬运、矩阵乘与指数归约被迫按严格屏障串行排队，每拍超过一半时间消耗在等待气泡上。',
+        '串行执行时，搬运、矩阵乘与指数归约按严格屏障依次排队，每拍超过一半时间消耗在等待气泡上。',
     },
     {
       state: {
@@ -104,7 +104,7 @@ export function buildFlashMlaSeesawSteps(): Step<FlashMlaSeesawState>[] {
           },
           {
             title: 'WG1 (O_R 64x256)',
-            subtitle: '与 WG0 互换工具',
+            subtitle: '与 WG0 交替执行',
             blocks: [
               { start: 1, dur: 3, label: '待首拍', tone: 'neutral', kind: 'bubble' },
               { start: 4, dur: 3, label: 'GEMM0 QK0_R', tone: 'q', active: true },
@@ -267,7 +267,7 @@ export default function FlashMlaSeesawExplainer({
                 { label: '目标微架构', value: s.archLabel, tone: 'q' },
                 { label: 'O 累加器驻留位置', value: s.accumBufText, tone: 'k' },
                 { label: '核心异步掩蔽策略', value: s.overlapText, tone: 'v' },
-                { label: '实测算力/利用率', value: s.throughputText, tone: 'v', active: true },
+                { label: '文献算力/利用率', value: s.throughputText, tone: 'v', active: true },
               ]}
             />
           </Stage>

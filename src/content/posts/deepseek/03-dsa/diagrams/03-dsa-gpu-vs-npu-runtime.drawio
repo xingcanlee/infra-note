@@ -40,7 +40,7 @@
         <mxCell id="a_idx_score" value="npu_lightning_indexer（达芬奇融合打分）&lt;br&gt;block_size=128 对齐 Cube · compute_topk 控跳选" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e3f5f3;strokeColor=#0f766e;strokeWidth=2;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
           <mxGeometry x="368" y="176" width="304" height="48" as="geometry"/>
         </mxCell>
-        <mxCell id="a_main" value="npu_sparse_flash_attention / sparse_flash_mla&lt;br&gt;物理页块 size=128，sparse_block_size=1 逐词精选&lt;br&gt;直接按 topk_indices 搬运对应潜向量完成 MQA" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#fbf2df;strokeColor=#7b5518;strokeWidth=2;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+        <mxCell id="a_main" value="npu_sparse_flash_attention / sparse_flash_mla&lt;br&gt;物理页块 size=128，sparse_block_size=1 逐 token 稀疏读取&lt;br&gt;直接按 topk_indices 搬运对应潜向量完成 MQA" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#fbf2df;strokeColor=#7b5518;strokeWidth=2;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
           <mxGeometry x="368" y="240" width="304" height="104" as="geometry"/>
         </mxCell>
         <mxCell id="dae1" value="" style="endArrow=classic;startArrow=none;html=1;strokeColor=#1d1d1f;strokeWidth=1.25;edgeStyle=orthogonalEdgeStyle;rounded=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="a_prep" target="a_idx_cache">

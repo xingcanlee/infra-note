@@ -5,10 +5,10 @@
         <mxCell id="0"/>
         <mxCell id="1" parent="0"/>
         <mxCell id="spec_left" value="NVIDIA GPU (vLLM V1 Spec Decode)" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f2fb;strokeColor=#2f5783;strokeWidth=1.25;verticalAlign=top;align=left;spacingLeft=12;spacingTop=6;fontFamily=Inter;fontSize=12;fontStyle=1;fontColor=#2f5783;container=0;" vertex="1" parent="1">
-          <mxGeometry x="0" y="8" width="336" height="312" as="geometry"/>
+          <mxGeometry x="0" y="8" width="336" height="328" as="geometry"/>
         </mxCell>
         <mxCell id="spec_right" value="Huawei Ascend NPU (vllm-ascend V2)" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e3f5f3;strokeColor=#0f766e;strokeWidth=1.25;verticalAlign=top;align=left;spacingLeft=12;spacingTop=6;fontFamily=Inter;fontSize=12;fontStyle=1;fontColor=#0f766e;container=0;" vertex="1" parent="1">
-          <mxGeometry x="352" y="8" width="336" height="312" as="geometry"/>
+          <mxGeometry x="352" y="8" width="336" height="328" as="geometry"/>
         </mxCell>
         <mxCell id="g_hier" value="Speculator 继承体系 (重构自 EagleProposer)&lt;br&gt;TargetDependentARSpeculator -&amp;gt; MTPSpeculator&lt;br&gt;DFlashSpeculator -&amp;gt; DSparkSpeculator" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f2fb;strokeColor=#2f5783;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
           <mxGeometry x="16" y="40" width="304" height="56" as="geometry"/>
@@ -17,22 +17,22 @@
           <mxGeometry x="16" y="112" width="304" height="64" as="geometry"/>
         </mxCell>
         <mxCell id="g_graph" value="CUDA Graph 全图重放&lt;br&gt;share_mtp_topk_indices 跳过重复 Indexer" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f2fb;strokeColor=#2f5783;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
-          <mxGeometry x="16" y="192" width="304" height="48" as="geometry"/>
+          <mxGeometry x="16" y="192" width="304" height="56" as="geometry"/>
         </mxCell>
         <mxCell id="g_rej" value="Triton 无损拒绝校验&lt;br&gt;rejection_sampler.py + 局部 LogSumExp 归约" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f2fb;strokeColor=#2f5783;strokeWidth=2;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
-          <mxGeometry x="16" y="256" width="304" height="48" as="geometry"/>
+          <mxGeometry x="16" y="264" width="304" height="48" as="geometry"/>
         </mxCell>
         <mxCell id="a_hier" value="Ascend 混合扩展栈&lt;br&gt;AscendTargetDependentARSpeculator&lt;br&gt;AscendMTPSpeculator / AscendDSparkSpeculator" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e3f5f3;strokeColor=#0f766e;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
           <mxGeometry x="368" y="40" width="304" height="56" as="geometry"/>
         </mxCell>
-        <mxCell id="a_dspark" value="LMHead TP 对齐包装&lt;br&gt;LmheadTPDraftSamplingMixin 将行填充至&lt;br&gt;max_num_reqs × num_speculative_steps 防卡死" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#fbf2df;strokeColor=#7b5518;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+        <mxCell id="a_dspark" value="LMHead TP 对齐（对齐集合通信形状）&lt;br&gt;LmheadTPDraftSamplingMixin 将行填充至&lt;br&gt;max_num_reqs × num_speculative_steps" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#fbf2df;strokeColor=#7b5518;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
           <mxGeometry x="368" y="112" width="304" height="64" as="geometry"/>
         </mxCell>
-        <mxCell id="a_graph" value="ACLGraph + AscendDSASWA 缓存&lt;br&gt;AutoRegressiveAclGraphManager + 线性物理槽散射" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e3f5f3;strokeColor=#0f766e;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
-          <mxGeometry x="368" y="192" width="304" height="48" as="geometry"/>
+        <mxCell id="a_graph" value="ACLGraph + AscendDSASWA 缓存&lt;br&gt;AutoRegressiveAclGraphManager&lt;br&gt;+ 线性物理槽位 Scatter 写入" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e3f5f3;strokeColor=#0f766e;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="368" y="192" width="304" height="56" as="geometry"/>
         </mxCell>
-        <mxCell id="a_rej" value="NPU 校验与重采样核&lt;br&gt;_probabilistic_rejection_kernel + resample.py" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e3f5f3;strokeColor=#0f766e;strokeWidth=2;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
-          <mxGeometry x="368" y="256" width="304" height="48" as="geometry"/>
+        <mxCell id="a_rej" value="NPU 校验与重采样 Kernel&lt;br&gt;_probabilistic_rejection_kernel + resample.py" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e3f5f3;strokeColor=#0f766e;strokeWidth=2;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="368" y="264" width="304" height="48" as="geometry"/>
         </mxCell>
         <mxCell id="eg1" value="" style="endArrow=classic;startArrow=none;html=1;strokeColor=#1d1d1f;strokeWidth=1.25;edgeStyle=orthogonalEdgeStyle;rounded=1;" edge="1" parent="1" source="g_hier" target="g_dspark">
           <mxGeometry relative="1" as="geometry"/>

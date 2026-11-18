@@ -35,7 +35,7 @@ export function buildMlaAbsorbSteps(): Step<MlaAbsorbState>[] {
         focusArea: 'cache',
       },
       caption:
-        '步骤 1（写入共享潜空间）：将多头 K/V 联合压缩为每词元仅 576 维的单一缓存 $[c_s^{KV}\\,(512);\\, k_s^R\\,(64)]$，BF16 仅占 $1152\\text{ B/tok}$，FP8（DS-V3.2）进一步压至 $656\\text{ B/tok}$。',
+        '步骤 1（写入共享潜空间）：将多头 K/V 联合压缩为每 token 仅 576 维的单一缓存 $[c_s^{KV}\\,(512);\\, k_s^R\\,(64)]$，BF16 仅占 $1152\\text{ B/tok}$，FP8（DS-V3.2）进一步压至 $656\\text{ B/tok}$。',
     },
     {
       state: {
@@ -48,7 +48,7 @@ export function buildMlaAbsorbSteps(): Step<MlaAbsorbState>[] {
         focusArea: 'naive',
       },
       caption:
-        '步骤 2（Naive 反例膨胀）：若解码时先把 $c_s^{KV}$ 乘以 $W^{UK}, W^{UV}$ 解压回 $128$ 个完整头，HBM 临时展开张量瞬间膨胀 $32\\times$（$512 \\to 16384$ 维），访存带宽红利被彻底吞噬。',
+        '步骤 2（Naive 反例膨胀）：若解码时先把 $c_s^{KV}$ 乘以 $W^{UK}, W^{UV}$ 解压回 $128$ 个完整头，HBM 临时展开张量扩大为 $32\\times$（$512 \\to 16384$ 维），低秩压缩省下的访存带宽被展开读写完全抵消。',
     },
     {
       state: {
@@ -61,7 +61,7 @@ export function buildMlaAbsorbSteps(): Step<MlaAbsorbState>[] {
         focusArea: 'absorb_q',
       },
       caption:
-        '步骤 3（矩阵吸收第一步 $q_t^C W^{UK}$）：利用乘法结合律把 $W^{UK}$ 从历史键值侧移至当前单步 Query 侧，计算 $q_t^{\\text{abs}} = q_t^C W^{UK} \\in \\mathbb{R}^{h \\times 512}$，完全不碰历史缓存。',
+        '步骤 3（矩阵吸收第一步 $q_t^C W^{UK}$）：利用乘法结合律把 $W^{UK}$ 从历史键值侧移至当前单步 Query 侧，计算 $q_t^{\\text{abs}} = q_t^C W^{UK} \\in \\mathbb{R}^{h \\times 512}$，不额外展开历史缓存。',
     },
     {
       state: {
@@ -87,7 +87,7 @@ export function buildMlaAbsorbSteps(): Step<MlaAbsorbState>[] {
         focusArea: 'ledger',
       },
       caption:
-        '步骤 5（后置上投影 $u_t W^{UV}$ 与字节账本）：注意力归约完成后再一次性执行 $u_t W^{UV}$ 恢复各头输出并乘 $W^O$，输出与 Naive 路径逐位等价，同时缓存字节较标准 MHA 暴降 $98\\%$。',
+        '步骤 5（后置上投影 $u_t W^{UV}$ 与字节账本）：注意力归约完成后再一次性执行 $u_t W^{UV}$ 恢复各头输出并乘 $W^O$，输出与 Naive 路径逐位等价，同时缓存字节较标准 MHA 缩减 $98\\%$。',
     },
   ];
 }
@@ -95,7 +95,7 @@ export function buildMlaAbsorbSteps(): Step<MlaAbsorbState>[] {
 const STAGE_H = 564;
 
 export default function MlaAbsorbExplainer({
-  title = '图 1：MLA 矩阵吸收五步等价推演与 Per-Token 字节账本',
+  title = '图 1：MLA 矩阵吸收五步等价推演与单 token 字节账本',
 }: {
   title?: string;
 }) {
@@ -114,7 +114,7 @@ export default function MlaAbsorbExplainer({
                 ? { x: 212, y: 188, w: 176, h: 94, label: '前吸收 q_t^C · W_UK^T' }
                 : s.focusArea === 'mqa'
                   ? { x: 402, y: 188, w: 148, h: 94, label: '1 头 576d MQA 点积' }
-                  : { x: 14, y: 306, w: 652, h: 248, label: 'Per-Layer KV 字节账本定格' };
+                  : { x: 14, y: 306, w: 652, h: 248, label: '每层 KV 字节账本' };
 
         return (
           <Stage width={STAGE_W} height={STAGE_H} label="MLA 矩阵吸收架构图解">
@@ -124,7 +124,7 @@ export default function MlaAbsorbExplainer({
               y={14}
               w={390}
               h={130}
-              title="反例：Naive 路径（Prefill 适用，Decode 引发 32× HBM 带宽爆炸）"
+              title="反例：Naive 路径（Prefill 适用，Decode 引发 32× HBM 访存膨胀）"
               tone="blue"
             />
             <TensorBlock

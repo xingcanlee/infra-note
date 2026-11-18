@@ -1,6 +1,6 @@
 ---
 title: '分布式并行与跨卡通信：从互连拓扑、集合通信到混合并行与通算融合'
-description: '零基础系统拆解 LLM 多卡多机推理：α-β 通信模型、Ring/Tree 集合通信、NVLink/NCCL vs 昇腾 HCCS/UB/HCCL、TP/SP/CP/DP+EP 混合并行、PD 分离 KV 传输及 DeepEP/MC2/DBO 通算融合。'
+description: '剖析大模型多卡与跨机推理的系统工程：从物理互连拓扑与集合通信代价出发，梳理算子与专家混合并行、预填充解码分离以及双端通算重叠的实现路径。'
 pubDate: 2026-11-14
 series: { id: distributed, order: 1 }
 tags: [Distributed, NCCL, HCCL, Parallelism, PD Disaggregation, NVIDIA, Ascend]
@@ -9,33 +9,26 @@ toc: true
 featured: true
 ---
 
-当模型权重与长上下文 KV Cache 远超单卡显存上限，单卡硬件本身的性能分析就必须扩展为跨卡、跨机协作的系统工程。
+当模型权重或长上下文 KV Cache 超出单张加速卡的显存上限，或者单卡高带宽显存（HBM）的读写速率成为生成瓶颈时，推理系统需要把计算拆分到多卡乃至多机协同执行。分布式切分同时引入三类显式通信代价：小消息下受限于单跳固定延迟 $\alpha$，大消息下受制于带宽倒数 $\beta$，而在动态路由的稀疏模型中还会因为负载倾斜引发全组同步等待。
 
-紧接 [系列一：推理与异构硬件基础](../foundations/) 中对 HBM 带宽、算力屋顶线与 PagedAttention 的单卡分析，本系列将视角抬升至 8 卡单机乃至百卡集群，从物理链路一路追到 `vllm` 与 `vllm-ascend` 的分布式执行代码。
+承接[《推理与异构硬件基础》](../foundations/)对单卡 Roofline 模型与分页缓存的分析，本系列将视角扩展到单机多卡与集群网络，围绕“物理链路底座、多维并行切分、通算流水重叠”三层问题域展开，并在每一层对照上游 `vllm` 与 `vllm-ascend` 的生产实现。三章内容之间的递进关系如图 1 所示。
 
-```mermaid caption="图 1：分布式并行与跨卡通信演进路线"
+```mermaid caption="图 1：分布式并行与跨卡通信的三层问题域"
 flowchart TD
-    S0["单卡算力与显存墙"] --> C1["01 物理互连与<br/>集合通信"]
-    C1 --> N1["NVLink / NVSwitch<br/>与 HCCS / UB"]
-    C1 --> C2["02 混合并行与<br/>PD 分离"]
-    N1 --> R1["NCCL SymmMem<br/>vs HCCL AIV"]
-    C2 --> P1["TP / SP /<br/>Ring CP 切分"]
-    C2 --> P2["DP+EP 与 NIXL<br/>/ MemFabric"]
-    P2 --> C3["03 MoE 通算<br/>融合与重叠"]
-    C3 --> M1["DeepEP v2<br/>IBGDA + DBO"]
-    C3 --> M2["昇腾 MC2 与<br/>FlashComm"]
+    S0["单卡显存容量与带宽上限"] --> C1["01 物理互连与集合通信"]
+    C1 --> D1["延迟带宽模型与多级拓扑"]
+    C1 --> C2["02 混合并行与阶段分离"]
+    C2 --> D2["算子专家切分与状态传输"]
+    C2 --> C3["03 专家并行与通算重叠"]
+    C3 --> D3["核内融合与跨流流水掩盖"]
 ```
 
-## 本系列章节导航
+## 三章核心脉络
 
-如图 1 所示，全系列按“物理链路底座 -> 张量与集群切分 -> MoE 极致掩盖”三层递进，每章均提供自洽 NumPy 核心实现与 NVIDIA / 华为昇腾双栈源码对照：
+全系列三章均配有可在 CPU 上直接运行的 NumPy 数值验证片段，以及 NVIDIA GPU 与华为昇腾 NPU 的双端源码对照，依次解答从链路传输到计算调度的关键取舍：
 
-1. [01 多卡互连、集合通信与 NVIDIA / 昇腾通信栈](./01-interconnects-and-collectives/)：从 $\alpha\text{-}\beta$ 通信公式出发，推演 4 卡 Ring AllReduce 两阶段拆分，厘清机内/超节点 Scale-Up（`NVSwitch` / `NVL72`、`HCCS` / `CloudMatrix 384 UB`）与跨机 Scale-Out（`ConnectX` / 参数面 `RoCE`）的拓扑层级，并对照 `CudaCommunicator` 与 `NPUCommunicator` 的分发与 Int8 量化规约。
-2. [02 张量、序列、专家并行与 PD 分离架构](./02-parallelism-and-disaggregation/)：拆解 Megatron Column/Row TP、SP 激活去重、Ring CP 在线 Softmax 轮转与 Attention DP + MoE EP 非对称路由，并梳理 Prefill-Decode 分离池中 `NixlConnector`、`Mooncake` 与昇腾 `MooncakeLayerwise / MemFabric`（接替已移除的 `LLMDataDist`）的 KV 传输实现。
-3. [03 MoE 跨卡通信与通算融合：从 DeepEP 双模式、昇腾 MC2 到双微批重叠（DBO）](./03-moe-comm-and-overlap/)：解剖偏斜路由引发的 `AllToAllV` 算力空转，深入 `DeepEP` HT/LL 到 `EPBuffer v2`、`HCCL MC2` 核内流水与 `MatmulReduceScatterFusionPass`，并在毫秒级时间轴上对照双微批乒乓（DBO）与昇腾共享专家异步流。
+1. [01 多卡互连、集合通信与 NVIDIA / 昇腾通信栈](./01-interconnects-and-collectives/)：从点对点延迟与带宽模型出发，推导 Ring 与 Tree 两种全归约算法在不同消息尺度下的时延拐点，厘清机内/超节点纵向扩展域（Scale-Up）与跨机横向扩展域（Scale-Out）的拓扑差异，并对照 `CudaCommunicator` 与 `NPUCommunicator` 的运行时分发策略。
+2. [02 张量、序列、专家并行与 PD 分离架构](./02-parallelism-and-disaggregation/)：拆解张量并行（TP）、序列并行（SP）与环形上下文并行（Ring CP）的矩阵分块与激活去重逻辑，算清注意力数据并行（DP）与专家并行（EP）在混合布局下的 KV 显存账，并分析预填充与解码分离架构中的异步 KV Cache 传输栈。
+3. [03 MoE 跨卡通信与通算融合：从 DeepEP 双模式、昇腾 MC2 到双微批重叠（DBO）](./03-moe-comm-and-overlap/)：剖析偏斜路由与变长 `All-to-All`（`AllToAllV`）带来的算力空转根源，对比 NVIDIA `DeepEP` 统一通信底座与华为昇腾 `HCCL MC2` 核内切片流水，并在毫秒级时间轴上拆解双微批重叠与共享专家异步流的工程边界。
 
-## 阅读建议与先修基础
-
-如果你尚未建立单卡 Arithmetic Intensity、HBM 带宽限制或 Paged KV Block 的物理直觉，建议先快速浏览 [系列一：推理与异构硬件基础](../foundations/)。
-
-完成本系列后，即可顺畅衔接 [系列三：DeepSeek 架构演进](../deepseek/) 中的 MLA 压缩与无辅助损失 MoE 路由算法，或进入 [系列四：vLLM 推理引擎深入](../vllm/) 跟踪调度器与计算图全貌。
+如果尚未建立单卡算术强度、HBM 带宽限制或分页缓存（Paged KV Cache）的基本直觉，建议先阅读[《推理与异构硬件基础》](../foundations/)。读完本系列后，可以继续前往[《DeepSeek 架构演进》](../deepseek/)考察低秩注意力压缩与稀疏路由等模型层面的减通信设计，或者进入[《vLLM 与昇腾推理引擎》](../vllm/)跟踪调度器与静态图捕获的执行全貌。

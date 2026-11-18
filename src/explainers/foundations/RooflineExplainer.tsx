@@ -140,7 +140,7 @@ export function buildRooflineSteps(): Step<RooflineState>[] {
         points: [
           { ai: 1.0, perf: 3.35, label: 'B=1 (H800)', tone: 'active' },
           { ai: 62.86, perf: 210.57, label: 'B=64 (H800)', tone: 'active' },
-          { ai: 2048, perf: 990, label: 'S=4096 (H800)', tone: 'active' },
+          { ai: 1893.85, perf: 990, label: 'S=4096 (H800)', tone: 'active' },
         ],
         cvLanes: serialLanes,
         syncEvents: [
@@ -217,7 +217,7 @@ export function buildRooflineSteps(): Step<RooflineState>[] {
         npuPerf: '100.6 TF (31.4% 峰值)',
       },
       caption:
-        '把批大小提升到 $B=64$，同一份 $258\\;\\text{MiB}$ SwiGLU 权重被 64 个词元摊分，算术强度涨至 $62.86\\;\\text{FLOP/B}$，但仍低于 $200$ 与 $295.5$ 两道拐点，依然处于带宽斜坡上（持续批处理或量化才能继续向右推）。',
+        '把批大小提升到 $B=64$，同一份 $258\\;\\text{MiB}$ SwiGLU 权重被 64 个 token 摊分，算术强度涨至 $62.86\\;\\text{FLOP/B}$，但仍低于 $200$ 与 $295.5$ 两道拐点，依然处于带宽斜坡上（配合连续批处理或量化才能继续向右推）。',
     },
     {
       state: {
@@ -259,7 +259,7 @@ export function buildRooflineSteps(): Step<RooflineState>[] {
         npuPerf: '320.0 TF (CV提速1.5x)',
       },
       caption:
-        'Prefill（$S=4096$）算术强度跃过 $1890\\;\\text{FLOP/B}$，彻底打满算力天花板。此时在昇腾 AI Core 上，用 CV 异步双流水把 Vector（Norm/SiLU）藏进下一块 Cube GEMM 背后，可将分块耗时从 $27\\;\\mu\\text{s}$ 压到 $\\max(t_c, t_v)$ 级（重叠区提速 $1.50\\times$）。',
+        'Prefill（$S=4096$）算术强度达到 $1893.85\\;\\text{FLOP/B}$，跑满算力天花板。此时在昇腾 AI Core 上，用 CV 异步双流水把 Vector（Norm/SiLU）隐藏在下一块 Cube GEMM 背后，可将分块耗时从 $27\\;\\mu\\text{s}$ 压到 $\\max(t_c, t_v)$ 级（重叠区提速 $1.50\\times$）。',
     },
   ];
 }

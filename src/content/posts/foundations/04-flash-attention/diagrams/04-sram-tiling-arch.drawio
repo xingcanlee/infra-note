@@ -16,7 +16,7 @@
         <mxCell id="hbm_kv" value="完整 K, V [N, d]&lt;br&gt;分块 Bc 顺序流式读取" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#fbf2df;strokeColor=#7b5518;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
           <mxGeometry x="168" y="72" width="160" height="64" as="geometry"/>
         </mxCell>
-        <mxCell id="hbm_no_sp" value="已消除: S, P [N, N]&lt;br&gt;O(N^2) 中间矩阵永不写回 HBM" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#5c6067;strokeWidth=1.25;dashed=1;dashPattern=4 4;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+        <mxCell id="hbm_no_sp" value="已消除: S, P [N, N]&lt;br&gt;O(N^2) 中间矩阵不写回 HBM" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#5c6067;strokeWidth=1.25;dashed=1;dashPattern=4 4;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
           <mxGeometry x="352" y="72" width="168" height="64" as="geometry"/>
         </mxCell>
         <mxCell id="hbm_o" value="最终 O [N, d]&lt;br&gt;仅循环末尾写回一次" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f5e9;strokeColor=#2c522d;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
@@ -31,7 +31,7 @@
         <mxCell id="sram_q" value="常驻切片 Q_i&lt;br&gt;[B_r, d]" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f2fb;strokeColor=#2f5783;strokeWidth=2;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
           <mxGeometry x="32" y="264" width="104" height="64" as="geometry"/>
         </mxCell>
-        <mxCell id="sram_kv" value="当前瓦片 K_j, V_j&lt;br&gt;[B_c, d] (双缓冲覆写)" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#fbf2df;strokeColor=#7b5518;strokeWidth=2;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+        <mxCell id="sram_kv" value="当前分块 Tile K_j, V_j&lt;br&gt;[B_c, d] (双缓冲覆写)" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#fbf2df;strokeColor=#7b5518;strokeWidth=2;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
           <mxGeometry x="32" y="376" width="104" height="72" as="geometry"/>
         </mxCell>
         <mxCell id="sram_s" value="局部矩阵乘 S_ij&lt;br&gt;= Q_i K_j^T / sqrt(d)&lt;br&gt;仅占 [B_r, B_c] 用完即丢" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#f4f4f2;strokeColor=#5c6067;strokeWidth=1;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">

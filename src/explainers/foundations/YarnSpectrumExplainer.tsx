@@ -88,17 +88,17 @@ export function buildYarnSpectrumSteps(): Step<YarnSpectrumState>[] {
         bandSegments: [
           {
             value: 32,
-            label: '全频段暴力 / 40 (高频近邻分辨率受损)',
+            label: '全频段统一 / 40 (高频近邻分辨率受损)',
             sub: 'PI 均匀压缩',
             tone: 'highlight',
             active: true,
           },
         ],
-        bandTotalLabel: '4K -> 128K (s=40) · 高频缩水 40x',
+        bandTotalLabel: '4K -> 128K (s=40) · 高频压缩 40x',
         highlightCache: 'none',
         windowText: 'PI 扩展 128K (s=40)',
         scaleText: '所有通道 theta_i / 40',
-        tempText: '相邻词元分辨力坍塌',
+        tempText: '相邻 token 分辨力下降',
         ubNoteText: '短距离语法注意力易混叠',
       },
       caption:
@@ -110,17 +110,17 @@ export function buildYarnSpectrumSteps(): Step<YarnSpectrumState>[] {
         barsTitle: 'YaRN 分频斜坡 (s=40, low=10, high=23)',
         barItems: makeItems(0.025, YARN_EXTRAP, true),
         bandSegments: [
-          { value: 10, label: '高频不动 (>32圈)', sub: 'i=0..9', tone: 'active', active: true },
+          { value: 11, label: '高频保持 (>32圈)', sub: 'i=0..10', tone: 'active', active: true },
           {
-            value: 13,
+            value: 12,
             label: '中频斜坡 (1~32圈)',
-            sub: 'i=10..22',
+            sub: 'i=11..22',
             tone: 'highlight',
             active: true,
           },
           {
             value: 9,
-            label: '低频安全/40 (<1圈)',
+            label: '低频插值 /40 (<1圈)',
             sub: 'i=23..31',
             tone: 'activation',
             active: true,
@@ -134,7 +134,7 @@ export function buildYarnSpectrumSteps(): Step<YarnSpectrumState>[] {
         ubNoteText: 'DeepSeek-V3 实配参数',
       },
       caption:
-        'YaRN 根据 4K 内旋转圈数自动划出边界 low=10, high=23：高频 $i<10$ 保留原速（$1.00$），低频 $i \\ge 23$ 安全除以 $40$，中间由线性斜坡过渡；同时用 $\\text{mscale}^2 = 1.8739$ 收紧注意力温度。',
+        'YaRN 根据 4K 内旋转圈数划出边界 low=10, high=23：高频 $i \\le 10$ 保留原速（$1.00$），低频 $i \\ge 23$ 按 $40$ 倍插值缩放，中间 $10 < i < 23$ 由线性斜坡过渡；同时用 $\\text{mscale}^2 = 1.8739$ 调整注意力缩放系数。',
     },
     {
       state: {
@@ -142,8 +142,8 @@ export function buildYarnSpectrumSteps(): Step<YarnSpectrumState>[] {
         barsTitle: 'YaRN 频谱与双后端 Cache 排布',
         barItems: makeItems(0.025, YARN_EXTRAP, false),
         bandSegments: [
-          { value: 10, label: '高频外推', tone: 'active' },
-          { value: 13, label: '中频斜坡', tone: 'highlight' },
+          { value: 11, label: '高频保持', tone: 'active' },
+          { value: 12, label: '中频斜坡', tone: 'highlight' },
           { value: 9, label: '低频插值', tone: 'activation' },
         ],
         bandTotalLabel: 'vLLM [S, d] vs vllm-ascend _cos_sin_flat',

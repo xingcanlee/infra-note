@@ -134,7 +134,7 @@ export function buildMoeRoutingAlignSteps(): Step<MoeRoutingAlignState>[] {
         biasRange: '[-0.22, +0.21]',
       },
       caption:
-        '稳态下 8 次激活几乎均匀落入 6 个专家，All-to-All 通信尾延迟显著收敛，为后续本地 Grouped GEMM 提供平衡的批大小。',
+        '稳态下 8 次激活几乎均匀落入 6 个专家，All-to-All 通信尾延迟明显收敛，为后续本地 Grouped GEMM 提供平衡的批大小。',
     },
     {
       state: {
@@ -153,12 +153,12 @@ export function buildMoeRoutingAlignSteps(): Step<MoeRoutingAlignState>[] {
         expertCounts: [2, 2, 1, 1, 1, 1],
         focusArea: 'align',
         avgLoad: '8 有效行',
-        maxLoad: '3×block=4',
-        paddingWaste: '4/12 PAD',
+        maxLoad: '6×block=4',
+        paddingWaste: '16/24 PAD',
         biasRange: '对齐 16/64',
       },
       caption:
-        '执行前调用 moe_align_block_size 按专家聚拢路由行并用 -1（PAD）补齐到 GEMM 块尺寸（此处以 block_size=4 示意 GPU/NPU 常见的 16 或 64 行分块）。',
+        '执行前调用 moe_align_block_size 按专家聚拢路由行并用 -1（PAD）补齐到 GEMM 块尺寸（此处以 block_size=4 示意 GPU/NPU 常见的 16 或 64 行分块，每个块仅包含单一专家；8 条有效行共占 6 块 24 槽，其中 16 个为 PAD 槽位）。',
     },
   ];
 }
@@ -210,66 +210,228 @@ export default function MoeRoutingAlignExplainer({
         const selectedSet = new Set<string>();
         s.loadGrid.forEach((row, r) => {
           row.forEach((val, c) => {
-            if (val === 1) selectedSet.add(`${r}-${c}`);
+            if (val === 1) selectedSet.add(`${r},${c}`);
           });
         });
 
-        const alignSlots = [
-          { id: 's0', label: 'T0', sub: 'E0', tone: 'active' as const, status: 'active' as const },
-          { id: 's1', label: 'T3', sub: 'E0', tone: 'active' as const, status: 'active' as const },
-          { id: 's2', label: 'PAD', sub: '-1', tone: 'mask' as const, status: 'masked' as const },
-          { id: 's3', label: 'PAD', sub: '-1', tone: 'mask' as const, status: 'masked' as const },
-          { id: 's4', label: 'T1', sub: 'E1', tone: 'done' as const, status: 'selected' as const },
-          { id: 's5', label: 'T3', sub: 'E1', tone: 'done' as const, status: 'selected' as const },
-          { id: 's6', label: 'PAD', sub: '-1', tone: 'mask' as const, status: 'masked' as const },
-          { id: 's7', label: 'PAD', sub: '-1', tone: 'mask' as const, status: 'masked' as const },
+        const expertBlocks = [
           {
-            id: 's8',
-            label: 'T2',
-            sub: 'E2',
-            tone: 'highlight' as const,
-            status: 'normal' as const,
+            title: 'Block 0 · 仅 E0 (2+2 PAD)',
+            slots: [
+              {
+                id: 'b0-0',
+                label: 'T0',
+                sub: 'E0',
+                tone: 'active' as const,
+                status: 'active' as const,
+              },
+              {
+                id: 'b0-1',
+                label: 'T3',
+                sub: 'E0',
+                tone: 'active' as const,
+                status: 'active' as const,
+              },
+              {
+                id: 'b0-2',
+                label: 'PAD',
+                sub: '-1',
+                tone: 'mask' as const,
+                status: 'masked' as const,
+              },
+              {
+                id: 'b0-3',
+                label: 'PAD',
+                sub: '-1',
+                tone: 'mask' as const,
+                status: 'masked' as const,
+              },
+            ],
           },
           {
-            id: 's9',
-            label: 'T0',
-            sub: 'E3',
-            tone: 'highlight' as const,
-            status: 'normal' as const,
+            title: 'Block 1 · 仅 E1 (2+2 PAD)',
+            slots: [
+              {
+                id: 'b1-0',
+                label: 'T1',
+                sub: 'E1',
+                tone: 'done' as const,
+                status: 'selected' as const,
+              },
+              {
+                id: 'b1-1',
+                label: 'T3',
+                sub: 'E1',
+                tone: 'done' as const,
+                status: 'selected' as const,
+              },
+              {
+                id: 'b1-2',
+                label: 'PAD',
+                sub: '-1',
+                tone: 'mask' as const,
+                status: 'masked' as const,
+              },
+              {
+                id: 'b1-3',
+                label: 'PAD',
+                sub: '-1',
+                tone: 'mask' as const,
+                status: 'masked' as const,
+              },
+            ],
           },
           {
-            id: 's10',
-            label: 'T1',
-            sub: 'E4',
-            tone: 'highlight' as const,
-            status: 'normal' as const,
+            title: 'Block 2 · 仅 E2 (1+3 PAD)',
+            slots: [
+              {
+                id: 'b2-0',
+                label: 'T2',
+                sub: 'E2',
+                tone: 'highlight' as const,
+                status: 'active' as const,
+              },
+              {
+                id: 'b2-1',
+                label: 'PAD',
+                sub: '-1',
+                tone: 'mask' as const,
+                status: 'masked' as const,
+              },
+              {
+                id: 'b2-2',
+                label: 'PAD',
+                sub: '-1',
+                tone: 'mask' as const,
+                status: 'masked' as const,
+              },
+              {
+                id: 'b2-3',
+                label: 'PAD',
+                sub: '-1',
+                tone: 'mask' as const,
+                status: 'masked' as const,
+              },
+            ],
           },
           {
-            id: 's11',
-            label: 'T2',
-            sub: 'E5',
-            tone: 'highlight' as const,
-            status: 'normal' as const,
+            title: 'Block 3 · 仅 E3 (1+3 PAD)',
+            slots: [
+              {
+                id: 'b3-0',
+                label: 'T0',
+                sub: 'E3',
+                tone: 'active' as const,
+                status: 'active' as const,
+              },
+              {
+                id: 'b3-1',
+                label: 'PAD',
+                sub: '-1',
+                tone: 'mask' as const,
+                status: 'masked' as const,
+              },
+              {
+                id: 'b3-2',
+                label: 'PAD',
+                sub: '-1',
+                tone: 'mask' as const,
+                status: 'masked' as const,
+              },
+              {
+                id: 'b3-3',
+                label: 'PAD',
+                sub: '-1',
+                tone: 'mask' as const,
+                status: 'masked' as const,
+              },
+            ],
+          },
+          {
+            title: 'Block 4 · 仅 E4 (1+3 PAD)',
+            slots: [
+              {
+                id: 'b4-0',
+                label: 'T1',
+                sub: 'E4',
+                tone: 'done' as const,
+                status: 'selected' as const,
+              },
+              {
+                id: 'b4-1',
+                label: 'PAD',
+                sub: '-1',
+                tone: 'mask' as const,
+                status: 'masked' as const,
+              },
+              {
+                id: 'b4-2',
+                label: 'PAD',
+                sub: '-1',
+                tone: 'mask' as const,
+                status: 'masked' as const,
+              },
+              {
+                id: 'b4-3',
+                label: 'PAD',
+                sub: '-1',
+                tone: 'mask' as const,
+                status: 'masked' as const,
+              },
+            ],
+          },
+          {
+            title: 'Block 5 · 仅 E5 (1+3 PAD)',
+            slots: [
+              {
+                id: 'b5-0',
+                label: 'T2',
+                sub: 'E5',
+                tone: 'highlight' as const,
+                status: 'active' as const,
+              },
+              {
+                id: 'b5-1',
+                label: 'PAD',
+                sub: '-1',
+                tone: 'mask' as const,
+                status: 'masked' as const,
+              },
+              {
+                id: 'b5-2',
+                label: 'PAD',
+                sub: '-1',
+                tone: 'mask' as const,
+                status: 'masked' as const,
+              },
+              {
+                id: 'b5-3',
+                label: 'PAD',
+                sub: '-1',
+                tone: 'mask' as const,
+                status: 'masked' as const,
+              },
+            ],
           },
         ];
 
-        const emptyAlignSlots = Array.from({ length: 12 }, (_, i) => ({
+        const emptyAlignSlots = Array.from({ length: 8 }, (_, i) => ({
           id: `e${i}`,
-          label: i < 8 ? `R${i}` : '—',
-          sub: i < 8 ? '待排序' : '空闲',
+          label: `R${i}`,
+          sub: '待重排',
           tone: 'neutral' as const,
-          status: (i < 8 ? 'normal' : 'empty') as 'normal' | 'empty',
+          status: 'normal' as const,
         }));
 
         return (
-          <Stage width={680} height={378} label={s.phaseLabel}>
+          <Stage width={680} height={418} label={s.phaseLabel}>
             <ActiveFocusFrame
               x={8}
               y={10}
               w={358}
               h={180}
               tone="active"
-              label={s.stepIndex === 1 ? '偏置选路 / 原始加权' : 'Token-0 打分对比'}
+              label={s.stepIndex === 1 ? '偏置选路 / 原始加权' : 'token 0 打分对比'}
               visible={s.focusArea === 'router'}
             />
             <ProbabilityBars
@@ -317,25 +479,41 @@ export default function MoeRoutingAlignExplainer({
 
             <SectionBox
               x={8}
-              y={204}
+              y={202}
               w={664}
-              h={102}
+              h={152}
               tone={s.focusArea === 'align' ? 'done' : 'neutral'}
               dashed={s.focusArea !== 'align'}
-              title="moe_align_block_size 输出槽位（示意 block_size=4 对应 16/64 分块）"
+              title="moe_align_block_size 分块矩阵（每块仅含同一专家与 -1 PAD 槽位，block_size=4 示意 16/64 分块）"
             />
-            <SlotStrip
-              x={20}
-              y={228}
-              slots={s.stepIndex === 4 ? alignSlots : emptyAlignSlots}
-              slotW={46}
-              gap={7}
-              slotH={36}
-            />
+            {s.stepIndex === 4 ? (
+              expertBlocks.map((blk, bi) => (
+                <SlotStrip
+                  key={blk.title}
+                  x={20 + (bi % 3) * 222}
+                  y={bi < 3 ? 224 : 288}
+                  slots={blk.slots}
+                  slotW={46}
+                  gap={4}
+                  slotH={34}
+                  title={blk.title}
+                />
+              ))
+            ) : (
+              <SlotStrip
+                x={20}
+                y={254}
+                slots={emptyAlignSlots}
+                slotW={72}
+                gap={9}
+                slotH={42}
+                title="未对齐路由缓冲：8 条激活跨专家混排，待按专家编号重排补齐"
+              />
+            )}
 
             <MetricRow
               x={8}
-              y={322}
+              y={366}
               w={664}
               h={42}
               gap={10}

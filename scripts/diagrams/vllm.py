@@ -22,7 +22,7 @@ def build_01_scheduler_arch() -> None:
 
     c.group("sched_grp", 0, 0, 688, 104, "vLLM V1 Scheduler.schedule() 统一配额调度", tone="active")
     c.node("req_q", 16, 32, 152, 56, "等待/运行请求队列\n(Chunked + Decode)", tone="neutral", font_size=12)
-    c.node("budget", 248, 32, 192, 56, "token_budget 配额裁剪\n(彻底消除 V0 阶段墙)", tone="active", emphasis=True, font_size=12)
+    c.node("budget", 248, 32, 192, 56, "token_budget 配额裁剪\n(消除 V0 Prefill/Decode 阶段隔离)", tone="active", emphasis=True, font_size=12)
     c.node("out_dict", 464, 32, 208, 56, "num_scheduled_tokens\n{req_id: tok_cnt}", tone="highlight", font_size=12)
     c.connect("e_rq_bd", "req_q", "budget", label="按轮扫描", tone="fg")
     c.connect("e_bd_od", "budget", "out_dict", tone="fg")
@@ -30,7 +30,7 @@ def build_01_scheduler_arch() -> None:
     c.group("kv_grp", 0, 144, 688, 112, "KVCacheManager 与 BlockPool 物理块管理", tone="neutral")
     c.node("prefix", 16, 176, 168, 64, "Prefix Cache 哈希树\n满块命中即 ref_cnt += 1", tone="highlight", font_size=12)
     c.node("pool", 264, 176, 176, 64, "BlockPool (Free FIFO)\nB0 永久保留为 null_block", tone="active", emphasis=True, font_size=12)
-    c.node("slot_map", 512, 176, 160, 64, "slot_mapping[]\n虚槽/空槽填 PAD (-1)", tone="neutral", font_size=12)
+    c.node("slot_map", 512, 176, 160, 64, "slot_mapping[]\nPadding 槽位填 PAD (-1)", tone="neutral", font_size=12)
     c.connect(
         "e_od_pl",
         "out_dict",
@@ -70,7 +70,7 @@ def build_01_scheduler_arch() -> None:
         ry + 8,
         rw - 16,
         72,
-        "torch_npu.npu_scatter_pa_kv_cache\nAICore 向量单元按页槽散列写入连续 HBM 块",
+        "torch_npu.npu_scatter_pa_kv_cache\nAICore 向量单元按 slot_mapping Scatter 写入物理 KV 块",
         tone="activation",
         emphasis=True,
         font_size=12,
@@ -115,7 +115,7 @@ def build_02_async_output_arch() -> None:
     c.node("g_sched", lx + 8, 40, lw - 16, 64, "GPUModelRunner 主线程\nPrep Step N -> 入队无同步发射", tone="active", font_size=12)
     c.node("g_comp", lx + 8, 128, lw - 16, 64, "Default CUDA Stream\n前向计算 + 采样 (非阻塞返回)", tone="active", emphasis=True, font_size=12)
     c.node("g_copy", lx + 8, 224, lw - 16, 64, "copy_stream + AsyncOutput\n锁页 D2H -> copy_event.record()", tone="highlight", font_size=12)
-    c.node("g_wait", lx + 8, 320, lw - 16, 64, "wait_for_output()\n准备完 Step N+1 再兑现同步", tone="neutral", font_size=12)
+    c.node("g_wait", lx + 8, 320, lw - 16, 64, "AsyncOutput.get_output()\n准备完 Step N+1 再兑现同步", tone="neutral", font_size=12)
     c.connect("e_g0", "g_sched", "g_comp", tone="fg")
     c.connect("e_g1", "g_comp", "g_copy", label="async copy", tone="fg")
     c.connect("e_g2", "g_copy", "g_wait", label="copy_event", tone="muted", dashed=True)
@@ -154,7 +154,7 @@ def build_03_fx_split_graph() -> None:
         200,
         184,
         72,
-        "submod_0 (静态编译)\nRMSNorm + QKV\n融合为单 Kernel",
+        "submod_0 (静态编译)\nRMSNorm 融合算子 + QKV GEMM\n同子图编译与捕获",
         tone="active",
         emphasis=True,
         font_size=12,
@@ -176,7 +176,7 @@ def build_03_fx_split_graph() -> None:
         200,
         200,
         72,
-        "submod_2 (静态编译)\nSiLU * Mul\n融合为单 Kernel",
+        "submod_2 (静态编译)\nGate/Up GEMM + SiLU * Mul\n同子图融合与捕获",
         tone="active",
         emphasis=True,
         font_size=12,
@@ -211,9 +211,9 @@ def build_03_inductor_vs_ascend_compile() -> None:
         right_tone="activation",
     )
 
-    c.node("gi0", lx + 8, 40, lw - 16, 64, "TorchCompileWithNoGuardsWrapper\n跳过动态 Shape Guards 防重追踪", tone="neutral", font_size=12)
+    c.node("gi0", lx + 8, 40, lw - 16, 64, "TorchCompileWithNoGuardsWrapper\n跳过动态 Shape Guard 防重追踪", tone="neutral", font_size=12)
     c.node("gi1", lx + 8, 128, lw - 16, 64, "VllmBackend + split_graph\n按 splitting_ops 切出分段 FX 子图", tone="active", font_size=12)
-    c.node("gi2", lx + 8, 216, lw - 16, 64, "TorchInductor FX Fusion\n自动生成并编译 Triton PTX 融合内核", tone="active", emphasis=True, font_size=12)
+    c.node("gi2", lx + 8, 216, lw - 16, 64, "TorchInductor FX Fusion\n自动生成并编译 Triton 融合 Kernel", tone="active", emphasis=True, font_size=12)
     c.node("gi3", lx + 8, 304, lw - 16, 64, "CUDAGraphWrapper (PIECEWISE)\n捕获各分段静态序列供低开销重放", tone="highlight", font_size=12)
     c.connect("e_gi0", "gi0", "gi1", tone="fg")
     c.connect("e_gi1", "gi1", "gi2", tone="fg")
@@ -221,8 +221,8 @@ def build_03_inductor_vs_ascend_compile() -> None:
 
     c.node("ni0", rx + 8, 40, rw - 16, 64, "TorchCompileWithNoGuardsWrapper\n共用 vLLM 上层无 Guard 入口", tone="neutral", font_size=12)
     c.node("ni1", rx + 8, 128, rw - 16, 64, "AscendCompiler.compile\noot_compiler (use_inductor=False)", tone="activation", font_size=12)
-    c.node("ni2", rx + 8, 216, rw - 16, 64, "npugraph_ex (兜底 torchair)\nFX 下沉 GE 图；含 Triton Wrapper 时跳过缓存", tone="activation", emphasis=True, font_size=12)
-    c.node("ni3", rx + 8, 304, rw - 16, 64, "ACLGraphWrapper / GraphFusionPass\n驱动昇腾静态内核与 aclmdlRI 重放", tone="highlight", font_size=12)
+    c.node("ni2", rx + 8, 216, rw - 16, 64, "npugraph_ex (FULL) / GraphFusionPass (PW)\n下沉 GE 图或模式匹配算子融合", tone="activation", emphasis=True, font_size=12)
+    c.node("ni3", rx + 8, 304, rw - 16, 64, "ACLGraphWrapper / UpdatableGraph\n驱动 aclmdlRI 静态图捕获与热更新重放", tone="highlight", font_size=12)
     c.connect("e_ni0", "ni0", "ni1", tone="fg")
     c.connect("e_ni1", "ni1", "ni2", tone="fg")
     c.connect("e_ni2", "ni2", "ni3", tone="fg")
@@ -239,25 +239,25 @@ def build_04_four_boundaries_cards() -> None:
     cards = [
         (
             "b1",
-            "铁律一：输入输出指针固定\n\n• 捕获硬编码张量虚拟地址 (data_ptr)\n• 重放必须原位 copy_() 覆写静态缓冲\n• 重新赋值将导致图死读旧 0x7f00_1000\n• 末图启用 weak_ref_tensors() 释放中间结果",
+            "约束一：输入输出指针固定\n\n• 捕获硬编码张量虚拟地址 (data_ptr)\n• 重放必须原位 copy_() 覆写静态缓冲\n• 重新赋值将导致图仍读取旧地址 0x7f00_1000\n• 末图启用 weak_ref_tensors() 释放中间结果",
             "blue",
             True,
         ),
         (
             "b2",
-            "铁律二：静态批形与零分配\n\n• 真实 Batch 必须垫齐进 Capture 桶\n• 禁止图内按运行时标量动态申请张量\n• 捕获共享 global_graph_pool 控制显存\n• 填充槽 slot_mapping 须显式刷写为 -1",
+            "约束二：静态批形与零分配\n\n• 真实 Batch 必须垫齐进 Capture 桶\n• 禁止图内按运行时标量动态申请张量\n• 捕获共享 global_graph_pool 控制显存\n• Padding 槽位 slot_mapping 须刷写为 -1",
             "amber",
             True,
         ),
         (
             "b3",
-            "铁律三：零主机控制流同步\n\n• 严禁图内调用 .item() / .cpu() / .tolist()\n• 严禁数据依赖分支与 torch.nonzero()\n• 分支条件须前置至 Runner CPU 侧\n• 违例直接触发 StreamCaptureUnsupported",
+            "约束三：零主机控制流同步\n\n• 禁止图内调用 .item() / .cpu() / .tolist()\n• 禁止数据依赖分支与 torch.nonzero()\n• 分支条件须前置至 Runner CPU 侧\n• 违例直接触发 StreamCaptureUnsupported",
             "rose",
             True,
         ),
         (
             "b4",
-            "铁律四：副流闭环与通信池隔离\n\n• 旁路拷贝流必须经 Event 汇回主流\n• Offloader 末尾执行 join_after_forward()\n• 对称内存切换至 nccl_symm_mem_context\n• 暂停 graph_pool 后登记跨卡通信窗地址",
+            "约束四：副流汇合与通信池隔离\n\n• 旁路拷贝流必须经 Event 汇回主流\n• Offloader 末尾执行 join_after_forward()\n• 对称内存切换至 nccl_symm_mem_context\n• 暂停 graph_pool 后登记跨卡通信窗地址",
             "slate",
             False,
         ),
@@ -285,14 +285,14 @@ def build_06_aclgraph_vs_npugraph_arch() -> None:
     c.node("a0", lx + 8, 40, lw - 16, 64, "ModelAclGraphManager 分桶\n稀疏档位 [32, 48, 64] 防 207008 流耗尽", tone="active", font_size=12)
     c.node("a1", lx + 8, 128, lw - 16, 64, "UpdatableGraph.register_task\n捕获 FIA 算子并保存 TaskGroup 句柄", tone="active", emphasis=True, font_size=12)
     c.node("a2", lx + 8, 216, lw - 16, 64, "update_stream 热更新 Tiling\ngraph_task_update_begin 原位刷新 seq_kv", tone="highlight", emphasis=True, font_size=12)
-    c.node("a3", lx + 8, 304, lw - 16, 64, "ExternalEvent 跨流同步闭环\nevent.record() 放行主流且防并发踩踏", tone="neutral", font_size=12)
+    c.node("a3", lx + 8, 304, lw - 16, 64, "ExternalEvent 跨流事件同步\nevent.record() 放行主流且防并发踩踏", tone="neutral", font_size=12)
     c.connect("e_a0", "a0", "a1", tone="fg")
     c.connect("e_a1", "a1", "a2", tone="fg")
     c.connect("e_a2", "a2", "a3", tone="muted", dashed=True)
 
     c.node("n0", rx + 8, 40, rw - 16, 64, "AscendCompiler.compile\n接收切分后 Torch FX 子图", tone="activation", font_size=12)
     c.node("n1", rx + 8, 128, rw - 16, 64, "npugraph_ex (回退 torchair)\nFX 下沉 GE 计算图 + 静态核编译选项", tone="activation", emphasis=True, font_size=12)
-    c.node("n2", rx + 8, 216, rw - 16, 64, "编译缓存防踩坑守卫\n检测到 triton_kernel_wrapper 即跳过写缓存", tone="highlight", font_size=12)
+    c.node("n2", rx + 8, 216, rw - 16, 64, "含 Triton 算子时跳过图缓存\n检测到 triton_kernel_wrapper 不写磁盘", tone="highlight", font_size=12)
     c.node("n3", rx + 8, 304, rw - 16, 64, "适用强静态图与全局算子融合\n与 ACLGraphWrapper 在分段处协同工作", tone="neutral", font_size=12)
     c.connect("e_n0", "n0", "n1", tone="fg")
     c.connect("e_n1", "n1", "n2", tone="fg")

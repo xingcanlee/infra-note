@@ -31,13 +31,13 @@
         <mxCell id="g_tier" value="智能体多轮分级存储与 SWA 有界重放（§3.2）" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f5e9;strokeColor=#2c522d;strokeWidth=1.25;dashed=1;verticalAlign=top;align=left;spacingLeft=12;spacingTop=6;fontFamily=Inter;fontSize=12;fontStyle=1;fontColor=#2c522d;container=0;" vertex="1" parent="1">
           <mxGeometry x="352" y="0" width="336" height="376" as="geometry"/>
         </mxCell>
-        <mxCell id="ssd" value="SSD 持久化前缀池（TTL &amp;gt;= 72 小时）&lt;br&gt;只存全局 KV（890 B/tok），体积仅为 V4 的 1/8&lt;br&gt;完全剔除短寿命 SWA KV，命中即直复全部长前缀" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f5e9;strokeColor=#2c522d;strokeWidth=2;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+        <mxCell id="ssd" value="SSD 持久化前缀池（TTL &amp;gt;= 72 小时）&lt;br&gt;只存全局 KV（890 B/tok），体积仅为 V4 的 1/8&lt;br&gt;剔除短寿命 SWA KV，命中后直接恢复长前缀全局 KV" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f5e9;strokeColor=#2c522d;strokeWidth=2;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
           <mxGeometry x="368" y="40" width="304" height="72" as="geometry"/>
         </mxCell>
         <mxCell id="dram" value="Host DRAM 热缓冲池（10% RAM · 分钟级 TTL）&lt;br&gt;只缓存 Prompt 尾与输出尾两处 SWA 快照&lt;br&gt;活跃多轮直接命中，过期即刻回收给新会话" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f2fb;strokeColor=#2f5783;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
           <mxGeometry x="368" y="144" width="304" height="72" as="geometry"/>
         </mxCell>
-        <mxCell id="miss" value="全局命中但 SWA 过期时的兜底策略&lt;br&gt;Encoder SWA Bounded Replay：&lt;br&gt;仅回放命中点前最后 n_win=128 个 token 恢复 SWA&lt;br&gt;（不再全网重跑 L×n_win=5120 步）&lt;br&gt;随后仅对新增短后缀生成全局 KV + SWA KV" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#fbf2df;strokeColor=#7b5518;strokeWidth=2;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+        <mxCell id="miss" value="全局命中但 SWA 过期时的兜底策略&lt;br&gt;Encoder SWA Bounded Replay：&lt;br&gt;仅回放命中点前最后 n_win=128 个 token 恢复 SWA&lt;br&gt;（无需全网重跑 L×n_win=5120 步）&lt;br&gt;随后仅对新增短后缀生成全局 KV + SWA KV" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#fbf2df;strokeColor=#7b5518;strokeWidth=2;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
           <mxGeometry x="368" y="248" width="304" height="112" as="geometry"/>
         </mxCell>
         <mxCell id="te1" value="全局命中" style="endArrow=classic;startArrow=none;html=1;strokeColor=#1d1d1f;strokeWidth=1.25;edgeStyle=orthogonalEdgeStyle;rounded=1;exitX=0.25;exitY=1;exitDx=0;exitDy=0;entryX=0.25;entryY=0;entryDx=0;entryDy=0;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;labelBackgroundColor=#fcfcfb;" edge="1" parent="1" source="ssd" target="dram">

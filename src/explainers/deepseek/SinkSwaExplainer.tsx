@@ -33,7 +33,7 @@ export interface SinkSwaState {
 
 const TOKENS = ['t0', 't1', 't2', 't3', 't4', 't5', 't6', 't7'];
 
-// 构造 8x8 因果注意力示例：t0 为 <bos> 汇聚点（logit=6.0），W=3 滑窗覆盖最近 3 个位置 [t-2..t]
+// 构造 8x8 因果注意力示例：t0 为 <bos> Attention Sink（logit=6.0），W=3 滑窗覆盖最近 3 个位置 [t-2..t]
 function computeAttentionGrid(mode: SinkSwaState['mode']): {
   values: (number | null)[][];
   masks: boolean[][];
@@ -165,10 +165,10 @@ export function buildSinkSwaSteps(): Step<SinkSwaState>[] {
         localSum: '100.0% (27.8x)',
         outShift: '1.454',
         klValue: '26.47',
-        sinkStatus: 't0 丢失引发坍缩',
+        sinkStatus: '缺少 Sink 分布失真',
       },
       caption:
-        '步骤 2（Pure SWA $W=3$ 坍缩）：硬切除 $t_0$ 后分母失去泄洪池，Softmax 强制把最近 3 个局部词元 $[t_5..t_7]$ 权重拉满至 $100\\%$（暴涨 $27.8\\times$），输出特征彻底偏离基线。',
+        '步骤 2（Pure SWA $W=3$ 分布失真）：移除 $t_0$ 后分母失去全局吸收项，Softmax 将最近 3 个局部 token $[t_5..t_7]$ 权重重归一化至 $100\\%$（放大 $27.8\\times$），输出特征显著偏离基线。',
     },
     {
       state: {
@@ -183,7 +183,7 @@ export function buildSinkSwaSteps(): Step<SinkSwaState>[] {
         sinkStatus: 'L 型掩码稳态',
       },
       caption:
-        '步骤 3（Sink + SWA 构成 L 型因果掩码）：只将第 0 列设为固定注意力汇聚点与 $W=3$ 滑窗拼接，$t_0$ 立刻吸回 $96.4\\%$ 质量，局部窗口恢复至 $3.6\\%$，输出偏差暴降 $132\\times$。',
+        '步骤 3（Sink + SWA 构成 L 型因果掩码）：将第 0 列设为固定 Attention Sink 并与 $W=3$ 滑窗拼接，$t_0$ 恢复吸收 $96.4\\%$ 质量，局部窗口回落至 $3.6\\%$，输出偏差缩小 $132\\times$。',
     },
     {
       state: {
@@ -198,7 +198,7 @@ export function buildSinkSwaSteps(): Step<SinkSwaState>[] {
         sinkStatus: '中段关键事实盲剪',
       },
       caption:
-        '步骤 4（L 型掩码的边界：中段遗忘）：若关键事实出现在窗口外 $t_2$（全量下本该占 $81\\%$），静态 Sink + SWA 仍将其强制归零，证明长上下文推理必须走向动态稀疏 NSA。',
+        '步骤 4（L 型掩码的边界：中段遗忘）：若关键事实出现在窗口外 $t_2$（全量下本该占 $81\\%$），静态 Sink + SWA 仍将其强制归零，说明长上下文推理需要转向动态稀疏 NSA。',
     },
   ];
 }
@@ -206,14 +206,14 @@ export function buildSinkSwaSteps(): Step<SinkSwaState>[] {
 const STAGE_H = 382;
 
 export default function SinkSwaExplainer({
-  title = '图 1：8×8 因果注意力热图演化：纯滑窗坍缩与 Sink 稳态锚点',
+  title = '图 1：8×8 因果注意力热图演化：纯滑窗分布失真与 Attention Sink 稳态锚点',
 }: {
   title?: string;
 }) {
   const steps = useMemo(() => buildSinkSwaSteps(), []);
 
   return (
-    <Explainer steps={steps} title={title} label="SWA 汇聚点与因果掩码演化">
+    <Explainer steps={steps} title={title} label="Attention Sink 与因果掩码演化">
       {(step) => {
         const s = step.state;
         const gridTone = s.mode === 'pure_swa' ? 'rose' : 'blue';
@@ -264,7 +264,7 @@ export default function SinkSwaExplainer({
                 fontWeight: 600,
               }}
             >
-              最后一步 q7 对历史词元概率分布
+              最后一步 q7 对历史 token 概率分布
             </text>
             <ProbabilityBars
               x={378}
@@ -319,7 +319,7 @@ export default function SinkSwaExplainer({
                 w={42}
                 h={262}
                 tone="highlight"
-                label="t0 汇聚锚点列"
+                label="t0 Sink 锚点列"
                 visible
               />
             )}

@@ -21,16 +21,16 @@ export function buildClusterDboSynthSteps(): Step<ClusterDboSynthState>[] {
     {
       state: {
         stepIndex: 0,
-        phaseLabel: 'Step 1 · 单 Batch 串行基线：计算核在 EP All-to-All 期间彻底空等',
+        phaseLabel: 'Step 1 · 单 Batch 串行基线：计算核在 EP All-to-All 期间空等',
         playhead: 5.0,
         mode: 'serial',
-        cycleLatency: '14.4 ms (双份总计)',
+        cycleLatency: '15.2 ms (14.4+0.8 ms)',
         computeUtil: '50% (大片空闲气泡)',
         commHideRate: '0% 通信掩盖',
         engramOverhead: '+0.8 ms 同步等待',
       },
       caption:
-        '不启用 Dual-Batch Overlap (DBO) 时，算力流在 Dispatch A2A（1.8 ms）和 Combine A2A（1.8 ms）期间只能干等网络返回，加上 Engram 宿主查表阻塞，硬件利用率跌至一半。',
+        '不启用 Dual-Batch Overlap (DBO) 时，算力流在两份微批的 Dispatch A2A（3.6 ms）和 Combine A2A（3.6 ms）期间空等网络返回，叠加上末尾 0.8 ms 的 Engram 主机查表阻塞，单层总耗时达到 15.2 ms。',
     },
     {
       state: {
@@ -39,7 +39,7 @@ export function buildClusterDboSynthSteps(): Step<ClusterDboSynthState>[] {
         playhead: 5.0,
         mode: 'dbo_mid',
         cycleLatency: '双微批交错启动',
-        computeUtil: '算力空等大幅压缩',
+        computeUtil: '算力空等显著缩短',
         commHideRate: 'μB0/1 Dispatch 被遮蔽',
         engramOverhead: '待并入辅助流',
       },
@@ -58,7 +58,7 @@ export function buildClusterDboSynthSteps(): Step<ClusterDboSynthState>[] {
         engramOverhead: '主计算与 EP 解耦',
       },
       caption:
-        '关键闭环：μB1 MoE GEMM 掩盖 μB0 Combine A2A（1.8 ms），而紧随其后的 μB1 Combine A2A（7.6–9.4 ms）则由下一层的 μB0 Attn 与 mHC 计算无缝隐藏！',
+        'μB1 MoE GEMM 掩盖 μB0 Combine A2A（1.8 ms），紧随其后的 μB1 Combine A2A（7.6–9.4 ms）则由下一层的 μB0 Attn 与 mHC 计算接管掩盖，使单层稳态步长收敛到 9.4 ms（较 15.2 ms 基线提速 1.62 倍）。',
     },
     {
       state: {
@@ -72,7 +72,7 @@ export function buildClusterDboSynthSteps(): Step<ClusterDboSynthState>[] {
         engramOverhead: '6.0 ms 查表完全隐藏',
       },
       caption:
-        '借助独立预取流，100B 宿主内存 Engram 表的 6.0 ms PCIe/HCCS 跨总线查表在前面层 Attn + MoE 期间后台完成（与 UBatchContext 解耦协同），消费层仅用 wait_event 零拷贝接管。',
+        '借助独立预取流，196B 主机内存 Engram 表的 6.0 ms PCIe/HCCS 跨总线查表在前面层 Attn + MoE 期间后台完成（与 UBatchContext 解耦协同），消费层仅用 wait_event 零拷贝接管。',
     },
   ];
 }
@@ -132,10 +132,9 @@ export default function ClusterDboSynthExplainer({
                 blocks: [
                   {
                     start: 14.4,
-                    dur: 1.0,
+                    dur: 0.8,
                     label: '阻塞',
                     tone: 'highlight' as const,
-                    kind: 'error' as const,
                   },
                 ],
               },
@@ -210,7 +209,7 @@ export default function ClusterDboSynthExplainer({
                       {
                         start: 0.8,
                         dur: 6.0,
-                        label: 'L14 Host DDR 100B 表异步预取 (6.0 ms)',
+                        label: 'L14 Host DDR 196B 表异步预取 (6.0 ms)',
                         tone: 'done' as const,
                         active: true,
                       },
@@ -247,7 +246,7 @@ export default function ClusterDboSynthExplainer({
                       at: 9.4,
                       toLane: 0,
                       toAt: 9.4,
-                      label: 'μB1 Comb闭环',
+                      label: 'μB1 Comb汇合',
                       tone: 'done' as const,
                       active: true,
                     },

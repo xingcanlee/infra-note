@@ -4,7 +4,7 @@
       <root>
         <mxCell id="0"/>
         <mxCell id="1" parent="0"/>
-        <mxCell id="io_split__title" value="1. 朴素分立 4 内核 \((4n+4)d = 20d\)：每个子层反复把 [T, 4, d] 搬进搬出 HBM" style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;fontFamily=Inter;fontSize=12;fontStyle=1;fontColor=#1d1d1f;" vertex="1" parent="1">
+        <mxCell id="io_split__title" value="1. 朴素分立 4 个 Kernel \((4n+4)d = 20d\)：每个子层反复把 [T, 4, d] 搬进搬出 HBM" style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;fontFamily=Inter;fontSize=12;fontStyle=1;fontColor=#1d1d1f;" vertex="1" parent="1">
           <mxGeometry x="8" y="8" width="528" height="24" as="geometry"/>
         </mxCell>
         <mxCell id="io_split__tot" value="20d (基准)" style="text;html=1;whiteSpace=wrap;align=right;verticalAlign=middle;fontFamily=Inter;fontSize=12;fontColor=#5c6067;" vertex="1" parent="1">
@@ -55,13 +55,13 @@
         <mxCell id="g_s1" value="mhc_shifted_post_pre 跨子层延迟融合&lt;br&gt;上层 Post 留到下层入口一次性合并读写" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f2fb;strokeColor=#2f5783;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
           <mxGeometry x="16" y="264" width="304" height="48" as="geometry"/>
         </mxCell>
-        <mxCell id="g_s2" value="SM100 分级加速内核&lt;br&gt;DeepGEMM mega_mhc / CuTe / Lamport AR" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f2fb;strokeColor=#2f5783;strokeWidth=2;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+        <mxCell id="g_s2" value="SM100 分级融合 Kernel&lt;br&gt;DeepGEMM mega_mhc / CuTe / Lamport AR" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f2fb;strokeColor=#2f5783;strokeWidth=2;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
           <mxGeometry x="16" y="328" width="304" height="48" as="geometry"/>
         </mxCell>
         <mxCell id="g_s3" value="L1 / L14 Engram 边界显式打断融合&lt;br&gt;mhc_post_tilelang → engram → mhc_pre" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f5e9;strokeColor=#2c522d;strokeWidth=1.25;dashed=1;dashPattern=4 4;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
           <mxGeometry x="16" y="392" width="304" height="48" as="geometry"/>
         </mxCell>
-        <mxCell id="n_s1" value="npu_hc_pre_v3 算子内接上层 pre_mix&lt;br&gt;单算子融合输入坍缩与 Sinkhorn 迭代" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#fbf2df;strokeColor=#7b5518;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+        <mxCell id="n_s1" value="npu_hc_pre_v3 算子内接上层 pre_mix&lt;br&gt;单算子融合输入聚合与 Sinkhorn 迭代" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#fbf2df;strokeColor=#7b5518;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
           <mxGeometry x="368" y="264" width="304" height="48" as="geometry"/>
         </mxCell>
         <mxCell id="n_s2" value="rms_norm_cast 一次归一化两路输出&lt;br&gt;同步产出 BF16 激活与 FP32 MoE 路由" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#fbf2df;strokeColor=#7b5518;strokeWidth=2;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">

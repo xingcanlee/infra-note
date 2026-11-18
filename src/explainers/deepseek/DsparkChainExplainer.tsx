@@ -47,7 +47,7 @@ export function buildDsparkChainSteps(): Step<DsparkChainState>[] {
         draftPassText: 'DSpark: 1-Pass 3层SWA',
         markovText: '主干 aux -> Context KV',
         cutoffText: '同时产 K=5 槽位特征',
-        speedupText: 'Draft 骨架仅 1.6 ms',
+        speedupText: 'Draft 模型仅 1.6 ms',
       },
       caption:
         'V4.1 DeepseekV41DSparkModel 先用 main_proj + context_wkv_proj 把目标层隐藏状态预投进 SWA 缓存，随后 1 次并行前向穿过 3 层非因果 SWA 块算完所有草稿位特征。',
@@ -58,7 +58,7 @@ export function buildDsparkChainSteps(): Step<DsparkChainState>[] {
         phaseLabel: 'Step 3 · r=256 低秩 Markov 转移链与在线置信度截断',
         playhead: 3.0,
         acceptedPrefix: 4,
-        draftPassText: '1-Pass 骨架 + 链式头',
+        draftPassText: '1-Pass Draft + 链式头',
         markovText: 'W1[prev]@W2 (r=256)',
         cutoffText: 'a_j < τ 在位点 4 截断',
         speedupText: '规避无效尾部 Verify',
@@ -72,7 +72,7 @@ export function buildDsparkChainSteps(): Step<DsparkChainState>[] {
         phaseLabel: 'Step 4 · Target 单次并行检验与自适应速度收益',
         playhead: 6.0,
         acceptedPrefix: 5,
-        draftPassText: '1-Pass 并行草稿',
+        draftPassText: '1-Pass Draft 模型',
         markovText: '零 KV 重算补全依存',
         cutoffText: '平均命中 ~4.2 tok/step',
         speedupText: '6.0 vs 11.8 ms (-49%)',
@@ -236,7 +236,7 @@ export default function DsparkChainExplainer({
               h={44}
               gap={10}
               metrics={[
-                { label: 'Draft 骨架执行', value: s.draftPassText, tone: 'active' },
+                { label: 'Draft 模型执行', value: s.draftPassText, tone: 'active' },
                 { label: '序列依赖建模', value: s.markovText, tone: 'highlight' },
                 {
                   label: '在线长度控制',

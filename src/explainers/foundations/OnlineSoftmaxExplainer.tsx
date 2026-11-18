@@ -123,7 +123,7 @@ export function buildOnlineSoftmaxSteps(): Step<OnlineSoftmaxState>[] {
         accSelected: new Set(),
         focusFrame: { x: 26, y: 176, w: 172, h: 142, label: 'Tile 1 得分', tone: 'q' },
         phaseText: '1/5 载入 Tile 1',
-        peakSramText: '2x2 分块 (非 4x4)',
+        peakSramText: '2x2 分块 (片上驻留)',
         rescaleText: 'm=-inf, l=0',
         accuracyText: '零 HBM 中间矩阵',
       },
@@ -209,7 +209,7 @@ export function buildOnlineSoftmaxSteps(): Step<OnlineSoftmaxState>[] {
         accuracyText: 'alpha*O + P2 V2',
       },
       caption:
-        '片上唯一的 $\\tilde{O}$ 就地完成修正：$\\tilde{O} \\leftarrow \\text{diag}(\\alpha)\\tilde{O} + \\tilde{P}^{(2)}V_{2:4} = [[2.018, 1.470],[1.100, 0.862]]$，分母同步累加为 $l=[1.203, 1.320]$，全程无需任何第二份片外或片上输出副本。',
+        '片上唯一的 $\\tilde{O}$ 就地完成修正：$\\tilde{O} \\leftarrow \\text{diag}(\\alpha)\\tilde{O} + \\tilde{P}^{(2)}V_{2:4} = [[2.018, 1.470],[1.100, 0.862]]$，分母同步累加为 $l=[1.203, 1.320]$，全程复用同一份片上输出缓冲。',
     },
     {
       state: {
@@ -259,7 +259,7 @@ export default function OnlineSoftmaxExplainer({
               y={10}
               w={648}
               h={106}
-              title="HBM 全局显存 (分块按需流式读取，不落盘 [N, N] 矩阵)"
+              title="HBM 全局显存 (分块按需流式读取，不写回 [N, N] 矩阵)"
               tone="neutral"
             />
 

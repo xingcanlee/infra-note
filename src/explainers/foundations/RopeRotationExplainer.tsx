@@ -40,7 +40,7 @@ export function buildRopeRotationSteps(): Step<RopeRotationState>[] {
     THETAS.map((th) => positions.map((p) => Number(((p * th) % (2 * Math.PI)).toFixed(2))));
 
   const radToDeg = (rad: number) => (rad * 180) / Math.PI;
-  // Base vectors q, k separated by -0.412753 matching Ch02 prose (dot(m=2,n=5) = -0.412753)
+  // Full 8D RoPE dot product dot(m=2, n=5) = 0.668685 matching Ch02 NumPy script
   const qBaseDeg = 20;
   const kBaseDeg = 55;
   const stepTheta0 = radToDeg(1.0); // 57.2958 deg/token
@@ -70,13 +70,13 @@ export function buildRopeRotationSteps(): Step<RopeRotationState>[] {
         qAngleDeg: qBaseDeg + 2 * stepTheta0,
         kAngleDeg: kBaseDeg + 5 * stepTheta0,
         relAngleDeg: kBaseDeg - qBaseDeg + 3 * stepTheta0,
-        dotVal: '全8维点积 = -0.412753',
+        dotVal: '全8维点积 = 0.668685',
         angleMatrix: makeAngles([2, 5, 19, 22]),
         colLabels: ['m=2', 'n=5', 'm=19', 'n=22'],
         highlightPairing: false,
       },
       caption:
-        '将位置 $m=2$ 旋转 $2\\theta_0$、位置 $n=5$ 旋转 $5\\theta_0$，由于正交矩阵满足 $R_m^\\top R_n = R_{n-m}$，两向量的相对夹角偏移精确等于 $(n - m)\\theta_0 = 3\\,\\text{rad}$，全 8 维点积为 $-0.412753$。',
+        '将位置 $m=2$ 旋转 $2\\theta_0$、位置 $n=5$ 旋转 $5\\theta_0$，由于正交矩阵满足 $R_m^\\top R_n = R_{n-m}$，两向量的相对夹角偏移精确等于 $(n - m)\\theta_0 = 3\\,\\text{rad}$，全 8 维点积为 $0.668685$。',
     },
     {
       state: {
@@ -86,13 +86,13 @@ export function buildRopeRotationSteps(): Step<RopeRotationState>[] {
         qAngleDeg: qBaseDeg + 19 * stepTheta0,
         kAngleDeg: kBaseDeg + 22 * stepTheta0,
         relAngleDeg: kBaseDeg - qBaseDeg + 3 * stepTheta0,
-        dotVal: '全8维点积 = -0.412753 (严格相等)',
+        dotVal: '全8维点积 = 0.668685 (严格相等)',
         angleMatrix: makeAngles([2, 5, 19, 22]),
         colLabels: ['m=2', 'n=5', 'm=19', 'n=22'],
         highlightPairing: false,
       },
       caption:
-        '把这段话整体往后平移 17 个词元到 $(m=19, n=22)$：$R_{19} q$ 与 $R_{22} k$ 在圆周上各自多转了 17 圈，但两者之间的相对角仍锁定为 $3\\theta_0$，点积同为 $-0.412753$——绝对位置对完全隐身成相对位移。',
+        '把这段话整体往后平移 17 个 token 到 $(m=19, n=22)$：$R_{19} q$ 与 $R_{22} k$ 在圆周上各自多转了 $17\\,\\text{rad}$（约 $2.71$ 圈），但两者之间的相对角仍锁定为 $3\\theta_0$，点积同为 $0.668685$，绝对位置坐标在点积中化简为相对位移。',
     },
     {
       state: {
@@ -197,7 +197,7 @@ export default function RopeRotationExplainer({
               fontWeight={600}
               fill={relStroke}
             >
-              {`夹角保持 (n-m)=${s.n - s.m} rad`}
+              {`相对偏移 (n-m)=${s.n - s.m} rad`}
             </text>
 
             {/* Vector R_m q */}

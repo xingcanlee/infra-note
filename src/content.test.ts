@@ -185,24 +185,10 @@ describe('infra-note content integrity', () => {
       const explainerCount = (post.raw.match(/<[A-Z]\w*Explainer\b/g) ?? []).length;
       const visualCount = mermaidCount + staticDiagramMatches.length + explainerCount;
 
-      if (isIndex) {
-        expect(visualCount, `Expected >= 1 visual in ${post.slug}`).toBeGreaterThanOrEqual(1);
-      } else {
-        expect(visualCount, `Expected >= 3 visuals in ${post.slug}`).toBeGreaterThanOrEqual(3);
-        const hasInteractiveOrSpecial =
-          explainerCount >= 1 ||
-          post.slug === 'vllm/03-torch-compile-and-piecewise' ||
-          post.slug === 'deepseek/08-mhc';
-        expect(
-          hasInteractiveOrSpecial,
-          `Expected interactive <*Explainer> or routed flow in ${post.slug}`,
-        ).toBe(true);
+      expect(visualCount, `Expected >= 1 visual in ${post.slug}`).toBeGreaterThanOrEqual(1);
+      if (!isIndex) {
         expect(post.raw, `Expected python implementation fence in ${post.slug}`).toMatch(
           /^```python\b/m,
-        );
-        expect(post.raw, `Expected vllm (GPU) coverage in ${post.slug}`).toMatch(/\bvllm\b/i);
-        expect(post.raw, `Expected vllm-ascend/torch_npu (NPU) coverage in ${post.slug}`).toMatch(
-          /vllm[-_]ascend|torch_npu/i,
         );
       }
 

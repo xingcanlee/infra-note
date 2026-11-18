@@ -81,7 +81,7 @@ export function buildDboTimelineSteps(): Step<DboTimelineState>[] {
         hardwareNote: '算力与网卡交替，互斥闲置',
       },
       caption:
-        'Step 1（串行单批基准，$B=1024$）：在未切分微批时，Compute 与 Comm 轨严格互斥等待；计算共 $4.60\\text{ ms}$，但前后两次同步+All-to-All 插入了 $3.90\\text{ ms}$ 纯等待气泡（占比 $45.9\\%$）。',
+        'Step 1（串行单批基准，$B=1024$）：在未切分微批时，Compute 与 Comm 轨按顺序串行等待；计算共 $4.60\\text{ ms}$，前后两次同步与 All-to-All 插入了 $3.90\\text{ ms}$ 纯等待气泡（占比 $45.9\\%$）。',
     },
     {
       state: {
@@ -89,7 +89,7 @@ export function buildDboTimelineSteps(): Step<DboTimelineState>[] {
         lanes: [
           {
             title: 'Compute 轨',
-            subtitle: 'SM / AICore',
+            subtitle: 'SM / TMA',
             blocks: [
               { start: 0.0, dur: 1.1, label: 'μB0 Attn (512)', tone: 'active', active: true },
               { start: 1.1, dur: 1.1, label: 'μB1 Attn (512)', tone: 'activation', active: true },
@@ -97,7 +97,7 @@ export function buildDboTimelineSteps(): Step<DboTimelineState>[] {
           },
           {
             title: 'Comm 轨',
-            subtitle: 'DeepEP / MC2',
+            subtitle: 'DeepEP',
             blocks: [
               { start: 0.0, dur: 1.15, label: '等待 μB0 Attn', tone: 'mask', kind: 'bubble' },
               {
@@ -134,7 +134,7 @@ export function buildDboTimelineSteps(): Step<DboTimelineState>[] {
         hardwareNote: 'μB1 Attn 填满 μB0 通信',
       },
       caption:
-        'Step 2（切分双微批错峰起步）：将 $B=1024$ 对半拆分为 $\\mu B_0$ 与 $\\mu B_1$（各 $512$ token）；当 $\\mu B_0$ 完成 Attention 进入异步 Dispatch 时，Compute 轨零停顿直接运行 $\\mu B_1$ 的 Attention。',
+        'Step 2（切分双微批错峰起步）：将 $B=1024$ 对半拆分为 $\\mu B_0$ 与 $\\mu B_1$（各 $512$ 个 token）；当 $\\mu B_0$ 完成 Attention 进入异步 Dispatch 时，Compute 轨零停顿直接运行 $\\mu B_1$ 的 Attention。',
     },
     {
       state: {
@@ -164,7 +164,7 @@ export function buildDboTimelineSteps(): Step<DboTimelineState>[] {
           },
           {
             title: 'Sync / 辅助',
-            subtitle: 'SM-Free Event',
+            subtitle: 'Event Sync',
             blocks: [
               { start: 1.1, dur: 0.05, label: 'E', tone: 'highlight' },
               { start: 2.15, dur: 0.05, label: 'E', tone: 'highlight' },
@@ -183,72 +183,104 @@ export function buildDboTimelineSteps(): Step<DboTimelineState>[] {
         endToEndMs: '5.40 ms (1.57x 加速)',
         computeUtil: '85.2% (4.60 / 5.40)',
         commBubble: '14.8% (仅尾部 0.80 ms)',
-        hardwareNote: 'IBGDA 绕过 SM/CPU，算力连贯',
+        hardwareNote: 'IBGDA 绕过 CPU，双流交错',
       },
       caption:
-        'Step 3（GPU DeepEP 双微批乒乓稳态）：DeepEP IBGDA 由 GPU Warp 直接写网卡队列而不占计算 SM；$\\mu B_1$ Dispatch 与 $\\mu B_0$ MoE 并发，$\\mu B_0$ Combine 与 $\\mu B_1$ MoE 并发，单层耗时从 $8.50\\text{ ms}$ 压至 $5.40\\text{ ms}$。',
+        'Step 3（GPU DeepEP 双微批乒乓稳态）：DeepEP IBGDA 绕过主机调度直接驱动网卡队列；$\\mu B_1$ Dispatch 与 $\\mu B_0$ MoE 并发，$\\mu B_0$ Combine 与 $\\mu B_1$ MoE 并发，仿真单层耗时从 $8.50\\text{ ms}$ 压至 $5.40\\text{ ms}$。',
     },
     {
       state: {
-        modeTag: '4. 昇腾 MC2 dispatch_v2 / combine_v2 融合切片',
+        modeTag: '4. 昇腾单批 MC2 融合流水 + 共享专家辅助流',
         lanes: [
           {
-            title: 'AICore 轨',
-            subtitle: 'Cube GMM',
+            title: '主流 AICore',
+            subtitle: 'Attn + GMM',
             blocks: [
-              { start: 0.0, dur: 1.1, label: 'μB0 Attn', tone: 'active' },
-              { start: 1.1, dur: 1.1, label: 'μB1 Attn', tone: 'activation' },
-              { start: 2.25, dur: 1.2, label: 'μB0 GMM', tone: 'active', active: true },
-              { start: 3.45, dur: 1.2, label: 'μB1 GMM', tone: 'activation', active: true },
-              { start: 4.65, dur: 0.85, label: '尾气泡', tone: 'mask', kind: 'bubble' },
+              { start: 0.0, dur: 2.2, label: 'Attn+Router (B=1024)', tone: 'active', active: true },
+              { start: 2.2, dur: 0.55, label: 'TopK', tone: 'highlight', dashed: true },
+              {
+                start: 2.75,
+                dur: 2.4,
+                label: 'GroupedMatmul (Slice 接力)',
+                tone: 'active',
+                active: true,
+              },
+              { start: 5.15, dur: 0.55, label: '汇合', tone: 'highlight', dashed: true },
             ],
           },
           {
-            title: 'AIV + RDMA',
-            subtitle: 'MC2 融合核',
+            title: 'MC2 融合核',
+            subtitle: 'disp/comb_v2',
             blocks: [
-              { start: 0.0, dur: 1.15, label: '起始等待', tone: 'mask', kind: 'bubble' },
-              { start: 1.15, dur: 1.05, label: 'μB0 Disp', tone: 'highlight', active: true },
-              { start: 2.25, dur: 1.05, label: 'μB1 Disp', tone: 'activation', active: true },
-              { start: 3.5, dur: 0.8, label: 'μB0 Comb', tone: 'highlight' },
-              { start: 4.7, dur: 0.8, label: 'μB1 Comb', tone: 'activation' },
+              { start: 0.0, dur: 2.2, label: '等待路由就绪', tone: 'mask', kind: 'bubble' },
+              {
+                start: 2.2,
+                dur: 1.5,
+                label: 'dispatch_v2 (Slice 流水)',
+                tone: 'highlight',
+                active: true,
+              },
+              { start: 3.7, dur: 0.5, label: '核内衔接', tone: 'mask', kind: 'bubble' },
+              {
+                start: 4.2,
+                dur: 1.5,
+                label: 'combine_v2 (Slice 归约)',
+                tone: 'highlight',
+                active: true,
+              },
             ],
           },
           {
-            title: 'UB / 硬件流控',
-            subtitle: 'AIV -> AICore',
+            title: '辅助计算流',
+            subtitle: 'Shared Expert',
             blocks: [
-              { start: 1.1, dur: 0.05, label: 'U', tone: 'highlight' },
-              { start: 2.2, dur: 0.05, label: 'U', tone: 'highlight' },
-              { start: 3.45, dur: 0.05, label: 'U', tone: 'highlight' },
-              { start: 4.65, dur: 0.05, label: 'U', tone: 'highlight' },
+              { start: 0.0, dur: 2.2, label: '等 router_ready', tone: 'mask', kind: 'bubble' },
+              {
+                start: 2.2,
+                dur: 1.85,
+                label: 'Shared Gate-Up + Down',
+                tone: 'activation',
+                active: true,
+              },
+              { start: 4.05, dur: 1.65, label: '就绪等待汇合', tone: 'mask', kind: 'bubble' },
             ],
           },
         ],
         syncEvents: [
           {
-            fromLane: 1,
+            fromLane: 0,
             at: 2.2,
-            toLane: 0,
-            toAt: 2.25,
-            label: 'UB 直喂',
+            toLane: 1,
+            toAt: 2.2,
+            label: 'Dispatch',
             tone: 'highlight',
             active: true,
           },
-          { fromLane: 0, at: 3.45, toLane: 1, toAt: 3.5, tone: 'highlight' },
+          { fromLane: 0, at: 2.2, toLane: 2, toAt: 2.2, tone: 'activation', active: true },
+          {
+            fromLane: 1,
+            at: 3.3,
+            toLane: 0,
+            toAt: 3.3,
+            label: 'Slice',
+            tone: 'active',
+            active: true,
+          },
+          { fromLane: 0, at: 4.5, toLane: 1, toAt: 4.5, label: 'Combine', tone: 'highlight' },
+          { fromLane: 2, at: 4.05, toLane: 0, toAt: 5.4, tone: 'activation', dashed: true },
         ],
-        playhead: 5.5,
-        endToEndMs: '5.50 ms (1.55x 加速)',
-        computeUtil: '83.6% (4.60 / 5.50)',
-        commBubble: '16.4% (省外置量化核)',
-        hardwareNote: 'MC2 v2 单核融合量化写窗',
+        playhead: 5.7,
+        endToEndMs: '单批整块执行 (禁用 DBO)',
+        computeUtil: '核内 Slice 通算接力',
+        commBubble: 'Shared 流掩盖 Dispatch',
+        hardwareNote: 'npu_moe_distribute_*_v2',
       },
       caption:
-        'Step 4（昇腾 MC2 通算融合切片）：昇腾通过 AIV 核内打包量化并触发 HCCS/UB-SDMA/RoCE 写窗，将原需多次 Host 调度的步骤收敛入 dispatch_v2 / combine_v2，同样实现双微批无气泡流水。',
+        'Step 4（昇腾单批 MC2 与共享专家并发）：vllm-ascend 显式禁用双微批 DBO，保持完整单批以避免 Cube 分块效率受损；主流经 npu_moe_distribute_dispatch_v2、GroupedMatmul 与 npu_moe_distribute_combine_v2 按 Slice 接力推进，同时辅助流并发执行 Shared Expert 填补 TopK 与 Dispatch 等待窗口。',
     },
     {
       state: {
-        modeTag: '5. 串行 vs DBO 省时总结 (严格毫秒对齐)',
+        modeTag: '5. 串行 vs DBO 省时总结 (昇腾单批走 MC2)',
         lanes: [
           {
             title: '串行基准',
@@ -261,7 +293,7 @@ export function buildDboTimelineSteps(): Step<DboTimelineState>[] {
             ],
           },
           {
-            title: 'DBO Compute',
+            title: 'GPU DBO',
             subtitle: '5.40 ms 达成',
             blocks: [
               { start: 0.0, dur: 1.1, label: 'μB0 A', tone: 'active' },
@@ -278,13 +310,20 @@ export function buildDboTimelineSteps(): Step<DboTimelineState>[] {
             ],
           },
           {
-            title: 'DBO Comm',
-            subtitle: '硬件并发掩盖',
+            title: 'GPU Comm / NPU',
+            subtitle: '并发掩盖对照',
             blocks: [
               { start: 1.15, dur: 1.0, label: 'μB0 Disp', tone: 'active' },
               { start: 2.2, dur: 1.0, label: 'μB1 Disp', tone: 'activation' },
               { start: 3.45, dur: 0.75, label: 'μB0 C', tone: 'active' },
               { start: 4.65, dur: 0.75, label: 'μB1 C', tone: 'activation' },
+              {
+                start: 5.6,
+                dur: 3.4,
+                label: '昇腾: 单批 MC2 (禁用 DBO)',
+                tone: 'activation',
+                dashed: true,
+              },
             ],
           },
         ],
@@ -303,16 +342,16 @@ export function buildDboTimelineSteps(): Step<DboTimelineState>[] {
         endToEndMs: '8.50 -> 5.40 ms',
         computeUtil: '54.1% -> 85.2%',
         commBubble: '3.90 -> 0.80 ms',
-        hardwareNote: '小批 Decode 需降 α 启动开销',
+        hardwareNote: 'GPU DBO 省 36.5%；NPU 单批 MC2',
       },
       caption:
-        'Step 5（总结对照）：严格按毫秒比例映射，Prefill 双微批乒乓成功消除了 $3.10\\text{ ms}$ 等效通信气泡（总时长缩减 $36.5\\%$，算力利用率从 $54.1\\%$ 跃升至 $85.2\\%$）；而在 Decode 极小批阶段，能否继续受益取决于 IBGDA 与 MC2 对 $\\alpha$ 启动时延的削减幅度。',
+        'Step 5（总结对照）：严格按毫秒比例映射，Prefill 双微批乒乓消除了 $3.10\\text{ ms}$ 通信气泡（总时长从 $8.50\\text{ ms}$ 降至 $5.40\\text{ ms}$，算力利用率由 $54.1\\%$ 升至 $85.2\\%$）；华为昇腾因当前 vllm-ascend 不支持双微批 DBO，保持单批执行并由 MC2 核内 Slice 流水与共享专家辅助流掩盖延迟，Decode 极小批则依赖 IBGDA 与 MC2 压低 $\\alpha$ 启动开销。',
     },
   ];
 }
 
 export default function DboTimelineExplainer({
-  title = '图 3：双微批重叠（DBO / TBO）与 DeepEP / MC2 毫秒级流水线推演',
+  title = '图 3：双微批重叠（DBO）与昇腾 MC2 异步流毫秒级流水线推演',
 }: {
   title?: string;
 }) {
@@ -353,7 +392,7 @@ export default function DboTimelineExplainer({
               y={10}
               w={STAGE_W - 24}
               h={262}
-              title={`Prefill (B=1024) 严格毫秒等比例泳道 · ${s.modeTag}`}
+              title={`Prefill (B=1024) 流水线泳道 · ${s.modeTag}`}
               tone="neutral"
               dashed
             />
@@ -371,7 +410,7 @@ export default function DboTimelineExplainer({
               laneGap={14}
               gutterW={102}
               playhead={s.playhead}
-              title="横轴宽度与真实 ms 严格成正比（每格 1.5 ms）"
+              title="横轴按仿真时间比例绘制（每格 1.5 ms）"
             />
 
             <MetricRow x={12} y={290} w={STAGE_W - 24} h={50} metrics={metrics} />

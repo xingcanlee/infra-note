@@ -13,7 +13,7 @@
         <mxCell id="arch_right" value="华为昇腾 DaVinci AI Core (910B / A3 / A5)" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e3f5f3;strokeColor=#0f766e;strokeWidth=1.25;verticalAlign=top;align=left;spacingLeft=12;spacingTop=6;fontFamily=Inter;fontSize=12;fontStyle=1;fontColor=#0f766e;container=0;" vertex="1" parent="1">
           <mxGeometry x="352" y="32" width="336" height="552" as="geometry"/>
         </mxCell>
-        <mxCell id="l_ctrl" value="SIMT Warp 调度器 + PrivateUse1=False&lt;br&gt;原生 CUDA 分发 -&amp;gt; forward_cuda" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#f4f4f2;strokeColor=#5c6067;strokeWidth=1;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+        <mxCell id="l_ctrl" value="SIMT Warp 调度器 + DispatchKey::CUDA&lt;br&gt;原生 CUDA 分发 -&amp;gt; forward_cuda" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#f4f4f2;strokeColor=#5c6067;strokeWidth=1;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
           <mxGeometry x="24" y="80" width="288" height="56" as="geometry"/>
         </mxCell>
         <mxCell id="l_tc" value="Tensor Core&lt;br&gt;MMA / WGMMA / tcgen05&lt;br&gt;高密度矩阵乘主引擎" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f2fb;strokeColor=#2f5783;strokeWidth=2;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">

@@ -10,7 +10,7 @@
         <mxCell id="req_q" value="等待/运行请求队列&lt;br&gt;(Chunked + Decode)" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#f4f4f2;strokeColor=#5c6067;strokeWidth=1;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
           <mxGeometry x="16" y="32" width="152" height="56" as="geometry"/>
         </mxCell>
-        <mxCell id="budget" value="token_budget 配额裁剪&lt;br&gt;(彻底消除 V0 阶段墙)" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f2fb;strokeColor=#2f5783;strokeWidth=2;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+        <mxCell id="budget" value="token_budget 配额裁剪&lt;br&gt;(消除 V0 Prefill/Decode 阶段隔离)" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f2fb;strokeColor=#2f5783;strokeWidth=2;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
           <mxGeometry x="248" y="32" width="192" height="56" as="geometry"/>
         </mxCell>
         <mxCell id="out_dict" value="num_scheduled_tokens&lt;br&gt;{req_id: tok_cnt}" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#fbf2df;strokeColor=#7b5518;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
@@ -31,7 +31,7 @@
         <mxCell id="pool" value="BlockPool (Free FIFO)&lt;br&gt;B0 永久保留为 null_block" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f2fb;strokeColor=#2f5783;strokeWidth=2;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
           <mxGeometry x="264" y="176" width="176" height="64" as="geometry"/>
         </mxCell>
-        <mxCell id="slot_map" value="slot_mapping[]&lt;br&gt;虚槽/空槽填 PAD (-1)" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#f4f4f2;strokeColor=#5c6067;strokeWidth=1;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+        <mxCell id="slot_map" value="slot_mapping[]&lt;br&gt;Padding 槽位填 PAD (-1)" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#f4f4f2;strokeColor=#5c6067;strokeWidth=1;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
           <mxGeometry x="512" y="176" width="160" height="64" as="geometry"/>
         </mxCell>
         <mxCell id="e_od_pl" value="alloc / free" style="endArrow=classic;startArrow=none;html=1;strokeColor=#1d1d1f;strokeWidth=1.25;edgeStyle=orthogonalEdgeStyle;rounded=1;exitX=0.5;exitY=1.0;exitDx=0;exitDy=0;entryX=0.65;entryY=0.0;entryDx=0;entryDy=0;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;labelBackgroundColor=#fcfcfb;" edge="1" parent="1" source="out_dict" target="pool">
@@ -57,7 +57,7 @@
         <mxCell id="gpu_kv" value="reshape_and_cache_flash&lt;br&gt;读 slot_mapping；遇到 slot &amp;lt; 0 直接跳过写回" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f2fb;strokeColor=#2f5783;strokeWidth=2;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
           <mxGeometry x="24" y="328" width="288" height="72" as="geometry"/>
         </mxCell>
-        <mxCell id="npu_kv" value="torch_npu.npu_scatter_pa_kv_cache&lt;br&gt;AICore 向量单元按页槽散列写入连续 HBM 块" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e3f5f3;strokeColor=#0f766e;strokeWidth=2;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+        <mxCell id="npu_kv" value="torch_npu.npu_scatter_pa_kv_cache&lt;br&gt;AICore 向量单元按 slot_mapping Scatter 写入物理 KV 块" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e3f5f3;strokeColor=#0f766e;strokeWidth=2;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
           <mxGeometry x="384" y="328" width="288" height="72" as="geometry"/>
         </mxCell>
         <mxCell id="e_sm_gpu" value="" style="endArrow=classic;startArrow=none;html=1;strokeColor=#1d1d1f;strokeWidth=1.25;edgeStyle=orthogonalEdgeStyle;rounded=1;exitX=0.25;exitY=1.0;exitDx=0;exitDy=0;entryX=0.85;entryY=0.0;entryDx=0;entryDy=0;" edge="1" parent="1" source="slot_map" target="gpu_kv">

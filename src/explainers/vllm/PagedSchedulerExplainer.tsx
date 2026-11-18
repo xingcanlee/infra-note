@@ -352,7 +352,7 @@ export function buildPagedSchedulerSteps(): Step<PagedSchedulerState>[] {
         focusLabel: '占位/被驱逐请求指回 B0 (null_block) 并写 PAD_SLOT_ID=-1，防 KV 写穿',
       },
       caption:
-        '第 6 步：Graph 补齐的虚请求与空槽全部指向 $B_0$（null_block）并将 slot_mapping 置为 $-1$；GPU/NPU 写入内核检测到负槽位直接跳过。',
+        '第 6 步：Graph 补齐的 Dummy request 与 Padding 槽位全部指向 $B_0$（null_block）并将 slot_mapping 置为 $-1$；GPU/NPU 写入算子检测到负槽位直接跳过。',
       focus: ['blk-0'],
     },
   ];
@@ -474,7 +474,7 @@ export default function PagedSchedulerExplainer({
 
         const metrics: MetricItem[] = [
           {
-            label: 'Token 预算占用',
+            label: 'token 预算占用',
             value: `${s.usedBudget} / ${s.tokenBudget}`,
             tone: s.usedBudget === s.tokenBudget ? 'highlight' : 'active',
             active: true,

@@ -13,7 +13,7 @@
         <mxCell id="hca_box" value="HCA（m&#x27; = 128，无重叠单窗）&lt;br&gt;单投影 C, Z + B，序列缩至 1/128&lt;br&gt;1M 上下文仅余约 7,812 条压缩块&lt;br&gt;取消索引器，直接全块稠密读取" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f5e9;strokeColor=#2c522d;strokeWidth=2;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
           <mxGeometry x="16" y="168" width="200" height="104" as="geometry"/>
         </mxCell>
-        <mxCell id="ring_box" value="FP32 定长 StateCache（环形缓冲）&lt;br&gt;暂存未闭合尾部词元&lt;br&gt;+ SWA (n_win=128)" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#fbf2df;strokeColor=#7b5518;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+        <mxCell id="ring_box" value="FP32 定长 StateCache（环形缓冲）&lt;br&gt;暂存未闭合尾部 token&lt;br&gt;+ SWA (n_win=128)" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#fbf2df;strokeColor=#7b5518;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
           <mxGeometry x="16" y="288" width="200" height="80" as="geometry"/>
         </mxCell>
         <mxCell id="g_attn" value="双轨 RoPE 与输出逆旋转（Eq. 27）" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#fbf2df;strokeColor=#7b5518;strokeWidth=1.25;dashed=1;verticalAlign=top;align=left;spacingLeft=12;spacingTop=6;fontFamily=Inter;fontSize=12;fontStyle=1;fontColor=#7b5518;container=0;" vertex="1" parent="1">
@@ -22,7 +22,7 @@
         <mxCell id="rope_track" value="双轨 Partial RoPE（末 64 维）&lt;br&gt;全局支：deepseek_yarn 长文本外推&lt;br&gt;SWA 支：factor=1.0 锁定局部对齐" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#fbf2df;strokeColor=#7b5518;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
           <mxGeometry x="264" y="40" width="208" height="80" as="geometry"/>
         </mxCell>
-        <mxCell id="mqa_sink" value="RMSNorm + Shared KV MQA + Sink&lt;br&gt;C^Comp 兼任 Key/Value 携带绝对位置&lt;br&gt;分母注入可学习 exp(z&#x27;_h) 泄洪项" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f2fb;strokeColor=#2f5783;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+        <mxCell id="mqa_sink" value="RMSNorm + Shared KV MQA + Sink&lt;br&gt;C^Comp 兼任 Key/Value 携带绝对位置&lt;br&gt;分母注入可学习 exp(z&#x27;_h) Sink 偏置项" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f2fb;strokeColor=#2f5783;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
           <mxGeometry x="264" y="136" width="208" height="88" as="geometry"/>
         </mxCell>
         <mxCell id="inv_rope" value="输出逆旋转 R_{-t}（inverse=True）&lt;br&gt;在输出末尾 64 维消除绝对旋转&lt;br&gt;还原相对位置 R_{k_pos - t}" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#fbf2df;strokeColor=#7b5518;strokeWidth=2;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
@@ -31,7 +31,7 @@
         <mxCell id="wo_grp" value="Grouped Output Proj&lt;br&gt;(DeepseekV4GroupedWoA)" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#f4f4f2;strokeColor=#5c6067;strokeWidth=1;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
           <mxGeometry x="264" y="328" width="208" height="40" as="geometry"/>
         </mxCell>
-        <mxCell id="g_stack" value="V4 混合堆叠与实测收益" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f5e9;strokeColor=#2c522d;strokeWidth=1.25;dashed=1;verticalAlign=top;align=left;spacingLeft=12;spacingTop=6;fontFamily=Inter;fontSize=12;fontStyle=1;fontColor=#2c522d;container=0;" vertex="1" parent="1">
+        <mxCell id="g_stack" value="V4 混合堆叠与基准收益" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f5e9;strokeColor=#2c522d;strokeWidth=1.25;dashed=1;verticalAlign=top;align=left;spacingLeft=12;spacingTop=6;fontFamily=Inter;fontSize=12;fontStyle=1;fontColor=#2c522d;container=0;" vertex="1" parent="1">
           <mxGeometry x="504" y="0" width="184" height="384" as="geometry"/>
         </mxCell>
         <mxCell id="st_flash" value="DeepSeek-V4-Flash (43L)&lt;br&gt;L0–1：纯 SWA&lt;br&gt;L2–42：CSA(m=4) 与&lt;br&gt;HCA(m&#x27;=128) 交错堆叠&lt;br&gt;&lt;br&gt;KV 降至 V3.2 的 7%&lt;br&gt;FLOPs 降至 V3.2 的 10%" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f5e9;strokeColor=#2c522d;strokeWidth=2;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">

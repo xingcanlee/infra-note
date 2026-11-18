@@ -29,7 +29,7 @@ def build_01_mla_arch() -> None:
     c.node("qr", 296, 80, 96, 40, "q_t^R + RoPE\n[128, 64]", tone="highlight", font_size=12)
 
     # 下分支：KV 联合压缩与共享单头 k_t^R
-    c.group("g_kv", 112, 160, 296, 168, "KV 联合压缩与缓存分支（单头 MQA 落盘）", tone="done", dashed=True)
+    c.group("g_kv", 112, 160, 296, 168, "KV 联合压缩与缓存分支（单头 MQA 缓存）", tone="done", dashed=True)
     c.node("wdkv", 128, 200, 64, 48, "W_DKV\n+ Norm", tone="neutral", font_size=12)
     c.tensor_block("ckv", 208, 200, 80, 48, "c_t^KV", "[512]", tone="done", emphasis=True)
     c.node("wkr", 128, 264, 80, 48, "W_KR + RoPE", tone="highlight", font_size=12)
@@ -72,10 +72,12 @@ def build_01_mla_arch() -> None:
     c.connect("e8", "ckv", "kv_cache", tone="fg", exit_xy=(1, 0.5), entry_xy=(0, 0.25))
     c.connect("e9", "wkr", "kr", tone="fg", exit_xy=(1, 0.5), entry_xy=(0, 0.5))
     c.connect("e10", "kr", "kv_cache", tone="fg", exit_xy=(1, 0.5), entry_xy=(0, 0.8))
-    c.connect("e11", "qc", "mha", tone="fg", exit_xy=(1, 0.5), entry_xy=(0, 0.35))
-    c.connect("e12", "qr", "mqa", tone="fg", dashed=True, exit_xy=(1, 0.5), entry_xy=(0, 0.3))
-    c.connect("e13", "kv_cache", "mha", tone="fg", dashed=True, exit_xy=(1, 0.25), entry_xy=(0, 0.75))
-    c.connect("e14", "kv_cache", "mqa", tone="fg", exit_xy=(1, 0.65), entry_xy=(0, 0.65))
+    c.connect("e11", "qc", "mha", tone="fg", dashed=True, exit_xy=(1, 0.4), entry_xy=(0, 0.08), points=[(400, 40), (400, 48)])
+    c.connect("e11_mqa", "qc", "mqa", tone="fg", exit_xy=(1, 0.8), entry_xy=(0, 0.15), points=[(416, 56), (416, 176)])
+    c.connect("e12_mha", "qr", "mha", tone="fg", dashed=True, exit_xy=(1, 0.3), entry_xy=(0, 0.5))
+    c.connect("e12", "qr", "mqa", tone="fg", exit_xy=(1, 0.8), entry_xy=(0, 0.38), points=[(424, 112), (424, 200)])
+    c.connect("e13", "kv_cache", "mha", tone="fg", dashed=True, exit_xy=(1, 0.25), entry_xy=(0, 0.77), points=[(440, 228), (440, 120)])
+    c.connect("e14", "kv_cache", "mqa", tone="fg", exit_xy=(1, 0.65), entry_xy=(0, 0.77), points=[(400, 272), (400, 240)])
     c.connect("e15", "mha", "wo", tone="fg", dashed=True, exit_xy=(1, 0.5), entry_xy=(1, 0.5), points=[(672, 92), (672, 296)])
     c.connect("e16", "mqa", "wo", tone="fg", exit_xy=(0.5, 1), entry_xy=(0.5, 0))
 
@@ -217,25 +219,25 @@ def build_01_mla_gpu_vs_npu_runtime() -> None:
 
 
 def build_02_nsa_gqa_tile_arch() -> None:
-    """图 3：GQA 组共享选块 vs 独立并集灾难，及 SRAM/UB 连续块 MMA 调度。"""
+    """图 3：GQA 组共享选块 vs 独立选块并集膨胀，及 SRAM/UB 连续块 MMA 调度。"""
     c = DrawioCanvas(page_name="02-nsa-gqa-tile", diagram_id="ds-02-nsa-tile", width=688)
 
     # 左侧反例 vs 正解选块对比
-    c.group("g_bad", 0, 0, 304, 152, "反例：GQA 组内按头独立选块 → 并集灾难", tone="error", dashed=True)
+    c.group("g_bad", 0, 0, 304, 152, "反例：GQA 组内按头独立选块 → 并集膨胀", tone="error", dashed=True)
     c.node("bad_h", 16, 40, 120, 48, "Head 0..15\n各挑 Top-n 离散块", tone="error", font_size=12)
     c.node("bad_u", 152, 40, 136, 48, "底层共享同一 HBM KV\n被迫搬运 16 头并集", tone="neutral", font_size=12)
-    c.node("bad_r", 16, 104, 272, 32, "实际访存退化接近全量扫描，饿死 TensorCore", tone="error", font_size=12)
+    c.node("bad_r", 16, 104, 272, 32, "算术强度退化，受限于访存带宽", tone="error", font_size=12)
     c.connect("be1", "bad_h", "bad_u", tone="fg", exit_xy=(1, 0.5), entry_xy=(0, 0.5))
 
     c.group("g_good", 0, 168, 304, 176, "正解：NSA 组共享连续块筛选（Eq. 10）", tone="done", dashed=True)
     c.node("gd_sum", 16, 208, 128, 56, "p_slc' = Sum_h p_slc^(h)\n整组 G=16 汇总选块分", tone="active", font_size=12)
     c.node("gd_idx", 160, 208, 128, 56, "唯一共享块集 I_t\nTop-n 块（每块 l'=64）", tone="done", emphasis=True, font_size=12)
-    c.node("gd_mem", 16, 288, 272, 40, "整组只读 n 块连续 KV（带宽直降 4x~11.6x）", tone="done", font_size=12)
+    c.node("gd_mem", 16, 288, 272, 40, "整组只读 n 块连续 KV（带宽降至 1/4 ~ 1/11.6）", tone="done", font_size=12)
     c.connect("ge_g1", "gd_sum", "gd_idx", tone="fg", exit_xy=(1, 0.5), entry_xy=(0, 0.5))
     c.connect("ge_g2", "gd_idx", "gd_mem", tone="fg", exit_xy=(0.5, 1), entry_xy=(0.5, 0))
 
-    # 右侧 SRAM/UB Group-Centric 内核循环
-    c.group("g_sram", 352, 0, 336, 344, "On-Chip SRAM / UB 硬件对齐内核（Group-Centric）", tone="active", dashed=False)
+    # 右侧 SRAM/UB Group-Centric Kernel 循环
+    c.group("g_sram", 352, 0, 336, 344, "On-Chip SRAM / UB 硬件对齐 Kernel（Group-Centric）", tone="active", dashed=False)
     c.node(
         "s_grid",
         368,
@@ -262,7 +264,7 @@ def build_02_nsa_gqa_tile_arch() -> None:
         184,
         304,
         72,
-        "3. TensorCore / 达芬奇 Cube 满阵计算\n[M=16, d_k] @ [d_k, N=64] + Online Softmax\n（16 个头分摊 1 份 KV 访存，跨过算数强度拐点）",
+        "3. TensorCore / 达芬奇 Cube 满阵计算\n[M=16, d_k] @ [d_k, N=64] + Online Softmax\n（16 个头分摊 1 份 KV 访存，跨过算术强度拐点）",
         tone="active",
         emphasis=True,
         font_size=12,
@@ -387,7 +389,7 @@ def build_03_dsa_gpu_vs_npu_runtime() -> None:
         ry + 208,
         rw,
         104,
-        "npu_sparse_flash_attention / sparse_flash_mla\n物理页块 size=128，sparse_block_size=1 逐词精选\n直接按 topk_indices 搬运对应潜向量完成 MQA",
+        "npu_sparse_flash_attention / sparse_flash_mla\n物理页块 size=128，sparse_block_size=1 逐 token 稀疏读取\n直接按 topk_indices 搬运对应潜向量完成 MQA",
         tone="highlight",
         emphasis=True,
         font_size=12,
@@ -434,7 +436,7 @@ def build_04_csa_hca_arch() -> None:
         288,
         200,
         80,
-        "FP32 定长 StateCache（环形缓冲）\n暂存未闭合尾部词元\n+ SWA (n_win=128)",
+        "FP32 定长 StateCache（环形缓冲）\n暂存未闭合尾部 token\n+ SWA (n_win=128)",
         tone="highlight",
         font_size=12,
     )
@@ -457,7 +459,7 @@ def build_04_csa_hca_arch() -> None:
         136,
         208,
         88,
-        "RMSNorm + Shared KV MQA + Sink\nC^Comp 兼任 Key/Value 携带绝对位置\n分母注入可学习 exp(z'_h) 泄洪项",
+        "RMSNorm + Shared KV MQA + Sink\nC^Comp 兼任 Key/Value 携带绝对位置\n分母注入可学习 exp(z'_h) Sink 偏置项",
         tone="active",
         font_size=12,
     )
@@ -484,7 +486,7 @@ def build_04_csa_hca_arch() -> None:
     )
 
     # 右：V4 混合层堆叠与收益
-    c.group("g_stack", 504, 0, 184, 384, "V4 混合堆叠与实测收益", tone="done", dashed=True)
+    c.group("g_stack", 504, 0, 184, 384, "V4 混合堆叠与基准收益", tone="done", dashed=True)
     c.node(
         "st_flash",
         520,
@@ -578,7 +580,7 @@ def build_05_ced_prefix_arch() -> None:
         40,
         304,
         72,
-        "SSD 持久化前缀池（TTL >= 72 小时）\n只存全局 KV（890 B/tok），体积仅为 V4 的 1/8\n完全剔除短寿命 SWA KV，命中即直复全部长前缀",
+        "SSD 持久化前缀池（TTL >= 72 小时）\n只存全局 KV（890 B/tok），体积仅为 V4 的 1/8\n剔除短寿命 SWA KV，命中后直接恢复长前缀全局 KV",
         tone="done",
         emphasis=True,
         font_size=12,
@@ -599,7 +601,7 @@ def build_05_ced_prefix_arch() -> None:
         248,
         304,
         112,
-        "全局命中但 SWA 过期时的兜底策略\nEncoder SWA Bounded Replay：\n仅回放命中点前最后 n_win=128 个 token 恢复 SWA\n（不再全网重跑 L×n_win=5120 步）\n随后仅对新增短后缀生成全局 KV + SWA KV",
+        "全局命中但 SWA 过期时的兜底策略\nEncoder SWA Bounded Replay：\n仅回放命中点前最后 n_win=128 个 token 恢复 SWA\n（无需全网重跑 L×n_win=5120 步）\n随后仅对新增短后缀生成全局 KV + SWA KV",
         tone="highlight",
         emphasis=True,
         font_size=12,

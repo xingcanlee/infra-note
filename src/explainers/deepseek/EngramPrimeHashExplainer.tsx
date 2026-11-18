@@ -104,7 +104,7 @@ export function buildEngramPrimeHashSteps(): Step<EngramPrimeHashState>[] {
         embedShape: '16 × [d_head]',
       },
       caption:
-        '将混洗哈希值分别对 $K=8$ 个互不重复的大素数 $P_j$ 取模并叠加 offsets，每个头映射到宿主内存大表的独立素数桶区间，直接完成 $O(1)$ 并行读取。',
+        '将混洗哈希值分别对 $K=8$ 个互不重复的大素数 $P_j$ 取模并叠加 offsets，每个头映射到主机内存大表的独立素数桶区间，直接完成 $O(1)$ 并行读取。',
     },
     {
       state: {
@@ -114,7 +114,7 @@ export function buildEngramPrimeHashSteps(): Step<EngramPrimeHashState>[] {
         showArcs: true,
         activeHeads: [0, 1, 2, 3, 4, 5, 6, 7],
         showConcat: true,
-        vocabAfterNorm: 'FP8 / MXFP4 存储',
+        vocabAfterNorm: 'FP8 / MXFP8 存储',
         ngramOrder: '2-gram + 3-gram',
         hashOps: '单次 PCIe/HCCS 预取',
         embedShape: 'e_t [B, T, 1280]',
@@ -262,7 +262,7 @@ export default function EngramPrimeHashExplainer({
               gap={12}
               metrics={[
                 { label: '后缀阶数', value: s.ngramOrder, tone: 'neutral' },
-                { label: 'V4.1 表精度', value: 'FP8 / MXFP4 (group=32)', tone: 'neutral' },
+                { label: 'V4.1 表精度', value: 'MXFP8 (FP8 E4M3 + E8M0)', tone: 'neutral' },
                 { label: '层间独立性', value: 'Seed = 10007 × layer_id', tone: 'active' },
               ]}
             />

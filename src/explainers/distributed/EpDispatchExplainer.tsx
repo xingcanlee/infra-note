@@ -180,7 +180,7 @@ export function buildEpDispatchSteps(): Step<EpDispatchState>[] {
             id: 'ep1',
             label: 'Rank 1 · E1',
             sub: '热点收 4 tok',
-            topTag: '50%!',
+            topTag: '50%',
             tone: 'highlight',
             status: 'active',
           },
@@ -300,7 +300,7 @@ export function buildEpDispatchSteps(): Step<EpDispatchState>[] {
         stragglerStatus: 'E1 成为拥堵热点',
       },
       caption:
-        'Step 2（Top-2 路由与 Splits 握手）：Router 输出偏斜分布，4 条 Token 的 Top-2 路由均撞向 E1，各卡接收计数为 $[2, 4, 2, 0]$；框架必须先交互 Token 计数再为异步 All-to-All 预留缓冲。',
+        'Step 2（Top-2 路由与 Splits 握手）：Router 输出偏斜分布，4 个 token 的 Top-2 路由均集中到 E1，各卡接收计数为 $[2, 4, 2, 0]$；框架必须先交换 token 计数再为异步 All-to-All 预留缓冲。',
     },
     {
       state: {
@@ -518,7 +518,7 @@ export function buildEpDispatchSteps(): Step<EpDispatchState>[] {
             id: 'ep1',
             label: 'E1 FFN',
             sub: '4 tok 关键路径',
-            topTag: '2.0x t!',
+            topTag: '2.0x t',
             tone: 'highlight',
             status: 'active',
           },
@@ -552,7 +552,7 @@ export function buildEpDispatchSteps(): Step<EpDispatchState>[] {
         stragglerStatus: '木桶长尾: Rank1 拖慢',
       },
       caption:
-        'Step 4（本地 Grouped GEMM）：各卡仅读本地显存中的专家权重执行前馈计算；由于 E1 负载达 4 tokens（均值的 2 倍），全组必须等待 Rank 1 完成，Rank 3 完全空转形成算力浪费。',
+        'Step 4（本地 Grouped GEMM）：各卡仅读本地显存中的专家权重执行前馈计算；由于 E1 负载达 4 个 token（均值的 2 倍），全组必须等待 Rank 1 完成，Rank 3 完全空转形成算力浪费。',
     },
     {
       state: {
@@ -713,12 +713,12 @@ export function buildEpDispatchSteps(): Step<EpDispatchState>[] {
         ],
         arcBadge: { text: 'All-to-All Combine', tone: 'done' },
         dpShape: '[1, D] 还原完成',
-        epShapeSkew: '回传规约完毕',
+        epShapeSkew: '回传归约完毕',
         commVolume: '2 次 All-to-All / 层',
         stragglerStatus: '重返 DP 并行下一层',
       },
       caption:
-        'Step 5（All-to-All Combine 与加权规约）：各专家将计算结果逆向路由回原点 DP 卡，并按原始无偏门控权重 $w_1 y_1 + w_2 y_2$ 求和，把激活重塑回 $[1, D]$ 进入下一层 Attention。',
+        'Step 5（All-to-All Combine 与加权归约）：各专家将计算结果逆向路由回原点 DP 卡，并按原始门控权重 $w_1 y_1 + w_2 y_2$ 求和，把激活重塑回 $[1, D]$ 进入下一层 Attention。',
     },
   ];
 }

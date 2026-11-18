@@ -31,13 +31,13 @@
         <mxCell id="after_g" value="split_graph 切分后：纯张量融合与旁路隔离" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#f4f4f2;strokeColor=#5c6067;strokeWidth=1.25;dashed=1;verticalAlign=top;align=left;spacingLeft=12;spacingTop=6;fontFamily=Inter;fontSize=12;fontStyle=1;fontColor=#5c6067;container=0;" vertex="1" parent="1">
           <mxGeometry x="0" y="160" width="688" height="200" as="geometry"/>
         </mxCell>
-        <mxCell id="s0" value="submod_0 (静态编译)&lt;br&gt;RMSNorm + QKV&lt;br&gt;融合为单 Kernel" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f2fb;strokeColor=#2f5783;strokeWidth=2;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+        <mxCell id="s0" value="submod_0 (静态编译)&lt;br&gt;RMSNorm 融合算子 + QKV GEMM&lt;br&gt;同子图编译与捕获" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f2fb;strokeColor=#2f5783;strokeWidth=2;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
           <mxGeometry x="16" y="200" width="184" height="72" as="geometry"/>
         </mxCell>
         <mxCell id="s1" value="submod_1 (Eager 隔离)&lt;br&gt;不进 Inductor / npugraph_ex&lt;br&gt;直调 PagedAttention 算子" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#fbf2df;strokeColor=#7b5518;strokeWidth=2;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
           <mxGeometry x="232" y="200" width="208" height="72" as="geometry"/>
         </mxCell>
-        <mxCell id="s2" value="submod_2 (静态编译)&lt;br&gt;SiLU * Mul&lt;br&gt;融合为单 Kernel" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f2fb;strokeColor=#2f5783;strokeWidth=2;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+        <mxCell id="s2" value="submod_2 (静态编译)&lt;br&gt;Gate/Up GEMM + SiLU * Mul&lt;br&gt;同子图融合与捕获" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f2fb;strokeColor=#2f5783;strokeWidth=2;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
           <mxGeometry x="472" y="200" width="200" height="72" as="geometry"/>
         </mxCell>
         <mxCell id="s0_tag" value="CUDAGraph / ACLGraph (PW)" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#f4f4f2;strokeColor=#5c6067;strokeWidth=1;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">

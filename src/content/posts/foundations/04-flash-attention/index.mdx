@@ -1,5 +1,5 @@
 ---
-title: '04 FlashAttention 与硬件对齐内核：从在线 Softmax 到 FA-4、FlashMLA 与昇腾融合注意力'
+title: '04 FlashAttention 与硬件对齐 Kernel：从在线 Softmax 到 FA-4、FlashMLA 与昇腾融合注意力'
 description: '拆解注意力机制如何用在线 Softmax 绕开 O(N^2) HBM 读写墙：从两块 4 数的增量重缩放出发，一路走到 FA-2/FA-3/FA-4 硬件演进、Split-KV 归并，以及 DeepSeek FlashMLA 与昇腾融合注意力的硬件对齐实现。'
 series: { id: foundations, order: 5 }
 pubDate: 2026-11-15
@@ -11,35 +11,34 @@ toc: true
 import OnlineSoftmaxExplainer from '../../../../explainers/foundations/OnlineSoftmaxExplainer';
 import FlashMlaSeesawExplainer from '../../../../explainers/foundations/FlashMlaSeesawExplainer';
 
-标准注意力最耗时的地方，往往不是矩阵乘法本身，而是把中间矩阵一次次写回显存再读出来。以序列长度 $N = 32{,}768$、$128$ 个查询头、BF16 精度（`2` 字节）为例，仅仅把注意力打分矩阵 $S = QK^\top / \sqrt{d}$ 完整落盘到显存 HBM，就需要 $128 \times 32{,}768^2 \times 2\text{ B} = 256\text{ GiB}$（约 `275 GB`），随后算完概率矩阵 $P = \operatorname{softmax}(S)$ 再读写一轮，吞吐瞬间被显存带宽墙锁死[^fa1-paper]。
+在长序列场景下，标准注意力把中间矩阵反复写回 HBM 再重新读出，这一片外访存开销直接主导了算子耗时。以序列长度 $N = 32{,}768$、128 个查询头、BF16 精度（每元素 2 字节）为例，将注意力打分矩阵 $S = QK^\top / \sqrt{d}$ 完整写回显存 HBM 就需要 $128 \times 32{,}768^2 \times 2\text{ B} = 256\text{ GiB}$，随后算完概率矩阵 $P = \operatorname{softmax}(S)$ 再写读一遍，吞吐就被显存带宽墙直接限制住[^fa1-paper]。
 
-更棘手的是以 DeepSeek MLA 为代表的潜在注意力解码场景（多头潜在注意力，详见[系列三 DeepSeek 01：MLA](../../deepseek/01-mla/)）：解码阶段通过权重吸收把所有查询头并到一起面对唯一 **`1` 个压缩后的 KV 潜在头（`h_kv = 1`）**，且 V3/V3.2 上向量宽度是不凑整的 `576 = 512 + 64`，每次只生成 `1` 个新 token。内核必须同时打赢「$O(N^2)$ HBM 读写墙」和「单头窄批饥饿」两仗。
+到了自回归解码阶段，瓶颈又反转到并行度一侧。由于每次只为 1 个新 token 计算查询向量（$s_q = 1$），如果 Kernel 沿查询序列切分任务块，绝大多数计算单元（SM 或 AI Core）会因为查询行数太少而长时间闲置；此时必须改为沿长历史上下文切分键值块（Split-KV），再将各块的局部统计量无损归并。
 
-读完这一篇，你可以带走四件事：
+## 在线 Softmax 与片上分块累加
 
-1. **为什么不用存 $S$ 矩阵也能算准 Softmax**：用一个 $B_r=2, B_c=2, N=4$ 的分块例手算两轮，看清片上单一累加器如何靠 $\alpha = \exp(m_{\text{old}} - m_{\text{new}})$ 就地重缩放。
-2. **从 FA-2 到 FA-4 的主线不是新公式，而是追逐硬件偏科**：A100 的矩阵/非矩阵算力差 `16` 倍、H100 出现异步 TMA/WGMMA、B200 矩阵算力翻倍而 MUFU 与 SMEM 带宽原地踏步——每代内核都在给当下最挤的那根管子减负[^fa2-paper][^fa3-paper][^fa4-paper]。
-3. **Decode 如何把饥饿的向量乘变回满载矩阵乘**：MLA 权重吸收合并多头使有效高度跃升至 $M = 128$，Split-KV 切分长上下文喂饱全部 SM，再借 `9` 路 TMA 与双 Warpgroup 跷跷板吃下 `576` 维宽行[^flashmla-v3]。
-4. **上游主干与昇腾 NPU 的演进切面**：为什么 `FlashMLA@395cb3af` 主干撤下 Hopper `576` 维稠密内核转向 SM100 稀疏 `512` 维[^flashmla-repo]，而昇腾 `1C2V` 选择把累加器搬进 Vector `UB` 并关闭 Split-KV[^ascend-code][^flashmla-ascend]。
+按教科书定义计算注意力，必须先算出完整分数矩阵 $S$ 扫第一遍找最大值与分母，再扫第二遍乘以 $V$。由于 $S$ 太大装不进算力核心旁只有几百 KB 的片上 SRAM 或 UB，朴素实现只能先把 $S$ 与 $P$ 写回慢速 HBM 再读入。
 
-## 先看一个例子：片上单一累加器如何绕开 S 矩阵落地
+要消除这轮片外往返，关键在于**片上只保留唯一一份在线累加状态 $(m, \ell, \tilde{O})$，每当新分块刷出更大的行最大值 $m_{\text{new}}$ 时，利用标量指数拆分恒等式就地缩放旧账**：
 
-按教科书定义计算注意力，需要先算出完整分数矩阵 $S$ 扫第一遍找最大值与分母，再扫第二遍乘 $V$。一旦 $S$ 太大装不进算力核心旁只有几百 KB 的片上 SRAM / UB，就不得不写回慢速 HBM 再读入，白跑两趟长途货运。
+$$
+e^{x - m_{\text{new}}} = e^{x - m_{\text{old}}} \cdot e^{m_{\text{old}} - m_{\text{new}}}
+$$
 
-解决思路可以浓缩成一句话：**片上只维护唯一一份在位累加状态 $(m, l, \tilde{O})$，新块出现更大最大值时就地给旧账乘一次缩放系数，全块扫完后才除一次分母**。我们用 $B_r = 2, B_c = 2, N = 4$ 的最小块演示整个片上就地覆盖过程（见图 1 交互步骤），其中第 0 行取分数 $s_0 = [1.0, 3.0 \mid 5.0, 2.0]$，第 1 行取 $s_1 = [4.0, 2.0 \mid 1.0, 2.0]$：
+利用这条恒等式，计算过程中直接复用片上当前累加状态，无需回溯历史分数 $x$：无论前面累加了多少个元素，只需把已累加的指数和与输出向量整体乘以同一个标量因子 $\alpha = \exp(m_{\text{old}} - m_{\text{new}})$，就能等价换算到新基准 $m_{\text{new}}$ 下，全部块扫完后再除一次最终分母。
+
+为了手算核对全过程，考虑分块尺寸 $B_r = 2, B_c = 2$、序列长度 $N = 4$ 的最小示例，取前两行得分 $S = \begin{bmatrix} 1 & 3 & 5 & 2 \\ 4 & 2 & 1 & 2 \end{bmatrix}$ 与值矩阵 $V = \begin{bmatrix} 1 & 0 \\ 0 & 2 \\ 2 & 1 \\ 0 & 4 \end{bmatrix}$。图 1 步进演示了这组 2×2 分块如何在片上复用同一块输出缓冲完成就地重缩放。
 
 <OnlineSoftmaxExplainer
   client:visible
   title="图 1：Online Softmax 片上单一累加器就地重缩放流程（Br=2, Bc=2）"
 />
 
-跟着图 1 的 5 个步骤拆开核对第 0 行的数字（第 1 行同步并行推进）：
+顺着图 1 核对第 0 行的数值演化（第 1 行同步推进）。在第一个分块上，局部得分 $S^{(1)} = [[1,3],[4,2]]$、值分块 $V_{0:2} = [[1,0],[0,2]]$ 载入片上缓冲后，第 0 行求得当前最大值 $m_0^{(1)} = 3.0$，局部未归一化权重 $\tilde{P}_0^{(1)} = [\exp(-2), \exp(0)] \approx [0.135335, 1.0]$，分母累加为 $\ell_0^{(1)} = 1.135335$，乘以 $V_{0:2}$ 写入唯一的累加器得 $\tilde{o}_0^{(1)} = [0.135335, 2.000000]$（第 1 行对应得到 $[1.000000, 0.270671]$）。
 
-- **载入 Tile 1 并写入唯一 $\tilde{O}$**：第 1 块 $K_{0:2}, V_{0:2}$ 进 SRAM，算出局部得分 $S^{(1)} = [[1,3],[4,2]]$。第 0 行最大值 $m_1 = 3.0$、指数和 $\ell_1 = \exp(-2) + \exp(0) = 1.135335$，直接乘 $V_{0:2}$ 写入唯一累加器得 $\tilde{o}_0^{(1)} = [0.135335, 2.000000]$（第 1 行为 $[1.000000, 0.270671]$）。
-- **Tile 2 原地覆盖并触发行级重缩放**：旧的 $S^{(1)}$ 直接丢弃，同一块 SRAM 槽位覆写为 $S^{(2)} = [[5,2],[1,2]]$。第 0 行最大值从 `3.0` 跳升到 `5.0`，只需把旧账统一乘缩放因子 $\alpha_0 = \exp(3 - 5) = 0.135335$；第 1 行最大值仍为 `4.0`，因此 $\alpha_1 = \exp(4 - 4) = 1.0$ 无需缩水。
-- **就地加总并一次性收尾**：把旧累加器按 $\alpha$ 就地缩水并加上新块贡献 $\tilde{P}^{(2)} V_{2:4}$，得到 $\tilde{O}^{(2)} = [[2.018316, 1.469819], [1.099574, 0.861799]]$，分母更新为 $\ell^{(2)} = [1.203438, 1.320458]$。直到全部分块结束，才在片上做唯一一次除法 $O = \tilde{O}^{(2)} / \ell^{(2)}$ 并单次写回 HBM。
+接着载入第二个分块 $S^{(2)} = [[5,2],[1,2]]$ 与 $V_{2:4} = [[2,1],[0,4]]$，直接原地覆盖片上分块槽位。第 0 行最大值从 3.0 跳到 5.0，依据指数拆分恒等式算出缩放因子 $\alpha_0 = \exp(3 - 5) \approx 0.135335$；而第 1 行旧最大值 4.0 依然不小于新块最大值 2.0，因此 $\alpha_1 = \exp(4 - 4) = 1.0$ 无需缩放。把旧累加器乘以 $\alpha$ 并加上新块贡献 $\tilde{P}^{(2)} V_{2:4}$ 后，片上更新为 $\tilde{O}^{(2)} = [[2.018316, 1.469819], [1.099574, 0.861799]]$，分母更新为 $\ell^{(2)} = [1.203438, 1.320458]$。直到全部分块扫完，才在片上做唯一一次除法 $O = \tilde{O}^{(2)} / \ell^{(2)} = [[1.677125, 1.221350], [0.832722, 0.652652]]$ 并写回 HBM，与全量 Softmax 结果对比的双精度最大绝对误差仅为 $2.22 \times 10^{-16}$。
 
-与全量一次性 $\operatorname{softmax}(S_4) \cdot V_4$ 对照，双精度下最大绝对误差仅为 **`2.22e-16`**！将这套无除法内循环写回一般公式（行块 $B_r$、列块 $B_c$）：
+将这套无除法内循环写回一般分块形式：
 
 $$
 \begin{aligned}
@@ -49,51 +48,44 @@ m^{(j)} &= \max\bigl(m^{(j-1)},\; \operatorname{rowmax}(S^{(j)})\bigr), \qquad \
 \end{aligned}
 $$
 
-图 2 从硬件存储视角把这条数据流落回 HBM 与片上 SRAM/UB 之间：只要外循环固定 $Q_i$、内循环流式滑过 $K_j, V_j$，规模为 $O(N^2)$ 的打分矩阵 $S$ 与概率矩阵 $P$ 从诞生到销毁从未离开过片上缓冲，从而把 HBM 读写复杂度从 $\Theta(Nd + N^2)$ 压降到 $\Theta(N^2 d^2 M^{-1})$（$M$ 为片上 SRAM 容量）[^fa1-paper]。
+图 2 从硬件存储层级还原了这条数据通路：外循环固定一块 $Q_i$ 留在片上，内循环流式读入 $K_j, V_j$ 并在片上销毁中间分数，因此规模为 $O(N^2)$ 的 $S$ 与 $P$ 从诞生到销毁从未写回片外显存，HBM 总读写复杂度也从 $\Theta(Nd + N^2)$ 压降到 $\Theta(N^2 d^2 M^{-1})$（$M$ 为片上缓冲容量）[^fa1-paper]。
 
 ![HBM 与 SRAM/UB 片上分块协同架构，避免 N x N 分数矩阵写回 HBM](./diagrams/04-sram-tiling-arch.drawio '图 2：FlashAttention HBM 与片上 SRAM/UB 分块计算及单一在位累加器架构')
 
-## 从 FA-2 到 FA-4：追逐不对称的硬件算力演化
+## 从 FA-2 到 FA-4 的硬件对齐演进
 
-在线 Softmax 解决了 HBM 带宽墙之后，工程师很快撞上了第二堵墙：**GPU 内部不同计算单元的算力膨胀速度严重失衡**。
+在线 Softmax 绕开显存带宽墙之后，前向 Kernel 能否跑满芯片标称算力，取决于硬件内部不同计算单元之间日益扩大的算力落差。从 FlashAttention-2 到 FlashAttention-4 的每一步演进，本质上都是围绕当下最拥挤的那条片内通道重新排布流水线。
 
-### FA-2（Ampere）：砍掉内循环除法，改写外循环并行度
+### FA-2：循环重排与延迟归一化
 
-在 A100 GPU 上，Tensor Core 矩阵乘峰值高达 `312 TFLOPs/s`，但标量/超越函数执行非矩阵 FP32 运算仅有 `19.5 TFLOPs/s`，相差整整 **`16` 倍**[^fa2-paper]。FA-2 做出三项关键改写，在 A100 上把前向推到 `230 TFLOPs/s`（约 `73%` 利用率）：
+在 Ampere A100 上，Tensor Core 矩阵乘峰值达到 312 TFLOPS，但执行 `exp`、乘法缩放与归约的非矩阵 FP32 算力只有 19.5 TFLOPS，两者相差 16 倍[^fa2-paper]。FlashAttention-2 针对性改写了循环结构与线程分工：先是在内循环里跳过逐块除以 $\ell^{(j)}$ 的操作、只对未归一化累加器 $\tilde{O}$ 乘以标量 $\alpha$，把唯一一次除法推迟到全部键值块结束；接着把外循环改为切分 $Q$、内循环流式扫过 $K, V$，使单个 `CTA（CUDA Thread Block）` 始终将 $\tilde{O}_i$ 留在寄存器中直至最后写回 HBM 一次；同时改为按 $Q$ 行切片把工作分配给 `CTA` 内的不同 Warp（Split-Q），消除了早期版本每步在共享内存 `SMEM` 中做跨 Warp 归约的同步开销，在 A100 上把前向推升至 230 TFLOPS（约 73% 利用率）[^fa2-paper]。
 
-1. **延迟归一化（保留 $\tilde{O}$）**：内循环只乘标量因子 $\alpha$，省掉中间 $\operatorname{diag}(\ell)^{-1}$ 除法，反向传播仅缓存合并对数和指数 $L = m + \log(\ell)$。
-2. **外循环切 $Q$、内循环扫 $K, V$**：一个 CTA 死攥一块 $\tilde{O}_i$ 不放手，仅在循环结束时写回 HBM 一次。
-3. **Warp 间采用 Split-Q**：CTA 内 4 个 warp 各自负责不同的 $Q$ 行切片，彻底消除每步 SMEM 跨 warp 归约。
+### FA-3：异步引擎与乒乓交错
 
-### FA-3（Hopper）：TMA 与 WGMMA 异步化 + Ping-Pong 双片交错
+到了 Hopper H100，异步拷贝引擎 TMA 与异步矩阵指令 WGMMA 允许搬运和矩阵乘脱离线程同步等待；但如果让同一个线程组串行做完矩阵乘再去算 `exp`，Tensor Core 利用率会回落到约 35%[^fa3-paper]。FlashAttention-3 将线程块内的 Warpgroup 拆分为专职数据搬运的 Producer 与两组交替执行 GEMM 和 Softmax 的 Consumer（乒乓交错调度），并引入 FP8 分块量化与 Hadamard 旋转抑制离群误差，在 H100 FP16 前向达到 740 TFLOPS（75% 利用率）[^fa3-paper]。不过在 Hopper 上，输出累加器仍然占着每 SM 仅 65,536 个 32-bit 寄存器中的大头，限制了更大分块的双缓冲余量。
 
-到了 Hopper H100，异步引擎 **TMA** 与 **WGMMA** 登场，让同一组线程干等 `exp` 会把 Tensor Core 利用率拽回 `35%`[^fa3-paper]。FA-3 把 Warpgroup 拆成搬运 `Producer` 与两个交替执行 GEMM 和 Softmax 的 `Consumer`（WG-A / WG-B），配合 FP8 块量化与 Hadamard 旋转在 H100 跑到 `740 TFLOPs/s`（FP16 75% 利用率）[^fa3-paper]。但此时累加器仍驻留稀缺的片上寄存器（每 SM 总计 `65,536` 个 32-bit 寄存器）。
+### FA-4：专用张量内存与多项式分流
 
-### FA-4（Blackwell）：当指数单元 MUFU 与共享内存原地踏步
+到 Blackwell B200 时，硬件偏科进一步拉大：BF16 矩阵算力翻倍到每 SM 每周期 8192 次运算，但特殊函数单元 `MUFU` 的指数吞吐依然停在每周期 16 次运算，`SMEM` 读带宽也维持在每周期 128 字节[^fa4-paper]。面对较大的矩阵分块，`MUFU` 计算指数的周期数甚至超过矩阵乘本身，直接拖慢 Tensor Core。为此，FlashAttention-4 利用 B200 新增的 256 KB 专用张量内存（Tensor Memory，TMEM）接管 $128 \times 128$ UMMA 累加器，释放大量寄存器并将 Warpgroup 细分为双 Softmax、独立 Correction 与 MMA/TMA 四路协同；针对 `MUFU` 瓶颈，按 $2^x = 2^{\lfloor x\rfloor}\cdot 2^{x-\lfloor x\rfloor}$ 将小数部分用 3 次 Horner 多项式交由空闲 FMA 管线分担 10%–25% 的 `exp2` 计算（近似误差远低于 BF16 7-bit 尾数舍入底噪）；同时引入条件跳过重缩放，仅当块间最大值增幅超过阈值 $\tau = \log_2(256) = 8.0$（对应 256 倍缩放）时才触发 `TMEM` 中的 $\tilde{O}$ 重缩放，最终借助 CuTe-DSL 在 B200 前向达到 1613 TFLOPS（约 71% 理论峰值）[^fa4-paper]。
 
-到 Blackwell B200，BF16 矩阵算力翻倍到 **`8192 ops/clk/SM`**，但 MUFU 指数单元仍停在 `16 ops/clk/SM`、SMEM 读带宽也依然停在 `128 B/clk/SM`[^fa4-paper]。面对 `M=256, N=d=128` 分块，MUFU 算指数竟要 `2048` 周期，正面卡死矩阵引擎。FA-4 为此重构四层协同（见图 3 第 3 步）：
+## Decode 分片归并、宽向量流水与昇腾 1C2V 协同
 
-1. **256 KB TMEM 解放寄存器**：专用 **Tensor Memory（TMEM）** 接管 `128x128` UMMA 累加器，将 Warpgroup 拆成 `2 个 Softmax + 1 个独立 Correction + 1 个 MMA/TMA`。
-2. **FMA 3 次多项式分流 `exp2`**：把 $2^x = 2^{\lfloor x\rfloor}\cdot 2^{x-\lfloor x\rfloor}$ 的小数部分用 Horner 法交由空闲 FMA 算 `10%–25%` 元素（相对误差远低于 BF16 `7-bit` 尾数本底噪声）。
-3. **条件跳过重缩放**：若新块最大值增幅未超阈值（$\log_2$ 空间 $\tau = 8.0$，对应 $\le 256\times$），直接跳过对 TMEM 内 $\tilde{O}$ 的乘法缩放。
-4. **2-CTA DSMEM 反向与 CuTe-DSL**：相邻两个 CTA 配对减半 `dQ` 读写，前向 B200 达到 **`1613 TFLOPs/s`**（`71%` 峰值）[^fa4-paper]。
+回到自回归解码阶段，单条请求在当前步只有 $s_q = 1$ 个新查询 token。如果依然只按查询长度切分线程块，在中小并发下大量 SM 会闲置；Split-KV（又称 Flash-Decoding）的做法是把每条请求长长的历史 KV 序列切分成多个切片，分配给全卡所有计算单元并行扫描，每个切片用在线 Softmax 算出局部累加输出 $\tilde{O}_s$ 与对数和指数统计量 $\text{LSE}_s = m_s + \ln \ell_s$ 写入临时缓冲，随后由一个轻量的归并 Kernel（如 `FlashMLA` 的 `combine.cu`）按全局权重 $\exp(\text{LSE}_s - \text{LSE}_{\text{global}})$ 无损合并[^flashmla-repo]，并常利用 CUDA 的程序依赖启动（PDL）将末尾归并与主扫描重叠。动态 Split-KV 会随切片数改变浮点加法结合顺序，导致输出出现末位微小差异；因此要求逐位可复现的线上环境会在 `vLLM` 与 `FlashMLA` 中打开 `enable_batch_invariant`（`batch_invariant` 确定性模式），将计算锁回单分片路径[^vllm-code][^flashmla-repo]。
 
-## Split-KV、FlashMLA 与昇腾 1C2V 硬件对齐演进
+当面对带有宽潜向量的注意力解码架构时（例如《DeepSeek 架构演进》第 01 篇详述的 MLA 架构），约束变得更加具体：权重吸收把 128 个查询头折叠后共同面对唯一的 1 个压缩 KV 潜在头（$h_{kv} = 1$），且向量宽度为 576 维（512 维内容加 64 维位置编码）。此时单请求查询矩阵高度跃升至 $M = h_q s_q = 128$，恰好跨过 H800 SXM5（降频实用峰值约 865 TFLOPS、带宽 3.35 TB/s）在 $h_q s_q \ge 128$ 处的算力拐点，把原本访存受限的解码推进算力受限区[^flashmla-v3]。但单份 $64 \times 512$ 的 FP32 输出累加器就要占用 32,768 个寄存器，H800 每 SM 的 65,536 个寄存器装不下两份完整累加器。为此，FlashMLA 把输出矩阵竖劈成左右两半 $O_L$ 与 $O_R$（各 $64 \times 256$），交给两个 Warpgroup 如跷跷板般交替占用 Tensor Core 与 CUDA Core，并用 9 路 $64 \times 64$ 的 `EVICT_FIRST` TMA 异步传输切分 576 维宽行，技术报告在 H800 上取得 660 TFLOPS 与 3 TB/s 带宽[^flashmla-v3]（而在最新的 `FlashMLA@395cb3af` 主干中，Hopper 576 维稠密 Kernel 已归档，活跃分支转向了 SM100 的 512 维稀疏解码 Kernel[^flashmla-repo]）。
 
-将镜头转回自回归解码（`s_q = 1`）：在 DeepSeek MLA 中，所有查询头共享仅有的 **`1` 个 KV 潜在头（$h_{kv} = 1$）**。为了把单个 SM 从访存受限救活到满载矩阵乘，DeepSeek FlashMLA 采用「权重吸收并头 + Split-KV + 核内跷跷板」组合拳[^flashmla-v3]：
-
-- **并头拉高 $M$ 与 Split-KV 喂饱全部 SM**：查询侧先吸收 $W_{UK}^\top$ 使 `128` 个查询头共同面对 `576` 维潜向量，H800 SXM5（实用峰值 ~`865 TFLOPS`、带宽 `3.35 TB/s`）拐点落在 $h_q s_q \ge 128$，单请求瞬间踩进算力受限区[^flashmla-v3]。同时调度器把长历史切为多段分发给全卡 SM 并行扫描，末段由 `combine.cu` 借助 PDL 与全局 LogSumExp 权重无损归并[^flashmla-repo]。
-- **H800 双 Warpgroup 跷跷板（见图 3 第 2 步）**：单份 `64x512` FP32 累加器就要吃掉 `32,768` 个寄存器，H800 根本装不下双缓冲；FlashMLA 把输出劈成左右两半 $O_L, O_R$（各 `64x256`）交由 `WG0` 与 `WG1` 交替占用 Tensor Core 与 Softmax，并用 `9` 路 `64x64` `EVICT_FIRST` TMA 切分 `576` 维宽行，实测冲到 **`660 TFLOPS`** 与 **`3 TB/s`**[^flashmla-v3]。
-- **昇腾 Ascend 950 `1C2V` 三线 Ping-Pong（见图 3 第 4 步）**：在最新 `FlashMLA@395cb3af` 中，CUDA 主干已转向 SM100 `512` 维稀疏内核（FP8 `528 B/token`、FP4 `288 B/token`），而昇腾分支面对的是 `1` 个 Cube（`4096 FMA/clk`, `256 KB L0C`）配 `2` 个 Vector 的 `1C2V` 架构[^flashmla-repo][^flashmla-ascend]。因为 `L0C` 累加器无法做就地标量乘法，昇腾核把 $\tilde{O}$ 搬到 Vector `UB` 中累加，用 `RESCALE_THRES = 6` 的 `skip-scale` 省掉频繁重缩放、用 `gather2` 双突发规避 `16` 槽位 `MTE2` 队列拥堵，并通过延迟一拍的 $S_{i-1} V_{i-1}$ 流水线把稀疏 Prefill 跑到 **`410 TFLOPS`（95% 峰值）**、Decode 跑到 **`360 TFLOPS`（83% 峰值）**。
+图 3 按时间轴对比了串行无重叠基线、H800 双 Warpgroup 跷跷板、Blackwell TMEM 分流与昇腾 950 `1C2V` 的片内执行流水线。
 
 <FlashMlaSeesawExplainer
   client:visible
   title="图 3：H800 跷跷板、Blackwell TMEM 与昇腾 1C2V 流水线时序演进"
 />
 
-## NumPy 核心实现与双硬件源码对照
+在华为昇腾平台上，硬件约束催生了另一套截然不同的在线归并方案[^flashmla-ascend]。以 Ascend 950 的 `1C2V` 核心为例，1 个 Cube 单元（4096 FMA/clk、256 KB `L0C`）配 2 个 Vector 单元：由于 `L0C` 累加缓冲只支持 `FixPipe` 迁出或做矩阵乘累加，无法就地执行任意标量重缩放乘法 $\alpha \cdot \tilde{O}$，昇腾 Kernel 干脆把在线 Softmax 的输出累加器 $\tilde{O}$ 放在 Vector `UB` 中维护。为了避免每扫一个分块都把 `L0C` 数据经 `FixPipe` 搬到 `UB` 做一次缩放，算子引入了 `RESCALE_THRES = 6` 的阈值跳过缩放策略（skip-scale），并用每次突发搬运 2 个 token 的 `gather2` 技巧防止超出单个 Vector 仅 16 槽位的 `MTE2` 发射队列，再把上一块的值乘法 $S_{i-1} V_{i-1}$ 延迟一拍执行以把 Softmax 掩蔽在 Cube 计算空窗期内，从而在稀疏 Prefill 与 Decode 上分别取得 410 TFLOPS（95% 峰值）与 360 TFLOPS（83% 峰值）的算力表现[^flashmla-ascend]。与此同时，在开源稀疏解码入口 `sparse_decode.cpp` 中，昇腾分支显式关闭了多段 Split-KV（`enable_split_kv = false`）[^flashmla-repo]，而 `vllm-ascend` 的常规 GQA 与 MLA 解码则统一依托 `npu_fused_infer_attention_score_v2` 完成硬件融合执行[^ascend-code]。
 
-下面用 20 行独立 NumPy 代码完整复现图 1 的 `B_r=2, B_c=2` 两块在线 Softmax 在位更新，并与标准全量 Softmax 核对精度：
+## NumPy 验证与双硬件源码对照
+
+下面这段自包含的 NumPy 脚本复现图 1 中的 $B_r=2, B_c=2$ 两块在线 Softmax 在位更新，并与标准全量 Softmax 核对精度：
 
 ```python
 import numpy as np
@@ -117,13 +109,13 @@ assert o_fa.shape == (2, 2) and np.max(np.abs(o_fa - o_ref)) < 1e-15
 print("FA O:", np.round(o_fa, 6).tolist(), "max_diff:", f"{np.max(np.abs(o_fa - o_ref)):.2e}")
 ```
 
-实测输出与图 1 每一步完全一致：
+脚本运行输出与图 1 每一步计算完全吻合：
 
 ```text
 FA O: [[1.677125, 1.22135], [0.832722, 0.652652]] max_diff: 2.22e-16
 ```
 
-在生产推理源码里，NVIDIA GPU 稀疏调度与 `vllm-ascend` 的融合推理算子边界如下[^flashmla-repo][^vllm-code][^ascend-code]：
+在生产源码里，NVIDIA 与昇腾分支各自划定了清晰的硬件形状与并行契约[^flashmla-repo][^vllm-code][^ascend-code]：
 
 ```cpp
 // FlashMLA/csrc/api/sparse_decode.cpp:220-232 (FlashMLA@395cb3af)
@@ -137,44 +129,30 @@ FA O: [[1.677125, 1.22135], [0.832722, 0.652652]] max_diff: 2.22e-16
     STD_TORCH_CHECK(d_v == 512, "Only head_size_v == 512 is supported for sparse decoding");
 ```
 
-而在 `vllm-ascend/vllm_ascend/attention/mla_v1.py:2820-2865` 中，`AscendMLAImpl._forward_decode` 根据 `enable_kv_nz` 自动在 `BSND_NBSD`（`PA_NZ` 分形，对齐 Cube `16` 维）与 `BNSD_NBSD` 之间切换 `input_layout`，并打包传入 `torch_npu.npu_fused_infer_attention_score_v2` 配合 `ACL Graph` 完成硬件零拆分执行[^ascend-code]。
+| 维度         | `vLLM` GPU（`bb23c0a8`）   | `FlashMLA@395cb3af`（SM100） | `vllm-ascend`（`3649b8ff`） |
+| :----------- | :------------------------- | :--------------------------- | :-------------------------- |
+| KV 块与头宽  | 块大小 64，对齐 16B 与多头 | 块大小 64，单头 512 维稀疏   | 块大小 128，支持分形与紧致  |
+| 片上流水核心 | TMA 异步 + 跷跷板 / TMEM   | UMMA 配 256 KB 专用 TMEM     | Cube 乘与 Vector UB 归并    |
+| 分片与确定性 | 动态 Split-KV + 确定性回退 | 按请求工作量开关 Split-KV    | 关 Split-KV，原生确定性模式 |
 
-| 维度                  | `vLLM` GPU（Hopper `576` 维 / FA-4）                                                           | `FlashMLA@395cb3af`（SM100 稀疏主干）                                    | `vllm-ascend`（`AscendAttentionBackend` / `AscendMLABackend`）                                   |
-| --------------------- | ---------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------ |
-| **KV 块与头维度**     | `block_size = 64`，标准 GQA 或 `h_kv = 1`、`d_qk = 576`、`d_v = 512`                           | `block_size = 64`，`h_kv = 1`，`d_qk = 512`（`448 + 64`）、`d_v = 512`   | `block_size = 128`，支持 `TND`、`PA` 与 5D `PA_NZ`（`nz_fmt_last_dim=16`）；950 单核接 `64` Q 头 |
-| **计算与流水线核心**  | TMA 16B 对齐（`_FA4_DENSE_ATTENTION_KERNEL`）/ `9` 路 TMA + 双 Warpgroup 跷跷板（`O_L`/`O_R`） | `tcgen05` / UMMA + `256 KB` TMEM、硬件加速更深层流水                     | Cube（`L0C`）算 GEMM + Vector `UB` 承接 $\tilde{O}$ 与 `skip-scale`（`RESCALE_THRES=6`）         |
-| **Split-KV 与确定性** | `cg_buf_num_splits` 动态分片 + PDL `combine.cu`；开 `VLLM_BATCH_INVARIANT` 退回单分片          | `!enable_batch_invariant && !(topk + extra_topk <= 640)` 时启用 Split-KV | `sparse_decode.cpp` 设 `enable_split_kv = false`；`supports_batch_invariance` 为真               |
+贴近硬件边界优化的 Kernel 都带着严格的形状契约——无论是页块大小还是头维度限制，只要上层张量错位就会退回通用慢路径[^vllm-code]；而动态 Split-KV 对浮点归约顺序的改写，也要求注重逐位一致性的服务显式切回 `batch_invariant` 确定性单分片模式。
 
-## 代价与边界
+算子融合已经把当前 16-bit 精度下的显存搬运与片内计算压到了接近物理天花板；要想把每个权重和 KV 元素占用的字节数再压低一半甚至四倍，下一章 [05 模型与 KV 量化：从 INT8、FP8 细粒度缩放到 MXFP4 与昇腾量化差异](../05-quantization/) 将展开低比特表示与量化硬件适配。
 
-- **极窄的形状契约（错一位都触发回退）**：无论是 Hopper 核的 `block_size = 64`、`d_qk = 576`，还是 `FlashMLA@395cb3af` 硬断言的 `h_kv == 1 && d_qk == 512 && d_v == 512`、`vllm-ascend` 的 `block_size = 128`，只要形状或对齐条件（如 `VLLM_BATCH_INVARIANT` 下 `topk % 64 == 0`[^vllm-code]）不满足，上层就只能切换通用回退路径，吞吐立刻掉档。
-- **动态分片换速度，代价是浮点非结合性**：Split-KV 改变分片数量时，由于浮点加法不满足结合律，FP32/BF16 下会产生轻微归约序漂移；线上若要求严格逐位可复现，必须在 `vLLM` / `FlashMLA` 里开启 `enable_batch_invariant` 强制固定单分片[^vllm-code][^flashmla-repo]。
-- **片上缓存形态决定软件架构上限**：在 Hopper 上是寄存器不足逼出跷跷板调度；在 B200 上是 SMEM 带宽和 `16 ops/clk` MUFU 逼出 TMEM 解耦与多项式逼近；在 Ascend 950 上则是 Cube `L0C` 不支持就地标量乘法，逼出「UB 接管累加 + skip-scale」。
+[^fa1-paper]: Tri Dao 等，“FlashAttention: Fast and Memory-Efficient Exact Attention with IO-Awareness”，NeurIPS 2022。[arXiv:2205.14135](https://arxiv.org/abs/2205.14135)，§3.2 Theorem 2。
 
-算子内核已经把当前精度下的算力与带宽压到物理极限，要想继续压缩**每份权重与 KV Cache 占用的字节体积**、把 Roofline 上限再推宽一倍甚至四倍，请继续阅读收官章节 [05 · 模型与 KV 量化：W8A8、FP8 与 MXFP4 如何守住精度并突破带宽墙](../05-quantization/)。
+[^fa2-paper]: Tri Dao，“FlashAttention-2: Faster Attention with Better Parallelism and Work Partitioning”，2023。[arXiv:2307.08691](https://arxiv.org/abs/2307.08691)，§2–3。
 
-## 自测
+[^fa3-paper]: Jay Shah 等，“FlashAttention-3: Fast and Accurate Attention with Asynchrony and Low-precision”，2024。[arXiv:2407.08608](https://arxiv.org/abs/2407.08608)，§2–3。
 
-1. 在图 1 的两块实例里，如果把 Tile 1 和 Tile 2 的顺序反过来先算 `[5.0, 2.0]` 再算 `[1.0, 3.0]`，中间的 $\alpha$ 会怎么变？最终输出的 `o` 还会一致吗？为什么？
-2. A100 上为什么说「砍掉内循环里的一次 `diag(l)` 缩放」比砍掉几条矩阵乘指令更值钱？FA-2 把外循环从 `K/V` 换成 `Q`、把 warp 分工从 Split-K 换成 Split-Q，分别消除了哪两种硬件等待或冗余写回？
-3. 对比 Hopper H100 与 Blackwell B200：为什么 FA-3 引以为傲的寄存器累加器 + Ping-Pong 调度到了 B200 会遇到新瓶颈？FA-4 用了哪两招去给 MUFU 指数单元与寄存器减压？
-4. 为什么 DeepSeek MLA 解码把查询头全投影吸收 $W_{UK}^\top$ 之后，算术强度就能越过 H800 SXM5 的 Roofline 拐点（$h_q s_q \approx 128$）？Hopper 版 FlashMLA 为什么要把 `576` 维切分成 `9` 路 `64x64` TMA 并引入双 Warpgroup 跷跷板？
-5. 在 `FlashMLA@395cb3af` 主干的 `sparse_decode.cpp` 里，什么条件下会关闭 CUDA 的 Split-KV？为什么在昇腾 950 构建分支下要直接写死 `enable_split_kv = false`？
+[^fa4-paper]: Ted Zadouri 等，“FlashAttention-4: Algorithm and Kernel Pipelining Co-Design for Asymmetric Hardware Scaling”，2026。[arXiv:2603.05451](https://arxiv.org/abs/2603.05451)，§2.2、§3.1.3–3.1.4 及 §5.1。
 
-[^fa1-paper]: Tri Dao et al., _FlashAttention: Fast and Memory-Efficient Exact Attention with IO-Awareness_, [arXiv:2205.14135](https://arxiv.org/abs/2205.14135)（NeurIPS 2022）。
+[^flashmla-repo]: DeepSeek FlashMLA 项目，[`csrc/api/sparse_decode.cpp`](https://github.com/deepseek-ai/FlashMLA/blob/395cb3afbb331fef7b1b21e9340861b9436b42d8/csrc/api/sparse_decode.cpp#L220-L232) 与 [`combine.cu`](https://github.com/deepseek-ai/FlashMLA/blob/395cb3afbb331fef7b1b21e9340861b9436b42d8/csrc/cuda_kernels/smxx/decode/combine/combine.cu#L88)，commit `395cb3af`（MIT）。
 
-[^fa2-paper]: Tri Dao, _FlashAttention-2: Faster Attention with Better Parallelism and Work Partitioning_, [arXiv:2307.08691](https://arxiv.org/abs/2307.08691)（2023-07）。
+[^vllm-code]: vLLM 项目，[`vllm/v1/attention/backends/flash_attn.py`](https://github.com/vllm-project/vllm/blob/bb23c0a81779ba733923a7dab9b840b4e533f6a5/vllm/v1/attention/backends/flash_attn.py#L1378-L1404) 与 [`vllm/v1/attention/backends/mla/flashmla.py`](https://github.com/vllm-project/vllm/blob/bb23c0a81779ba733923a7dab9b840b4e533f6a5/vllm/v1/attention/backends/mla/flashmla.py#L46-L351)，commit `bb23c0a8`（Apache-2.0）。
 
-[^fa3-paper]: Jay Shah et al., _FlashAttention-3: Fast and Accurate Attention with Asynchrony and Low-precision_, [arXiv:2407.08608](https://arxiv.org/abs/2407.08608)（2024-07）。
+[^flashmla-v3]: DeepSeek FlashMLA 文档，[`docs/20250422-new-kernel-deep-dive.md`](https://github.com/deepseek-ai/FlashMLA/blob/395cb3afbb331fef7b1b21e9340861b9436b42d8/docs/20250422-new-kernel-deep-dive.md#L1-L77)，commit `395cb3af`（MIT）。详述 $h_q s_q \ge 128$ 拐点、双 Warpgroup `O_L`/`O_R` 跷跷板及 9 路 TMA 调度。
 
-[^fa4-paper]: Ted Zadouri et al., _FlashAttention-4: Algorithm and Kernel Pipelining Co-Design for Asymmetric Hardware Scaling_, [arXiv:2603.05451](https://arxiv.org/abs/2603.05451)（2026-03）。
+[^flashmla-ascend]: DeepSeek FlashMLA 文档，[`docs/20260930-ascend-prefill-deep-dive-zh.md`](https://github.com/deepseek-ai/FlashMLA/blob/395cb3afbb331fef7b1b21e9340861b9436b42d8/docs/20260930-ascend-prefill-deep-dive-zh.md)，commit `395cb3af`（MIT）。拆解 Ascend 950 `1C2V` 结构、Vector `UB` 累加、`RESCALE_THRES = 6` `skip-scale` 与 `gather2` 搬运。
 
-[^flashmla-v3]: DeepSeek 官方技术博客 `FlashMLA/docs/20250422-new-kernel-deep-dive.md`（commit `395cb3af` 保留归档）：推导 $M = h_q s_q \ge 128$ 拐点、双 Warpgroup `O_L`/`O_R` 跷跷板、`9` 路 `64x64` TMA 与 `660 TFLOPS` / `3 TB/s` 实测。
-
-[^flashmla-repo]: `deepseek-ai/FlashMLA`（commit `395cb3af`）：`README.md`、`csrc/api/sparse_decode.cpp:220-232` 与 `csrc/cuda_kernels/smxx/decode/combine/combine.cu:88`。
-
-[^flashmla-ascend]: `FlashMLA/docs/20260930-ascend-prefill-deep-dive-zh.md`：详解昇腾 Ascend 950 `1C2V` 架构、Vector `UB` 累加、`RESCALE_THRES = 6` `skip-scale` 与 `gather2` 双突发搬运。
-
-[^vllm-code]: `vLLM`（commit `bb23c0a8`）：`vllm/v1/attention/backends/flash_attn.py`、`vllm/v1/attention/backends/mla/flashmla.py` 与 `vllm/model_executor/layers/attention/mla_attention.py`。
-
-[^ascend-code]: `vllm-ascend`（commit `3649b8ff`）：`vllm_ascend/attention/attention_v1.py`、`vllm_ascend/attention/mla_v1.py:1412-1850, 2760-2865` 与 `vllm_ascend/attention/sfa_v1.py`。
+[^ascend-code]: vLLM Ascend 项目，[`vllm_ascend/attention/attention_v1.py`](https://github.com/vllm-project/vllm-ascend/blob/3649b8ff7fd69e707db2c634073d2b4c40eadf15/vllm_ascend/attention/attention_v1.py#L75-L153) 与 [`mla_v1.py`](https://github.com/vllm-project/vllm-ascend/blob/3649b8ff7fd69e707db2c634073d2b4c40eadf15/vllm_ascend/attention/mla_v1.py#L2819-L2870)，commit `3649b8ff`（Apache-2.0）。
