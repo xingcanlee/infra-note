@@ -1,7 +1,9 @@
-import { formatNumber } from 'astro-wisp/explainers';
+import { formatNumber, hasInlineMath, plainInlineMath } from 'astro-wisp/explainers';
 import { motion } from 'motion/react';
+import SvgRichLabel from './SvgRichLabel';
 import {
   RADIUS_SM,
+  fontKindFor,
   fontVarFor,
   resolveToneFill,
   resolveToneStroke,
@@ -65,22 +67,34 @@ export default function ProbabilityBars({
 
   return (
     <g>
-      {title && (
-        <text
-          x={x}
-          y={y + 8}
-          textAnchor="start"
-          dominantBaseline="central"
-          style={{
-            fill: 'var(--wisp-fg)',
-            fontFamily: 'var(--wisp-font-sans)',
-            fontSize: 12.5,
-            fontWeight: 600,
-          }}
-        >
-          {title}
-        </text>
-      )}
+      {title &&
+        (hasInlineMath(title) ? (
+          <SvgRichLabel
+            x={x}
+            y={y + 8}
+            width={Math.max(120, w - (legend ? legend.length * 84 : 0))}
+            height={22}
+            text={title}
+            fontSize={12.5}
+            fontWeight={600}
+            anchor="start"
+          />
+        ) : (
+          <text
+            x={x}
+            y={y + 8}
+            textAnchor="start"
+            dominantBaseline="central"
+            style={{
+              fill: 'var(--wisp-fg)',
+              fontFamily: 'var(--wisp-font-sans)',
+              fontSize: 12.5,
+              fontWeight: 600,
+            }}
+          >
+            {title}
+          </text>
+        ))}
 
       {legend && (
         <g>
@@ -98,19 +112,32 @@ export default function ProbabilityBars({
                   stroke={resolveToneStroke(lg.tone)}
                   strokeWidth={1.25}
                 />
-                <text
-                  x={lx + 14}
-                  y={y + 8}
-                  textAnchor="start"
-                  dominantBaseline="central"
-                  style={{
-                    fill: 'var(--wisp-muted)',
-                    fontFamily: 'var(--wisp-font-sans)',
-                    fontSize: 11,
-                  }}
-                >
-                  {lg.label}
-                </text>
+                {hasInlineMath(lg.label) ? (
+                  <SvgRichLabel
+                    x={lx + 14}
+                    y={y + 8}
+                    width={68}
+                    height={18}
+                    text={lg.label}
+                    fontSize={11}
+                    color="var(--wisp-muted)"
+                    anchor="start"
+                  />
+                ) : (
+                  <text
+                    x={lx + 14}
+                    y={y + 8}
+                    textAnchor="start"
+                    dominantBaseline="central"
+                    style={{
+                      fill: 'var(--wisp-muted)',
+                      fontFamily: 'var(--wisp-font-sans)',
+                      fontSize: 11,
+                    }}
+                  >
+                    {lg.label}
+                  </text>
+                )}
               </g>
             );
           })}
@@ -142,19 +169,36 @@ export default function ProbabilityBars({
                   strokeWidth={1}
                   strokeDasharray="4 3"
                 />
-                <text
-                  x={x + w}
-                  y={ry - 7}
-                  textAnchor="end"
-                  dominantBaseline="central"
-                  style={{
-                    fill: rs,
-                    fontFamily: fontVarFor(refLine.label, 'mono'),
-                    fontSize: 10.5,
-                  }}
-                >
-                  {refLine.label}
-                </text>
+                {hasInlineMath(refLine.label) ? (
+                  <SvgRichLabel
+                    x={x + w}
+                    y={ry - 7}
+                    width={Math.min(
+                      w,
+                      Math.max(80, plainInlineMath(refLine.label).length * 9 + 18),
+                    )}
+                    height={18}
+                    text={refLine.label}
+                    fontSize={10.5}
+                    color={rs}
+                    anchor="end"
+                    family="mono"
+                  />
+                ) : (
+                  <text
+                    x={x + w}
+                    y={ry - 7}
+                    textAnchor="end"
+                    dominantBaseline="central"
+                    style={{
+                      fill: rs,
+                      fontFamily: fontVarFor(refLine.label, 'mono'),
+                      fontSize: 10.5,
+                    }}
+                  >
+                    {refLine.label}
+                  </text>
+                )}
               </>
             );
           })()}
@@ -227,36 +271,63 @@ export default function ProbabilityBars({
               );
             })}
 
-            <text
-              x={cx}
-              y={baseLineY + 11}
-              textAnchor="middle"
-              dominantBaseline="central"
-              style={{
-                fill: item.masked ? 'var(--wisp-muted)' : 'var(--wisp-fg)',
-                fontFamily: fontVarFor(item.label, 'mono'),
-                fontSize: 11,
-                fontWeight: 600,
-                fontVariantNumeric: 'tabular-nums',
-              }}
-            >
-              {item.label}
-            </text>
-            {item.sublabel && (
+            {hasInlineMath(item.label) ? (
+              <SvgRichLabel
+                x={cx}
+                y={baseLineY + 11}
+                width={Math.max(36, slotW - 4)}
+                height={20}
+                text={item.label}
+                fontSize={11}
+                fontWeight={600}
+                color={item.masked ? 'var(--wisp-muted)' : 'var(--wisp-fg)'}
+                family={fontKindFor(plainInlineMath(item.label), 'mono')}
+              />
+            ) : (
               <text
                 x={cx}
-                y={baseLineY + 23}
+                y={baseLineY + 11}
                 textAnchor="middle"
                 dominantBaseline="central"
                 style={{
-                  fill: 'var(--wisp-muted)',
-                  fontFamily: fontVarFor(item.sublabel, 'mono'),
-                  fontSize: 10,
+                  fill: item.masked ? 'var(--wisp-muted)' : 'var(--wisp-fg)',
+                  fontFamily: fontVarFor(item.label, 'mono'),
+                  fontSize: 11,
+                  fontWeight: 600,
+                  fontVariantNumeric: 'tabular-nums',
                 }}
               >
-                {item.sublabel}
+                {item.label}
               </text>
             )}
+            {item.sublabel &&
+              (hasInlineMath(item.sublabel) ? (
+                <SvgRichLabel
+                  x={cx}
+                  y={baseLineY + 23}
+                  width={Math.max(36, slotW - 4)}
+                  height={18}
+                  text={item.sublabel}
+                  fontSize={10}
+                  fontWeight={500}
+                  color="var(--wisp-muted)"
+                  family={fontKindFor(plainInlineMath(item.sublabel), 'mono')}
+                />
+              ) : (
+                <text
+                  x={cx}
+                  y={baseLineY + 23}
+                  textAnchor="middle"
+                  dominantBaseline="central"
+                  style={{
+                    fill: 'var(--wisp-muted)',
+                    fontFamily: fontVarFor(item.sublabel, 'mono'),
+                    fontSize: 10,
+                  }}
+                >
+                  {item.sublabel}
+                </text>
+              ))}
           </g>
         );
       })}

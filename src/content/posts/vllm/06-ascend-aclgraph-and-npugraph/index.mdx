@@ -7,8 +7,6 @@ series: { id: vllm, order: 7 }
 tags: [vLLM, Ascend, ACLGraph, torch.compile, PagedAttention]
 ---
 
-import AscendAclGraphExplainer from '../../../../explainers/vllm/AscendAclGraphExplainer';
-
 把统一的 `BatchExecutionDescriptor` 与 `FULL`、`PIECEWISE` 双模式调度迁到华为昇腾（Ascend）NPU 时，CANN 硬件执行栈带来了两条在 CUDA 上不会遇到的约束。一方面，NPU 底层物理 `Stream / Notify` 槽位与任务提交/完成队列（`SQ/CQ`）存在明确的硬件实体配额，无法像 NVIDIA GPU 那样为几十个细碎批大小密集捕获静态图；另一方面，昇腾融合注意力算子在捕获期会把 Host 侧计算的 Tiling 切分参数固化进硬件 Task 描述符，仅靠设备张量原地拷贝无法在重放时动态改变上下文长度。
 
 为了在守住这两道约束的前提下维持静态图收益，`vllm-ascend` 演化出了结合稀疏硬件分桶、跨流热更新图实例 `UpdatableGraph` 以及 `AscendCompiler` 编译下沉的协同体系。
@@ -27,12 +25,9 @@ import AscendAclGraphExplainer from '../../../../explainers/vllm/AscendAclGraphE
 
 遇到跨卡通信算子或异步旁路查表时，捕获与重放上下文还需要额外对齐。在捕获阶段，`ModelAclGraphManager.capture` 会通过 `communicator_switch` 临时将通信器切换为 `NPUCommunicator`，使 HCCL 集合通信算子正确录进静态图流[^ascend-v2-utils]；而在重放整图之前，若模型挂载了类似 Engram 的异步预取状态，运行器会先依据 DP 同步后的填充总长度触发 `prepare_engram()`，再由模型内部在首个消费层以 `ExternalEvent` 衔接查表结果[^ascend-aclgraph-utils]。
 
-以一组实际运行批大小 `[17, 33, 45, 58]` 和稀疏硬件桶 `[32, 48, 64]` 为例：批大小 17 映射到桶 32，33 与 45 共同复用同一张桶 48 静态图，58 映射到桶 64。复用同一张桶 48 的不同请求不仅输入 token 数不同，在自回归解码推进过程中，各自的历史 KV 长度（`seq_kv`）还会从 16 逐轮增长到 33、45。下面的交互视图以 `[32, 48, 64]` 稀疏分桶与桶 48 的变长 KV 重放为例，演示参数热更新与事件同步的完整过程，可通过步进按钮逐帧观察。
+以一组实际运行批大小 `[17, 33, 45, 58]` 和稀疏硬件桶 `[32, 48, 64]` 为例：批大小 17 映射到桶 32，33 与 45 共同复用同一张桶 48 静态图，58 映射到桶 64。复用同一张桶 48 的不同请求不仅输入 token 数不同，在自回归解码推进过程中，各自的历史 KV 长度（`seq_kv`）还会从 16 逐轮增长到 33、45。图 1 以 `[32, 48, 64]` 稀疏分桶与桶 48 的变长 KV 重放为例，概括了参数热更新与事件同步的完整过程。
 
-<AscendAclGraphExplainer
-  client:visible
-  title="图 1：昇腾 ACLGraph 稀疏分桶、UpdatableGraph 热更新与跨流同步推演"
-/>
+![昇腾 ACLGraph 稀疏分桶 [32, 48, 64]、UpdatableGraph 跨 update_stream 原地热更新 FIA/PA Task Tiling 与 ExternalEvent 同步链路](./diagrams/06-aclgraph-hot-update-timeline.drawio '图 1：昇腾 ACLGraph 稀疏分桶、UpdatableGraph 热更新与跨流同步机制')
 
 ## UpdatableGraph 热更新与跨流同步时序
 

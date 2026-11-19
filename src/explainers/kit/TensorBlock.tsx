@@ -1,5 +1,6 @@
-import { TexLabel } from 'astro-wisp/explainers';
+import { TexLabel, hasInlineMath, plainInlineMath } from 'astro-wisp/explainers';
 import { motion } from 'motion/react';
+import SvgRichLabel from './SvgRichLabel';
 import {
   RADIUS,
   RADIUS_SM,
@@ -316,7 +317,18 @@ export default function TensorBlock({
               tone={tone === 'neutral' ? undefined : tone}
             />
           ) : (
-            name && (
+            name &&
+            (hasInlineMath(name) ? (
+              <SvgRichLabel
+                x={x + w / 2}
+                y={y - 11 - (stack - 1) * 4}
+                width={Math.max(w + 24, 96)}
+                height={22}
+                text={name}
+                fontSize={12.5}
+                fontWeight={600}
+              />
+            ) : (
               <text
                 x={x + w / 2}
                 y={y - 10 - (stack - 1) * 4}
@@ -331,88 +343,137 @@ export default function TensorBlock({
               >
                 {name}
               </text>
-            )
+            ))
           )}
-          {shape && (
-            <text
-              x={x + w / 2}
-              y={y + h + 11}
-              textAnchor="middle"
-              dominantBaseline="central"
-              style={{
-                fill: 'var(--wisp-muted)',
-                fontFamily: fontVarFor(shape, 'mono'),
-                fontSize: 11,
-                fontVariantNumeric: 'tabular-nums',
-              }}
-            >
-              {shape}
-            </text>
-          )}
-          {detail && (
-            <text
-              x={x + w / 2}
-              y={y + h + (shape ? 24 : 11)}
-              textAnchor="middle"
-              dominantBaseline="central"
-              style={{
-                fill: 'var(--wisp-muted)',
-                fontFamily: fontVarFor(detail, 'mono'),
-                fontSize: 10.5,
-                fontVariantNumeric: 'tabular-nums',
-              }}
-            >
-              {detail}
-            </text>
-          )}
+          {shape &&
+            (hasInlineMath(shape) ? (
+              <SvgRichLabel
+                x={x + w / 2}
+                y={y + h + 11}
+                width={Math.max(w + 24, 96)}
+                height={20}
+                text={shape}
+                fontSize={11}
+                color="var(--wisp-muted)"
+                family={fontKindFor(plainInlineMath(shape), 'mono')}
+              />
+            ) : (
+              <text
+                x={x + w / 2}
+                y={y + h + 11}
+                textAnchor="middle"
+                dominantBaseline="central"
+                style={{
+                  fill: 'var(--wisp-muted)',
+                  fontFamily: fontVarFor(shape, 'mono'),
+                  fontSize: 11,
+                  fontVariantNumeric: 'tabular-nums',
+                }}
+              >
+                {shape}
+              </text>
+            ))}
+          {detail &&
+            (hasInlineMath(detail) ? (
+              <SvgRichLabel
+                x={x + w / 2}
+                y={y + h + (shape ? 24 : 11)}
+                width={Math.max(w + 24, 96)}
+                height={20}
+                text={detail}
+                fontSize={10.5}
+                color="var(--wisp-muted)"
+                family={fontKindFor(plainInlineMath(detail), 'mono')}
+              />
+            ) : (
+              <text
+                x={x + w / 2}
+                y={y + h + (shape ? 24 : 11)}
+                textAnchor="middle"
+                dominantBaseline="central"
+                style={{
+                  fill: 'var(--wisp-muted)',
+                  fontFamily: fontVarFor(detail, 'mono'),
+                  fontSize: 10.5,
+                  fontVariantNumeric: 'tabular-nums',
+                }}
+              >
+                {detail}
+              </text>
+            ))}
         </>
       ) : (
         <>
           {name &&
-            (() => {
-              const nf = fitTextMetrics(name, Math.max(20, w - 8), 12.5, 10, 'sans');
-              return (
-                <text
-                  x={x + w / 2}
-                  y={y + h / 2 - (shape ? 8 : 0)}
-                  textAnchor="middle"
-                  dominantBaseline="central"
-                  textLength={nf.textLength}
-                  lengthAdjust={nf.textLength ? 'spacingAndGlyphs' : undefined}
-                  style={{
-                    fill: 'var(--wisp-fg)',
-                    fontFamily: 'var(--wisp-font-sans)',
-                    fontSize: nf.fontSize,
-                    fontWeight: 600,
-                  }}
-                >
-                  {name}
-                </text>
-              );
-            })()}
+            (hasInlineMath(name) ? (
+              <SvgRichLabel
+                x={x + w / 2}
+                y={y + h / 2 - (shape ? 8 : 0)}
+                width={Math.max(24, w - 6)}
+                height={20}
+                text={name}
+                fontSize={12.5}
+                fontWeight={600}
+              />
+            ) : (
+              (() => {
+                const nf = fitTextMetrics(name, Math.max(20, w - 8), 12.5, 10, 'sans');
+                return (
+                  <text
+                    x={x + w / 2}
+                    y={y + h / 2 - (shape ? 8 : 0)}
+                    textAnchor="middle"
+                    dominantBaseline="central"
+                    textLength={nf.textLength}
+                    lengthAdjust={nf.textLength ? 'spacingAndGlyphs' : undefined}
+                    style={{
+                      fill: 'var(--wisp-fg)',
+                      fontFamily: 'var(--wisp-font-sans)',
+                      fontSize: nf.fontSize,
+                      fontWeight: 600,
+                    }}
+                  >
+                    {name}
+                  </text>
+                );
+              })()
+            ))}
           {shape &&
-            (() => {
-              const shapeKind = fontKindFor(shape, 'mono');
-              const sf = fitTextMetrics(shape, Math.max(20, w - 8), 11, 10, shapeKind);
-              return (
-                <text
-                  x={x + w / 2}
-                  y={y + h / 2 + (name ? 9 : 0)}
-                  textAnchor="middle"
-                  dominantBaseline="central"
-                  textLength={sf.textLength}
-                  lengthAdjust={sf.textLength ? 'spacingAndGlyphs' : undefined}
-                  style={{
-                    fill: 'var(--wisp-muted)',
-                    fontFamily: fontVarFor(shape, 'mono'),
-                    fontSize: sf.fontSize,
-                    fontVariantNumeric: 'tabular-nums',
-                  }}
-                >
-                  {shape}
-                </text>
-              );
-            })()}
+            (hasInlineMath(shape) ? (
+              <SvgRichLabel
+                x={x + w / 2}
+                y={y + h / 2 + (name ? 9 : 0)}
+                width={Math.max(24, w - 6)}
+                height={18}
+                text={shape}
+                fontSize={11}
+                color="var(--wisp-muted)"
+                family={fontKindFor(plainInlineMath(shape), 'mono')}
+              />
+            ) : (
+              (() => {
+                const shapeKind = fontKindFor(shape, 'mono');
+                const sf = fitTextMetrics(shape, Math.max(20, w - 8), 11, 10, shapeKind);
+                return (
+                  <text
+                    x={x + w / 2}
+                    y={y + h / 2 + (name ? 9 : 0)}
+                    textAnchor="middle"
+                    dominantBaseline="central"
+                    textLength={sf.textLength}
+                    lengthAdjust={sf.textLength ? 'spacingAndGlyphs' : undefined}
+                    style={{
+                      fill: 'var(--wisp-muted)',
+                      fontFamily: fontVarFor(shape, 'mono'),
+                      fontSize: sf.fontSize,
+                      fontVariantNumeric: 'tabular-nums',
+                    }}
+                  >
+                    {shape}
+                  </text>
+                );
+              })()
+            ))}
         </>
       )}
     </motion.g>

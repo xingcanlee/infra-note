@@ -1,4 +1,6 @@
+import { hasInlineMath, plainInlineMath } from 'astro-wisp/explainers';
 import { motion } from 'motion/react';
+import SvgRichLabel from './SvgRichLabel';
 import {
   RADIUS_SM,
   estimateTextWidth,
@@ -42,7 +44,9 @@ function arrowHeadPoints(from: Point2D, to: Point2D, size = 6.5): string {
 }
 
 function estimateLabelWidth(text: string): number {
-  return Math.max(24, Math.ceil(estimateTextWidth(text, 11.5, 'sans')) + 10);
+  const hasMath = hasInlineMath(text);
+  const plain = plainInlineMath(text);
+  return Math.max(24, Math.ceil(estimateTextWidth(plain, 11.5, 'sans')) + (hasMath ? 18 : 10));
 }
 
 function defaultLabelPoint(points: readonly Point2D[]): Point2D {
@@ -142,20 +146,16 @@ export default function DataFlowArrow({
             rx={RADIUS_SM}
             fill="var(--wisp-bg)"
           />
-          <text
+          <SvgRichLabel
             x={lp[0]}
             y={lp[1]}
-            textAnchor="middle"
-            dominantBaseline="central"
-            style={{
-              fill: active ? stroke : 'var(--wisp-muted)',
-              fontFamily: 'var(--wisp-font-sans)',
-              fontSize: 11.5,
-              fontWeight: active ? 600 : 500,
-            }}
-          >
-            {label}
-          </text>
+            width={lw}
+            height={20}
+            text={label}
+            fontSize={11.5}
+            fontWeight={active ? 600 : 500}
+            color={active ? stroke : 'var(--wisp-muted)'}
+          />
         </g>
       )}
     </motion.g>

@@ -1,22 +1,22 @@
 <mxfile host="wisp-diagram">
   <diagram id="ds-05-ced-prefix" name="05-ced-prefix">
-    <mxGraphModel dx="800" dy="600" grid="1" gridSize="8" guides="1" page="0" math="0" shadow="0">
+    <mxGraphModel dx="800" dy="600" grid="1" gridSize="8" guides="1" page="0" math="1" shadow="0">
       <root>
         <mxCell id="0"/>
         <mxCell id="1" parent="0"/>
         <mxCell id="g_ced" value="Causal Encoder-Decoder（CED）Prefill 算力减半" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f2fb;strokeColor=#2f5783;strokeWidth=1.25;dashed=1;verticalAlign=top;align=left;spacingLeft=12;spacingTop=6;fontFamily=Inter;fontSize=12;fontStyle=1;fontColor=#2f5783;container=0;" vertex="1" parent="1">
           <mxGeometry x="0" y="0" width="328" height="376" as="geometry"/>
         </mxCell>
-        <mxCell id="enc" value="Causal Encoder（L0..L19，激活 ~8B）&lt;br&gt;处理完整长度 N · L2–19 (m=2) 生成 1.5 份全局 KV" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f2fb;strokeColor=#2f5783;strokeWidth=2;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+        <mxCell id="enc" value="Causal Encoder（L0..L19，激活 ~8B）&lt;br&gt;处理完整长度 \(N\) · L2–19 (\(m=2\)) 生成 1.5 份全局 KV" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f2fb;strokeColor=#2f5783;strokeWidth=2;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
           <mxGeometry x="16" y="40" width="296" height="72" as="geometry"/>
         </mxCell>
-        <mxCell id="hl2" value="编码器顶层隐状态 H_{L/2}（一次性投影源）" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#fbf2df;strokeColor=#7b5518;strokeWidth=2;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+        <mxCell id="hl2" value="编码器顶层隐状态 \(H_{L/2}\)（一次性投影源）" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#fbf2df;strokeColor=#7b5518;strokeWidth=2;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
           <mxGeometry x="16" y="136" width="296" height="48" as="geometry"/>
         </mxCell>
-        <mxCell id="proj" value="直接投影 L20..L39 全局 KV：C_l = H_{L/2} W_l^{KV}&lt;br&gt;只需在 L20 写入 1.0 份 m=1 主 KV，免跑上层 MoE" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f5e9;strokeColor=#2c522d;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+        <mxCell id="proj" value="直接投影 L20..L39 全局 KV：\(C_l = H_{L/2} W_l^{KV}\)&lt;br&gt;只需在 L20 写入 1.0 份 \(m=1\) 主 KV，免跑上层 MoE" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f5e9;strokeColor=#2c522d;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
           <mxGeometry x="16" y="208" width="296" height="64" as="geometry"/>
         </mxCell>
-        <mxCell id="dec_swa" value="DecoderReplayLayers（L20..L39，末尾 n_win=128）&lt;br&gt;只对最后 128 个 token 跑局部 SWA&lt;br&gt;Prefill 降至 O(NL/2)" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#fbf2df;strokeColor=#7b5518;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+        <mxCell id="dec_swa" value="DecoderReplayLayers（L20..L39，末尾 \(n_{\text{win}}=128\)）&lt;br&gt;只对最后 128 个 token 跑局部 SWA&lt;br&gt;Prefill 降至 \(O(NL/2)\)" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#fbf2df;strokeColor=#7b5518;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
           <mxGeometry x="16" y="296" width="296" height="64" as="geometry"/>
         </mxCell>
         <mxCell id="ce1" value="" style="endArrow=classic;startArrow=none;html=1;strokeColor=#1d1d1f;strokeWidth=1.25;edgeStyle=orthogonalEdgeStyle;rounded=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="enc" target="hl2">
@@ -37,7 +37,7 @@
         <mxCell id="dram" value="Host DRAM 热缓冲池（10% RAM · 分钟级 TTL）&lt;br&gt;只缓存 Prompt 尾与输出尾两处 SWA 快照&lt;br&gt;活跃多轮直接命中，过期即刻回收给新会话" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f2fb;strokeColor=#2f5783;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
           <mxGeometry x="368" y="144" width="304" height="72" as="geometry"/>
         </mxCell>
-        <mxCell id="miss" value="全局命中但 SWA 过期时的兜底策略&lt;br&gt;Encoder SWA Bounded Replay：&lt;br&gt;仅回放命中点前最后 n_win=128 个 token 恢复 SWA&lt;br&gt;（无需全网重跑 L×n_win=5120 步）&lt;br&gt;随后仅对新增短后缀生成全局 KV + SWA KV" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#fbf2df;strokeColor=#7b5518;strokeWidth=2;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+        <mxCell id="miss" value="全局命中但 SWA 过期时的兜底策略&lt;br&gt;Encoder SWA Bounded Replay：&lt;br&gt;仅回放命中点前最后 \(n_{\text{win}}=128\) 个 token 恢复 SWA&lt;br&gt;（无需全网重跑 \(L\times n_{\text{win}}=5120\) 步）&lt;br&gt;随后仅对新增短后缀生成全局 KV + SWA KV" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#fbf2df;strokeColor=#7b5518;strokeWidth=2;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
           <mxGeometry x="368" y="248" width="304" height="112" as="geometry"/>
         </mxCell>
         <mxCell id="te1" value="全局命中" style="endArrow=classic;startArrow=none;html=1;strokeColor=#1d1d1f;strokeWidth=1.25;edgeStyle=orthogonalEdgeStyle;rounded=1;exitX=0.25;exitY=1;exitDx=0;exitDy=0;entryX=0.25;entryY=0;entryDx=0;entryDy=0;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;labelBackgroundColor=#fcfcfb;" edge="1" parent="1" source="ssd" target="dram">

@@ -1,4 +1,6 @@
+import { hasInlineMath, plainInlineMath } from 'astro-wisp/explainers';
 import { motion } from 'motion/react';
+import SvgRichLabel from './SvgRichLabel';
 import {
   RADIUS_SM,
   estimateTextWidth,
@@ -50,22 +52,34 @@ export function SlotStrip({
 
   return (
     <g>
-      {title && (
-        <text
-          x={x}
-          y={y + 7}
-          textAnchor="start"
-          dominantBaseline="central"
-          style={{
-            fill: 'var(--wisp-fg)',
-            fontFamily: 'var(--wisp-font-sans)',
-            fontSize: 12,
-            fontWeight: 600,
-          }}
-        >
-          {title}
-        </text>
-      )}
+      {title &&
+        (hasInlineMath(title) ? (
+          <SvgRichLabel
+            x={x}
+            y={y + 7}
+            width={Math.max(120, slots.length * (slotW + gap))}
+            height={20}
+            text={title}
+            fontSize={12}
+            fontWeight={600}
+            anchor="start"
+          />
+        ) : (
+          <text
+            x={x}
+            y={y + 7}
+            textAnchor="start"
+            dominantBaseline="central"
+            style={{
+              fill: 'var(--wisp-fg)',
+              fontFamily: 'var(--wisp-font-sans)',
+              fontSize: 12,
+              fontWeight: 600,
+            }}
+          >
+            {title}
+          </text>
+        ))}
 
       {slots.map((s, idx) => {
         const sx = x + idx * (slotW + gap);
@@ -86,9 +100,12 @@ export function SlotStrip({
               ? 1
               : 1.25;
         const innerW = Math.max(12, slotW - 4);
-        const lblKind = fontKindFor(s.label, 'mono');
-        const subKind = s.sub ? fontKindFor(s.sub, 'mono') : 'mono';
-        const tagKind = s.topTag ? fontKindFor(s.topTag, 'mono') : 'mono';
+        const lblHasMath = hasInlineMath(s.label);
+        const subHasMath = hasInlineMath(s.sub);
+        const tagHasMath = hasInlineMath(s.topTag);
+        const lblKind = fontKindFor(plainInlineMath(s.label), 'mono');
+        const subKind = s.sub ? fontKindFor(plainInlineMath(s.sub), 'mono') : 'mono';
+        const tagKind = s.topTag ? fontKindFor(plainInlineMath(s.topTag), 'mono') : 'mono';
         const lblFit = fitTextMetrics(s.label, innerW, fontSize, 10, lblKind);
         const subFit = s.sub ? fitTextMetrics(s.sub, innerW, 10, 10, subKind) : null;
         const tagFit = s.topTag
@@ -97,24 +114,37 @@ export function SlotStrip({
 
         return (
           <g key={s.id}>
-            {s.topTag && tagFit && (
-              <text
-                x={sx + slotW / 2}
-                y={gridY - 8}
-                textAnchor="middle"
-                dominantBaseline="central"
-                textLength={tagFit.textLength}
-                lengthAdjust={tagFit.textLength ? 'spacingAndGlyphs' : undefined}
-                style={{
-                  fill: 'var(--wisp-muted)',
-                  fontFamily: fontVarFor(s.topTag, 'mono'),
-                  fontSize: tagFit.fontSize,
-                  fontVariantNumeric: 'tabular-nums',
-                }}
-              >
-                {s.topTag}
-              </text>
-            )}
+            {s.topTag &&
+              tagFit &&
+              (tagHasMath ? (
+                <SvgRichLabel
+                  x={sx + slotW / 2}
+                  y={gridY - 8}
+                  width={slotW + Math.max(4, gap)}
+                  height={18}
+                  text={s.topTag}
+                  fontSize={10}
+                  color="var(--wisp-muted)"
+                  family={tagKind}
+                />
+              ) : (
+                <text
+                  x={sx + slotW / 2}
+                  y={gridY - 8}
+                  textAnchor="middle"
+                  dominantBaseline="central"
+                  textLength={tagFit.textLength}
+                  lengthAdjust={tagFit.textLength ? 'spacingAndGlyphs' : undefined}
+                  style={{
+                    fill: 'var(--wisp-muted)',
+                    fontFamily: fontVarFor(s.topTag, 'mono'),
+                    fontSize: tagFit.fontSize,
+                    fontVariantNumeric: 'tabular-nums',
+                  }}
+                >
+                  {s.topTag}
+                </text>
+              ))}
             <motion.rect
               initial={false}
               animate={{ opacity: status === 'masked' ? 0.65 : 1 }}
@@ -129,41 +159,68 @@ export function SlotStrip({
               strokeWidth={sw}
               strokeDasharray={status === 'empty' || status === 'masked' ? '3 2' : undefined}
             />
-            <text
-              x={sx + slotW / 2}
-              y={gridY + (s.sub ? slotH * 0.38 : slotH / 2)}
-              textAnchor="middle"
-              dominantBaseline="central"
-              textLength={lblFit.textLength}
-              lengthAdjust={lblFit.textLength ? 'spacingAndGlyphs' : undefined}
-              style={{
-                fill: status === 'empty' ? 'var(--wisp-muted)' : 'var(--wisp-fg)',
-                fontFamily: fontVarFor(s.label, 'mono'),
-                fontSize: lblFit.fontSize,
-                fontWeight: status === 'selected' || status === 'active' ? 600 : 500,
-                fontVariantNumeric: 'tabular-nums',
-              }}
-            >
-              {s.label}
-            </text>
-            {s.sub && subFit && (
+            {lblHasMath ? (
+              <SvgRichLabel
+                x={sx + slotW / 2}
+                y={gridY + (s.sub ? slotH * 0.38 : slotH / 2)}
+                width={innerW}
+                height={18}
+                text={s.label}
+                fontSize={fontSize}
+                fontWeight={status === 'selected' || status === 'active' ? 600 : 500}
+                color={status === 'empty' ? 'var(--wisp-muted)' : 'var(--wisp-fg)'}
+                family={lblKind}
+              />
+            ) : (
               <text
                 x={sx + slotW / 2}
-                y={gridY + slotH * 0.74}
+                y={gridY + (s.sub ? slotH * 0.38 : slotH / 2)}
                 textAnchor="middle"
                 dominantBaseline="central"
-                textLength={subFit.textLength}
-                lengthAdjust={subFit.textLength ? 'spacingAndGlyphs' : undefined}
+                textLength={lblFit.textLength}
+                lengthAdjust={lblFit.textLength ? 'spacingAndGlyphs' : undefined}
                 style={{
-                  fill: 'var(--wisp-fg)',
-                  fontFamily: fontVarFor(s.sub, 'mono'),
-                  fontSize: subFit.fontSize,
+                  fill: status === 'empty' ? 'var(--wisp-muted)' : 'var(--wisp-fg)',
+                  fontFamily: fontVarFor(s.label, 'mono'),
+                  fontSize: lblFit.fontSize,
+                  fontWeight: status === 'selected' || status === 'active' ? 600 : 500,
                   fontVariantNumeric: 'tabular-nums',
                 }}
               >
-                {s.sub}
+                {s.label}
               </text>
             )}
+            {s.sub &&
+              subFit &&
+              (subHasMath ? (
+                <SvgRichLabel
+                  x={sx + slotW / 2}
+                  y={gridY + slotH * 0.74}
+                  width={innerW}
+                  height={16}
+                  text={s.sub}
+                  fontSize={10}
+                  color="var(--wisp-fg)"
+                  family={subKind}
+                />
+              ) : (
+                <text
+                  x={sx + slotW / 2}
+                  y={gridY + slotH * 0.74}
+                  textAnchor="middle"
+                  dominantBaseline="central"
+                  textLength={subFit.textLength}
+                  lengthAdjust={subFit.textLength ? 'spacingAndGlyphs' : undefined}
+                  style={{
+                    fill: 'var(--wisp-fg)',
+                    fontFamily: fontVarFor(s.sub, 'mono'),
+                    fontSize: subFit.fontSize,
+                    fontVariantNumeric: 'tabular-nums',
+                  }}
+                >
+                  {s.sub}
+                </text>
+              ))}
           </g>
         );
       })}
@@ -240,10 +297,12 @@ export function PointerArcs({ arcs }: { arcs: readonly PointerArc[] }) {
             )}
             {a.label &&
               (() => {
-                const labelKind = fontKindFor(a.label, 'mono');
+                const labelHasMath = hasInlineMath(a.label);
+                const plain = plainInlineMath(a.label);
+                const labelKind = fontKindFor(plain, 'mono');
                 const alw = Math.max(
                   36,
-                  Math.ceil(estimateTextWidth(a.label, 10.5, labelKind)) + 10,
+                  Math.ceil(estimateTextWidth(plain, 10.5, labelKind)) + (labelHasMath ? 18 : 10),
                 );
                 return (
                   <g>
@@ -255,20 +314,17 @@ export function PointerArcs({ arcs }: { arcs: readonly PointerArc[] }) {
                       rx={RADIUS_SM}
                       fill="var(--wisp-bg)"
                     />
-                    <text
+                    <SvgRichLabel
                       x={lx}
                       y={ly}
-                      textAnchor="middle"
-                      dominantBaseline="central"
-                      style={{
-                        fill: a.active ? stroke : 'var(--wisp-muted)',
-                        fontFamily: fontVarFor(a.label, 'mono'),
-                        fontSize: 10.5,
-                        fontWeight: a.active ? 600 : 500,
-                      }}
-                    >
-                      {a.label}
-                    </text>
+                      width={alw}
+                      height={16}
+                      text={a.label}
+                      fontSize={10.5}
+                      fontWeight={a.active ? 600 : 500}
+                      color={a.active ? stroke : 'var(--wisp-muted)'}
+                      family={labelKind}
+                    />
                   </g>
                 );
               })()}

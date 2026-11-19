@@ -10,7 +10,6 @@ toc: true
 
 import CausalAttentionExplainer from '../../../../explainers/foundations/CausalAttentionExplainer';
 import RopeRotationExplainer from '../../../../explainers/foundations/RopeRotationExplainer';
-import YarnSpectrumExplainer from '../../../../explainers/foundations/YarnSpectrumExplainer';
 
 上一篇的 RMSNorm 与 SwiGLU 全部在单个 token 内部独立完成：把“猫 坐在 垫 上”四个字打乱成“上 垫 坐在 猫”，第 3 号向量独自穿过前馈网络后产出依然完全不变。只依赖逐位置运算，语言模型就停留在“词袋”阶段，无法在前后词之间交换语义。
 
@@ -110,10 +109,7 @@ $$
 
 在 $s = 40$ 时算得 $\text{mscale} = 1.3689$，因此推理框架也可以选择把 $\text{mscale}^2 \approx 1.8739$ 直接合入注意力的 `softmax_scale` 标量里[^ds_mla_scale]。图 3 展示了 32 对旋转通道在 4K 原生窗、PI 均匀插值与 YaRN 三频段斜坡之间的频谱差异，以及 GPU 与昇腾侧频率表的排布方式。
 
-<YarnSpectrumExplainer
-  client:visible
-  title="图 3：YaRN 分频斜坡外推（low=10, high=23）、mscale 修正与 GPU/昇腾缓存排布"
-/>
+![YaRN 分频斜坡外推对比 4K 原生与 PI 均匀插值，展示高频、斜坡与低频分段，以及 vLLM GPU 与 vllm-ascend 的频率 Cache 排布差异](./diagrams/02-yarn-spectrum.drawio '图 3：YaRN 分频斜坡外推（low=10, high=23）、mscale 修正与 GPU/昇腾缓存排布')
 
 对照图 3 中的 32 对通道可以看到三段各自的分工：索引 $i \le 10$（`i=0..10`）的高频短波段在 4K 训练窗内已转过超过 32 圈，相位规律训练充分，令 $\text{extrap}_i = 1.0$ 完全保留原频率，近邻词序分辨力毫不受损；索引 $i \ge 23$ 的低频长波段在原窗口内连一整圈都未转完，令 $\text{extrap}_i = 0.0$ 缩放到 $\theta_i / s$，把长距离位置表征撑开；中间 $10 < i < 23$ 的过渡区则沿着斜坡函数线性衔接，避免频谱在边界发生突变。若未经长序列继续预训练而直接将外推倍数 $s$ 零样本拉高几十倍，YaRN 在中频密集检索上仍会出现衰减；而只关注局部近邻的滑动窗口注意力层则会直接锁定 `factor = 1.0`，保持原生频率不外推。
 

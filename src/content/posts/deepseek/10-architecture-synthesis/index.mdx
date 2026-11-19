@@ -9,21 +9,15 @@ category: AI Infra
 toc: true
 ---
 
-import V41LayerStepExplainer from '../../../../explainers/deepseek/V41LayerStepExplainer';
-import ClusterDboSynthExplainer from '../../../../explainers/deepseek/ClusterDboSynthExplainer';
-
 前九篇把 Roofline 访存模型、MLA 潜空间吸收、稀疏索引与序列压缩、DeepSeekMoE、Engram 条件记忆、mHC 多分支超连接和 MTP/DSpark 逐一拆解清楚。进入在线推理服务后，这些部件共同运行在同一套静态图捕获与多流调度边界之内，在张量形状、KV 内存账本与跨卡通信时序上紧密耦合。
 
 本篇沿三条主线串联整套设计：首先顺着四分支残差张量 `[T, 4, d]` 走完 DeepSeek-V4.1 单步解码全链路；随后建立从标准 MHA 到 V4.1-Flash 的五代整网 KV 字节账本；最后进入集群级双微批重叠（DBO）与异步 Engram 预取流水线，对照 NVIDIA GPU（`vllm`）与华为昇腾 NPU（`vllm-ascend`）的完整实现[^vllm-synth][^ascend-synth]。
 
 ## V4.1 单步解码全链路与多流张量流转
 
-DeepSeek-V4.1 主干在层间始终维护四条并行流形残差 `[T, 4, d]`，替代了传统 Transformer 的单流残差传递。图 1 用六阶段交互视图展示了单步解码期间张量形状、字节流向与算子边界，点击步进即可逐段追踪层内执行状态。
+DeepSeek-V4.1 主干在层间始终维护四条并行流形残差 `[T, 4, d]`，替代了传统 Transformer 的单流残差传递。图 1 展示了单步解码期间六阶段全景、张量形状、字节流向与算子边界。
 
-<V41LayerStepExplainer
-  client:visible
-  title="图 1：DeepSeek-V4.1 单 token 解码六阶段全景与字节账本追踪"
-/>
+![DeepSeek-V4.1 单 token 解码六阶段全景：Mega-mHC Pre-Mix、CSA2/CED、Async Engram（L1,14）、DeepSeekMoE、mHC Post-Mix 与 DSpark Draft](./diagrams/10-v41-layer-panoramic.drawio '图 1：DeepSeek-V4.1 单 token 解码六阶段全景与算子边界')
 
 顺着 `[T, 4, d]` 的生命周期走完单层解码全链路。进入子层时，首先由 `Mega-mHC` 边界把上一子层的残差写回（`post_mix` 与 `res_mix`）和本子层错位时移的输入聚合权重 $A_{l-1}$ 及 `RMSNorm` 合并成单遍读写（访存 $10d$），将四条流聚合成单流 BF16 激活 `[T, d]` 送入注意力分支（SM100 走 `mhc_shifted_post_pre_deep_gemm`、昇腾走 `npu_hc_pre_v3`），同时靠 20 轮 FP32 Sinkhorn 保证深层连乘下的信号增益受控[^vllm-synth][^ascend-synth]。
 
@@ -68,10 +62,7 @@ DeepSeek 五代架构演化始终围绕同一个系统目标推进：在保持�
 
 即使单卡 Kernel 已经高度融合，多卡 EP 推理仍面临跨节点 `All-to-All` 通信裸露的问题：如果整批算完注意力再集体停下来等 `Dispatch` 与 `Combine` 返回，计算单元会在网络等待期间大量空转。`vLLM` 的 `UBatchContext` 将一个全局批拆成交替推进的乒乓微批 μB0 与 μB1，用计算流与通信流的硬件事件屏障把网络传输藏进矩阵计算窗口[^vllm-synth]。图 3 按毫秒等比刻度展示了这一调度切换过程。
 
-<ClusterDboSynthExplainer
-  client:visible
-  title="图 3：集群级 Dual-Microbatch (DBO) 与异步 Engram 预取毫秒等比时间线"
-/>
+![集群级 Dual-Microbatch (DBO) 与 Host DDR Engram 异步预取协同时间线：从串行 15.2 ms 降至稳态 9.4 ms（1.62 倍加速）](./diagrams/10-cluster-dbo-engram.drawio '图 3：集群级 Dual-Microbatch (DBO) 与异步 Engram 预取毫秒等比时间线')
 
 结合图 3 的时序刻度来看，串行执行两份微批加上同步等待 Engram 查表共耗时 15.2 ms。切入稳态 DBO 后，计算流先执行 μB0 注意力，就在 μB0 进入 1.8 ms 的 Dispatch 通信瞬间，计算流立刻切换去执行 μB1 注意力（1.4 ms）；紧接着 μB0 的 MoE GEMM 掩盖 μB1 Dispatch，μB1 的 MoE GEMM 掩盖 μB0 Combine，而最后一段 μB1 Combine（7.6–9.4 ms）则由下一层的 μB0 注意力接管掩盖，使单层稳态步长收敛到 9.4 ms（较串行基线提速 1.62 倍）。
 

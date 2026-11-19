@@ -8,8 +8,7 @@ category: AI Infra
 toc: true
 ---
 
-import ForwardPassExplainer from '../../../../explainers/foundations/ForwardPassExplainer';
-import RooflineExplainer from '../../../../explainers/foundations/RooflineExplainer';
+import RooflineExplainer from '@/explainers/foundations/RooflineExplainer';
 
 大模型推理在部署到加速卡上时，数据在片外高带宽显存（HBM）、片上暂存器与计算单元之间的往返搬运主导着实际延迟和吞吐。这一物理约束直接造成了推理两阶段的性能分化：一次输入整段提示词的 Prefill（预填充）能够把矩阵算力单元跑满，而每次只推进 1 个新 token 的 Decode（解码）几乎全程受制于显存搬运权重。
 
@@ -17,12 +16,9 @@ import RooflineExplainer from '../../../../explainers/foundations/RooflineExplai
 
 ## 单层解码器前向张量剖面
 
-在写出通用公式之前，先设定一个便于对齐尺寸的小批张量剖面 `[B=2, S=4, D=8]`：即同时处理 $B = 2$ 条请求、每条长度 $S = 4$ 个 token、隐藏特征维度 $D = 8$（整批共计 8 个 token）。注意力侧采用 2:1 分组查询结构，即每 2 个查询头共享 1 组键值头，因此键与值投影输出的总宽度减半为 $D_{kv} = 4$；前馈网络则采用 SwiGLU 门控结构，中间宽度扩至 $D_{\text{ff}} = 16$。图 1 展示了这批张量经过单层解码器五道工序时的形状变换、算子属性与字节流量分布，可以按顺序步进对照每一阶段的数值归属。
+在写出通用公式之前，先设定一个便于对齐尺寸的小批张量剖面 `[B=2, S=4, D=8]`：即同时处理 $B = 2$ 条请求、每条长度 $S = 4$ 个 token、隐藏特征维度 $D = 8$（整批共计 8 个 token）。注意力侧采用 2:1 分组查询结构，即每 2 个查询头共享 1 组键值头，因此键与值投影输出的总宽度减半为 $D_{kv} = 4$；前馈网络则采用 SwiGLU 门控结构，中间宽度扩至 $D_{\text{ff}} = 16$。图 1 展示了这批张量经过单层解码器五道工序时的形状变换、算子属性与字节流量分布。
 
-<ForwardPassExplainer
-  client:visible
-  title="图 1：解码器单层前向张量形状、算子分类与字节流量分布（[B=2, S=4, D=8]）"
-/>
+![解码器单层前向张量流转与算力字节账本：注意力子层（RMSNorm、2:1 GQA 与残差）、SwiGLU 前馈子层及 BF16 流量汇总](./diagrams/01-forward-pass-flow.drawio '图 1：解码器单层前向张量形状、算子分类与字节流量分布（[B=2, S=4, D=8]）')
 
 顺着图 1 标出的五个阶段，现代 Transformer（如 Llama、Qwen 与 DeepSeek 系列）的每层计算由以下五道工序串联而成。
 

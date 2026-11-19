@@ -7,8 +7,6 @@ series: { id: vllm, order: 6 }
 tags: [vLLM, CUDA Graph, torch.compile, Scheduler]
 ---
 
-import DpDispatchConsensusExplainer from '../../../../explainers/vllm/DpDispatchConsensusExplainer';
-
 单张静态图守住四道边界后（见[第 4 章](../04-cuda-graph-and-boundaries/)），真实在线服务的动态性立刻带来了两重冲突。第一重冲突在单卡内部：第 $t$ 步可能全是单 token 均匀解码（decode），第 $t+1$ 步就混入了分块预填充（chunked prefill），不同注意力内核能否进整图的能力各不相同，引擎必须在同一个模型对象上动态切换整图（`FULL`）、分段图（`PIECEWISE`）与 Eager（`NONE`）三种运行时模式。
 
 第二重冲突出现在多卡数据并行（DP）集群上：当模型开启混合专家（MoE）并行时，各张计算卡的批构成往往各不相同，如果卡与卡各自按本地负载选了不同的图模式或填充长度，后续跨卡集合通信就会在形状或执行流上直接挂死。vLLM 用**三层同心包装结构**解决单卡无痛切换，并用**主机侧轻量 DP 共识**锁住跨卡一致性。
@@ -21,9 +19,9 @@ import DpDispatchConsensusExplainer from '../../../../explainers/vllm/DpDispatch
 
 为此，`GPUModelRunner` 在进入模型前向之前，会先调用 `dispatch_cg_and_sync_dp` 执行一次纯主机侧的状态汇总[^vllm-dp-utils][^vllm-model-runner]。具体来说，每张卡在 CPU 上把本地 `num_tokens`、期望图模式枚举值 `cg_mode`、`uniform_token_count`、`max_query_len`、`allow_ubatching`、`num_reqs` 与 `allow_skip_drafts` 共 $7$ 个整型状态写入一张形状为 `(7, dp_size)` 的 CPU 张量，并通过 `cpu_all_reduce_()` 完成跨卡交换，全程不阻塞 GPU 计算流。
 
-汇总结束后，所有存活卡按同一套保守规则联合裁决：全局图模式取枚举最小值 `min(cg_mode_across_dp)`（枚举值定义为 `NONE = 0`、`PIECEWISE = 1`、`FULL = 2`，因此只要任意一张卡需要降级，全体同步降级）；若全组仍有卡保持图执行，则统一取最大 token 数 `max(num_tokens_across_dp)` 并据此在共享档位中重新分桶对齐；一旦各卡对均匀查询长度 `uniform_token_count` 意见不一，即将其置为 `None`，迫使整组退出均匀解码专用路径[^vllm-dp-utils]。以上例中的 `(4, FULL)` 与 `(19, PIECEWISE)` 为例，全组最终一致对齐到 `PIECEWISE` 与分桶 $T = 20$，使所有 Rank 以对称的 `(20, H)` 张量穿越每一层 `All-to-All`。下面的交互视图演示了从本地投票分化、未对齐死锁风险到主机共识对齐的完整时序，可步进查看各步状态变化。
+汇总结束后，所有存活卡按同一套保守规则联合裁决：全局图模式取枚举最小值 `min(cg_mode_across_dp)`（枚举值定义为 `NONE = 0`、`PIECEWISE = 1`、`FULL = 2`，因此只要任意一张卡需要降级，全体同步降级）；若全组仍有卡保持图执行，则统一取最大 token 数 `max(num_tokens_across_dp)` 并据此在共享档位中重新分桶对齐；一旦各卡对均匀查询长度 `uniform_token_count` 意见不一，即将其置为 `None`，迫使整组退出均匀解码专用路径[^vllm-dp-utils]。以上例中的 `(4, FULL)` 与 `(19, PIECEWISE)` 为例，全组最终一致对齐到 `PIECEWISE` 与分桶 $T = 20$，使所有 Rank 以对称的 `(20, H)` 张量穿越每一层 `All-to-All`。图 1 展示了从本地投票分化、未对齐死锁风险到主机共识对齐的完整链路。
 
-<DpDispatchConsensusExplainer client:visible title="图 1：多卡 DP 运行时模式对齐与防死锁共识推演" />
+![多卡 DP 运行时模式对齐与防死锁共识：Rank 0 (4 tok FULL) 与 Rank 1 (19 tok PIECEWISE) 经 cpu_all_reduce_ 同步后保守裁决为 PIECEWISE 与 T=20 对称桶](./diagrams/05-dp-dispatch-consensus.drawio '图 1：多卡 DP 运行时模式对齐与防死锁共识')
 
 ## 三层同心包装与 NONE 透传不变量
 

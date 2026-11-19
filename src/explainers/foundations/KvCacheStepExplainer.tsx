@@ -34,8 +34,8 @@ export interface KvCacheStepState {
   focusRect: { x: number; y: number; w: number; h: number; label: string; tone: AnyTone };
 }
 
-const ROW_LABELS = ['t=1', 't=2', 't=3', 't=4'];
-const COL_LABELS = ['k1', 'k2', 'k3', 'k4'];
+const ROW_LABELS = ['$t=1$', '$t=2$', '$t=3$', '$t=4$'];
+const COL_LABELS = ['$k_1$', '$k_2$', '$k_3$', '$k_4$'];
 
 const PROBS_ROWS: (number | null)[][] = [
   [1.0, null, null, null],
@@ -55,10 +55,11 @@ function makeSlots(
   recomputeAll: boolean,
 ): SlotItem[] {
   return [0, 1, 2, 3].map((idx) => {
+    const texLbl = `$${prefix}_${idx + 1}$`;
     if (idx >= filledCount) {
       return {
         id: `${prefix}-${idx}`,
-        label: `${prefix}${idx + 1}`,
+        label: texLbl,
         sub: '空槽',
         status: 'empty',
       };
@@ -66,7 +67,7 @@ function makeSlots(
     if (recomputeAll) {
       return {
         id: `${prefix}-${idx}`,
-        label: `${prefix}${idx + 1}`,
+        label: texLbl,
         sub: '重算',
         tone: 'k',
         status: 'active',
@@ -75,7 +76,7 @@ function makeSlots(
     if (idx === activeIdx) {
       return {
         id: `${prefix}-${idx}`,
-        label: `${prefix}${idx + 1}`,
+        label: texLbl,
         sub: '追加',
         tone: prefix,
         status: 'selected',
@@ -83,7 +84,7 @@ function makeSlots(
     }
     return {
       id: `${prefix}-${idx}`,
-      label: `${prefix}${idx + 1}`,
+      label: texLbl,
       sub: '命中',
       tone: 'visited',
       status: 'normal',
@@ -131,13 +132,13 @@ export function buildKvCacheStepSteps(): Step<KvCacheStepState>[] {
     {
       state: {
         stepIndex: 0,
-        decodeLabel: 'Decode t=1',
-        qTitle: 'Q_1',
-        qShape: '[1, d]',
-        kvTitle: 'k_1, v_1',
+        decodeLabel: 'Decode $t=1$',
+        qTitle: '$Q_1$',
+        qShape: '$[1, d]$',
+        kvTitle: '$k_1, v_1$',
         kvShape: '写入槽 1',
-        outTitle: 'O_1',
-        outShape: '[1, d] · t=1',
+        outTitle: '$O_1$',
+        outShape: '$[1, d] \\cdot t=1$',
         outTone: 'v',
         kSlots: makeSlots('k', 1, 0, false),
         vSlots: makeSlots('v', 1, 0, false),
@@ -148,11 +149,11 @@ export function buildKvCacheStepSteps(): Step<KvCacheStepState>[] {
         matrixMasks: makeMasks(1),
         selectedCells: rowSet(0),
         softSelectedCells: new Set(),
-        seqLenText: 't = 1 (1/4)',
+        seqLenText: '$t = 1\\;(1/4)$',
         stepWorkText: '1 KV / 1 点积',
         cumKvProjText: '1 vs 无Cache 1',
         savingText: '基线步 (0%)',
-        focusRect: { x: 16, y: 90, w: 228, h: 144, label: '写入 Slot 1', tone: 'k' },
+        focusRect: { x: 16, y: 94, w: 224, h: 144, label: '写入 Slot 1', tone: 'k' },
       },
       caption:
         '第 1 步（$t=1$）：生成单个新 token，投影出 $Q_1, k_1, v_1 \\in \\mathbb{R}^{1 \\times d}$，将 $k_1, v_1$ 写入 KV Cache 第 1 槽位；注意力仅计算第 1 行 $1$ 次点积。',
@@ -160,28 +161,28 @@ export function buildKvCacheStepSteps(): Step<KvCacheStepState>[] {
     {
       state: {
         stepIndex: 1,
-        decodeLabel: 'Decode t=2',
-        qTitle: 'Q_2',
-        qShape: '[1, d]',
-        kvTitle: 'k_2, v_2',
+        decodeLabel: 'Decode $t=2$',
+        qTitle: '$Q_2$',
+        qShape: '$[1, d]$',
+        kvTitle: '$k_2, v_2$',
         kvShape: '追加槽 2',
-        outTitle: 'O_2',
-        outShape: '[1, d] · t=2',
+        outTitle: '$O_2$',
+        outShape: '$[1, d] \\cdot t=2$',
         outTone: 'v',
         kSlots: makeSlots('k', 2, 1, false),
         vSlots: makeSlots('v', 2, 1, false),
-        matrixTitle: '注意力权重矩阵 (复用 k1)',
+        matrixTitle: '注意力权重矩阵 (复用 $k_1$)',
         matrixTone: 'q',
         selectedTone: 'q',
         matrixValues: makeValues(2),
         matrixMasks: makeMasks(2),
         selectedCells: rowSet(1),
         softSelectedCells: priorSet(1),
-        seqLenText: 't = 2 (2/4)',
+        seqLenText: '$t = 2\\;(2/4)$',
         stepWorkText: '1 KV / 2 点积',
         cumKvProjText: '2 vs 无Cache 3',
         savingText: '已省 33.3% KV',
-        focusRect: { x: 266, y: 12, w: 256, h: 202, label: '仅算第 2 行', tone: 'q' },
+        focusRect: { x: 266, y: 16, w: 254, h: 196, label: '仅算第 2 行', tone: 'q' },
       },
       caption:
         '第 2 步（$t=2$）：仅对新 token 计算 $Q_2, k_2, v_2$ 并追加到第 2 槽位；第 1 槽位 $k_1, v_1$ 直接复用不重算，注意力只需读取 $K_{1:2}$ 计算第 2 行（$2$ 次点积）。',
@@ -189,28 +190,28 @@ export function buildKvCacheStepSteps(): Step<KvCacheStepState>[] {
     {
       state: {
         stepIndex: 2,
-        decodeLabel: 'Decode t=3',
-        qTitle: 'Q_3',
-        qShape: '[1, d]',
-        kvTitle: 'k_3, v_3',
+        decodeLabel: 'Decode $t=3$',
+        qTitle: '$Q_3$',
+        qShape: '$[1, d]$',
+        kvTitle: '$k_3, v_3$',
         kvShape: '追加槽 3',
-        outTitle: 'O_3',
-        outShape: '[1, d] · t=3',
+        outTitle: '$O_3$',
+        outShape: '$[1, d] \\cdot t=3$',
         outTone: 'v',
         kSlots: makeSlots('k', 3, 2, false),
         vSlots: makeSlots('v', 3, 2, false),
-        matrixTitle: '注意力权重矩阵 (复用 k1..2)',
+        matrixTitle: '注意力权重矩阵 (复用 $k_{1:2}$)',
         matrixTone: 'q',
         selectedTone: 'q',
         matrixValues: makeValues(3),
         matrixMasks: makeMasks(3),
         selectedCells: rowSet(2),
         softSelectedCells: priorSet(2),
-        seqLenText: 't = 3 (3/4)',
+        seqLenText: '$t = 3\\;(3/4)$',
         stepWorkText: '1 KV / 3 点积',
         cumKvProjText: '3 vs 无Cache 6',
         savingText: '已省 50.0% KV',
-        focusRect: { x: 266, y: 12, w: 256, h: 202, label: '仅算第 3 行', tone: 'q' },
+        focusRect: { x: 266, y: 16, w: 254, h: 196, label: '仅算第 3 行', tone: 'q' },
       },
       caption:
         '第 3 步（$t=3$）：前 2 步的历史行已定型且无需再输出，$Q_3 [1, d]$ 与扩展后的 $K_{1:3} [3, d]$ 做向量-矩阵乘（GEMV），累计 KV 投影次数降为无缓存的一半（$3$ vs $6$）。',
@@ -218,28 +219,28 @@ export function buildKvCacheStepSteps(): Step<KvCacheStepState>[] {
     {
       state: {
         stepIndex: 3,
-        decodeLabel: 'Decode t=4',
-        qTitle: 'Q_4',
-        qShape: '[1, d]',
-        kvTitle: 'k_4, v_4',
+        decodeLabel: 'Decode $t=4$',
+        qTitle: '$Q_4$',
+        qShape: '$[1, d]$',
+        kvTitle: '$k_4, v_4$',
         kvShape: '追加槽 4',
-        outTitle: 'O_4',
-        outShape: '[1, d] · t=4',
+        outTitle: '$O_4$',
+        outShape: '$[1, d] \\cdot t=4$',
         outTone: 'v',
         kSlots: makeSlots('k', 4, 3, false),
         vSlots: makeSlots('v', 4, 3, false),
-        matrixTitle: '注意力权重矩阵 (复用 k1..3)',
+        matrixTitle: '注意力权重矩阵 (复用 $k_{1:3}$)',
         matrixTone: 'q',
         selectedTone: 'q',
         matrixValues: makeValues(4),
         matrixMasks: makeMasks(4),
         selectedCells: rowSet(3),
         softSelectedCells: priorSet(3),
-        seqLenText: 't = 4 (4/4)',
+        seqLenText: '$t = 4\\;(4/4)$',
         stepWorkText: '1 KV / 4 点积',
         cumKvProjText: '4 vs 无Cache 10',
         savingText: '已省 60.0% KV',
-        focusRect: { x: 544, y: 82, w: 120, h: 74, label: 'O_4 [1, d]', tone: 'v' },
+        focusRect: { x: 544, y: 84, w: 120, h: 72, label: '$O_4\\;[1, d]$', tone: 'v' },
       },
       caption:
         '第 4 步（$t=4$）：新写入 $k_4, v_4$ 后缓存增至 $[4, d]$；4 步累计仅执行 $4$ 次 token KV 投影和 $10$ 次点积，而计算复杂度随序列总长 $T$ 从无缓存的 $O(T^3)$ 降至 $O(T^2)$。',
@@ -248,27 +249,27 @@ export function buildKvCacheStepSteps(): Step<KvCacheStepState>[] {
       state: {
         stepIndex: 4,
         decodeLabel: '无 Cache 对照',
-        qTitle: 'Q_{1:4}',
-        qShape: '[4, d] 重算',
-        kvTitle: 'K_{1:4}, V_{1:4}',
+        qTitle: '$Q_{1:4}$',
+        qShape: '$[4, d]$ 重算',
+        kvTitle: '$K_{1:4}, V_{1:4}$',
         kvShape: '全量重算',
-        outTitle: 'O_{1:4}',
-        outShape: '[4, d] 丢3留1',
+        outTitle: '$O_{1:4}$',
+        outShape: '$[4, d]$ 丢3留1',
         outTone: 'k',
         kSlots: makeSlots('k', 4, 3, true),
         vSlots: makeSlots('v', 4, 3, true),
-        matrixTitle: '无 Cache 单步全部重算 (10 格)',
+        matrixTitle: '无 Cache 单步重算 (10 格)',
         matrixTone: 'k',
         selectedTone: 'k',
         matrixValues: makeValues(4),
         matrixMasks: makeMasks(4),
         selectedCells: allLowerSet(),
         softSelectedCells: new Set(),
-        seqLenText: 'T = 4 累计对照',
+        seqLenText: '$T = 4$ 累计对照',
         stepWorkText: '单步 4 KV / 10 格',
-        cumKvProjText: '4 vs 10 (省 2.5x)',
-        savingText: 'S=2048 省 ~1024x',
-        focusRect: { x: 266, y: 12, w: 256, h: 202, label: '单步重算下三角', tone: 'k' },
+        cumKvProjText: '4 vs 10 (省 $2.5\\times$)',
+        savingText: '$S=2048$ 省 $1024\\times$',
+        focusRect: { x: 266, y: 16, w: 254, h: 196, label: '单步重算下三角', tone: 'k' },
       },
       caption:
         '若关闭 KV Cache，仅在 $t=4$ 这一步就必须重算全部 $[4, d]$ 的 $Q/K/V$ 与下三角 $10$ 格（前 3 行算完即丢弃）。开启缓存大幅节省计算量，同时将 Decode 推向读取 $K_{1:t}, V_{1:t}$ 的 HBM 带宽瓶颈。',
@@ -277,7 +278,7 @@ export function buildKvCacheStepSteps(): Step<KvCacheStepState>[] {
 }
 
 export default function KvCacheStepExplainer({
-  title = '图 1：Decode 阶段 KV Cache 增量追加与免重算收益',
+  title = '图 1：Decode 阶段 KV Cache 增量追加与免重算收益（$t=1\\dots 4$）',
 }: {
   title?: string;
 }) {
@@ -317,7 +318,7 @@ export default function KvCacheStepExplainer({
               slotW={50}
               slotH={36}
               gap={4}
-              title="K Cache [t, d]"
+              title="$K$ Cache $[t, d]$"
             />
 
             <SlotStrip
@@ -327,7 +328,7 @@ export default function KvCacheStepExplainer({
               slotW={50}
               slotH={36}
               gap={4}
-              title="V Cache [t, d]"
+              title="$V$ Cache $[t, d]$"
             />
 
             <DataFlowArrow

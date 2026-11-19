@@ -51,9 +51,9 @@ export function buildRingCollectivesSteps(): Step<RingCollectivesState>[] {
         ],
         activeIdx: [3, 0, 1, 2],
         doneIndices: [[], [], [], []],
-        transfers: ['c0: +1', 'c1: +1', 'c2: +1', 'c3: +2'],
-        cumLatency: '1·(α + S/4·β)',
-        treeCompare: 'Tree 需完整 S 发送',
+        transfers: ['$c_0: +1$', '$c_1: +1$', '$c_2: +1$', '$c_3: +2$'],
+        cumLatency: '$1\\cdot(\\alpha + \\frac{S}{4}\\beta)$',
+        treeCompare: 'Tree 需完整 $S$ 发送',
         bwEfficiency: '100% 并发收发',
       },
       caption:
@@ -71,8 +71,8 @@ export function buildRingCollectivesSteps(): Step<RingCollectivesState>[] {
         ],
         activeIdx: [2, 3, 0, 1],
         doneIndices: [[], [], [], []],
-        transfers: ['c3: +6', 'c0: +4', 'c1: +5', 'c2: +4'],
-        cumLatency: '2·(α + S/4·β)',
+        transfers: ['$c_3: +6$', '$c_0: +4$', '$c_1: +5$', '$c_2: +4$'],
+        cumLatency: '$2\\cdot(\\alpha + \\frac{S}{4}\\beta)$',
         treeCompare: '2-hop 等长微块流水',
         bwEfficiency: '链路无空闲等待',
       },
@@ -91,8 +91,8 @@ export function buildRingCollectivesSteps(): Step<RingCollectivesState>[] {
         ],
         activeIdx: [1, 2, 3, 0],
         doneIndices: [[1], [2], [3], [0]],
-        transfers: ['c2: +4', 'c3: +6', 'c0: +4', 'c1: +6'],
-        cumLatency: '3·α + 0.75·S·β',
+        transfers: ['$c_2: +4$', '$c_3: +6$', '$c_0: +4$', '$c_1: +6$'],
+        cumLatency: '$3\\alpha + 0.75S\\beta$',
         treeCompare: '等价 Tree 前半程',
         bwEfficiency: '4 卡各持 1 个全和',
       },
@@ -116,8 +116,8 @@ export function buildRingCollectivesSteps(): Step<RingCollectivesState>[] {
           [2, 3],
           [3, 0],
         ],
-        transfers: ['c1=8', 'c2=6', 'c3=8', 'c0=6'],
-        cumLatency: '4·α + 1.00·S·β',
+        transfers: ['$c_1=8$', '$c_2=6$', '$c_3=8$', '$c_0=6$'],
+        cumLatency: '$4\\alpha + 1.00S\\beta$',
         treeCompare: '无需加法纯覆写',
         bwEfficiency: '每卡 2/4 分片就绪',
       },
@@ -141,9 +141,9 @@ export function buildRingCollectivesSteps(): Step<RingCollectivesState>[] {
           [1, 2, 3],
           [2, 3, 0],
         ],
-        transfers: ['c0=6', 'c1=8', 'c2=6', 'c3=8'],
-        cumLatency: '5·α + 1.25·S·β',
-        treeCompare: '小消息 α 占比抬升',
+        transfers: ['$c_0=6$', '$c_1=8$', '$c_2=6$', '$c_3=8$'],
+        cumLatency: '$5\\alpha + 1.25S\\beta$',
+        treeCompare: '小消息 $\\alpha$ 占比抬升',
         bwEfficiency: '每卡 3/4 分片就绪',
       },
       caption:
@@ -166,10 +166,10 @@ export function buildRingCollectivesSteps(): Step<RingCollectivesState>[] {
           [0, 1, 2, 3],
           [0, 1, 2, 3],
         ],
-        transfers: ['c3=8', 'c0=6', 'c1=8', 'c2=6'],
-        cumLatency: '6·α + 1.50·S·β',
-        treeCompare: 'vs Tree 4·α + 4·S·β',
-        bwEfficiency: '75% = (P-1)/P 带宽效率',
+        transfers: ['$c_3=8$', '$c_0=6$', '$c_1=8$', '$c_2=6$'],
+        cumLatency: '$6\\alpha + 1.50S\\beta$',
+        treeCompare: 'vs Tree $4\\alpha + 4S\\beta$',
+        bwEfficiency: '75% ($\\frac{P-1}{P}$) 带宽效率',
       },
       caption:
         'AllGather 第 3 跳收敛：4 张卡均得到完整的全局归约向量 $[6, 8, 6, 8]$；大消息下 Ring 带宽项 $2\\frac{P-1}{P}S\\beta = 1.5S\\beta$ 远低于 Tree 的 $2(\\log_2 P)S\\beta = 4S\\beta$，但延迟项 $6\\alpha$ 随卡数线性增长。',
@@ -192,7 +192,7 @@ function buildRankSlots(rank: 0 | 1 | 2 | 3, s: RingCollectivesState): SlotItem[
       id: `r${rank}_c${idx}`,
       label: String(v),
       sub: `原${initVals[idx]}`,
-      topTag: `c${idx}`,
+      topTag: `$c_${idx}$`,
       tone,
       status,
     };
@@ -244,7 +244,7 @@ export default function RingCollectivesExplainer({
               y={10}
               w={STAGE_W - 24}
               h={292}
-              title={`顺时针环拓扑 R0 -> R1 -> R2 -> R3 -> R0 · 当前: ${s.phase} (${s.subStep})`}
+              title={`顺时针环拓扑 $R_0 \\to R_1 \\to R_2 \\to R_3 \\to R_0$ · 当前: ${s.phase} (${s.subStep})`}
               tone="neutral"
               dashed
             />

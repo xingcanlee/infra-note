@@ -8,9 +8,6 @@ category: AI Infra
 toc: true
 ---
 
-import SinkSwaExplainer from '../../../../explainers/deepseek/SinkSwaExplainer';
-import NsaThreeBranchExplainer from '../../../../explainers/deepseek/NsaThreeBranchExplainer';
-
 在[01 多头潜在注意力（MLA）](../01-mla/)中，每层每个 token 的 KV 缓存被压成了 576 维单头潜向量，显著降低了单 token 的显存占用与搬运开销。但随着上下文扩展到 64K 甚至 128K，注意力算子本身的序列长度开销仍随 $L$ 增长：NSA 论文测算在 64K 长度下，Softmax 注意力会占到单步 Decode 总延迟的 70%–80%[^nsa]。
 
 观测表明，成熟语言模型在长文本中超过 95% 的历史 token 分配到的注意力权重接近于零。然而工程实践已经证明，无论是直接丢弃早期 token 的纯滑动窗口，还是先预训练稠密模型再按阈值剪枝的事后稀疏，都很难兼顾精度与真实的硬件加速。
@@ -25,12 +22,9 @@ import NsaThreeBranchExplainer from '../../../../explainers/deepseek/NsaThreeBra
 
 一旦开启无 Sink 的纯滑动窗口（丢掉 $t_0$），分母失去 $e^{6.0}$，仅剩 $e^{1.2} + e^{1.5} + e^{2.0} \approx 15.2$；Softmax 将位置 $[5, 6, 7]$ 的总权重重归一化到 100.00%，局部权重被放大了 27.9 倍，导致输出表征显著偏移。而只要把第 0 列重新加回因果掩码形成 **L 型掩码**（$t_0$ 配 $W = 3$），$t_0$ 立刻恢复吸收 96.37% 的分母质量，局部窗口总重回落至 3.63%。
 
-图 1 展示了这组 8×8 注意力矩阵在四种掩码状态下的权重热图、$q_7$ 分布柱状图及输出偏移指标，可点击逐步切换查看数值变化。
+图 1 展示了这组 8×8 注意力矩阵在四种掩码状态下的权重、$q_7$ 分布及输出偏移指标对照。
 
-<SinkSwaExplainer
-  client:visible
-  title="图 1：8×8 因果注意力热图演化：纯滑窗分布失真与 Attention Sink 稳态锚点"
-/>
+![8×8 因果注意力掩码四种状态对照：Full Causal 基线、Pure SWA 27.9 倍暴涨、Sink+SWA L 型掩码稳态以及中段关键事实 t2 被盲剪的边界](./diagrams/02-sink-swa-masks.drawio '图 1：8×8 因果注意力掩码对比：纯滑窗分布失真与 Attention Sink 稳态锚点')
 
 StreamingLLM 在 Llama-2-13B 的 65K PG-19 长文本评测中也验证了同一规律：纯滑窗（$0 + 1024$）的困惑度高达 5158.07，而只要保留开头的 4 个初始锚点（$4 + 1020$），困惑度立刻稳回 5.40；即便把开头 4 个 token 全部替换成不承载语义信息的换行符，困惑度仍维持在 5.60[^sink]。
 
@@ -40,7 +34,7 @@ StreamingLLM 在 Llama-2-13B 的 65K PG-19 长文本评测中也验证了同一�
 
 第二是专用 `Sink` 偏置参数的引入。相比单纯在 Softmax 分母加常数 1（Zero Sink，$\text{SoftMax}_1$），在预训练样本开头固定插入一个**可学习的专用 `Sink token`** 能让单槽位稳定承接多余权重：在 160M 模型实验下，Zero Sink 在 $1 + 1023$ 配置的困惑度仍为 19.90，而 Learnable Sink 可降至 18.01。
 
-但 L 型掩码也存在清晰的能力边界：当真正关键的历史事实落在滑窗之外的中段位置（如图 1 步骤 4 中设定的 $t_2$，全量掩码下占 81% 权重），静态 Sink + SWA 会直接将其置零。长上下文推理既需要 `Sink` 偏置锚点，也需要跨任意距离动态取回中段重要块的能力。
+但 L 型掩码也存在清晰的能力边界：当真正关键的历史事实落在滑窗之外的中段位置（如图 1 第四格设定的 $t_2$，全量掩码下占 81% 权重），静态 Sink + SWA 会直接将其置零。长上下文推理既需要 `Sink` 偏置锚点，也需要跨任意距离动态取回中段重要块的能力。
 
 ## 事后稀疏的训练与硬件访存瓶颈
 
@@ -60,12 +54,9 @@ $$
 \mathbf{o}_t^* = \sum_{c \in \{\text{cmp},\, \text{slc},\, \text{win}\}} g_t^c \cdot \operatorname{Attn}\!\left(\mathbf{q}_t,\, \tilde{K}_t^c,\, \tilde{V}_t^c\right)
 $$
 
-图 2 将三条分支从粗粒度压缩打分、空间重叠累加到 GQA 组共享选块与门控融合拆成五个阶段演示，可按步骤切换观察各分支数据流。
+图 2 总结了三条分支从粗粒度压缩打分、空间重叠累加到 GQA 组共享选块与门控融合的完整数据流。
 
-<NsaThreeBranchExplainer
-  client:visible
-  title="图 2：DeepSeek NSA 三分支硬件对齐稀疏计算与 Sigmoid 门控融合"
-/>
+![DeepSeek NSA 三分支稀疏注意力架构：cmp 粗粒度块压缩、slc GQA 组共享 Top-n 精筛与 win 独立滑窗经 Sigmoid 门控融合输出](./diagrams/02-nsa-three-branch.drawio '图 2：DeepSeek NSA 三分支硬件对齐稀疏计算与 Sigmoid 门控融合')
 
 第一条分支是**粗粒度块压缩**（`cmp`）。它以窗长 $l = 32$、滑动步长 $d = 16$ 对历史 Key 和 Value 分段，通过带块内位置编码的可学习 MLP $\varphi$ 把每段 32 个 token 折叠成 1 条粗粒度表示 $\tilde{K}_t^{\text{cmp}}, \tilde{V}_t^{\text{cmp}}$。
 

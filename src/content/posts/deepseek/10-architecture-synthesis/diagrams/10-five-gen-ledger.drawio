@@ -1,19 +1,19 @@
 <mxfile host="wisp-diagram">
   <diagram id="ds-10-five-gen-ledger" name="five-gen-ledger">
-    <mxGraphModel dx="800" dy="600" grid="1" gridSize="8" guides="1" page="0" math="0" shadow="0">
+    <mxGraphModel dx="800" dy="600" grid="1" gridSize="8" guides="1" page="0" math="1" shadow="0">
       <root>
         <mxCell id="0"/>
         <mxCell id="1" parent="0"/>
-        <mxCell id="kv_v23__title" value="1. V2 / V3 / R1 BF16 MLA：1024 B c_t^KV + 128 B k_t^R（61 层整网 70,272 B/tok）" style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;fontFamily=Inter;fontSize=12;fontStyle=1;fontColor=#1d1d1f;" vertex="1" parent="1">
+        <mxCell id="kv_v23__title" value="1. V2 / V3 / R1 BF16 MLA：1024 B \(c_t^{KV}\) + 128 B \(k_t^R\)（61 层整网 70,272 B/tok）" style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;fontFamily=Inter;fontSize=12;fontStyle=1;fontColor=#1d1d1f;" vertex="1" parent="1">
           <mxGeometry x="8" y="8" width="528" height="24" as="geometry"/>
         </mxCell>
         <mxCell id="kv_v23__tot" value="1152 B/层" style="text;html=1;whiteSpace=wrap;align=right;verticalAlign=middle;fontFamily=Inter;fontSize=12;fontColor=#5c6067;" vertex="1" parent="1">
           <mxGeometry x="536" y="8" width="144" height="24" as="geometry"/>
         </mxCell>
-        <mxCell id="kv_v23_0" value="V2 / V3 / R1 BF16 c_t^KV (1024 B)" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f2fb;strokeColor=#2f5783;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+        <mxCell id="kv_v23_0" value="V2 / V3 / R1 BF16 \(c_t^{KV}\) (1024 B)" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f2fb;strokeColor=#2f5783;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
           <mxGeometry x="8" y="32" width="600" height="40" as="geometry"/>
         </mxCell>
-        <mxCell id="kv_v23_1" value="k_t^R&lt;br&gt;(128 B)" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#fbf2df;strokeColor=#7b5518;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+        <mxCell id="kv_v23_1" value="\(k_t^R\)&lt;br&gt;(128 B)" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#fbf2df;strokeColor=#7b5518;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
           <mxGeometry x="608" y="32" width="72" height="40" as="geometry"/>
         </mxCell>
         <mxCell id="kv_v32__title" value="2. V3.2 FP8 MLA + DSA Indexer：656 B 主缓存 + 132 B 索引器（解码仅读 Top-2048）" style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;fontFamily=Inter;fontSize=12;fontStyle=1;fontColor=#1d1d1f;" vertex="1" parent="1">

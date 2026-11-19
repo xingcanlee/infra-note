@@ -1,0 +1,34 @@
+<mxfile host="wisp-diagram">
+  <diagram id="deepseek-04-csa-ring-fold" name="DeepSeek-V4 CSA Ring Cache and Inverse RoPE">
+    <mxGraphModel dx="800" dy="600" grid="1" gridSize="8" guides="1" page="0" math="1" shadow="0">
+      <root>
+        <mxCell id="0"/>
+        <mxCell id="1" parent="0"/>
+        <mxCell id="hdr" value="DeepSeek-V4 CSA 序列重叠折叠（\(m=4\)）、环形尾缓冲 StateCache 与共享 KV 输出逆 RoPE" style="text;html=1;whiteSpace=wrap;align=center;verticalAlign=middle;fontFamily=Inter;fontSize=12;fontColor=#5c6067;" vertex="1" parent="1">
+          <mxGeometry x="0" y="0" width="688" height="24" as="geometry"/>
+        </mxCell>
+        <mxCell id="fold_grp" value="1. 序列沿时间轴折叠与流式尾部暂存（保留关键高权重符号，避免等权池化稀释为 1/m）" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#f4f4f2;strokeColor=#e2e2dd;strokeWidth=1;dashed=1;verticalAlign=top;align=left;spacingLeft=12;spacingTop=6;fontFamily=Inter;fontSize=12;fontStyle=1;fontColor=#5c6067;container=0;" vertex="1" parent="1">
+          <mxGeometry x="8" y="32" width="672" height="192" as="geometry"/>
+        </mxCell>
+        <mxCell id="csa_win" value="&lt;b&gt;CSA 重叠双窗门控折块（\(m=4,\; 2m=8\)）&lt;/b&gt;&lt;br&gt;双投影 \((C^a, Z^a, B^a)\) 跨读 \([t_{mi}..t_{m(i+1)-1}]\)&lt;br&gt;与 \((C^b, Z^b, B^b)\) 跨读前块 \([t_{m(i-1)}..t_{mi-1}]\)&lt;br&gt;逐通道 Softmax 权重突显关键符号（如 \(t_1=0.45\)）&lt;br&gt;每隔 \(m=4\) 步写 1 条 \(C_i^{\text{Comp}}\)，净压缩 &lt;b&gt;1/4&lt;/b&gt;" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f2fb;strokeColor=#2f5783;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="24" y="64" width="320" height="144" as="geometry"/>
+        </mxCell>
+        <mxCell id="ring_tail" value="&lt;b&gt;环形尾缓冲 StateCache（定长 FP32）&lt;/b&gt;&lt;br&gt;流式生成 \(t_8, t_9\) 时分组 \([t_8..t_{11}]\) 未闭合&lt;br&gt;先暂存环形槽位，凑满 \(m=4\) 整组再折叠写回&lt;br&gt;&lt;b&gt;局部 SWA（\(n_{\text{win}}=128\)）&lt;/b&gt;：补足块内与尾块近邻精度" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#fbf2df;strokeColor=#7b5518;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="360" y="64" width="304" height="144" as="geometry"/>
+        </mxCell>
+        <mxCell id="mid_grp" value="2. HCA 极重压缩交错层与共享 Key/Value 条目的输出逆向 RoPE（\(R_{-t}\)）" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#f4f4f2;strokeColor=#e2e2dd;strokeWidth=1;dashed=1;verticalAlign=top;align=left;spacingLeft=12;spacingTop=6;fontFamily=Inter;fontSize=12;fontStyle=1;fontColor=#5c6067;container=0;" vertex="1" parent="1">
+          <mxGeometry x="8" y="240" width="672" height="112" as="geometry"/>
+        </mxCell>
+        <mxCell id="hca_box" value="&lt;b&gt;HCA 极重压缩（\(m'=128\)，无重叠）&lt;/b&gt;&lt;br&gt;1M 上下文压至 ~7,812 条 KV&lt;br&gt;省去闪电索引器直接全块稠密读取" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f2fb;strokeColor=#2f5783;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="24" y="272" width="232" height="64" as="geometry"/>
+        </mxCell>
+        <mxCell id="inv_rope" value="&lt;b&gt;共享 KV 输出逆向 RoPE \(R_{-t}\) + GroupedWoA&lt;/b&gt;&lt;br&gt;\(C_j^{\text{Comp}}\)（448 NoPE + 64 绝对 RoPE \(R_{k_{\text{pos}}(j)}\)）兼任 K 与 V&lt;br&gt;输出端末 64 维乘 \(R_{-t}\) 恢复 \(R_{k_{\text{pos}}(j)-t}\)；\(g=8\) 分组降参投影" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#fbf2df;strokeColor=#7b5518;strokeWidth=2;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="272" y="272" width="392" height="64" as="geometry"/>
+        </mxCell>
+        <mxCell id="led_box" value="&lt;b&gt;V4 混合精简缓存（584 B/条）&lt;/b&gt;：448 B FP8 NoPE + 8 B 缩放 + 128 B BF16 RoPE　|　V4-Flash 1M 上下文 &lt;b&gt;KV 降至 V3.2 的 7%，FLOPs 降至 10%&lt;/b&gt;" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f5e9;strokeColor=#2c522d;strokeWidth=2;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="8" y="368" width="672" height="48" as="geometry"/>
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

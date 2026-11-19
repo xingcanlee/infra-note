@@ -1,0 +1,49 @@
+<mxfile host="wisp-diagram">
+  <diagram id="deepseek-05-csa2-hsi-arch" name="DeepSeek-V4.1 CSA2 and HSI Architecture">
+    <mxGraphModel dx="800" dy="600" grid="1" gridSize="8" guides="1" page="0" math="1" shadow="0">
+      <root>
+        <mxCell id="0"/>
+        <mxCell id="1" parent="0"/>
+        <mxCell id="hdr" value="DeepSeek-V4.1-Flash CSA2：三维乘法压缩（890 B/tok）、三态分工、HSI 两级索引与 CED 减半" style="text;html=1;whiteSpace=wrap;align=center;verticalAlign=middle;fontFamily=Inter;fontSize=12;fontColor=#5c6067;" vertex="1" parent="1">
+          <mxGeometry x="0" y="0" width="688" height="24" as="geometry"/>
+        </mxCell>
+        <mxCell id="ax_grp" value="1. 三维乘法压缩：位宽（288 B NVFP4） × 序列折叠（Encoder m=2） × 跨层复用（全网 2.5 份 = 890 B/tok）" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#f4f4f2;strokeColor=#e2e2dd;strokeWidth=1;dashed=1;verticalAlign=top;align=left;spacingLeft=12;spacingTop=6;fontFamily=Inter;fontSize=12;fontStyle=1;fontColor=#5c6067;container=0;" vertex="1" parent="1">
+          <mxGeometry x="8" y="32" width="672" height="104" as="geometry"/>
+        </mxCell>
+        <mxCell id="ax_w" value="&lt;b&gt;条目位宽压至 288 B（主）+ 68 B（索引）&lt;/b&gt;&lt;br&gt;MLA BF16 (1152 B) → V4 FP8 (584 B) → NVFP4：256 B E2M1 + 32 B per-16 E4M3" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f5e9;strokeColor=#2c522d;strokeWidth=1.5;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="24" y="64" width="320" height="56" as="geometry"/>
+        </mxCell>
+        <mxCell id="ax_sum" value="&lt;b&gt;全网 40 层总账 = 890 B/tok（1M 上下文 849 MiB）&lt;/b&gt;&lt;br&gt;\((1.5_{\text{Enc}} + 1.0_{\text{Dec}})\times 356\;\text{B} = 720\;\text{B 主 KV} + 170\;\text{B HSI}\)（SSD 缩 1/8）" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#fbf2df;strokeColor=#7b5518;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="360" y="64" width="304" height="56" as="geometry"/>
+        </mxCell>
+        <mxCell id="mod_grp" value="2. CSA2 40 层三态静态分工解耦" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#f4f4f2;strokeColor=#e2e2dd;strokeWidth=1;dashed=1;verticalAlign=top;align=left;spacingLeft=12;spacingTop=6;fontFamily=Inter;fontSize=12;fontStyle=1;fontColor=#5c6067;container=0;" vertex="1" parent="1">
+          <mxGeometry x="8" y="152" width="304" height="224" as="geometry"/>
+        </mxCell>
+        <mxCell id="m_full" value="&lt;b&gt;Full Mode（L2/8/14 + L20，4 层）&lt;/b&gt;&lt;br&gt;写主 KV（2.5 份源）+ 投影 Indexer K + 产出 L1 池" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f2fb;strokeColor=#2f5783;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="24" y="184" width="272" height="48" as="geometry"/>
+        </mxCell>
+        <mxCell id="m_reidx" value="&lt;b&gt;Reindex Mode（L24/28/32/36，4 层）&lt;/b&gt;&lt;br&gt;复用 L20 主 KV · 仅重扫候选池选新 Top-512" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#fbf2df;strokeColor=#7b5518;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="24" y="248" width="272" height="48" as="geometry"/>
+        </mxCell>
+        <mxCell id="m_reuse" value="&lt;b&gt;Reuse Mode（30 层，+ L0–1 纯 SWA）&lt;/b&gt;&lt;br&gt;全复用主 KV 与下标 · Decode 仅 11 融合核" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f5e9;strokeColor=#2c522d;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="24" y="312" width="272" height="48" as="geometry"/>
+        </mxCell>
+        <mxCell id="hsi_grp" value="3. HSI 两级分层稀疏索引器（1M 下缩至 1.64%）" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#f4f4f2;strokeColor=#e2e2dd;strokeWidth=1;dashed=1;verticalAlign=top;align=left;spacingLeft=12;spacingTop=6;fontFamily=Inter;fontSize=12;fontStyle=1;fontColor=#5c6067;container=0;" vertex="1" parent="1">
+          <mxGeometry x="328" y="152" width="352" height="224" as="geometry"/>
+        </mxCell>
+        <mxCell id="h_l1" value="&lt;b&gt;L1 粗块候选池构建（L20 Full 执行 1 次）&lt;/b&gt;&lt;br&gt;扫描全长上下文，每 8 个连续槽位取块内最大值&lt;br&gt;挑选 Top-2048 粗块 → &lt;b&gt;16,384 固定共享候选池&lt;/b&gt;" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f2fb;strokeColor=#2f5783;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="344" y="184" width="320" height="72" as="geometry"/>
+        </mxCell>
+        <mxCell id="h_l2" value="&lt;b&gt;L2 常数开销重索引（L24/28/32/36）&lt;/b&gt;&lt;br&gt;仅扫描固定 16,384 候选槽（脱离序列长度 \(L\)）&lt;br&gt;各自筛选 Top-512；开销从 \(O(L) \to O(1)\)（4K→1M 仅 +25%）" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f5e9;strokeColor=#2c522d;strokeWidth=2;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="344" y="288" width="320" height="72" as="geometry"/>
+        </mxCell>
+        <mxCell id="ftr" value="&lt;b&gt;输出逆 RoPE 与 CED 减半&lt;/b&gt;：末 64 维乘 \(R_{-n}\) 恢复相对偏移；后 20 层由 \(H_{L/2}\) 直投全局 KV + \(n_{\text{win}}=128\) 有界重放（Prefill &lt;b&gt;2.00×&lt;/b&gt; 加速）" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#fbf2df;strokeColor=#7b5518;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="8" y="392" width="672" height="48" as="geometry"/>
+        </mxCell>
+        <mxCell id="e_hsi" value="候选 16,384" style="endArrow=classic;startArrow=none;html=1;strokeColor=#1d1d1f;strokeWidth=1.25;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;labelBackgroundColor=#f4f4f2;" edge="1" parent="1" source="h_l1" target="h_l2">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

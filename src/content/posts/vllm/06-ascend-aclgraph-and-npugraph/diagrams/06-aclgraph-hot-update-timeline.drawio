@@ -1,0 +1,43 @@
+<mxfile host="wisp-diagram">
+  <diagram id="vllm-06-aclgraph-hot-update-timeline" name="Ascend ACLGraph Sparse Buckets and UpdatableGraph Hot-Patch">
+    <mxGraphModel dx="800" dy="600" grid="1" gridSize="8" guides="1" page="0" math="1" shadow="0">
+      <root>
+        <mxCell id="0"/>
+        <mxCell id="1" parent="0"/>
+        <mxCell id="hdr" value="昇腾 ACLGraph：硬件配额下的稀疏分桶、UpdatableGraph 跨流热更新 Tiling 与异步 507011 防护" style="text;html=1;whiteSpace=wrap;align=center;verticalAlign=middle;fontFamily=Inter;fontSize=12;fontColor=#5c6067;" vertex="1" parent="1">
+          <mxGeometry x="0" y="0" width="688" height="24" as="geometry"/>
+        </mxCell>
+        <mxCell id="bkt_grp" value="1. 稀疏硬件分桶（守住 NPU Stream/Notify 上限，避开 207008 Alloc sq cq fail，优先 FULL_DECODE_ONLY）" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#f4f4f2;strokeColor=#e2e2dd;strokeWidth=1;dashed=1;verticalAlign=top;align=left;spacingLeft=12;spacingTop=6;fontFamily=Inter;fontSize=12;fontStyle=1;fontColor=#5c6067;container=0;" vertex="1" parent="1">
+          <mxGeometry x="8" y="32" width="672" height="96" as="geometry"/>
+        </mxCell>
+        <mxCell id="b1" value="&lt;b&gt;Bucket 32 (aclmdlRI)&lt;/b&gt;&lt;br&gt;承接 17 tok（向上归并）" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f2fb;strokeColor=#2f5783;strokeWidth=1.25;align=center;verticalAlign=middle;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="24" y="64" width="192" height="48" as="geometry"/>
+        </mxCell>
+        <mxCell id="b2" value="&lt;b&gt;Bucket 48 (UpdatableGraph)&lt;/b&gt;&lt;br&gt;同桶复用 33 / 45 + 变长 seq_kv" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#fbf2df;strokeColor=#7b5518;strokeWidth=2;align=center;verticalAlign=middle;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="232" y="64" width="224" height="48" as="geometry"/>
+        </mxCell>
+        <mxCell id="b3" value="&lt;b&gt;Bucket 64 (aclmdlRI)&lt;/b&gt;&lt;br&gt;承接 58 tok（MTP 对齐）" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f2fb;strokeColor=#2f5783;strokeWidth=1.25;align=center;verticalAlign=middle;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="472" y="64" width="192" height="48" as="geometry"/>
+        </mxCell>
+        <mxCell id="up_grp" value="2. UpdatableGraph：解决 CANN 捕获固化 Host Tiling 难题（免重捕修改 actual_seq_kv = 16 → 33 → 45）" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#f4f4f2;strokeColor=#e2e2dd;strokeWidth=1;dashed=1;verticalAlign=top;align=left;spacingLeft=12;spacingTop=6;fontFamily=Inter;fontSize=12;fontStyle=1;fontColor=#5c6067;container=0;" vertex="1" parent="1">
+          <mxGeometry x="8" y="144" width="672" height="200" as="geometry"/>
+        </mxCell>
+        <mxCell id="u_cap" value="&lt;b&gt;捕获期 register_task&lt;/b&gt;&lt;br&gt;在 FIA/PA 前后埋入 ExternalEvent.wait/reset&lt;br&gt;用 graph_task_group_begin/end 截取 handle&lt;br&gt;FIA 以 use_max_workspace=True 锁最大工作区" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f2fb;strokeColor=#2f5783;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="24" y="176" width="264" height="152" as="geometry"/>
+        </mxCell>
+        <mxCell id="u_main" value="&lt;b&gt;Main Stream（重放复用 Bucket 48）&lt;/b&gt;：ContextSource 提取 seq_kv → replay() → &lt;b&gt;ExternalEvent.wait&lt;/b&gt; → 执行 FIA(新 Tiling)" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f5e9;strokeColor=#2c522d;strokeWidth=1.5;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="304" y="176" width="360" height="64" as="geometry"/>
+        </mxCell>
+        <mxCell id="u_sub" value="&lt;b&gt;update_stream（并行原地热改 Task 描述符）&lt;/b&gt;：wait_stream(Main) → task_update_begin(handle) 写新 Tiling → end → &lt;b&gt;ev.record&lt;/b&gt;" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#fbf2df;strokeColor=#7b5518;strokeWidth=1.5;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="304" y="256" width="360" height="72" as="geometry"/>
+        </mxCell>
+        <mxCell id="ftr" value="&lt;b&gt;异步重放 507011 防护&lt;/b&gt;：次步重放前先同步上一轮防读写踩踏；per-head sinks 等持久缓冲须强持有引用，weak_ref 仅释放工作区与末输出" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f5e9;strokeColor=#2c522d;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="8" y="360" width="672" height="48" as="geometry"/>
+        </mxCell>
+        <mxCell id="e_ev" value="ev.record 唤醒" style="endArrow=classic;startArrow=none;html=1;strokeColor=#2c522d;strokeWidth=1.5;exitX=0.5;exitY=0;exitDx=0;exitDy=0;entryX=0.5;entryY=1;entryDx=0;entryDy=0;fontFamily=Inter;fontSize=12;fontColor=#2c522d;labelBackgroundColor=#f4f4f2;" edge="1" parent="1" source="u_sub" target="u_main">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

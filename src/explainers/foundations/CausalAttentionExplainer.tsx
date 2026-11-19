@@ -23,8 +23,8 @@ export interface CausalAttentionState {
 }
 
 const TOKENS = ['猫', '坐在', '垫', '上'];
-const COL_IDX = ['t=0', 't=1', 't=2', 't=3'];
-const DIM_COLS = ['d0', 'd1', 'd2', 'd3'];
+const COL_IDX = ['$t=0$', '$t=1$', '$t=2$', '$t=3$'];
+const DIM_COLS = ['$d_0$', '$d_1$', '$d_2$', '$d_3$'];
 
 const RAW_QK: (number | null)[][] = [
   [2.0, 0.0, 0.0, 0.0],
@@ -95,7 +95,7 @@ export function buildCausalAttentionSteps(): Step<CausalAttentionState>[] {
     {
       state: {
         stepIndex: 0,
-        centerTitle: '原始点积矩阵 Q K^T [4, 4]',
+        centerTitle: '原始点积矩阵 $QK^\\top\\;[4, 4]$',
         centerTone: 'active',
         centerValues: RAW_QK,
         centerMasks: NO_MASKS,
@@ -103,9 +103,9 @@ export function buildCausalAttentionSteps(): Step<CausalAttentionState>[] {
         outputValues: EMPTY_OUT,
         outputSelected: new Set(),
         scaleFormula: '未缩放 (直接内积)',
-        varianceText: 'Var = d_k (随维度膨胀)',
+        varianceText: '$\\operatorname{Var} = d_k$ (随维度膨胀)',
         maskCountText: '0 / 16 未来位置未遮蔽',
-        focusRowText: 't=2 与未来 t=3 点积高达 2.0',
+        focusRowText: '$t=2$ 与未来 $t=3$ 点积 2.0',
       },
       caption:
         '4 个 token 经投影得到 $Q, K, V \\in \\mathbb{R}^{4 \\times 4}$。先算原始相似度矩阵 $Q K^\\top$：若不做缩放，独立向量内积的方差会随 $d_k$ 线性膨胀到 $d_k$ 倍，把 Softmax 推向饱和区。',
@@ -113,35 +113,35 @@ export function buildCausalAttentionSteps(): Step<CausalAttentionState>[] {
     {
       state: {
         stepIndex: 1,
-        centerTitle: '缩放分数 S = Q K^T / sqrt(4) [4, 4]',
+        centerTitle: '缩放分数 $S = QK^\\top / \\sqrt{4}\\;[4, 4]$',
         centerTone: 'active',
         centerValues: SCALED_S,
         centerMasks: NO_MASKS,
         selectedCenter: futureCell,
         outputValues: EMPTY_OUT,
         outputSelected: new Set(),
-        scaleFormula: '/ sqrt(4) = x 0.5',
-        varianceText: 'Var(q.k / sqrt(d_k)) = 1.0',
-        maskCountText: '0 / 16 (t=2 仍可见 t=3)',
-        focusRowText: 'S[2] = [0.5, 1.0, 0.5, 1.0]',
+        scaleFormula: '$/\\sqrt{4} = \\times 0.5$',
+        varianceText: '$\\operatorname{Var}(q\\cdot k / \\sqrt{d_k}) = 1.0$',
+        maskCountText: '0 / 16 ($t=2$ 可见 $t=3$)',
+        focusRowText: '$S[2] = [0.5, 1.0, 0.5, 1.0]$',
       },
       caption:
-        '整体除以 $\\sqrt{d_k} = 2$ 后方差回归稳定的 $1.0$（对应 vLLM 中 self.scaling = $d_k^{-0.5}$）。第 2 行「垫」上 $S[2, 3] = 1.00$，表明此时仍能读取未来 token「上」。',
+        '整体除以 $\\sqrt{d_k} = 2$ 后方差回归稳定的 $1.0$（对应 vLLM 中 self.scaling $= d_k^{-0.5}$）。第 2 行「垫」上 $S[2, 3] = 1.00$，表明此时仍能读取未来 token「上」。',
     },
     {
       state: {
         stepIndex: 2,
-        centerTitle: '因果掩码 S + M_triu [4, 4]',
+        centerTitle: '因果掩码 $S + M_{\\text{triu}}\\;[4, 4]$',
         centerTone: 'highlight',
         centerValues: SCALED_S,
         centerMasks: CAUSAL_MASKS,
         selectedCenter: row2Focus,
         outputValues: EMPTY_OUT,
         outputSelected: new Set(),
-        scaleFormula: 'strict triu(-inf)',
+        scaleFormula: '上三角置 $-\\infty$',
         varianceText: '保留当前及左侧因果历史',
-        maskCountText: '6 / 16 未来单元置 -inf',
-        focusRowText: 'S[2] -> [0.5, 1.0, 0.5, -inf]',
+        maskCountText: '6 / 16 未来单元置 $-\\infty$',
+        focusRowText: '$S[2] \\to [0.5, 1.0, 0.5, -\\infty]$',
       },
       caption:
         '加上严格上三角因果掩码 $M_{\\text{triu}}$，把所有 $j > i$ 的 6 个未来单元设为 $-\\infty$（虚线格）。第 $t=2$ 行只保留 $[0.5, 1.0, 0.5, -\\infty]$，阻断未来信息泄露。',
@@ -149,7 +149,7 @@ export function buildCausalAttentionSteps(): Step<CausalAttentionState>[] {
     {
       state: {
         stepIndex: 3,
-        centerTitle: '逐行 Softmax 概率 P [4, 4]',
+        centerTitle: '逐行 Softmax 概率 $P\\;[4, 4]$',
         centerTone: 'active',
         centerValues: PROBS_P,
         centerMasks: CAUSAL_MASKS,
@@ -157,10 +157,10 @@ export function buildCausalAttentionSteps(): Step<CausalAttentionState>[] {
         selectedCenter: row2Focus,
         outputValues: EMPTY_OUT,
         outputSelected: new Set(),
-        scaleFormula: 'exp(-inf) = 0.000',
+        scaleFormula: '$\\exp(-\\infty) = 0.000$',
         varianceText: '每行严格归一化至 1.00',
         maskCountText: '6 / 16 权重严格清零',
-        focusRowText: 't=2 最强关注 t=1「坐在」(0.452)',
+        focusRowText: '$t=2$ 聚焦「坐在」(0.452)',
       },
       caption:
         '逐行执行 Softmax：$\\exp(-\\infty) = 0$ 使未来权重清零，$t=2$ 行得到 $[0.274, 0.452, 0.274, 0]$，最聚焦于动词「坐在」；$t=3$ 行则均衡关注句首「猫」（$0.311$）与自身「上」（$0.311$）。',
@@ -168,7 +168,7 @@ export function buildCausalAttentionSteps(): Step<CausalAttentionState>[] {
     {
       state: {
         stepIndex: 4,
-        centerTitle: '注意力权重矩阵 P [4, 4]',
+        centerTitle: '注意力权重矩阵 $P\\;[4, 4]$',
         centerTone: 'active',
         centerValues: PROBS_P,
         centerMasks: CAUSAL_MASKS,
@@ -176,10 +176,10 @@ export function buildCausalAttentionSteps(): Step<CausalAttentionState>[] {
         selectedCenter: row3Focus,
         outputValues: OUT_O,
         outputSelected: row3Focus,
-        scaleFormula: 'O = P @ V',
+        scaleFormula: '$O = P \\cdot V$',
         varianceText: '4 个 token 上下文融合完成',
-        maskCountText: '复杂度 O(T^2): 长序列需 Flash/KV',
-        focusRowText: 't=3 输出 [0.406, 0.283, 0.500, 0.406]',
+        maskCountText: '复杂度 $O(T^2)$：需 Flash/KV',
+        focusRowText: '$O_3$:[.41,.28,.50,.41]',
       },
       caption:
         '最后由 $O = P \\cdot V$ 将各历史 token 的值向量按权重聚合，写出输出矩阵 $O \\in \\mathbb{R}^{4 \\times 4}$。行末位置「上」的输出 $[0.406, 0.283, 0.500, 0.406]$ 已融入主语「猫」的语义。',
@@ -188,7 +188,7 @@ export function buildCausalAttentionSteps(): Step<CausalAttentionState>[] {
 }
 
 export default function CausalAttentionExplainer({
-  title = '图 1：4 个 token 因果自注意力计算全链路（QK^T / sqrt(d_k) -> Mask -> Softmax -> PV）',
+  title = '图 1：4 个 token 因果自注意力计算全链路（$QK^\\top / \\sqrt{d_k} \\to \\text{Mask} \\to \\text{Softmax} \\to PV$）',
 }: {
   title?: string;
 }) {
@@ -210,7 +210,8 @@ export default function CausalAttentionExplainer({
               w={58}
               h={44}
               tone="active"
-              name="Q"
+              texName="Q"
+              texWidth={48}
               shape="[4, 4]"
               active={s.stepIndex <= 1}
             />
@@ -220,7 +221,8 @@ export default function CausalAttentionExplainer({
               w={58}
               h={44}
               tone="highlight"
-              name="K^T"
+              texName="K^\top"
+              texWidth={48}
               shape="[4, 4]"
               active={s.stepIndex <= 1}
             />
@@ -230,7 +232,8 @@ export default function CausalAttentionExplainer({
               w={58}
               h={44}
               tone="done"
-              name="V"
+              texName="V"
+              texWidth={48}
               shape="[4, 4]"
               active={isStep4}
             />
@@ -260,7 +263,7 @@ export default function CausalAttentionExplainer({
               tone={s.centerTone}
               values={s.centerValues}
               masks={s.centerMasks}
-              maskText="-inf"
+              maskText="-∞"
               rowLabels={TOKENS}
               colLabels={COL_IDX}
               rowSums={s.centerRowSums?.map((v) => v.toFixed(2))}
@@ -285,7 +288,7 @@ export default function CausalAttentionExplainer({
               tone="done"
               active={isStep4}
               flow={isStep4}
-              label="P @ V"
+              label="$P \cdot V$"
               labelPos={[384, 130]}
             />
 
@@ -293,7 +296,7 @@ export default function CausalAttentionExplainer({
             <HeatmapMatrix
               x={418}
               y={24}
-              title="输出向量 O = P @ V [4, 4]"
+              title="输出向量 $O = P \cdot V\;[4, 4]$"
               tone="done"
               values={s.outputValues}
               rowLabels={TOKENS}

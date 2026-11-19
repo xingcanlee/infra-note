@@ -18,7 +18,7 @@ import KvCacheStepExplainer from '../../../../explainers/foundations/KvCacheStep
 
 <KvCacheStepExplainer
   client:visible
-  title="图 1：Decode 阶段 KV Cache 增量追加与免重算收益（t=1..4）"
+  title="图 1：Decode 阶段 KV Cache 增量追加与免重算收益（$t=1\dots 4$）"
 />
 
 放在包含提示词前缀的一般推理场景里，这种差距会拉得更大。设提示词长度为 $T_{\text{prompt}}$、自回归生成 $T_{\text{gen}}$ 步，无缓存路径每步重算的前缀长度呈等差数列递增。当取 $T_{\text{prompt}} = 4$、$T_{\text{gen}} = 4$ 时，重算路径累计执行 $5 + 6 + 7 + 8 = 26$ 次全 token KV 投影，开启 KV Cache 则只需计算 4 个新生成 token 的键值，投影运算量差距立刻拉大到 6.50 倍，并随着上下文总长线性扩大到 $O(T)$ 倍。

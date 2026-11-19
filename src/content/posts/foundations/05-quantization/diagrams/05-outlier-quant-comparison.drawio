@@ -1,0 +1,37 @@
+<mxfile host="wisp-diagram">
+  <diagram id="foundations-05-outlier-quant-comparison" name="Outlier Channel Trap and SQNR Recovery">
+    <mxGraphModel dx="800" dy="600" grid="1" gridSize="8" guides="1" page="0" math="1" shadow="0">
+      <root>
+        <mxCell id="0"/>
+        <mxCell id="1" parent="0"/>
+        <mxCell id="hdr" value="离群通道陷阱与量化精度恢复对照：BF16 激活 \(X\;[4, 8]\)（列 \(c_3 = \pm 12.4\) vs 正常列 \(\pm 0.02\text{–}0.49\)）" style="text;html=1;whiteSpace=wrap;align=center;verticalAlign=middle;fontFamily=Inter;fontSize=12;fontColor=#5c6067;" vertex="1" parent="1">
+          <mxGeometry x="0" y="0" width="688" height="24" as="geometry"/>
+        </mxCell>
+        <mxCell id="in_box" value="&lt;b&gt;原始激活分布 \(X\;[4, 8]\)&lt;/b&gt;：7 个正常通道（28 元素）集中于 \(\pm 0.02\text{–}0.49\)，仅单列 \(c_3\) 突刺至 \(\pm 12.4\)（\(25\times\) 正常峰值），拉爆全局量化步长" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#fcedec;strokeColor=#984646;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="8" y="32" width="672" height="48" as="geometry"/>
+        </mxCell>
+        <mxCell id="grid_grp" value="五种量化方案的零桶截断与正常通道 SQNR 保真度对比（约每 6.02 dB 等价多保住 1 bit 有效精度）" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#f4f4f2;strokeColor=#e2e2dd;strokeWidth=1;dashed=1;verticalAlign=top;align=left;spacingLeft=12;spacingTop=6;fontFamily=Inter;fontSize=12;fontStyle=1;fontColor=#5c6067;container=0;" vertex="1" parent="1">
+          <mxGeometry x="8" y="96" width="672" height="264" as="geometry"/>
+        </mxCell>
+        <mxCell id="m_int8" value="&lt;b&gt;1. Per-Tensor INT8（基线受损）&lt;/b&gt;&lt;br&gt;全张量按 \(s = 12.4/127 \approx 0.0976\) 放缩&lt;br&gt;&lt;b&gt;10 / 28 正常元素落入 0 桶&lt;/b&gt;，浪费 96% 刻度&lt;br&gt;SQNR = &lt;b&gt;20.25 dB&lt;/b&gt;" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#fcedec;strokeColor=#984646;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="24" y="128" width="312" height="80" as="geometry"/>
+        </mxCell>
+        <mxCell id="m_smh" value="&lt;b&gt;2. SmoothQuant + Hadamard-8（最优恢复）&lt;/b&gt;&lt;br&gt;\(s_3 = \sqrt{12.4/0.48} \approx 5.083\) 平滑后乘正交 \(H_8\)&lt;br&gt;峰值降至 \(1.354\)（步长 \(0.0107\)），&lt;b&gt;0 / 28 归零&lt;/b&gt;&lt;br&gt;SQNR = &lt;b&gt;39.69 dB&lt;/b&gt;（\(+19.44\;\text{dB}\)，多保 &gt;3 bit）" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f5e9;strokeColor=#2c522d;strokeWidth=2;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="352" y="128" width="312" height="80" as="geometry"/>
+        </mxCell>
+        <mxCell id="m_fp8" value="&lt;b&gt;3. FP8 E4M3 块缩放（原生抗离群）&lt;/b&gt;&lt;br&gt;4-bit 指数自带对数刻度，无需离线旋转 · &lt;b&gt;0 / 28 归零&lt;/b&gt;&lt;br&gt;本例 &lt;b&gt;32.11 dB&lt;/b&gt;；DeepSeek \(1\times 128\) GEMM 达 &lt;b&gt;29.38 dB&lt;/b&gt;" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#fbf2df;strokeColor=#7b5518;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="24" y="224" width="216" height="120" as="geometry"/>
+        </mxCell>
+        <mxCell id="m_fp4" value="&lt;b&gt;4. 无微缩放单尺度 FP4&lt;/b&gt;&lt;br&gt;E2M1 正半轴仅 7 个离散幅值&lt;br&gt;单尺度使正常通道全部截断为 0&lt;br&gt;SQNR = &lt;b&gt;0.00 dB&lt;/b&gt;" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#fcedec;strokeColor=#984646;strokeWidth=1.25;dashed=1;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="256" y="224" width="176" height="120" as="geometry"/>
+        </mxCell>
+        <mxCell id="m_mx" value="&lt;b&gt;5. OCP MXFP4 + 平滑旋转&lt;/b&gt;&lt;br&gt;每 32 元素共享 1 B E8M0 指数块（均摊 4.25 bit）&lt;br&gt;\([4,8]\) 恢复至 &lt;b&gt;8.60 dB&lt;/b&gt;；\([64,128]\) GEMM 由 15.10 → &lt;b&gt;25.24 dB&lt;/b&gt;" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#fbf2df;strokeColor=#7b5518;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="448" y="224" width="216" height="120" as="geometry"/>
+        </mxCell>
+        <mxCell id="ftr" value="恒等变换：SmoothQuant \((X\,\text{diag}(s)^{-1})(\text{diag}(s)\,W)\)　|　Hadamard \((X H)(H^\top W)\)　|　Embed / LM Head / Router 保留 BF16" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#f4f4f2;strokeColor=#5c6067;strokeWidth=1;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#5c6067;" vertex="1" parent="1">
+          <mxGeometry x="8" y="376" width="672" height="40" as="geometry"/>
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

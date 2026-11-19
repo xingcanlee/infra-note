@@ -1,0 +1,51 @@
+<mxfile host="wisp-diagram">
+  <diagram id="deepseek-10-v41-layer-panoramic" name="DeepSeek-V4.1 Full Decode Step">
+    <mxGraphModel dx="800" dy="600" grid="1" gridSize="8" guides="1" page="0" math="1" shadow="0">
+      <root>
+        <mxCell id="0"/>
+        <mxCell id="1" parent="0"/>
+        <mxCell id="hdr" value="DeepSeek-V4.1 单 token 解码六阶段全景：四流残差（mHC）、CSA2/HSI、异步 Engram、MoE 与 DSpark" style="text;html=1;whiteSpace=wrap;align=center;verticalAlign=middle;fontFamily=Inter;fontSize=12;fontColor=#5c6067;" vertex="1" parent="1">
+          <mxGeometry x="0" y="0" width="688" height="24" as="geometry"/>
+        </mxCell>
+        <mxCell id="s1" value="&lt;b&gt;1. Mega-mHC Pre-Mix&lt;/b&gt;&lt;br&gt;\([B,4,H]\to[B,H]\) 单遍读写 \(10d\)&lt;br&gt;20 轮 Sinkhorn 控制增益 \(\le 1.6\)&lt;br&gt;SM100 Shifted / NPU npu_hc_pre_v3" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f5e9;strokeColor=#2c522d;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="8" y="40" width="208" height="96" as="geometry"/>
+        </mxCell>
+        <mxCell id="s2" value="&lt;b&gt;2. CSA2 / CED 稀疏注意力&lt;/b&gt;&lt;br&gt;Full / Reindex / Reuse 40 层复用&lt;br&gt;HSI 16,384 池选 Top-512 · 288 B NVFP4&lt;br&gt;全网均摊 890 B/tok + 末 64 维 \(R_{-t}\)" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f2fb;strokeColor=#2f5783;strokeWidth=1.5;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="240" y="40" width="216" height="96" as="geometry"/>
+        </mxCell>
+        <mxCell id="s3" value="&lt;b&gt;3. Async Engram（L1, L14）&lt;/b&gt;&lt;br&gt;L0 前定址 · 后台 PCIe/HCCS 预取&lt;br&gt;卡在 mhc_post 后 / mhc_pre 前注入&lt;br&gt;4:1 Key/Value + 有符号开方门控" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#fbf2df;strokeColor=#7b5518;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="480" y="40" width="200" height="96" as="geometry"/>
+        </mxCell>
+        <mxCell id="s4" value="&lt;b&gt;4. DeepSeekMoE + 共享专家&lt;/b&gt;&lt;br&gt;无辅损偏置路由 Top-8 + 1 Shared&lt;br&gt;GPU DeepEP+DeepGEMM / NPU MC2&lt;br&gt;Shared 掩盖 Dispatch 首段等待" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f2fb;strokeColor=#2f5783;strokeWidth=1.5;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="8" y="176" width="208" height="96" as="geometry"/>
+        </mxCell>
+        <mxCell id="s5" value="&lt;b&gt;5. mHC Post-Mix 写回 4 流&lt;/b&gt;&lt;br&gt;\([B,H]\to[B,4,H]\) 残差分散&lt;br&gt;单批可延迟至下层 mhc_shifted 融合&lt;br&gt;开 DBO 时强制层内同步收敛" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f5e9;strokeColor=#2c522d;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="240" y="176" width="216" height="96" as="geometry"/>
+        </mxCell>
+        <mxCell id="s6" value="&lt;b&gt;6. DSpark 轻量并行草稿链&lt;/b&gt;&lt;br&gt;辅助特征 → 3 层 SWA 1-Pass 并行&lt;br&gt;\(r=256\) Markov 头 + 置信截断&lt;br&gt;单轮无损校验推进 \(3\sim 5\) tok" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#fbf2df;strokeColor=#7b5518;strokeWidth=1.5;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="480" y="176" width="200" height="96" as="geometry"/>
+        </mxCell>
+        <mxCell id="e12" value="" style="endArrow=classic;startArrow=none;html=1;strokeColor=#1d1d1f;strokeWidth=1.25;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="s1" target="s2">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e23" value="" style="endArrow=classic;startArrow=none;html=1;strokeColor=#1d1d1f;strokeWidth=1.25;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="s2" target="s3">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e34" value="单流进 FFN" style="endArrow=classic;startArrow=none;html=1;strokeColor=#1d1d1f;strokeWidth=1.25;edgeStyle=orthogonalEdgeStyle;rounded=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;fontFamily=Inter;fontSize=12;fontColor=#5c6067;labelBackgroundColor=#fcfcfb;" edge="1" parent="1" source="s3" target="s4">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="580" y="156"/>
+              <mxPoint x="112" y="156"/>
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e45" value="" style="endArrow=classic;startArrow=none;html=1;strokeColor=#1d1d1f;strokeWidth=1.25;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="s4" target="s5">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e56" value="末层 aux" style="endArrow=classic;startArrow=none;html=1;strokeColor=#1d1d1f;strokeWidth=1.25;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;fontFamily=Inter;fontSize=12;fontColor=#5c6067;labelBackgroundColor=#fcfcfb;" edge="1" parent="1" source="s5" target="s6">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

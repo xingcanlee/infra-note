@@ -7,8 +7,6 @@ tags: [vLLM, Ascend, PyTorch, Roofline, Profiling]
 description: '从同步等待与异步 FIFO 队列递推出发，拆解 Compute-bound 排空代价、Launch-bound 发射墙上限及两阶段异步调度交接机制。'
 ---
 
-import AsyncLaunchQueueExplainer from '../../../../explainers/vllm/AsyncLaunchQueueExplainer';
-
 连续批调度消除显存碎片并填满 token 配额后，小批量解码（Decode）的时间线（Trace）上仍会出现显著失衡：计算单元上的每一个 Kernel 本身只执行了短短几微秒，但算子之间的硬件时间轨却留出大片空白间隔。
 
 这种硬件等待直接源于主机侧（CPU）的指令供给速度落后于设备消耗速度，这一瓶颈在推理系统中称为**发射墙（Launch Wall）**。在真实集群上，Python 线程通过 PyTorch C++ 分发器（Dispatcher）向 CUDA 或昇腾 CANN 驱动提交单个轻量算子的开销通常在 5–15 μs 量级；一个 60 层 Transformer 单步前向就要穿过数百个归一化、激活、线性投影与残差加法节点，累计主机下发耗时往往达到 2–5 ms。
@@ -41,12 +39,9 @@ $$
 T_{\text{launch\_bound}} = \sum_{i=1}^{N} t_{\text{cpu}, i} + t_{\text{dev}, N}
 $$
 
-这意味着即使代码里一处 `.item()` 同步都不写，发射受限场景的设备利用率也存在渐近天花板 $t_{\text{dev}} / t_{\text{cpu}}$（例如 $0.6 / 0.8 = 75.0\%$，而在 3 μs 对 10 μs 的实机比例下上限仅约 30%）。下面的交互时间线直观对比了同步串行、异步队列积攒、`op5` 隐式同步排空以及跨步异步输出的轨间空隙，可按步骤切换观察各条轨道的占用变化。
+这意味着即使代码里一处 `.item()` 同步都不写，发射受限场景的设备利用率也存在渐近天花板 $t_{\text{dev}} / t_{\text{cpu}}$（例如 $0.6 / 0.8 = 75.0\%$，而在 3 μs 对 10 μs 的实机比例下上限仅约 30%）。图 1 直观对比了同步串行、异步队列积攒、`op5` 隐式同步排空以及跨步异步输出的轨间空隙。
 
-<AsyncLaunchQueueExplainer
-  client:visible
-  title="图 1：CPU-Device 启动墙、Async FIFO 与 .item() 同步清空推演"
-/>
+![CPU-Device 启动墙、Async FIFO、.item() 同步排空与 vLLM AsyncOutput / Ascend TaskQueue 跨步重叠对比](./diagrams/02-async-launch-timeline.drawio '图 1：CPU-Device 启动墙、Async FIFO 与 .item() 同步清空对比')
 
 ## 跨步异步调度与两阶段采样交接
 

@@ -1,5 +1,6 @@
-import { formatNumber } from 'astro-wisp/explainers';
+import { formatNumber, hasInlineMath, plainInlineMath } from 'astro-wisp/explainers';
 import { motion } from 'motion/react';
+import SvgRichLabel from './SvgRichLabel';
 import {
   RADIUS_SM,
   fontVarFor,
@@ -111,22 +112,34 @@ export default function HeatmapMatrix({
 
   return (
     <g>
-      {title && (
-        <text
-          x={gridX}
-          y={y + 8}
-          textAnchor="start"
-          dominantBaseline="central"
-          style={{
-            fill: 'var(--wisp-fg)',
-            fontFamily: 'var(--wisp-font-sans)',
-            fontSize: 12.5,
-            fontWeight: 600,
-          }}
-        >
-          {title}
-        </text>
-      )}
+      {title &&
+        (hasInlineMath(title) ? (
+          <SvgRichLabel
+            x={gridX}
+            y={y + 8}
+            width={Math.max(120, gridW)}
+            height={22}
+            text={title}
+            fontSize={12.5}
+            fontWeight={600}
+            anchor="start"
+          />
+        ) : (
+          <text
+            x={gridX}
+            y={y + 8}
+            textAnchor="start"
+            dominantBaseline="central"
+            style={{
+              fill: 'var(--wisp-fg)',
+              fontFamily: 'var(--wisp-font-sans)',
+              fontSize: 12.5,
+              fontWeight: 600,
+            }}
+          >
+            {title}
+          </text>
+        ))}
 
       {showLegend && (
         <g>
@@ -174,42 +187,71 @@ export default function HeatmapMatrix({
       )}
 
       {colLabels &&
-        colLabels.map((lbl, c) => (
-          <text
-            key={`cl-${c}`}
-            x={gridX + c * (cellW + gap) + cellW / 2}
-            y={gridY - 9}
-            textAnchor="middle"
-            dominantBaseline="central"
-            style={{
-              fill: 'var(--wisp-muted)',
-              fontFamily: fontVarFor(lbl, 'mono'),
-              fontSize: 11,
-              fontVariantNumeric: 'tabular-nums',
-            }}
-          >
-            {lbl}
-          </text>
-        ))}
+        colLabels.map((lbl, c) =>
+          hasInlineMath(lbl) ? (
+            <SvgRichLabel
+              key={`cl-${c}`}
+              x={gridX + c * (cellW + gap) + cellW / 2}
+              y={gridY - 9}
+              width={cellW + gap}
+              height={18}
+              text={lbl}
+              fontSize={11}
+              color="var(--wisp-muted)"
+              family={plainInlineMath(lbl).length > 4 ? 'sans' : 'mono'}
+            />
+          ) : (
+            <text
+              key={`cl-${c}`}
+              x={gridX + c * (cellW + gap) + cellW / 2}
+              y={gridY - 9}
+              textAnchor="middle"
+              dominantBaseline="central"
+              style={{
+                fill: 'var(--wisp-muted)',
+                fontFamily: fontVarFor(lbl, 'mono'),
+                fontSize: 11,
+                fontVariantNumeric: 'tabular-nums',
+              }}
+            >
+              {lbl}
+            </text>
+          ),
+        )}
 
       {rowLabels &&
-        rowLabels.map((lbl, r) => (
-          <text
-            key={`rl-${r}`}
-            x={gridX - 7}
-            y={gridY + r * (ch + gap) + ch / 2}
-            textAnchor="end"
-            dominantBaseline="central"
-            style={{
-              fill: 'var(--wisp-muted)',
-              fontFamily: fontVarFor(lbl, 'mono'),
-              fontSize: 11,
-              fontVariantNumeric: 'tabular-nums',
-            }}
-          >
-            {lbl}
-          </text>
-        ))}
+        rowLabels.map((lbl, r) =>
+          hasInlineMath(lbl) ? (
+            <SvgRichLabel
+              key={`rl-${r}`}
+              x={gridX - 7}
+              y={gridY + r * (ch + gap) + ch / 2}
+              width={Math.max(36, rowLabelW - 4)}
+              height={18}
+              text={lbl}
+              fontSize={11}
+              color="var(--wisp-muted)"
+              anchor="end"
+              family="mono"
+            />
+          ) : (
+            <text
+              key={`rl-${r}`}
+              x={gridX - 7}
+              y={gridY + r * (ch + gap) + ch / 2}
+              textAnchor="end"
+              dominantBaseline="central"
+              style={{
+                fill: 'var(--wisp-muted)',
+                fontFamily: fontVarFor(lbl, 'mono'),
+                fontSize: 11,
+                fontVariantNumeric: 'tabular-nums',
+              }}
+            >
+              {lbl}
+            </text>
+          ),
+        )}
 
       {values.map((row, r) =>
         row.map((val, c) => {

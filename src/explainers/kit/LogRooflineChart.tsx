@@ -1,4 +1,6 @@
+import { plainInlineMath } from 'astro-wisp/explainers';
 import { motion } from 'motion/react';
+import SvgRichLabel from './SvgRichLabel';
 import {
   RADIUS_SM,
   estimateTextWidth,
@@ -40,7 +42,7 @@ export interface LogRooflineChartProps {
   xAxisLabel?: string;
   yAxisLabel?: string;
   /** ridgeAI marker vertical line */
-  ridgeMarkers?: readonly { ai: number; label: string; tone: AnyTone }[];
+  ridgeMarkers?: readonly { ai: number; label: string; tone: AnyTone; side?: 'left' | 'right' }[];
 }
 
 /** 对数坐标 Roofline 性能曲线画布：严格按 log10 比例映射到 viewBox。 */
@@ -63,7 +65,7 @@ export default function LogRooflineChart({
   const left = x + 46;
   const top = y + 14;
   const pw = w - 62;
-  const ph = h - 46;
+  const ph = h - 50;
 
   const lx0 = Math.log10(xRange[0]);
   const lx1 = Math.log10(xRange[1]);
@@ -79,14 +81,29 @@ export default function LogRooflineChart({
 
   // 预计算无碰撞标签位置（拐点垂直线贴底，Ceiling 贴左膝区，数据点标签避让折线与同行兄弟）
   const placedRidges = (ridgeMarkers ?? []).reduce<
-    Array<{ rm: { ai: number; label: string; tone: AnyTone }; rx: number; ly: number; lw: number }>
+    Array<{
+      rm: { ai: number; label: string; tone: AnyTone; side?: 'left' | 'right' };
+      rx: number;
+      pillX: number;
+      ly: number;
+      lw: number;
+      anchor: 'start' | 'end';
+    }>
   >((acc, rm) => {
     const rx = toPx(rm.ai);
-    const lw = Math.ceil(estimateTextWidth(rm.label, 10, fontKindFor(rm.label, 'mono'))) + 8;
-    const lx = Math.max(left + 4, Math.min(left + pw - lw - 4, rx + 4));
-    const collidesRow0 = acc.some((prev) => prev.ly > top + ph - 18 && lx < prev.rx + prev.lw + 6);
-    const ly = top + ph - (collidesRow0 ? 26 : 12);
-    acc.push({ rm, rx, ly, lw });
+    const plain = plainInlineMath(rm.label);
+    const lw = Math.ceil(estimateTextWidth(plain, 10, fontKindFor(plain, 'mono'))) + 18;
+    const anchor: 'start' | 'end' = rm.side === 'left' ? 'end' : 'start';
+    const pillX =
+      anchor === 'end'
+        ? Math.max(left + 4, rx - lw - 4)
+        : Math.max(left + 4, Math.min(left + pw - lw - 4, rx + 4));
+    const collidesRow0 = acc.some(
+      (prev) =>
+        prev.ly > top + ph - 20 && pillX < prev.pillX + prev.lw + 4 && pillX + lw + 4 > prev.pillX,
+    );
+    const ly = top + ph - (collidesRow0 ? 34 : 13);
+    acc.push({ rm, rx, pillX, ly, lw, anchor });
     return acc;
   }, []);
 
@@ -101,7 +118,7 @@ export default function LogRooflineChart({
     const lw = Math.ceil(estimateTextWidth(c.label, 10.5, 'sans')) + 24;
     // Legend in upper-left corner (always above diagonal bandwidth slope, guaranteed empty)
     const lx = left + 10;
-    const ly = top + 11 + idx * 17;
+    const ly = top + 11 + idx * 18;
     return {
       c,
       pointsStr: `${p0x},${p0y} ${p1x},${p1y} ${p2x},${p1y}`,
@@ -136,15 +153,16 @@ export default function LogRooflineChart({
     const rawLx = nearRight ? px - 9 : px + 9;
     const lx = anchor === 'start' ? Math.min(rawLx, left + pw - lw) : Math.max(rawLx, left + lw);
 
-    let ly = py < top + 24 ? Math.min(top + ph - 12, py + 13) : py - 1;
+    let ly = py < top + 24 ? Math.min(top + ph - 10, py + 14) : py - 1;
     for (const prev of acc) {
       const pLeft = prev.anchor === 'start' ? prev.lx - 4 : prev.lx - prev.lw + 4;
       const curLeft = anchor === 'start' ? lx - 4 : lx - lw + 4;
       const overlapX = curLeft < pLeft + prev.lw + 4 && curLeft + lw + 4 > pLeft;
-      if (overlapX && Math.abs(ly - prev.ly) < 13) {
-        ly = Math.min(top + ph - 10, prev.ly + 13);
+      if (overlapX && Math.abs(ly - prev.ly) < 15) {
+        ly = Math.min(top + ph - 10, prev.ly + 15);
       }
     }
+    ly = Math.max(top + 10, Math.min(top + ph - 10, ly));
     acc.push({ pt, px, py, lx, ly, lw, anchor, stroke, fill });
     return acc;
   }, []);
@@ -225,9 +243,8 @@ export default function LogRooflineChart({
         );
       })}
 
-      {placedRidges.map(({ rm, rx, ly, lw }) => {
+      {placedRidges.map(({ rm, rx, pillX, ly, lw, anchor }) => {
         const rs = resolveToneStroke(rm.tone);
-        const pillX = Math.max(left + 4, Math.min(left + pw - lw - 4, rx + 2));
         return (
           <g key={rm.label}>
             <line
@@ -241,27 +258,25 @@ export default function LogRooflineChart({
             />
             <rect
               x={pillX}
-              y={ly - 7}
+              y={ly - 9}
               width={lw}
-              height={14}
+              height={18}
               rx={RADIUS_SM}
               fill="var(--wisp-bg)"
               fillOpacity={0.92}
             />
-            <text
-              x={pillX + 4}
+            <SvgRichLabel
+              x={anchor === 'end' ? pillX + lw - 4 : pillX + 4}
               y={ly}
-              textAnchor="start"
-              dominantBaseline="central"
-              style={{
-                fill: rs,
-                fontFamily: fontVarFor(rm.label, 'mono'),
-                fontSize: 10,
-                fontWeight: 600,
-              }}
-            >
-              {rm.label}
-            </text>
+              width={lw - 8}
+              height={18}
+              text={rm.label}
+              fontSize={10}
+              fontWeight={600}
+              color={rs}
+              anchor={anchor}
+              family="mono"
+            />
           </g>
         );
       })}
@@ -354,19 +369,15 @@ export default function LogRooflineChart({
         );
       })}
 
-      <text
+      <SvgRichLabel
         x={left + pw / 2}
-        y={top + ph + 26}
-        textAnchor="middle"
-        dominantBaseline="central"
-        style={{
-          fill: 'var(--wisp-muted)',
-          fontFamily: 'var(--wisp-font-sans)',
-          fontSize: 11,
-        }}
-      >
-        {xAxisLabel}
-      </text>
+        y={top + ph + 28}
+        width={pw}
+        height={22}
+        text={xAxisLabel}
+        fontSize={11}
+        color="var(--wisp-muted)"
+      />
       <text
         x={x + 12}
         y={top + ph / 2}

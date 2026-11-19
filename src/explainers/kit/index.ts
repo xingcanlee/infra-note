@@ -55,3 +55,4 @@ export {
   type MetricRowProps,
   type SectionBoxProps,
 } from './MetricRow';
+export { default as SvgRichLabel, type SvgRichLabelProps } from './SvgRichLabel';

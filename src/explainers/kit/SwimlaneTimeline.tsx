@@ -1,5 +1,6 @@
 import { formatNumber } from 'astro-wisp/explainers';
 import { motion } from 'motion/react';
+import SvgRichLabel from './SvgRichLabel';
 import {
   RADIUS_SM,
   estimateTextWidth,
@@ -90,20 +91,17 @@ export default function SwimlaneTimeline({
   return (
     <g>
       {title && (
-        <text
+        <SvgRichLabel
           x={x}
-          y={y + 8}
-          textAnchor="start"
-          dominantBaseline="central"
-          style={{
-            fill: 'var(--wisp-fg)',
-            fontFamily: 'var(--wisp-font-sans)',
-            fontSize: 12.5,
-            fontWeight: 600,
-          }}
-        >
-          {title}
-        </text>
+          y={y + 9}
+          width={w}
+          height={22}
+          text={title}
+          fontSize={12.5}
+          fontWeight={600}
+          color="var(--wisp-fg)"
+          anchor="start"
+        />
       )}
 
       {tickList.map((tk) => {

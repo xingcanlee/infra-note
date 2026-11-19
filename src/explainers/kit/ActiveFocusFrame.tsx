@@ -1,4 +1,6 @@
+import { hasInlineMath, plainInlineMath } from 'astro-wisp/explainers';
 import { motion } from 'motion/react';
+import SvgRichLabel from './SvgRichLabel';
 import {
   RADIUS,
   RADIUS_SM,
@@ -33,7 +35,14 @@ export default function ActiveFocusFrame({
 }: ActiveFocusFrameProps) {
   const { stepTransition } = useDiagramMotion();
   const stroke = resolveToneStroke(tone);
-  const labelW = label ? Math.max(44, Math.ceil(estimateTextWidth(label, 10.5, 'sans')) + 14) : 0;
+  const labelHasMath = hasInlineMath(label);
+  const labelPlain = label ? plainInlineMath(label) : '';
+  const labelW = label
+    ? Math.max(
+        44,
+        Math.ceil(estimateTextWidth(labelPlain, 10.5, 'sans')) + (labelHasMath ? 22 : 14),
+      )
+    : 0;
   const badgeX = Math.max(4, Math.min(STAGE_W - labelW - 4, x + 6));
   const badgeY = Math.max(2, y - 9);
 
@@ -56,10 +65,6 @@ export default function ActiveFocusFrame({
       />
       <motion.rect
         initial={false}
-        x={x}
-        y={y}
-        width={w}
-        height={h}
         animate={{ x, y, width: w, height: h }}
         transition={stepTransition}
         rx={RADIUS}
@@ -80,20 +85,16 @@ export default function ActiveFocusFrame({
             stroke={stroke}
             strokeWidth={1}
           />
-          <text
+          <SvgRichLabel
             x={labelW / 2}
             y={8}
-            textAnchor="middle"
-            dominantBaseline="central"
-            style={{
-              fill: stroke,
-              fontFamily: 'var(--wisp-font-sans)',
-              fontSize: 10.5,
-              fontWeight: 600,
-            }}
-          >
-            {label}
-          </text>
+            width={labelW}
+            height={16}
+            text={label}
+            fontSize={10.5}
+            fontWeight={600}
+            color={stroke}
+          />
         </motion.g>
       )}
     </motion.g>

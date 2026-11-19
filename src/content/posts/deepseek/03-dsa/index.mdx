@@ -8,8 +8,6 @@ category: AI Infra
 toc: true
 ---
 
-import DsaIndexerExplainer from '../../../../explainers/deepseek/DsaIndexerExplainer';
-
 在[02 原生稀疏注意力（NSA）](../02-swa-and-nsa/)中，NSA 依靠 GQA 多组共享块选择把 64K 上下文的 KV 访存压缩了一个量级。但到了 DeepSeek-V3.2，团队并没有把 GQA-NSA 直接搬进生产主干：一方面，NSA 需要从头联合训练三路独立分支；另一方面，DeepSeek-V3.1-Terminus 底座的 128K 上下文已经建立在 MLA 之上，Decode 阶段通过矩阵吸收化归为单头 MQA 潜空间（128 个 Query 头共用 1 份 512 + 64 维潜向量）。
 
 若拆回多组 KV 会推翻 MLA 的显存收益，而用 128 个高精度头逐 token 全量打分又会退回 $O(L^2)$ 瓶颈。为此，DeepSeek-V3.2 提出的 **DeepSeek 稀疏注意力（DSA）**把「粗筛谁重要」和「精算怎么聚合」拆给算力预算完全不对称的两个模块[^ds32]：先由一个极轻量的**闪电索引器（Lightning Indexer）**快速扫过历史序列挑出 Top-$k$（生产取 $k = 2048$）槽位，再让主模型 128 头 MLA 只按索引 Gather 这 2048 条潜向量，把主注意力的复杂度从 $O(L^2)$ 压至 $O(Lk)$。
@@ -39,12 +37,9 @@ $$
 
 放大到生产尺寸（$L = 131{,}072$、$k = 2048$）时，主模型 128 个高精度头每步仅从 HBM 稀疏读取约 1.56% 的历史潜向量，在几乎不损长上下文精度的前提下大幅压缩主注意力算力（DeepSeek-V3.2-Exp 在 AA-LCR 与 Fiction.liveBench 上持平乃至略微反超稠密基线 DeepSeek-V3.1-Terminus）[^ds32]。
 
-图 1 将这组 8 槽位算例的 ReLU 打分、Top-$k$ 筛选、按索引 Gather、生产字节账本与序列拐点串成五步视图，可逐帧切换对照。
+图 1 展示了这组 8 槽位算例的 ReLU 打分、Top-$k$ 筛选、按索引 Gather、生产字节账本与序列长度交叉点。
 
-<DsaIndexerExplainer
-  client:visible
-  title="图 1：DeepSeek-V3.2 DSA 闪电索引器、Top-K 按索引 Gather 与 656 B + 132 B 账本"
-/>
+![DeepSeek-V3.2 DSA 闪电索引器流程：64 头共享单 FP8 键 ReLU 打分、Top-k 离散筛选、FlashMLA 稀疏 Gather 与 656 B + 132 B 双精度缓存账本](./diagrams/03-dsa-indexer-flow.drawio '图 1：DeepSeek-V3.2 DSA 闪电索引器、Top-K 按索引 Gather 与 656 B + 132 B 账本')
 
 ## 两阶段蒸馏预热与梯度隔离
 

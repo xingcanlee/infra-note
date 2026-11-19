@@ -13,7 +13,7 @@
         <mxCell id="kv_right" value="vllm-ascend PA_NZ (mla_v1.py / attention_v1.py)" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e3f5f3;strokeColor=#0f766e;strokeWidth=1.25;verticalAlign=top;align=left;spacingLeft=12;spacingTop=6;fontFamily=Inter;fontSize=12;fontStyle=1;fontColor=#0f766e;container=0;" vertex="1" parent="1">
           <mxGeometry x="352" y="32" width="336" height="520" as="geometry"/>
         </mxCell>
-        <mxCell id="g_shape" value="物理张量池: [num_blocks, n_kv, block_size, 2*head_size]&lt;br&gt;do_kv_cache_update -&amp;gt; transpose(1,2).split(D)" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#f4f4f2;strokeColor=#5c6067;strokeWidth=1;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+        <mxCell id="g_shape" value="物理张量池: [num_blocks, n_kv, block_size, 2*head_size]&lt;br&gt;do_kv_cache_update → transpose(1,2).split(D)" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#f4f4f2;strokeColor=#5c6067;strokeWidth=1;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
           <mxGeometry x="24" y="80" width="288" height="72" as="geometry"/>
         </mxCell>
         <mxCell id="g_blk_title" value="单个物理块内的 K / V (ND 行主序)" style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;fontFamily=Inter;fontSize=12;fontStyle=1;fontColor=#1d1d1f;" vertex="1" parent="1">

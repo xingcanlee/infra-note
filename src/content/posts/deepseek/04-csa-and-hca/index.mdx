@@ -8,8 +8,6 @@ category: AI Infra
 toc: true
 ---
 
-import CsaRingExplainer from '../../../../explainers/deepseek/CsaRingExplainer';
-
 在[03 DeepSeek 稀疏注意力（DSA）](../03-dsa/)中，闪电索引器把主注意力的单步计算量压到了 $O(Lk)$，却没有从显存里删掉任何历史条目：按 `fp8_ds_mla` 格式计，每个 token 在每层仍占 656 B 主缓存与 132 B 索引键。放到百万 token 上下文（$L = 10^6$）与高并发批处理场景下，线性增长的 $O(L)$ 容量依然会迅速耗尽 HBM。
 
 既然 MLA 已经把单条潜向量的宽度压缩到了极限，继续打破长文本显存墙的下一条轴线就是直接压缩**序列长度轴 $L$**。DeepSeek-V4 提出了一对互补的序列压缩注意力架构——交错部署门控序列压缩稀疏注意力（CSA）与重度压缩注意力（HCA），配合 584 B 混合精度缓存，使 DeepSeek-V4-Flash 在 1M 上下文下的 KV 占用降至 V3.2 的 7%、单 token 推理计算量降至 10%[^dsv4-paper]。
@@ -40,12 +38,9 @@ $$
 
 为此，DeepSeek-V4 一方面在定长 FP32 环形状态槽位（`StateCache`）里暂存未闭合的尾部状态，另一方面为每层配对一条局部滑动窗口注意力（SWA，$n_{\text{win}} = 128$）保住逐 token 精细依赖[^dsv4-paper]。
 
-图 1 演示了流水线到达时新 token 进入环形尾槽、凑满 $m=4$ 后双窗折叠写回、HCA 与 SWA 协同以及输出端逆旋转恢复的五个阶段，可逐帧切换查看。
+图 1 汇总了新 token 进入环形尾槽、凑满 $m=4$ 后双窗折叠写回、HCA 与 SWA 协同以及输出端逆旋转恢复与字节账本。
 
-<CsaRingExplainer
-  client:visible
-  title="图 1：DeepSeek-V4 CSA 重叠门控折叠、环形尾缓存与输出逆 RoPE 推演"
-/>
+![DeepSeek-V4 CSA 重叠双窗折叠（m=4, 2m=8）、FP32 环形尾缓冲 StateCache、HCA 128 倍压缩、输出逆 RoPE 与 584 B 混合缓存账本](./diagrams/04-csa-ring-fold.drawio '图 1：DeepSeek-V4 CSA 重叠门控折叠、环形尾缓存与输出逆 RoPE 原理')
 
 ## CSA 与 HCA 混合架构及输出逆旋转
 

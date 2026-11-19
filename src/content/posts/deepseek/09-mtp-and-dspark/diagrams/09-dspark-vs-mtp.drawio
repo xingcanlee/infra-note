@@ -1,0 +1,70 @@
+<mxfile host="wisp-diagram">
+  <diagram id="deepseek-09-dspark-vs-mtp" name="DeepSeek-V3 Serial MTP vs V4.1 DSpark">
+    <mxGraphModel dx="800" dy="600" grid="1" gridSize="8" guides="1" page="0" math="1" shadow="0">
+      <root>
+        <mxCell id="0"/>
+        <mxCell id="1" parent="0"/>
+        <mxCell id="hdr" value="草稿生成时序演进：DeepSeek-V3 严格串行 MTP（11.8 ms） vs V4.1 DSpark 并行 SWA + 低秩马尔可夫链（6.0 ms）" style="text;html=1;whiteSpace=wrap;align=center;verticalAlign=middle;fontFamily=Inter;fontSize=12;fontColor=#5c6067;" vertex="1" parent="1">
+          <mxGeometry x="0" y="0" width="688" height="24" as="geometry"/>
+        </mxCell>
+        <mxCell id="g1" value="1. DeepSeek-V3 串行因果 MTP（K=4 步严守前序依赖，每步重跑 Decoder 块与全词表采样 → 8.8 ms 草稿 + 3.0 ms 检验 = 11.8 ms）" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#f4f4f2;strokeColor=#e2e2dd;strokeWidth=1;dashed=1;verticalAlign=top;align=left;spacingLeft=12;spacingTop=6;fontFamily=Inter;fontSize=12;fontStyle=1;fontColor=#5c6067;container=0;" vertex="1" parent="1">
+          <mxGeometry x="8" y="32" width="672" height="112" as="geometry"/>
+        </mxCell>
+        <mxCell id="m1" value="MTP k=1&lt;br&gt;2.2 ms" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#fbf2df;strokeColor=#7b5518;strokeWidth=1.25;align=center;verticalAlign=middle;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="24" y="64" width="112" height="64" as="geometry"/>
+        </mxCell>
+        <mxCell id="m2" value="MTP k=2&lt;br&gt;2.2 ms" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#fbf2df;strokeColor=#7b5518;strokeWidth=1.25;align=center;verticalAlign=middle;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="152" y="64" width="112" height="64" as="geometry"/>
+        </mxCell>
+        <mxCell id="m3" value="MTP k=3&lt;br&gt;2.2 ms" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#fbf2df;strokeColor=#7b5518;strokeWidth=1.25;align=center;verticalAlign=middle;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="280" y="64" width="112" height="64" as="geometry"/>
+        </mxCell>
+        <mxCell id="m4" value="MTP k=4&lt;br&gt;2.2 ms" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#fbf2df;strokeColor=#7b5518;strokeWidth=1.25;align=center;verticalAlign=middle;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="408" y="64" width="112" height="64" as="geometry"/>
+        </mxCell>
+        <mxCell id="mv" value="Target 并行 Verify&lt;br&gt;3.0 ms（合计 11.8 ms）" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f5e9;strokeColor=#2c522d;strokeWidth=1.25;align=center;verticalAlign=middle;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="536" y="64" width="128" height="64" as="geometry"/>
+        </mxCell>
+        <mxCell id="g2" value="2. DeepSeek-V4.1 DSpark 半自回归并行链（总耗时 6.0 ms，较 V3 省 5.8 ms / -49%，平均命中 ~4.2 tok/step）" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#f4f4f2;strokeColor=#e2e2dd;strokeWidth=1;dashed=1;verticalAlign=top;align=left;spacingLeft=12;spacingTop=6;fontFamily=Inter;fontSize=12;fontStyle=1;fontColor=#5c6067;container=0;" vertex="1" parent="1">
+          <mxGeometry x="8" y="160" width="672" height="192" as="geometry"/>
+        </mxCell>
+        <mxCell id="d1" value="&lt;b&gt;Context 投影（0.7 ms）&lt;/b&gt;&lt;br&gt;main_proj + context_wkv&lt;br&gt;预填 3 层 SWA (W=128)" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f2fb;strokeColor=#2f5783;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="24" y="192" width="160" height="72" as="geometry"/>
+        </mxCell>
+        <mxCell id="d2" value="&lt;b&gt;1-Pass 并行 SWA（1.5 ms）&lt;/b&gt;&lt;br&gt;锚点 + \(\gamma-1\) 掩码并行&lt;br&gt;同时产全槽 \(\mathbf{z}_k^{\text{base}}\)" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f2fb;strokeColor=#2f5783;strokeWidth=2;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="200" y="192" width="176" height="72" as="geometry"/>
+        </mxCell>
+        <mxCell id="d3" value="&lt;b&gt;低秩 Markov + 置信截断（0.8 ms）&lt;/b&gt;&lt;br&gt;\(\mathbf{z}_k = \mathbf{z}_k^{\text{base}} + \mathbf{W}_1[x_{k-1}]\mathbf{W}_2\;(r=256)\)&lt;br&gt;\(a_j = \prod_{i=1}^j c_i &lt; \tau\) 在高并发裁断长尾" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#fbf2df;strokeColor=#7b5518;strokeWidth=1.5;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="392" y="192" width="272" height="72" as="geometry"/>
+        </mxCell>
+        <mxCell id="dv" value="&lt;b&gt;Target 并行 Verify（3.0 ms）&lt;/b&gt;：无损拒绝采样 + 额外奖励 1 token" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f5e9;strokeColor=#2c522d;strokeWidth=2;align=center;verticalAlign=middle;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="24" y="280" width="352" height="56" as="geometry"/>
+        </mxCell>
+        <mxCell id="dsav" value="&lt;b&gt;节省时延 5.8 ms（-49%）&lt;/b&gt;：消除串行 Kernel 启动墙与重复 Decoder 重计算" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f5e9;strokeColor=#2c522d;strokeWidth=1.25;dashed=1;align=center;verticalAlign=middle;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="392" y="280" width="272" height="56" as="geometry"/>
+        </mxCell>
+        <mxCell id="e_m1" value="" style="endArrow=classic;startArrow=none;html=1;strokeColor=#7b5518;strokeWidth=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="m1" target="m2">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e_m2" value="" style="endArrow=classic;startArrow=none;html=1;strokeColor=#7b5518;strokeWidth=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="m2" target="m3">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e_m3" value="" style="endArrow=classic;startArrow=none;html=1;strokeColor=#7b5518;strokeWidth=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="m3" target="m4">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e_m4" value="" style="endArrow=classic;startArrow=none;html=1;strokeColor=#2c522d;strokeWidth=1.25;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="m4" target="mv">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e_d1" value="" style="endArrow=classic;startArrow=none;html=1;strokeColor=#1d1d1f;strokeWidth=1.25;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="d1" target="d2">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e_d2" value="" style="endArrow=classic;startArrow=none;html=1;strokeColor=#1d1d1f;strokeWidth=1.25;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="d2" target="d3">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e_dv" value="" style="endArrow=classic;startArrow=none;html=1;strokeColor=#2c522d;strokeWidth=1.5;edgeStyle=orthogonalEdgeStyle;rounded=1;exitX=0.2;exitY=1;exitDx=0;exitDy=0;entryX=0.8;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="d3" target="dv">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

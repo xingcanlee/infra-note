@@ -40,7 +40,7 @@ const BLK_COUNT = 16;
 function makePool(overrides: Record<number, Partial<SlotItem>>): SlotItem[] {
   const base: SlotItem[] = Array.from({ length: BLK_COUNT }, (_, idx) => ({
     id: `blk-${idx}`,
-    label: idx === 0 ? 'B0' : `B${idx}`,
+    label: `$B_{${idx}}$`,
     sub: idx === 0 ? 'null' : 'free',
     topTag: idx === 0 ? 'RSV' : undefined,
     tone: idx === 0 ? 'mask' : 'neutral',
@@ -90,7 +90,7 @@ export function buildPagedSchedulerSteps(): Step<PagedSchedulerState>[] {
           },
         ],
         focusArea: 'pool',
-        focusLabel: 'BlockPool 初始化：B0 保留为 null_block，可用 15 块',
+        focusLabel: 'BlockPool 初始化：$B_0$ 保留为 null_block，可用 15 块',
       },
       caption:
         '第 1 步：BlockPool 初始化 16 块（$B_0\\text{–}B_{15}$）时先弹出 $B_0$ 作为永久保留的 null_block，其余 15 个物理块按 FIFO 进入 free_block_queue。',
@@ -136,7 +136,7 @@ export function buildPagedSchedulerSteps(): Step<PagedSchedulerState>[] {
           },
         ],
         focusArea: 'prefix',
-        focusLabel: 'Req A 写入系统前缀 B1（hash=0x9a, ref_cnt=1）',
+        focusLabel: 'Req A 写入系统前缀 $B_1$ (hash=0x9a, ref=1)',
       },
       caption:
         '第 2 步：Req A 完成 12 token Prefill（每块 4 token），消耗 $B_1\\text{–}B_3$；其中满块 $B_1$ 按前缀哈希 0x9a 登记进 Prefix Cache（ref_cnt=1）。',
@@ -183,7 +183,7 @@ export function buildPagedSchedulerSteps(): Step<PagedSchedulerState>[] {
           },
         ],
         focusArea: 'prefix',
-        focusLabel: 'Req B 命中共享前缀 B1（ref_cnt=2），零重复计算与写入',
+        focusLabel: 'Req B 命中共享前缀 $B_1$ (ref=2)，零重复计算',
       },
       caption:
         '第 3 步：Req B 共享相同系统提示，KVCacheManager 直接复指 $B_1$（ref_cnt=2）并跳过其 Prefill，仅需分配 $B_4$ 写入后 4 个新 token。',
@@ -291,7 +291,7 @@ export function buildPagedSchedulerSteps(): Step<PagedSchedulerState>[] {
           },
         ],
         focusArea: 'preempt',
-        focusLabel: '空闲块归零时触发 LIFO 抢占：驱逐 Req C 释放 B5..B8，保住 Req A/B',
+        focusLabel: '空闲块归零触发 LIFO 抢占：驱逐 Req C 释放 $B_5\\text{–}B_8$',
       },
       caption:
         '第 5 步：突发请求占满 $B_9\\text{–}B_{15}$ 后，新槽位分配失败；调度器按抢占策略驱逐低优先级的 Req C，回收 $B_5\\text{–}B_8$ 保障 Req A/B 推进。',
@@ -346,7 +346,7 @@ export function buildPagedSchedulerSteps(): Step<PagedSchedulerState>[] {
           },
         ],
         focusArea: 'null',
-        focusLabel: '占位/被驱逐请求指回 B0 (null_block) 并写 PAD_SLOT_ID=-1，防 KV 写穿',
+        focusLabel: '占位/被驱逐请求指回 $B_0$ (null_block) 并写 PAD=-1',
       },
       caption:
         '第 6 步：Graph 补齐的 Dummy request 与 Padding 槽位全部指向 $B_0$（null_block）并将 slot_mapping 置为 $-1$；GPU/NPU 写入算子检测到负槽位直接跳过。',
@@ -504,7 +504,7 @@ export default function PagedSchedulerExplainer({
               y={12}
               w={STAGE_W - 24}
               h={126}
-              title="Physical KV Block Pool (16 Blocks, B0 = null_block 保留)"
+              title="Physical KV Block Pool (16 Blocks, $B_0 = \text{null\_block}$ 保留)"
               tone="neutral"
               dashed
             />

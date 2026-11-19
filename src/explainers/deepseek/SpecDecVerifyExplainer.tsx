@@ -57,8 +57,8 @@ export function buildSpecDecVerifySteps(): Step<SpecDecVerifyState>[] {
         slotSubs: ['k=1 接受', 'k=2 拒绝', '废弃', '废弃', '无 Bonus'],
         showResidual: false,
         showFinalDist: false,
-        acceptRatio: 'p(B)/q(B) = 0.50',
-        decisionText: 'u=0.72 > 0.50 拒收',
+        acceptRatio: '$p(B)/q(B) = 0.50$',
+        decisionText: '$u=0.72 > 0.50$ 拒收',
         tvDistance: '需残差重采样',
         emittedTokens: '前缀 A 已确认',
       },
@@ -74,9 +74,9 @@ export function buildSpecDecVerifySteps(): Step<SpecDecVerifyState>[] {
         slotSubs: ['已接收 A', '重采样位置', '截断', '截断', '跳过'],
         showResidual: true,
         showFinalDist: false,
-        acceptRatio: 'Σmax(0,p-q)=0.25',
-        decisionText: 'P_res(A)=0.60, C=0.40',
-        tvDistance: 'TV -> 0.000',
+        acceptRatio: '$\\sum\\max(0,p-q)=0.25$',
+        decisionText: '$P_{\\text{res}}(A)=0.60, C=0.40$',
+        tvDistance: '$\\mathrm{TV} \\to 0.000$',
         emittedTokens: '准备补抽 1 token',
       },
       caption:
@@ -88,12 +88,12 @@ export function buildSpecDecVerifySteps(): Step<SpecDecVerifyState>[] {
         phaseLabel: 'Step 4 · 精确无损分布等价性证明 P_final == p',
         slotStatuses: ['selected', 'selected', 'masked', 'masked', 'empty'],
         slotTones: ['done', 'done', 'neutral', 'neutral', 'neutral'],
-        slotSubs: ['t+1: A', 't+2: A*', '已抛弃', '已抛弃', '下一轮'],
+        slotSubs: ['$t+1$: A', '$t+2$: A*', '已抛弃', '已抛弃', '下一轮'],
         showResidual: true,
         showFinalDist: true,
-        acceptRatio: 'min(p,q)+max(0,p-q)',
+        acceptRatio: '$\\min(p,q)+\\max(0,p-q)$',
         decisionText: '采样出 A (补正)',
-        tvDistance: 'ΔTV = 0.0000',
+        tvDistance: '$\\Delta\\mathrm{TV} = 0.0000$',
         emittedTokens: '单步产出 2 token',
       },
       caption:
@@ -105,13 +105,13 @@ export function buildSpecDecVerifySteps(): Step<SpecDecVerifyState>[] {
         phaseLabel: 'Step 5 · 全接收情景与第 K+1 个 Bonus token',
         slotStatuses: ['selected', 'selected', 'selected', 'selected', 'selected'],
         slotTones: ['done', 'done', 'done', 'done', 'done'],
-        slotSubs: ['t+1: A', 't+2: B', 't+3: C', 't+4: D', 't+5: Bonus'],
+        slotSubs: ['$t+1$: A', '$t+2$: B', '$t+3$: C', '$t+4$: D', '$t+5$: Bonus'],
         showResidual: false,
         showFinalDist: true,
-        acceptRatio: '全部命中 p>=q/u',
-        decisionText: '直接从 p_{K+1} 采样',
-        tvDistance: 'ΔTV = 0.0000',
-        emittedTokens: '单步产出 K+1 = 5',
+        acceptRatio: '全部命中 $p \\ge q/u$',
+        decisionText: '从 $p_{K+1}$ 采样',
+        tvDistance: '$\\Delta\\mathrm{TV} = 0.0000$',
+        emittedTokens: '单步产出 $K+1 = 5$',
       },
       caption:
         '若 $K=4$ 个草稿全部通过校验，因 Target 前向本身已算完第 $K+1$ 位的 logits，可直接从 $p_{K+1}$ 采样额外第 5 个 Bonus token，实现 5 倍上限加速且保持完全同分布。',
@@ -130,10 +130,10 @@ export default function SpecDecVerifyExplainer({
     <Explainer steps={steps} title={title} label={title}>
       {(step) => {
         const s = step.state;
-        const slotLabels = ['D0: A', 'D1: B', 'D2: C', 'D3: D', 'Bonus'];
+        const slotLabels = ['$D_0$: A', '$D_1$: B', '$D_2$: C', '$D_3$: D', 'Bonus'];
         const slots = slotLabels.map((lbl, idx) => ({
           id: `sd${idx}`,
-          label: idx === 1 && s.stepIndex === 3 ? 'D1->A*' : lbl,
+          label: idx === 1 && s.stepIndex === 3 ? '$D_1 \\to A^*$' : lbl,
           sub: s.slotSubs[idx],
           tone: s.slotTones[idx],
           status: s.slotStatuses[idx],
@@ -188,7 +188,7 @@ export default function SpecDecVerifyExplainer({
               w={656}
               h={86}
               tone={s.stepIndex === 4 ? 'done' : 'neutral'}
-              title="Target 单次前向并行校验 K=4 草稿序列与 Bonus 位置"
+              title="Target 单次前向并行校验 $K=4$ 草稿序列与 Bonus 位置"
             />
             <SlotStrip x={34} y={36} slots={slots} slotW={112} gap={12} slotH={38} />
 
@@ -198,7 +198,9 @@ export default function SpecDecVerifyExplainer({
               w={324}
               h={184}
               tone={s.showFinalDist ? 'done' : 'active'}
-              label={s.showFinalDist ? '边缘分布恒等 P_final = p' : '位置 k=2 分布对比'}
+              label={
+                s.showFinalDist ? '边缘分布恒等 $P_{\\text{final}} = p$' : '位置 $k=2$ 分布对比'
+              }
               visible={true}
             />
             <ProbabilityBars
@@ -212,12 +214,12 @@ export default function SpecDecVerifyExplainer({
               legend={
                 s.showFinalDist
                   ? [
-                      { label: 'min(p,q)', tone: 'active' },
-                      { label: 'P_final=p', tone: 'done' },
+                      { label: '$\\min(p,q)$', tone: 'active' },
+                      { label: '$P_{\\text{final}}=p$', tone: 'done' },
                     ]
                   : [
-                      { label: 'Draft q', tone: 'active' },
-                      { label: 'Target p', tone: 'done' },
+                      { label: 'Draft $q$', tone: 'active' },
+                      { label: 'Target $p$', tone: 'done' },
                     ]
               }
             />
@@ -228,7 +230,11 @@ export default function SpecDecVerifyExplainer({
               w={320}
               h={184}
               tone="highlight"
-              label={s.showResidual ? '残差重采样 norm(max(0,p-q))' : '位置接收概率 min(1,p/q)'}
+              label={
+                s.showResidual
+                  ? '残差重采样 $\\operatorname{norm}(\\max(0,p-q))$'
+                  : '位置接收概率 $\\min(1, p/q)$'
+              }
               visible={s.stepIndex >= 1}
             />
             <ProbabilityBars
@@ -255,7 +261,7 @@ export default function SpecDecVerifyExplainer({
               metrics={[
                 { label: '接收条件 / 质量', value: s.acceptRatio, tone: 'active' },
                 { label: '采样决策', value: s.decisionText, tone: 'highlight', active: true },
-                { label: '分布偏差 ΔTV', value: s.tvDistance, tone: 'done' },
+                { label: '分布偏差 $\\Delta\\mathrm{TV}$', value: s.tvDistance, tone: 'done' },
                 { label: '单步有效产出', value: s.emittedTokens, tone: 'done' },
               ]}
             />

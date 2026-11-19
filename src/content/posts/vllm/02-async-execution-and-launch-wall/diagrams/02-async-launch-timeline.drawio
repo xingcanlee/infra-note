@@ -1,0 +1,34 @@
+<mxfile host="wisp-diagram">
+  <diagram id="vllm-02-async-launch-timeline" name="Async FIFO Launch Wall and AsyncOutput">
+    <mxGraphModel dx="800" dy="600" grid="1" gridSize="8" guides="1" page="0" math="1" shadow="0">
+      <root>
+        <mxCell id="0"/>
+        <mxCell id="1" parent="0"/>
+        <mxCell id="hdr" value="CPU–Device 发射墙与异步交接对比：从同步阻塞、FIFO 积攒/排空到 vLLM AsyncOutput 跨步重叠" style="text;html=1;whiteSpace=wrap;align=center;verticalAlign=middle;fontFamily=Inter;fontSize=12;fontColor=#5c6067;" vertex="1" parent="1">
+          <mxGeometry x="0" y="0" width="688" height="24" as="geometry"/>
+        </mxCell>
+        <mxCell id="m1" value="&lt;b&gt;1. 同步串行基线（43% 利用 · 7.0 ms）&lt;/b&gt;&lt;br&gt;\(T_{\text{sync}} = \sum (t_{\text{cpu}}+t_{\text{dev}}) = 5\times(0.8+0.6)\)；Device 57% 时间空等" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#fcedec;strokeColor=#984646;strokeWidth=1.25;align=left;verticalAlign=middle;spacingLeft=12;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="8" y="32" width="672" height="56" as="geometry"/>
+        </mxCell>
+        <mxCell id="m2" value="&lt;b&gt;2. Compute-bound 异步 FIFO（\(t_{\text{cpu}}=0.6 &lt; t_{\text{dev}}=0.8\)，87% 利用 · 4.6 ms）&lt;/b&gt;&lt;br&gt;CPU 3.0 ms 预填全队，除首算子 0.6 ms 启动外算子紧贴；Launch-bound（\(t_{\text{cpu}} &gt; t_{\text{dev}}\)）则封顶 \(t_{\text{dev}}/t_{\text{cpu}}\)" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f2fb;strokeColor=#2f5783;strokeWidth=1.25;align=left;verticalAlign=middle;spacingLeft=12;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="8" y="104" width="672" height="64" as="geometry"/>
+        </mxCell>
+        <mxCell id="m3" value="&lt;b&gt;3. op5 调用 .item() / .cpu() 隐式同步排空（77% 利用 · 5.2 ms）&lt;/b&gt;&lt;br&gt;主机阻塞等待 1.6 ms 直至 FIFO 队列彻底排空，积攒库存归零，下一轮首算子重新暴露启动气泡" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#fcedec;strokeColor=#984646;strokeWidth=1.25;dashed=1;align=left;verticalAlign=middle;spacingLeft=12;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="8" y="184" width="672" height="64" as="geometry"/>
+        </mxCell>
+        <mxCell id="m4_grp" value="4. vLLM AsyncOutput / 昇腾 TaskQueue 跨步重叠（91%–92% 利用 · 3.5–3.6 ms/step）" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#f4f4f2;strokeColor=#2c522d;strokeWidth=1.5;verticalAlign=top;align=left;spacingLeft=12;spacingTop=6;fontFamily=Inter;fontSize=12;fontStyle=1;fontColor=#2c522d;container=0;" vertex="1" parent="1">
+          <mxGeometry x="8" y="264" width="672" height="168" as="geometry"/>
+        </mxCell>
+        <mxCell id="h_host" value="&lt;b&gt;Host Python（零同步占位）&lt;/b&gt;：发射 Step N 后直接以 num_output_placeholders 乐观推进并筹备提交 Step N+1" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f2fb;strokeColor=#2f5783;strokeWidth=1.25;align=center;verticalAlign=middle;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="24" y="296" width="640" height="32" as="geometry"/>
+        </mxCell>
+        <mxCell id="h_dev" value="&lt;b&gt;Device Stream（Token 全程留驻 HBM）&lt;/b&gt;：Step N 采样原地写入 last_sampled_tokens → Step N+1 嵌入直接读取" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f5e9;strokeColor=#2c522d;strokeWidth=1.5;align=center;verticalAlign=middle;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="24" y="336" width="640" height="32" as="geometry"/>
+        </mxCell>
+        <mxCell id="h_cpy" value="&lt;b&gt;独立 copy_stream（延迟兑现）&lt;/b&gt;：Pinned D2H 拷贝结果并挂 copy_event / aclrtEvent，仅在文本返回前 get_output() 同步" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f5e9;strokeColor=#2c522d;strokeWidth=1;dashed=1;align=center;verticalAlign=middle;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="24" y="376" width="640" height="40" as="geometry"/>
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

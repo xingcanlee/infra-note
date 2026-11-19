@@ -1,0 +1,43 @@
+<mxfile host="wisp-diagram">
+  <diagram id="foundations-02-yarn-spectrum" name="YaRN Frequency Ramp and Cache Layout">
+    <mxGraphModel dx="800" dy="600" grid="1" gridSize="8" guides="1" page="0" math="1" shadow="0">
+      <root>
+        <mxCell id="0"/>
+        <mxCell id="1" parent="0"/>
+        <mxCell id="hdr" value="YaRN 分频斜坡外推（\(L=4096 \to 128\text{K},\; s=40,\; d_{\text{rope}}=64\)）与双后端 Cache 排布" style="text;html=1;whiteSpace=wrap;align=center;verticalAlign=middle;fontFamily=Inter;fontSize=12;fontColor=#5c6067;" vertex="1" parent="1">
+          <mxGeometry x="0" y="0" width="688" height="24" as="geometry"/>
+        </mxCell>
+        <mxCell id="spec_grp" value="1. 32 对旋转通道频谱对比（按 4K 原生窗转过圈数 \(r_i = L/\lambda_i\) 划定 \(\text{low}=10,\;\text{high}=23\)）" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#f4f4f2;strokeColor=#e2e2dd;strokeWidth=1;dashed=1;verticalAlign=top;align=left;spacingLeft=12;spacingTop=6;fontFamily=Inter;fontSize=12;fontStyle=1;fontColor=#5c6067;container=0;" vertex="1" parent="1">
+          <mxGeometry x="8" y="32" width="672" height="192" as="geometry"/>
+        </mxCell>
+        <mxCell id="row_nat" value="&lt;b&gt;4K 原生（\(s=1\)）&lt;/b&gt;：全部 32 对通道保持原速 \(\text{extrap}_i = 1.0\)，\(\theta_i = 10000^{-2i/64}\)，无需 \(\text{mscale}\) 修正" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f2fb;strokeColor=#2f5783;strokeWidth=1;align=left;verticalAlign=middle;spacingLeft=12;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="24" y="64" width="640" height="32" as="geometry"/>
+        </mxCell>
+        <mxCell id="row_pi" value="&lt;b&gt;线性插值 PI（全频 \(/40\)）&lt;/b&gt;：所有通道等比压缩至 \(0.025\)，高频 \(i=0\) 也被缩放 \(40\times\)，近邻词序判别受损" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#f4f4f2;strokeColor=#5c6067;strokeWidth=1;dashed=1;align=left;verticalAlign=middle;spacingLeft=12;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="24" y="104" width="640" height="32" as="geometry"/>
+        </mxCell>
+        <mxCell id="y_hi" value="&lt;b&gt;YaRN 高频 \(i=0..10\)&lt;/b&gt;&lt;br&gt;\(r_i &gt; \beta_{\text{fast}}=32\) 圈&lt;br&gt;\(\text{extrap}_i = 1.00\)（不缩）&lt;br&gt;完整保留局部语序" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f2fb;strokeColor=#2f5783;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="24" y="144" width="208" height="72" as="geometry"/>
+        </mxCell>
+        <mxCell id="y_mid" value="&lt;b&gt;中频斜坡 \(i=11..22\)&lt;/b&gt;&lt;br&gt;\(1 \le r_i \le 32\) 圈&lt;br&gt;\(i=14: 0.69,\;17: 0.46,\;20: 0.23\)&lt;br&gt;线性斜坡平滑衔接" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#fbf2df;strokeColor=#7b5518;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="248" y="144" width="224" height="72" as="geometry"/>
+        </mxCell>
+        <mxCell id="y_lo" value="&lt;b&gt;低频 \(i=23..31\)&lt;/b&gt;&lt;br&gt;\(r_i &lt; \beta_{\text{slow}}=1\) 圈&lt;br&gt;\(\text{extrap}_i = 0.00\;(\theta_i/40)\)&lt;br&gt;撑开长距离位置相位" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e3f5f3;strokeColor=#0f766e;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="488" y="144" width="176" height="72" as="geometry"/>
+        </mxCell>
+        <mxCell id="eq_box" value="频谱混合：\(\theta'_i = (1-\text{extrap}_i)\,\theta_i/s + \text{extrap}_i\,\theta_i\)　|　温度修正：\(\text{mscale}=0.1\ln(40)+1=1.3689\)，等效 \(\text{softmax\_scale} \times 1.8739\)" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#fbf2df;strokeColor=#7b5518;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="8" y="240" width="672" height="48" as="geometry"/>
+        </mxCell>
+        <mxCell id="cache_grp" value="2. 双后端预乘 \(\text{mscale}\) 频率 Cache 布局对照" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#f4f4f2;strokeColor=#e2e2dd;strokeWidth=1;dashed=1;verticalAlign=top;align=left;spacingLeft=12;spacingTop=6;fontFamily=Inter;fontSize=12;fontStyle=1;fontColor=#5c6067;container=0;" vertex="1" parent="1">
+          <mxGeometry x="8" y="304" width="672" height="128" as="geometry"/>
+        </mxCell>
+        <mxCell id="c_gpu" value="&lt;b&gt;vLLM GPU：cos_sin_cache \([S_{\max}, 64]\)&lt;/b&gt;&lt;br&gt;\([\cos\cdot\text{mscale}\;[32]\;|\;\sin\cdot\text{mscale}\;[32]]\)&lt;br&gt;CUDA / FlashInfer 原地 index_select" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f2fb;strokeColor=#2f5783;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="24" y="336" width="304" height="80" as="geometry"/>
+        </mxCell>
+        <mxCell id="c_npu" value="&lt;b&gt;vllm-ascend：_cos_sin_flat 与 _cos_mla&lt;/b&gt;&lt;br&gt;\([\cos_0,\sin_0,\cos_1,\sin_1,\dots]\) 展平静态缓冲&lt;br&gt;避开 aclnnIndex 拷贝 · 适配 ACLGraph · 受 192 KB UB 分块" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e3f5f3;strokeColor=#0f766e;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="352" y="336" width="312" height="80" as="geometry"/>
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

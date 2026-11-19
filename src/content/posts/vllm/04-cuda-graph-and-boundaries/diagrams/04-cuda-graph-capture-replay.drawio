@@ -1,0 +1,37 @@
+<mxfile host="wisp-diagram">
+  <diagram id="vllm-04-cuda-graph-capture-replay" name="CUDA Graph Capture Replay and Four Boundaries">
+    <mxGraphModel dx="800" dy="600" grid="1" gridSize="8" guides="1" page="0" math="1" shadow="0">
+      <root>
+        <mxCell id="0"/>
+        <mxCell id="1" parent="0"/>
+        <mxCell id="hdr" value="CUDA Graph 两阶段契约（以 \(B_{\text{cap}}=4,\; H=8\) 为例）与四道硬件边界防护" style="text;html=1;whiteSpace=wrap;align=center;verticalAlign=middle;fontFamily=Inter;fontSize=12;fontColor=#5c6067;" vertex="1" parent="1">
+          <mxGeometry x="0" y="0" width="688" height="24" as="geometry"/>
+        </mxCell>
+        <mxCell id="cap" value="&lt;b&gt;1. Stream Capture 静态捕获（\(B_{\text{cap}}=4\)）&lt;/b&gt;&lt;br&gt;绑定 global_graph_pool 固化 Kernel 与虚拟指针：&lt;br&gt;hidden @ 0x7f00_1000 · slot @ 0x7f00_2000 · out @ 0x7f00_3000" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f2fb;strokeColor=#2f5783;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="8" y="32" width="320" height="80" as="geometry"/>
+        </mxCell>
+        <mxCell id="rep" value="&lt;b&gt;2. 健康重放 Replay（实批 \(B=3 \to\) 桶 4，~0.08 ms）&lt;/b&gt;&lt;br&gt;InputBuffers.copy_() 原地覆写前 3 槽固定地址&lt;br&gt;第 4 槽置 is_padding=True 且 PAD_SLOT_ID=-1 跳过写 KV" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f2fb;strokeColor=#2f5783;strokeWidth=2;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="352" y="32" width="328" height="80" as="geometry"/>
+        </mxCell>
+        <mxCell id="g_bnd" value="四道硬件边界：违例失效征兆 vs vLLM 运行时防御" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#f4f4f2;strokeColor=#e2e2dd;strokeWidth=1;dashed=1;verticalAlign=top;align=left;spacingLeft=12;spacingTop=6;fontFamily=Inter;fontSize=12;fontStyle=1;fontColor=#5c6067;container=0;" vertex="1" parent="1">
+          <mxGeometry x="8" y="128" width="672" height="272" as="geometry"/>
+        </mxCell>
+        <mxCell id="b1" value="&lt;b&gt;约束一 · 显存地址恒定&lt;/b&gt;&lt;br&gt;违例：重绑定新张量 0x7f00_9000&lt;br&gt;→ 图静默消费旧 0x7f00_1000 数据&lt;br&gt;防御：仅用 .copy_() 原地更新 + DEBUG 指针核对" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#fcedec;strokeColor=#984646;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="24" y="160" width="312" height="104" as="geometry"/>
+        </mxCell>
+        <mxCell id="b2" value="&lt;b&gt;约束二 · 静态形状与安全填充&lt;/b&gt;&lt;br&gt;违例：超桶 \(B=5&gt;4\) 崩溃；缩容遗留旧槽号 [4,5]&lt;br&gt;→ Padding 激活写穿别请求活跃 KV 块&lt;br&gt;防御：尾部全刷 PAD_SLOT_ID=-1 + is_padding 屏蔽" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#fbf2df;strokeColor=#7b5518;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="352" y="160" width="312" height="104" as="geometry"/>
+        </mxCell>
+        <mxCell id="b3" value="&lt;b&gt;约束三 · 零 Host 同步与数据分支&lt;/b&gt;&lt;br&gt;违例：捕获期调 .item()/.cpu()/nonzero() 或数据分支&lt;br&gt;→ 报 cudaErrorStreamCaptureUnsupported&lt;br&gt;防御：入图前 CPU 算完元数据 + VLLM_GPU_SYNC_CHECK" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#fcedec;strokeColor=#984646;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="24" y="280" width="312" height="104" as="geometry"/>
+        </mxCell>
+        <mxCell id="b4" value="&lt;b&gt;约束四 · 多流汇合与图池隔离&lt;/b&gt;&lt;br&gt;违例：copy_stream 未汇回主流报 Unjoined；劫持对称分配&lt;br&gt;防御：首调 sync_prev_onload / 尾调 join_after_forward&lt;br&gt;+ nccl_symm_mem_context 隔离 + weak_ref_tensors 释放末输出" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#fbf2df;strokeColor=#7b5518;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="352" y="280" width="312" height="104" as="geometry"/>
+        </mxCell>
+        <mxCell id="e_cr" value="cudaGraphLaunch" style="endArrow=classic;startArrow=none;html=1;strokeColor=#2f5783;strokeWidth=1.25;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;fontFamily=Inter;fontSize=12;fontColor=#2f5783;labelBackgroundColor=#fcfcfb;" edge="1" parent="1" source="cap" target="rep">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

@@ -10,7 +10,6 @@ toc: true
 ---
 
 import SpecDecVerifyExplainer from '../../../../explainers/deepseek/SpecDecVerifyExplainer';
-import DsparkChainExplainer from '../../../../explainers/deepseek/DsparkChainExplainer';
 
 自回归解码每输出 1 个 token，都要把整张大权重从 HBM 搬进计算单元一次。当批量较小或 KV 缓存访问占主导时，算术强度远低于 GPU 与 NPU 的 Roofline 算力拐点，绝大多数矩阵计算核心都在等待数据搬运。
 
@@ -49,10 +48,7 @@ $$
 
 解决无损验证后，系统瓶颈转移到草稿侧本身的延迟：如果草稿模型每猜一步都要串行重跑一层 Decoder 与全词表投影，推测收益会被草稿耗时抵消。图 2 对比了两代架构在草稿生成与检验阶段的时序演进。
 
-<DsparkChainExplainer
-  client:visible
-  title="图 2：DeepSeek-V3 串行 MTP 与 V4.1 DSpark 轻量并行草稿链对比"
-/>
+![DeepSeek-V3 串行 MTP（11.8 ms）与 V4.1 DSpark 并行 SWA + r=256 低秩马尔可夫链（6.0 ms，时延减半）对比](./diagrams/09-dspark-vs-mtp.drawio '图 2：DeepSeek-V3 串行 MTP 与 V4.1 DSpark 轻量并行草稿链对比')
 
 ### DeepSeek-V3 因果 MTP 与串行层开销
 

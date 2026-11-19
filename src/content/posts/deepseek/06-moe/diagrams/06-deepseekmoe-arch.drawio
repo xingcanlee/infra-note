@@ -1,10 +1,10 @@
 <mxfile host="wisp-diagram">
   <diagram id="ds-06-moe-arch" name="deepseekmoe-arch">
-    <mxGraphModel dx="800" dy="600" grid="1" gridSize="8" guides="1" page="0" math="0" shadow="0">
+    <mxGraphModel dx="800" dy="600" grid="1" gridSize="8" guides="1" page="0" math="1" shadow="0">
       <root>
         <mxCell id="0"/>
         <mxCell id="1" parent="0"/>
-        <mxCell id="inp" value="输入隐状态 h_t [T, 7168]" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#f4f4f2;strokeColor=#1d1d1f;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=14;fontColor=#1d1d1f;" vertex="1" parent="1">
+        <mxCell id="inp" value="输入隐状态 \(h_t\;[T, 7168]\)" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#f4f4f2;strokeColor=#1d1d1f;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=14;fontColor=#1d1d1f;" vertex="1" parent="1">
           <mxGeometry x="232" y="8" width="224" height="32" as="geometry"/>
         </mxCell>
         <mxCell id="g_shared" value="" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f5e9;strokeColor=#2c522d;strokeWidth=1.25;verticalAlign=top;align=left;spacingLeft=12;spacingTop=6;fontFamily=Inter;fontSize=12;fontStyle=1;fontColor=#2c522d;container=0;" vertex="1" parent="1">
@@ -22,13 +22,13 @@
         <mxCell id="g_routed_lbl" value="256 路由专家 (Node-Limited Top-8)" style="text;html=1;whiteSpace=wrap;align=right;verticalAlign=middle;fontFamily=Inter;fontSize=12;fontStyle=1;fontColor=#2f5783;" vertex="1" parent="1">
           <mxGeometry x="432" y="64" width="240" height="24" as="geometry"/>
         </mxCell>
-        <mxCell id="r_gate" value="Sigmoid s_{i,t}&lt;br&gt;+ 无辅损偏置 b_i" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f2fb;strokeColor=#2f5783;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+        <mxCell id="r_gate" value="Sigmoid \(s_{i,t}\)&lt;br&gt;+ 无辅损偏置 \(b_i\)" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f2fb;strokeColor=#2f5783;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
           <mxGeometry x="256" y="104" width="128" height="48" as="geometry"/>
         </mxCell>
-        <mxCell id="r_grp" value="8 组筛 Top M=4 组&lt;br&gt;仅选组内 Top-8" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f2fb;strokeColor=#2f5783;strokeWidth=1.25;dashed=1;dashPattern=4 4;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+        <mxCell id="r_grp" value="8 组筛 Top \(M=4\) 组&lt;br&gt;仅选组内 Top-8" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f2fb;strokeColor=#2f5783;strokeWidth=1.25;dashed=1;dashPattern=4 4;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
           <mxGeometry x="400" y="104" width="128" height="48" as="geometry"/>
         </mxCell>
-        <mxCell id="r_w" value="用未偏置 s_{i,t}&lt;br&gt;归一化加权 w_{i,t}" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f2fb;strokeColor=#2f5783;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+        <mxCell id="r_w" value="用未偏置 \(s_{i,t}\)&lt;br&gt;归一化加权 \(w_{i,t}\)" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f2fb;strokeColor=#2f5783;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
           <mxGeometry x="544" y="104" width="120" height="48" as="geometry"/>
         </mxCell>
         <mxCell id="e_in_sh" value="" style="endArrow=classic;startArrow=none;html=1;strokeColor=#1d1d1f;strokeWidth=1.25;edgeStyle=orthogonalEdgeStyle;rounded=1;exitX=0.25;exitY=1.0;exitDx=0;exitDy=0;entryX=0.9;entryY=0.0;entryDx=0;entryDy=0;" edge="1" parent="1" source="inp" target="sh_mlp">
@@ -79,8 +79,8 @@
         <mxCell id="e_n_23" value="" style="endArrow=classic;startArrow=none;html=1;strokeColor=#1d1d1f;strokeWidth=1.25;edgeStyle=orthogonalEdgeStyle;rounded=1;" edge="1" parent="1" source="npu_ep" target="npu_mm">
           <mxGeometry relative="1" as="geometry"/>
         </mxCell>
-        <mxCell id="sum_out" value="双路求和输出: y = Shared(h_t) + ∑ w_{i,t} E_i(h_t)" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f5e9;strokeColor=#2c522d;strokeWidth=2;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
-          <mxGeometry x="200" y="400" width="288" height="32" as="geometry"/>
+        <mxCell id="sum_out" value="双路求和输出：\(y = \operatorname{Shared}(h_t) + \sum w_{i,t} E_i(h_t)\)" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f5e9;strokeColor=#2c522d;strokeWidth=2;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="176" y="400" width="336" height="32" as="geometry"/>
         </mxCell>
       </root>
     </mxGraphModel>

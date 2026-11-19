@@ -7,7 +7,7 @@ import { STAGE_W, assertMaxHues, type AnyTone as Tone } from '@/explainers/kit/m
 
 export interface RooflineState {
   stepIndex: number;
-  highlightMode: 'baseline' | 'decode1' | 'decode64' | 'prefill';
+  highlightMode: 'baseline' | 'decode1' | 'decode64' | 'batch256' | 'prefill';
   points: {
     ai: number;
     perf: number;
@@ -128,37 +128,39 @@ export function buildRooflineSteps(): Step<RooflineState>[] {
     },
   ];
 
+  const serialSync = [
+    {
+      fromLane: 0,
+      at: 9,
+      toLane: 1,
+      toAt: 9,
+      label: '串行等待',
+      tone: 'neutral' as Tone,
+      dashed: true,
+    },
+    { fromLane: 1, at: 13.5, toLane: 0, toAt: 13.5, tone: 'neutral' as Tone, dashed: true },
+  ];
+
   return [
     {
       state: {
         stepIndex: 0,
         highlightMode: 'baseline',
         points: [
-          { ai: 1.0, perf: 3.35, label: 'B=1 (H800)', tone: 'active' },
-          { ai: 62.86, perf: 210.57, label: 'B=64 (H800)', tone: 'active' },
-          { ai: 1893.85, perf: 990, label: 'S=4096 (H800)', tone: 'active' },
+          { ai: 1.0, perf: 3.35, label: 'M=1 (H800)', tone: 'active' },
+          { ai: 62.86, perf: 210.57, label: 'M=64 (H800)', tone: 'active' },
+          { ai: 1893.85, perf: 990, label: 'M=4096 (H800)', tone: 'active' },
         ],
         cvLanes: serialLanes,
-        syncEvents: [
-          {
-            fromLane: 0,
-            at: 9,
-            toLane: 1,
-            toAt: 9,
-            label: '串行等待',
-            tone: 'neutral',
-            dashed: true,
-          },
-          { fromLane: 1, at: 13.5, toLane: 0, toAt: 13.5, tone: 'neutral', dashed: true },
-        ],
+        syncEvents: serialSync,
         totalTime: 27,
-        regimeLabel: '双平台拐点 I*',
-        aiValue: 'H800 295.5 | 910B 200',
-        h800Perf: '990 TF / 3.35 TB/s',
-        npuPerf: '320 TF / 1.60 TB/s',
+        regimeLabel: '双平台拐点 $I^*$',
+        aiValue: 'H800 $295.5$ · 昇腾 $200$',
+        h800Perf: '$990\\;\\text{TF}$ / $3.35\\;\\text{TB/s}$',
+        npuPerf: '$320\\;\\text{TF}$ / $1.60\\;\\text{TB/s}$',
       },
       caption:
-        '对数 Roofline 由斜率（HBM 带宽 $BW_{\\text{HBM}}$）与水平天花板（峰值算力 $P_{\\text{peak}}$）交汇定义。H800 SXM5 拐点 $I^* = 990/3.35 \\approx 295.5\\;\\text{FLOP/B}$，昇腾示例剖面（$320\\;\\text{TFLOPS}, 1.6\\;\\text{TB/s}$）拐点为 $200.0\\;\\text{FLOP/B}$。',
+        '对数 Roofline 由斜率（HBM 带宽 $BW_{\\text{HBM}}$）与水平天花板（峰值算力 $P_{\\text{peak}}$）交汇定义。H800 SXM5 拐点 $I^* = 990/3.35 \\approx 295.5\\;\\text{FLOP/B}$，昇腾示例剖面（$320\\;\\text{TFLOPS},\\; 1.60\\;\\text{TB/s}$）拐点为 $200.0\\;\\text{FLOP/B}$。',
     },
     {
       state: {
@@ -168,70 +170,104 @@ export function buildRooflineSteps(): Step<RooflineState>[] {
           {
             ai: 1.0,
             perf: 3.35,
-            label: 'Decode B=1 (H800 3.35 TF)',
+            label: 'Decode M=1 (H800 3.35 TF)',
             tone: 'highlight',
             active: true,
           },
-          { ai: 1.0, perf: 1.6, label: 'B=1 (910B 1.60 TF)', tone: 'activation', active: true },
+          { ai: 1.0, perf: 1.6, label: 'M=1 (昇腾 1.60 TF)', tone: 'activation', active: true },
         ],
         cvLanes: serialLanes,
+        syncEvents: serialSync,
         totalTime: 27,
-        regimeLabel: 'Decode B=1 (访存墙)',
-        aiValue: '1.00 FLOP/B',
-        h800Perf: '3.35 TF (0.3% 峰值)',
-        npuPerf: '1.60 TF (0.5% 峰值)',
+        regimeLabel: 'Decode $M=1$ (访存墙)',
+        aiValue: '$1.00\\;\\text{FLOP/B}$',
+        h800Perf: '$3.35\\;\\text{TF}$ ($0.3\\%$)',
+        npuPerf: '$1.60\\;\\text{TF}$ ($0.5\\%$)',
       },
       caption:
-        '单并发 Decode（$B=1$）每读 2 字节权重仅做 2 次乘加，$I \\approx 1.00\\;\\text{FLOP/B}$。无论 Tensor Core 还是 Cube 单元，算力利用率均不足 $0.5\\%$，超过 $99\\%$ 的时间卡在等 HBM 送数。',
+        '单并发 Decode（$M=1$）每搬运 $2\\;\\text{B}$ 权重仅做 $2$ 次乘加，算术强度 $I = 1.00\\;\\text{FLOP/B}$。无论 GPU Tensor Core 还是昇腾 Cube，算力利用率均不足 $0.5\\%$，超过 $99\\%$ 的时间卡在等 HBM 送数。',
     },
     {
       state: {
         stepIndex: 2,
         highlightMode: 'decode64',
         points: [
-          { ai: 1.0, perf: 3.35, label: 'B=1', tone: 'neutral' },
+          { ai: 1.0, perf: 3.35, label: 'M=1', tone: 'neutral' },
           {
             ai: 62.86,
             perf: 210.57,
-            label: 'Decode B=64 (H800 211 TF)',
+            label: 'Decode M=64 (H800 211 TF)',
             tone: 'highlight',
             active: true,
           },
           {
             ai: 62.86,
             perf: 100.57,
-            label: 'B=64 (910B 101 TF)',
+            label: 'M=64 (昇腾 101 TF)',
             tone: 'activation',
             active: true,
           },
         ],
         cvLanes: serialLanes,
+        syncEvents: serialSync,
         totalTime: 27,
-        regimeLabel: 'Decode B=64 (仍受限于带宽)',
-        aiValue: '62.86 FLOP/B',
-        h800Perf: '210.6 TF (21.3% 峰值)',
-        npuPerf: '100.6 TF (31.4% 峰值)',
+        regimeLabel: 'Decode $M=64$ (带宽斜坡)',
+        aiValue: '$62.86\\;\\text{FLOP/B}$',
+        h800Perf: '$210.6\\;\\text{TF}$ ($21.3\\%$)',
+        npuPerf: '$100.6\\;\\text{TF}$ ($31.4\\%$)',
       },
       caption:
-        '把批大小提升到 $B=64$，同一份 $258\\;\\text{MiB}$ SwiGLU 权重被 64 个 token 摊分，算术强度涨至 $62.86\\;\\text{FLOP/B}$，但仍低于 $200$ 与 $295.5$ 两道拐点，依然处于带宽斜坡上（配合连续批处理或量化才能继续向右推）。',
+        '批大小扩大到 $M=64$，同一份 $258\\;\\text{MiB}$ SwiGLU 权重被 $64$ 个 token 摊分复用，算术强度沿斜坡升至 $I = 62.86\\;\\text{FLOP/B}$，但仍位于 $200.0$ 与 $295.5$ 两道硬件拐点左侧，尚未触达算力平台期。',
     },
     {
       state: {
         stepIndex: 3,
+        highlightMode: 'batch256',
+        points: [
+          { ai: 62.86, perf: 210.57, label: 'M=64', tone: 'neutral' },
+          {
+            ai: 238.66,
+            perf: 799.5,
+            label: 'M=256 (H800 800 TF)',
+            tone: 'highlight',
+            active: true,
+          },
+          {
+            ai: 238.66,
+            perf: 320.0,
+            label: 'M=256 (昇腾 320 TF)',
+            tone: 'activation',
+            active: true,
+          },
+        ],
+        cvLanes: serialLanes,
+        syncEvents: serialSync,
+        totalTime: 27,
+        regimeLabel: '大批 $M=256$ (拐点分化)',
+        aiValue: '$238.7\\;\\text{FLOP/B}$',
+        h800Perf: '$799.5\\;\\text{TF}$ ($80.8\\%$)',
+        npuPerf: '$320.0\\;\\text{TF}$ (已封顶)',
+      },
+      caption:
+        '推进到 $M=256$ 时，SwiGLU 算术强度达到 $I \\approx 238.66\\;\\text{FLOP/B}$，恰好落于双平台拐点之间：昇腾剖面已跨越 $I^* = 200$ 并率先封顶 $320\\;\\text{TF}$ 算力墙，而高算力比芯片 H800（$I^* \\approx 295.5$）仍在带宽斜坡上跑到 $799.5\\;\\text{TF}$。',
+    },
+    {
+      state: {
+        stepIndex: 4,
         highlightMode: 'prefill',
         points: [
-          { ai: 62.86, perf: 210.57, label: 'B=64', tone: 'neutral' },
+          { ai: 238.66, perf: 799.5, label: 'M=256', tone: 'neutral' },
           {
             ai: 1893.85,
             perf: 990,
-            label: 'Prefill S=4096 (H800 990 TF)',
+            label: 'Prefill M=4096 (H800 990 TF)',
             tone: 'highlight',
             active: true,
           },
           {
             ai: 1893.85,
             perf: 320,
-            label: 'S=4096 (910B 320 TF)',
+            label: 'M=4096 (昇腾 320 TF)',
             tone: 'activation',
             active: true,
           },
@@ -249,69 +285,69 @@ export function buildRooflineSteps(): Step<RooflineState>[] {
           },
         ],
         totalTime: 22.5,
-        regimeLabel: 'Prefill S=4096 (算力墙+CV重叠)',
-        aiValue: '1893.9 FLOP/B',
-        h800Perf: '990.0 TF (100% 满载)',
-        npuPerf: '320.0 TF (CV提速1.5x)',
+        regimeLabel: 'Prefill $M=4096$ (算力墙)',
+        aiValue: '$1893.9\\;\\text{FLOP/B}$',
+        h800Perf: '$990.0\\;\\text{TF}$ ($100\\%$)',
+        npuPerf: '$320.0\\;\\text{TF}$ (CV $1.50\\times$)',
       },
       caption:
-        'Prefill（$S=4096$）算术强度达到 $1893.85\\;\\text{FLOP/B}$，跑满算力天花板。此时在昇腾 AI Core 上，用 CV 异步双流水把 Vector（Norm/SiLU）隐藏在下一块 Cube GEMM 背后，可将分块耗时从 $27\\;\\mu\\text{s}$ 压到 $\\max(t_c, t_v)$ 级（重叠区提速 $1.50\\times$）。',
+        '进入长序列 Prefill（$M=4096$），算术强度跃至 $1893.85\\;\\text{FLOP/B}$，双硬件均彻底进入水平算力天花板。此时昇腾用异步 CV 双流水把 Vector（Norm/SiLU）掩盖在下一块 Cube GEMM 背后，将重叠区耗时从 $27$ 拍压到 $18$ 拍（提速 $1.50\\times$）。',
     },
   ];
 }
 
 export default function RooflineExplainer({
-  title = '图 2：H800 vs 昇腾 910B 对数 Roofline 与 Cube/Vector 流水重叠',
+  title = '图 3：双硬件对数 Roofline 拐点、Decode/Prefill 状态迁移与 Cube/Vector 重叠',
 }: {
   title?: string;
 }) {
   const steps = useMemo(() => buildRooflineSteps(), []);
 
   return (
-    <Explainer steps={steps} title={title} label="对数 Roofline 与硬件执行流水线交互">
+    <Explainer steps={steps} title={title} label="对数 Roofline 曲线与 CV 流水重叠交互">
       {(step) => {
         const s = step.state;
         return (
-          <Stage width={STAGE_W} height={454} label="H800 与昇腾 910B 对数 Roofline 及 CV 重叠">
+          <Stage width={STAGE_W} height={466} label="H800 与昇腾示例剖面对数 Roofline 及 CV 重叠">
             <LogRooflineChart
               x={16}
               y={10}
               w={648}
-              h={218}
+              h={228}
               xRange={[0.5, 4096]}
               yRange={[1, 2048]}
               xTicks={[1, 4, 16, 64, 256, 1024, 4096]}
               yTicks={[1, 4, 16, 64, 256, 1024]}
-              xAxisLabel="算术强度 I (FLOPs / Byte, 对数刻度)"
+              xAxisLabel="算术强度 $I$ ($\text{FLOPs/Byte}$, 对数刻度)"
               yAxisLabel="TFLOPS"
               ceilings={[
                 { bw: 3350, peak: 990, label: 'NVIDIA H800 (990 TF, 3.35 TB/s)', tone: 'active' },
                 {
                   bw: 1600,
                   peak: 320,
-                  label: '昇腾 910B 剖面 (320 TF, 1.60 TB/s)',
+                  label: '昇腾示例剖面 (320 TF, 1.60 TB/s)',
                   tone: 'activation',
                   dashed: true,
                 },
               ]}
               ridgeMarkers={[
-                { ai: 200, label: '910B I*=200', tone: 'activation' },
-                { ai: 295.5, label: 'H800 I*=295.5', tone: 'active' },
+                { ai: 200, label: '昇腾 $I^*=200$', tone: 'activation', side: 'left' },
+                { ai: 295.5, label: 'H800 $I^*=295.5$', tone: 'active', side: 'right' },
               ]}
               points={s.points}
             />
 
             <SwimlaneTimeline
               x={16}
-              y={246}
+              y={256}
               w={648}
               totalTime={27}
-              unit="us"
+              unit="μs"
               ticks={[0, 9, 13.5, 18, 22.5, 27]}
               title={
                 s.highlightMode === 'prefill'
-                  ? '昇腾 Cube + Vector 异步 CV 重叠流水线'
-                  : '昇腾 Cube + Vector 串行等待基线 (两块分块共 27 us)'
+                  ? '昇腾 Cube + Vector 异步 CV 重叠流水线（重叠区提速 $1.50\\times$）'
+                  : '昇腾 Cube + Vector 串行等待基线（两块分块共 $27\\;\\mu\\text{s}$）'
               }
               gutterW={124}
               laneH={30}
@@ -322,14 +358,14 @@ export default function RooflineExplainer({
 
             <MetricRow
               x={16}
-              y={394}
+              y={404}
               w={648}
-              h={42}
+              h={44}
               metrics={[
                 { label: '当前工况', value: s.regimeLabel, tone: 'highlight', active: true },
-                { label: '算术强度', value: s.aiValue, tone: 'neutral' },
+                { label: '算术强度 $I$', value: s.aiValue, tone: 'neutral' },
                 { label: 'H800 上限', value: s.h800Perf, tone: 'active' },
-                { label: '910B 剖面', value: s.npuPerf, tone: 'activation' },
+                { label: '昇腾剖面', value: s.npuPerf, tone: 'activation' },
               ]}
             />
           </Stage>

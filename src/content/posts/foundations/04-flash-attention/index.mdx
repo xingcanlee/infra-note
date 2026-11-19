@@ -9,7 +9,6 @@ toc: true
 ---
 
 import OnlineSoftmaxExplainer from '../../../../explainers/foundations/OnlineSoftmaxExplainer';
-import FlashMlaSeesawExplainer from '../../../../explainers/foundations/FlashMlaSeesawExplainer';
 
 在长序列场景下，标准注意力把中间矩阵反复写回 HBM 再重新读出，这一片外访存开销直接主导了算子耗时。以序列长度 $N = 32{,}768$、128 个查询头、BF16 精度（每元素 2 字节）为例，将注意力打分矩阵 $S = QK^\top / \sqrt{d}$ 完整写回显存 HBM 就需要 $128 \times 32{,}768^2 \times 2\text{ B} = 256\text{ GiB}$，随后算完概率矩阵 $P = \operatorname{softmax}(S)$ 再写读一遍，吞吐就被显存带宽墙直接限制住[^fa1-paper]。
 
@@ -74,12 +73,9 @@ $$
 
 当面对带有宽潜向量的注意力解码架构时（例如《DeepSeek 架构演进》第 01 篇详述的 MLA 架构），约束变得更加具体：权重吸收把 128 个查询头折叠后共同面对唯一的 1 个压缩 KV 潜在头（$h_{kv} = 1$），且向量宽度为 576 维（512 维内容加 64 维位置编码）。此时单请求查询矩阵高度跃升至 $M = h_q s_q = 128$，恰好跨过 H800 SXM5（降频实用峰值约 865 TFLOPS、带宽 3.35 TB/s）在 $h_q s_q \ge 128$ 处的算力拐点，把原本访存受限的解码推进算力受限区[^flashmla-v3]。但单份 $64 \times 512$ 的 FP32 输出累加器就要占用 32,768 个寄存器，H800 每 SM 的 65,536 个寄存器装不下两份完整累加器。为此，FlashMLA 把输出矩阵竖劈成左右两半 $O_L$ 与 $O_R$（各 $64 \times 256$），交给两个 Warpgroup 如跷跷板般交替占用 Tensor Core 与 CUDA Core，并用 9 路 $64 \times 64$ 的 `EVICT_FIRST` TMA 异步传输切分 576 维宽行，技术报告在 H800 上取得 660 TFLOPS 与 3 TB/s 带宽[^flashmla-v3]（而在最新的 `FlashMLA@395cb3af` 主干中，Hopper 576 维稠密 Kernel 已归档，活跃分支转向了 SM100 的 512 维稀疏解码 Kernel[^flashmla-repo]）。
 
-图 3 按时间轴对比了串行无重叠基线、H800 双 Warpgroup 跷跷板、Blackwell TMEM 分流与昇腾 950 `1C2V` 的片内执行流水线。
+图 3 对比了串行无重叠基线、H800 双 Warpgroup 跷跷板、Blackwell TMEM 分流与昇腾 950 `1C2V` 的片内执行流水线。
 
-<FlashMlaSeesawExplainer
-  client:visible
-  title="图 3：H800 跷跷板、Blackwell TMEM 与昇腾 1C2V 流水线时序演进"
-/>
+![多代硬件 FlashMLA 与注意力流水线演化：串行基线、H800 双 WG 跷跷板、Blackwell TMEM 与 FMA exp2 分流及昇腾 950 1C2V](./diagrams/04-flashmla-hardware-pipelines.drawio '图 3：H800 跷跷板、Blackwell TMEM 与昇腾 1C2V 流水线时序演进')
 
 在华为昇腾平台上，硬件约束催生了另一套截然不同的在线归并方案[^flashmla-ascend]。以 Ascend 950 的 `1C2V` 核心为例，1 个 Cube 单元（4096 FMA/clk、256 KB `L0C`）配 2 个 Vector 单元：由于 `L0C` 累加缓冲只支持 `FixPipe` 迁出或做矩阵乘累加，无法就地执行任意标量重缩放乘法 $\alpha \cdot \tilde{O}$，昇腾 Kernel 干脆把在线 Softmax 的输出累加器 $\tilde{O}$ 放在 Vector `UB` 中维护。为了避免每扫一个分块都把 `L0C` 数据经 `FixPipe` 搬到 `UB` 做一次缩放，算子引入了 `RESCALE_THRES = 6` 的阈值跳过缩放策略（skip-scale），并用每次突发搬运 2 个 token 的 `gather2` 技巧防止超出单个 Vector 仅 16 槽位的 `MTE2` 发射队列，再把上一块的值乘法 $S_{i-1} V_{i-1}$ 延迟一拍执行以把 Softmax 掩蔽在 Cube 计算空窗期内，从而在稀疏 Prefill 与 Decode 上分别取得 410 TFLOPS（95% 峰值）与 360 TFLOPS（83% 峰值）的算力表现[^flashmla-ascend]。与此同时，在开源稀疏解码入口 `sparse_decode.cpp` 中，昇腾分支显式关闭了多段 Split-KV（`enable_split_kv = false`）[^flashmla-repo]，而 `vllm-ascend` 的常规 GQA 与 MLA 解码则统一依托 `npu_fused_infer_attention_score_v2` 完成硬件融合执行[^ascend-code]。
 

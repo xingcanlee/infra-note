@@ -8,8 +8,6 @@ category: AI Infra
 toc: true
 ---
 
-import DboTimelineExplainer from '../../../../explainers/distributed/DboTimelineExplainer';
-
 在大型混合专家（MoE）模型中，每 token 的激活前馈计算量经稀疏路由大幅压缩后，把 token 送往目标专家卡、算完再收归原卡的两趟跨卡 `All-to-All` 通信直接成为端到端吞吐与尾延迟的主要瓶颈。同时，单批次内部的算子依赖会让计算核心在网络传输飞行窗口内处于等待空转状态。
 
 ## 专家并行 All-to-All 通信的阻塞根源
@@ -87,12 +85,9 @@ MC2（Matmul-Communication Fusion）之所以能够消除大部分通信气泡�
 
 ## 双微批重叠与共享专家异步流
 
-即便单个通信 Kernel 的带宽利用率已经逼近硬件链路上限，只要整批请求运行在同一条顺序依赖链上，Attention 计算完成前 Dispatch 依然无法启动，Dispatch 飞行期间后续算子也只能停滞。将整批输入（例如 $B = 1024$ 个 token）对半切分为两个微批 $\mu B_0$ 与 $\mu B_1$（每份 512 个 token），让两个微批在计算流与通信流之间交替错峰推进，便是**双微批重叠（DBO，Dual-Batch Overlap）**的核心机制。可以通过图 3 的步进控件依次观察串行基准、GPU 双微批乒乓模式以及昇腾单批 MC2 辅助流流水线的对比。
+即便单个通信 Kernel 的带宽利用率已经逼近硬件链路上限，只要整批请求运行在同一条顺序依赖链上，Attention 计算完成前 Dispatch 依然无法启动，Dispatch 飞行期间后续算子也只能停滞。将整批输入（例如 $B = 1024$ 个 token）对半切分为两个微批 $\mu B_0$ 与 $\mu B_1$（每份 512 个 token），让两个微批在计算流与通信流之间交替错峰推进，便是**双微批重叠（DBO，Dual-Batch Overlap）**的核心机制。图 3 对照了串行基准、GPU 双微批乒乓模式以及昇腾单批 MC2 辅助流流水线。
 
-<DboTimelineExplainer
-  client:visible
-  title="图 3：双微批重叠（DBO）与昇腾 MC2 异步流毫秒级流水线推演"
-/>
+![双微批重叠 DBO 与昇腾 MC2 异步流毫秒级流水线对比：串行 8.50ms、GPU DBO 5.40ms（算力利用 85.2%）与昇腾单批 Slice 流水](./diagrams/03-dbo-vs-mc2-timeline.drawio '图 3：双微批重叠（DBO）与昇腾 MC2 异步流毫秒级流水线对比')
 
 如图 3 所示，在严格按毫秒比例对齐的泳道中，串行单批完成一层共耗时 8.50 ms（有效计算 4.60 ms，算力利用率 54.1%）；GPU 端对半切分后，$\mu B_1$ 的注意力槽位恰好填满了 $\mu B_0$ 的跨卡分发等待，后续 $\mu B_1$ 分发与 $\mu B_0$ 专家计算交叉推进，将单层耗时降至 5.40 ms，算力活跃度提高到 85.2%；而昇腾端则保留完整单批，在主流执行 MC2 算子内 Slice 流水的同时，由辅助计算流并发执行共享专家。
 

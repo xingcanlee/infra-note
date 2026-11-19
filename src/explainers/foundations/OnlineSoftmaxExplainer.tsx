@@ -31,9 +31,9 @@ export interface OnlineSoftmaxState {
   accuracyText: string;
 }
 
-const ROW_LABELS = ['r0', 'r1'];
-const STAT_COLS = ['m', 'alpha', 'l'];
-const OUT_COLS = ['d0', 'd1'];
+const ROW_LABELS = ['$r_0$', '$r_1$'];
+const STAT_COLS = ['$m$', '$\\alpha$', '$l$'];
+const OUT_COLS = ['$d_0$', '$d_1$'];
 
 const S1_TILE: (number | null)[][] = [
   [1.0, 3.0],
@@ -47,12 +47,16 @@ const S2_TILE: (number | null)[][] = [
   [5.0, 2.0],
   [1.0, 2.0],
 ];
+const P2_TILE: (number | null)[][] = [
+  [1.0, 0.05],
+  [0.05, 0.135],
+];
 
 const STATS_INIT: (number | null)[][] = [
   [null, null, 0.0],
   [null, null, 0.0],
 ];
-const STATS_T1: (number | null)[][] = [
+const STATS_M1: (number | null)[][] = [
   [3.0, 1.0, 1.135],
   [4.0, 1.0, 1.135],
 ];
@@ -91,6 +95,8 @@ function fmtVal(v: number): string {
 const ALL_2X2 = new Set(['0,0', '0,1', '1,0', '1,1']);
 const ROW0_2X2 = new Set(['0,0', '0,1']);
 const STAT_M_ALPHA = new Set(['0,0', '0,1', '1,0', '1,1']);
+const STAT_M_COL = new Set(['0,0', '1,0']);
+const STAT_ROW0_MA = new Set(['0,0', '0,1']);
 const STAT_L_COL = new Set(['0,2', '1,2']);
 
 export function buildOnlineSoftmaxSteps(): Step<OnlineSoftmaxState>[] {
@@ -104,26 +110,26 @@ export function buildOnlineSoftmaxSteps(): Step<OnlineSoftmaxState>[] {
         k0Tone: 'k',
         k1Tone: 'mask',
         outHbmTone: 'mask',
-        tileTitle: 'S_tile (Tile 1)',
+        tileTitle: 'Tile 1 得分 $S^{(1)}$',
         tileTone: 'q',
         tileValues: S1_TILE,
-        tileColLabels: ['k0', 'k1'],
+        tileColLabels: ['$k_0$', '$k_1$'],
         tileSelected: ALL_2X2,
         statsValues: STATS_INIT,
         statsTone: 'neutral',
         statsSelected: new Set(),
-        accTitle: '唯一 O_tilde (待写)',
+        accTitle: '唯一 $\\tilde{O}$ (待写)',
         accTone: 'neutral',
         accValues: O_NULL,
         accSelected: new Set(),
-        focusFrame: { x: 26, y: 176, w: 172, h: 142, label: 'Tile 1 得分', tone: 'q' },
-        phaseText: '1/5 载入 Tile 1',
-        peakSramText: '2x2 分块 (片上驻留)',
-        rescaleText: 'm=-inf, l=0',
+        focusFrame: { x: 26, y: 176, w: 158, h: 136, label: 'Tile 1 得分 $S^{(1)}$', tone: 'q' },
+        phaseText: '1/7 载入 Tile 1',
+        peakSramText: '$2\\times 2$ 分块驻留',
+        rescaleText: '$m=-\\infty,\\; l=0$',
         accuracyText: '零 HBM 中间矩阵',
       },
       caption:
-        '设 $B_r=2, B_c=2, N=4$：仅将 $Q_{0:2}$ 与第 1 块 $K_{0:2}, V_{0:2}$ 搬入片上 SRAM，算出局部得分 $S^{(1)} = [[1,3],[4,2]]$。此时片上只分配唯一一份在位状态 $(m, l, \\tilde{O})$，不分配完整 $[4,4]$ 矩阵。',
+        '设 $B_r=2, B_c=2, N=4$：仅将 $Q_{0:2}$ 与第 1 块 $K_{0:2}, V_{0:2}$ 搬入片上 SRAM，算出局部得分 $S^{(1)} = [[1,3],[4,2]]$。此时片上仅分配唯一一份在位状态 $(m, l, \\tilde{O})$，不落盘完整 $[4,4]$ 矩阵。',
     },
     {
       state: {
@@ -131,53 +137,60 @@ export function buildOnlineSoftmaxSteps(): Step<OnlineSoftmaxState>[] {
         k0Tone: 'k',
         k1Tone: 'mask',
         outHbmTone: 'mask',
-        tileTitle: 'P_tilde (Tile 1)',
+        tileTitle: '局部权重 $\\tilde{P}^{(1)}$',
         tileTone: 'k',
         tileValues: P1_TILE,
-        tileColLabels: ['k0', 'k1'],
+        tileColLabels: ['$k_0$', '$k_1$'],
         tileSelected: ALL_2X2,
-        statsValues: STATS_T1,
+        statsValues: STATS_M1,
         statsTone: 'k',
-        statsSelected: STAT_M_ALPHA,
-        accTitle: '唯一 O_tilde (Tile 1)',
-        accTone: 'v',
-        accValues: O_T1,
-        accSelected: ALL_2X2,
-        focusFrame: { x: 434, y: 176, w: 204, h: 142, label: '写入唯一 O_tilde', tone: 'v' },
-        phaseText: '2/5 首块累加',
-        peakSramText: '1 份 O_tilde 缓冲',
-        rescaleText: 'm=[3.0, 4.0]',
-        accuracyText: 'l=[1.135, 1.135]',
+        statsSelected: STAT_M_COL,
+        accTitle: '唯一 $\\tilde{O}$ (待写)',
+        accTone: 'neutral',
+        accValues: O_NULL,
+        accSelected: new Set(),
+        focusFrame: {
+          x: 208,
+          y: 176,
+          w: 212,
+          h: 136,
+          label: '更新 $m^{(1)}, l^{(1)}$',
+          tone: 'k',
+        },
+        phaseText: '2/7 首块统计',
+        peakSramText: '片上行最大归约',
+        rescaleText: '$m^{(1)}=[3.0, 4.0]$',
+        accuracyText: '$l^{(1)}=[1.135, 1.135]$',
       },
       caption:
-        '由 $S^{(1)}$ 求得首块行最大 $m^{(1)}=[3.0, 4.0]$，算出未归一化权重 $\\tilde{P}^{(1)}=\\exp(S^{(1)}-m^{(1)})$ 与局部和 $l^{(1)}=[1.135, 1.135]$，并将 $\\tilde{P}^{(1)} V_{0:2}$ 写入片上唯一的 $\\tilde{O}$ 累加器。',
+        '由 $S^{(1)}$ 求得首块行最大 $m^{(1)}=[3.0, 4.0]$，算出未归一化局部权重 $\\tilde{P}^{(1)}=\\exp(S^{(1)}-m^{(1)})=[[0.135, 1.0],[1.0, 0.135]]$，并把行和归约进分母 $l^{(1)}=[1.135, 1.135]$。',
     },
     {
       state: {
         stepIndex: 2,
-        k0Tone: 'visited',
-        k1Tone: 'k',
+        k0Tone: 'k',
+        k1Tone: 'mask',
         outHbmTone: 'mask',
-        tileTitle: 'S_tile (Tile 2 覆盖)',
+        tileTitle: '局部权重 $\\tilde{P}^{(1)}$',
         tileTone: 'k',
-        tileValues: S2_TILE,
-        tileColLabels: ['k2', 'k3'],
-        tileSelected: ROW0_2X2,
-        statsValues: STATS_RESCALE,
+        tileValues: P1_TILE,
+        tileColLabels: ['$k_0$', '$k_1$'],
+        tileSelected: new Set(),
+        statsValues: STATS_M1,
         statsTone: 'k',
-        statsSelected: STAT_M_ALPHA,
-        accTitle: '唯一 O_tilde (待缩放)',
-        accTone: 'neutral',
+        statsSelected: STAT_L_COL,
+        accTitle: '唯一 $\\tilde{O}^{(1)}$ (片上)',
+        accTone: 'v',
         accValues: O_T1,
-        accSelected: new Set(),
-        focusFrame: { x: 214, y: 176, w: 210, h: 142, label: 'r0 触发重缩放', tone: 'k' },
-        phaseText: '3/5 载入 Tile 2',
-        peakSramText: '原地覆盖 S_tile',
-        rescaleText: 'alpha=[0.135, 1.0]',
-        accuracyText: 'r0 最大值 3 -> 5',
+        accSelected: ALL_2X2,
+        focusFrame: { x: 440, y: 176, w: 196, h: 136, label: '写入唯一 $\\tilde{O}$', tone: 'v' },
+        phaseText: '3/7 首块累加',
+        peakSramText: '1 份 $\\tilde{O}$ 缓冲',
+        rescaleText: '$\\alpha = [1.0, 1.0]$',
+        accuracyText: '$\\tilde{O}^{(1)} = \\tilde{P}^{(1)}V_{0:2}$',
       },
       caption:
-        '换入第 2 块 $K_{2:4}, V_{2:4}$ 原地覆盖旧分块，得到 $S^{(2)}=[[5,2],[1,2]]$。第 0 行最大值从 $3$ 跳升到 $5$，旧状态必须乘缩放因子 $\\alpha_0 = \\exp(3-5)=0.135$；第 1 行最大值未超 $4$，保持 $\\alpha_1=1.0$。',
+        '将 $\\tilde{P}^{(1)} V_{0:2}$ 写入片上唯一的 $\\tilde{O}$ 累加器（未除以 $l^{(1)}$），得到 $\\tilde{O}^{(1)} = [[0.135, 2.000],[1.000, 0.271]]$，随即释放第 1 块 $K_{0:2}, V_{0:2}$ 的片上缓冲。',
     },
     {
       state: {
@@ -185,53 +198,114 @@ export function buildOnlineSoftmaxSteps(): Step<OnlineSoftmaxState>[] {
         k0Tone: 'visited',
         k1Tone: 'k',
         outHbmTone: 'mask',
-        tileTitle: 'S_tile (Tile 2)',
+        tileTitle: 'Tile 2 覆盖 $S^{(2)}$',
         tileTone: 'q',
         tileValues: S2_TILE,
-        tileColLabels: ['k2', 'k3'],
-        tileSelected: new Set(),
-        statsValues: STATS_T2,
-        statsTone: 'v',
-        statsSelected: STAT_L_COL,
-        accTitle: '唯一 O_tilde (就地缩放+加)',
-        accTone: 'v',
-        accValues: O_T2,
-        accSelected: ALL_2X2,
-        focusFrame: { x: 434, y: 176, w: 204, h: 142, label: '就地覆盖 O_tilde', tone: 'v' },
-        phaseText: '4/5 在位重缩放',
-        peakSramText: '无额外 O 副本',
-        rescaleText: 'l=[1.203, 1.320]',
-        accuracyText: 'alpha*O + P2 V2',
+        tileColLabels: ['$k_2$', '$k_3$'],
+        tileSelected: ROW0_2X2,
+        statsValues: STATS_M1,
+        statsTone: 'neutral',
+        statsSelected: new Set(),
+        accTitle: '唯一 $\\tilde{O}$ (待缩放)',
+        accTone: 'neutral',
+        accValues: O_T1,
+        accSelected: new Set(),
+        focusFrame: { x: 26, y: 176, w: 158, h: 136, label: 'Tile 2 覆盖 $S^{(2)}$', tone: 'q' },
+        phaseText: '4/7 换入 Tile 2',
+        peakSramText: '原地覆盖 Tile 缓冲',
+        rescaleText: '$S^{(2)}_{0,0}=5.0 > 3.0$',
+        accuracyText: '$r_0$ 最大值跃升',
       },
       caption:
-        '片上唯一的 $\\tilde{O}$ 就地完成修正：$\\tilde{O} \\leftarrow \\text{diag}(\\alpha)\\tilde{O} + \\tilde{P}^{(2)}V_{2:4} = [[2.018, 1.470],[1.100, 0.862]]$，分母同步累加为 $l=[1.203, 1.320]$，全程复用同一份片上输出缓冲。',
+        '换入第 2 块 $K_{2:4}, V_{2:4}$ 原地覆盖旧分块空间，算出 $S^{(2)}=[[5,2],[1,2]]$。此时第 0 行出现更大的峰值 $5.0$（超过历史 $m_0^{(1)}=3.0$），意味着旧累加器 $\\tilde{O}_0$ 与 $l_0$ 的指数基数需要修正。',
     },
     {
       state: {
         stepIndex: 4,
         k0Tone: 'visited',
+        k1Tone: 'k',
+        outHbmTone: 'mask',
+        tileTitle: 'Tile 2 权重 $\\tilde{P}^{(2)}$',
+        tileTone: 'k',
+        tileValues: P2_TILE,
+        tileColLabels: ['$k_2$', '$k_3$'],
+        tileSelected: ROW0_2X2,
+        statsValues: STATS_RESCALE,
+        statsTone: 'k',
+        statsSelected: STAT_ROW0_MA,
+        accTitle: '唯一 $\\tilde{O}$ (待缩放)',
+        accTone: 'neutral',
+        accValues: O_T1,
+        accSelected: new Set(),
+        focusFrame: {
+          x: 208,
+          y: 176,
+          w: 212,
+          h: 136,
+          label: '$\\alpha = e^{m^{(1)}-m^{(2)}}$ 重缩放',
+          tone: 'k',
+        },
+        phaseText: '5/7 计算重缩放 $\\alpha$',
+        peakSramText: '指数对齐新峰值',
+        rescaleText: '$\\alpha=[0.135, 1.0]$',
+        accuracyText: '$r_0: 3 \\to 5$',
+      },
+      caption:
+        '更新 $m^{(2)} = \\max(m^{(1)}, \\operatorname{rowmax}(S^{(2)})) = [5.0, 4.0]$：第 0 行最大值从 $3$ 跳升到 $5$，算得重缩放因子 $\\alpha_0 = e^{3-5} = 0.135$；第 1 行最大值未超 $4$，保持 $\\alpha_1 = 1.0$。',
+    },
+    {
+      state: {
+        stepIndex: 5,
+        k0Tone: 'visited',
+        k1Tone: 'k',
+        outHbmTone: 'mask',
+        tileTitle: 'Tile 2 权重 $\\tilde{P}^{(2)}$',
+        tileTone: 'k',
+        tileValues: P2_TILE,
+        tileColLabels: ['$k_2$', '$k_3$'],
+        tileSelected: new Set(),
+        statsValues: STATS_T2,
+        statsTone: 'v',
+        statsSelected: STAT_M_ALPHA,
+        accTitle: '唯一 $\\tilde{O}$ (就地修正)',
+        accTone: 'v',
+        accValues: O_T2,
+        accSelected: ALL_2X2,
+        focusFrame: { x: 440, y: 176, w: 196, h: 136, label: '就地覆盖 $\\tilde{O}$', tone: 'v' },
+        phaseText: '6/7 在位重缩放',
+        peakSramText: '无额外 $\\tilde{O}$ 副本',
+        rescaleText: '$l=[1.203, 1.320]$',
+        accuracyText: '$\\alpha\\tilde{O} + \\tilde{P}^{(2)}V_2$',
+      },
+      caption:
+        '片上唯一的 $\\tilde{O}$ 就地完成缩放累加：$\\tilde{O} \\leftarrow \\operatorname{diag}(\\alpha)\\tilde{O} + \\tilde{P}^{(2)}V_{2:4} = [[2.018, 1.470],[1.100, 0.862]]$，分母同步缩放并累加至 $l=[1.203, 1.320]$，全程复用同一块 SRAM。',
+    },
+    {
+      state: {
+        stepIndex: 6,
+        k0Tone: 'visited',
         k1Tone: 'visited',
         outHbmTone: 'v',
         tileTitle: 'Tile 生命周期结束',
         tileTone: 'neutral',
-        tileValues: S2_TILE,
-        tileColLabels: ['k2', 'k3'],
+        tileValues: P2_TILE,
+        tileColLabels: ['$k_2$', '$k_3$'],
         tileSelected: new Set(),
         statsValues: STATS_T2,
         statsTone: 'v',
-        statsSelected: new Set(),
-        accTitle: '唯一 O = O_tilde / l',
+        statsSelected: STAT_L_COL,
+        accTitle: '唯一 $O = \\tilde{O} / l$',
         accTone: 'v',
         accValues: O_FINAL,
         accSelected: ALL_2X2,
-        focusFrame: { x: 554, y: 42, w: 102, h: 62, label: '1次写回 HBM', tone: 'v' },
-        phaseText: '5/5 尾声归一化',
-        peakSramText: 'HBM 读写 O(N d)',
-        rescaleText: 'O_tilde / l',
-        accuracyText: '误差 2.22e-16',
+        focusFrame: { x: 554, y: 44, w: 102, h: 58, label: '1 次写回 HBM', tone: 'v' },
+        phaseText: '7/7 尾声归一化',
+        peakSramText: 'HBM 读写 $O(Nd)$',
+        rescaleText: '$O = \\tilde{O} / l$',
+        accuracyText: '误差 $2.22\\times 10^{-16}$',
       },
       caption:
-        '遍历全部 $K/V$ 块后，在片上将唯一的 $\\tilde{O}$ 一次性除以 $l=[1.203, 1.320]$，得到最终结果 $[[1.677, 1.221],[0.833, 0.653]]$ 并单次写回 HBM；与完整 $[4,4]$ Softmax 数值误差仅 $2.22\\times 10^{-16}$。',
+        '遍历全部 $K/V$ 块后，在片上将唯一的 $\\tilde{O}$ 一次性除以 $l=[1.203, 1.320]$，得到最终输出 $[[1.677, 1.221],[0.833, 0.653]]$ 并单次写回 HBM；与完整 $[4,4]$ Softmax 数值误差仅 $2.22\\times 10^{-16}$。',
     },
   ];
 }
@@ -247,6 +321,10 @@ export default function OnlineSoftmaxExplainer({
     <Explainer title={title} steps={steps}>
       {(step) => {
         const s = step.state;
+        const isTile1 = s.stepIndex <= 2;
+        const isTile2 = s.stepIndex >= 3 && s.stepIndex <= 5;
+        const isFinal = s.stepIndex === 6;
+
         return (
           <Stage width={STAGE_W} height={412} label={title}>
             <SectionBox
@@ -254,21 +332,32 @@ export default function OnlineSoftmaxExplainer({
               y={10}
               w={648}
               h={106}
-              title="HBM 全局显存 (分块按需流式读取，不写回 [N, N] 矩阵)"
+              title="HBM 全局显存 (分块按需流式读取，不写回 $[N, N]$ 矩阵)"
               tone="neutral"
             />
 
-            <TensorBlock x={28} y={56} w={88} h={36} tone="q" name="Q_0:2" shape="[2, d]" active />
+            <TensorBlock
+              x={28}
+              y={56}
+              w={88}
+              h={36}
+              tone="q"
+              texName="Q_{0:2}"
+              texWidth={56}
+              shape="$[2, d]$"
+              active
+            />
             <TensorBlock
               x={132}
               y={56}
               w={88}
               h={36}
               tone={s.k0Tone}
-              name="K_0:2"
+              texName="K_{0:2}"
+              texWidth={56}
               shape="Tile 1"
-              active={s.stepIndex <= 1}
-              muted={s.stepIndex >= 2}
+              active={isTile1}
+              muted={!isTile1}
             />
             <TensorBlock
               x={228}
@@ -276,10 +365,11 @@ export default function OnlineSoftmaxExplainer({
               w={88}
               h={36}
               tone={s.k0Tone}
-              name="V_0:2"
+              texName="V_{0:2}"
+              texWidth={56}
               shape="Tile 1"
-              active={s.stepIndex <= 1}
-              muted={s.stepIndex >= 2}
+              active={isTile1}
+              muted={!isTile1}
             />
             <TensorBlock
               x={336}
@@ -287,11 +377,12 @@ export default function OnlineSoftmaxExplainer({
               w={88}
               h={36}
               tone={s.k1Tone}
-              name="K_2:4"
+              texName="K_{2:4}"
+              texWidth={56}
               shape="Tile 2"
-              active={s.stepIndex === 2 || s.stepIndex === 3}
-              muted={s.stepIndex < 2 || s.stepIndex === 4}
-              dashed={s.stepIndex < 2}
+              active={isTile2}
+              muted={!isTile2}
+              dashed={isTile1}
             />
             <TensorBlock
               x={432}
@@ -299,11 +390,12 @@ export default function OnlineSoftmaxExplainer({
               w={88}
               h={36}
               tone={s.k1Tone}
-              name="V_2:4"
+              texName="V_{2:4}"
+              texWidth={56}
               shape="Tile 2"
-              active={s.stepIndex === 2 || s.stepIndex === 3}
-              muted={s.stepIndex < 2 || s.stepIndex === 4}
-              dashed={s.stepIndex < 2}
+              active={isTile2}
+              muted={!isTile2}
+              dashed={isTile1}
             />
             <TensorBlock
               x={562}
@@ -311,23 +403,23 @@ export default function OnlineSoftmaxExplainer({
               w={86}
               h={40}
               tone={s.outHbmTone}
-              name="O_0:2"
+              name="$O_{0:2}$"
               shape="最终输出"
               labelMode="inside"
-              active={s.stepIndex === 4}
-              dashed={s.stepIndex < 4}
+              active={isFinal}
+              dashed={!isFinal}
             />
 
             <DataFlowArrow
               points={[
-                [s.stepIndex <= 1 ? 176 : 380, 112],
-                [s.stepIndex <= 1 ? 176 : 380, 128],
+                [isTile1 ? 176 : 380, 112],
+                [isTile1 ? 176 : 380, 128],
                 [156, 128],
                 [156, 184],
               ]}
               tone="k"
-              active={s.stepIndex < 4}
-              flow
+              active={!isFinal}
+              flow={!isFinal}
             />
 
             <DataFlowArrow
@@ -336,9 +428,9 @@ export default function OnlineSoftmaxExplainer({
                 [605, 98],
               ]}
               tone="v"
-              active={s.stepIndex === 4}
-              dashed={s.stepIndex < 4}
-              flow
+              active={isFinal}
+              dashed={!isFinal}
+              flow={isFinal}
             />
 
             <SectionBox x={16} y={140} w={648} h={190} title="片上 SRAM / UB" tone="v" />
@@ -370,8 +462,8 @@ export default function OnlineSoftmaxExplainer({
                 [212, 262],
               ]}
               tone="k"
-              active={s.stepIndex >= 1 && s.stepIndex <= 3}
-              flow
+              active={s.stepIndex >= 1 && s.stepIndex <= 5}
+              flow={s.stepIndex === 1 || s.stepIndex === 4}
             />
 
             <HeatmapMatrix
@@ -390,7 +482,7 @@ export default function OnlineSoftmaxExplainer({
               rowLabels={ROW_LABELS}
               colLabels={STAT_COLS}
               rowLabelW={28}
-              title="在位状态 (m, alpha, l)"
+              title="在位状态 $(m, \alpha, l)$"
               showLegend={false}
               fontSize={11}
             />
@@ -401,8 +493,8 @@ export default function OnlineSoftmaxExplainer({
                 [446, 262],
               ]}
               tone="v"
-              active={s.stepIndex >= 1}
-              flow
+              active={s.stepIndex === 2 || s.stepIndex >= 5}
+              flow={s.stepIndex === 2 || s.stepIndex === 5}
             />
 
             <HeatmapMatrix

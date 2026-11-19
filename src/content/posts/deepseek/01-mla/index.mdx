@@ -8,8 +8,6 @@ category: AI Infra
 toc: true
 ---
 
-import MlaAbsorbExplainer from '../../../../explainers/deepseek/MlaAbsorbExplainer';
-
 在[03 KV Cache 与 GQA](../../foundations/03-kv-cache-and-gqa/)中，分组查询注意力（GQA）通过让多个 Query 头共用一组 KV 头来压缩显存，但直接削减独立 KV 头的数量会在从零预训练的多学科推理任务上带来精度损失[^dsv2-paper]。
 
 多头潜在注意力（Multi-Head Latent Attention，MLA）换了一条线性代数路线：把所有头的 Key 与 Value 写入显存前先联合压成一条共享的低秩潜在向量，在解码计算时再借助矩阵结合律绕过显式展开，在不缩减多头数量的前提下压低缓存体积。
@@ -49,9 +47,9 @@ $$
 
 单 token 只在最终输出时按头乘一次 $W_{UV,h}$，即可把 512 维潜输出恢复为 128 维多头特征；工程上保留 $W_{UV,h}$ 与输出投影 $W^O$ 的独立乘算而不离线合并，是为了保留张量并行按头切分的独立性并复用现成批矩阵乘算子。
 
-为了把上述前后双向吸收与字节节省对照起来，图 1 以 DeepSeek-V3 生产维度演示了 Naive 展开路径、矩阵吸收等价变换以及每层 KV 字节账本，可逐步点击查看各阶段张量尺寸变化。
+为了把上述前后双向吸收与字节节省对照起来，图 1 以 DeepSeek-V3 生产维度对照了 Naive 展开路径、矩阵吸收等价变换以及每层 KV 字节账本。
 
-<MlaAbsorbExplainer client:visible title="图 1：MLA 矩阵吸收五步等价推演与单 token 字节账本" />
+![MLA 双向矩阵吸收对照：对比 Naive 解压 32 倍膨胀路径与 Decode 双向矩阵吸收等价路径，并汇总 MHA、GQA、MLA BF16 与 fp8_ds_mla 单 token 字节账本](./diagrams/01-mla-matrix-absorption.drawio '图 1：MLA 矩阵吸收等价变换与单 token 字节账本')
 
 从图 1 的尺寸对照可以看出，Naive 路径在单步解码时把 512 维潜向量展开为 $128 \times 128 = 16{,}384$ 维的临时 Key 和 Value；而双向吸收把 $W_{UK}$ 留在单步 Query 一侧、把 $W_{UV}$ 推迟到注意力和算子之后，使历史缓存侧始终维持一份共享潜向量，在代数上等价于把 128 头 MHA 化归为 1 头 MQA。
 

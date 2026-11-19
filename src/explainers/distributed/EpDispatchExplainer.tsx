@@ -7,6 +7,7 @@ import {
   type PointerArc,
   type SlotItem,
 } from '@/explainers/kit/PointerBoard';
+import SvgRichLabel from '@/explainers/kit/SvgRichLabel';
 import TensorBlock from '@/explainers/kit/TensorBlock';
 import { STAGE_W, assertMaxHues, type AnyTone } from '@/explainers/kit/motion';
 
@@ -46,33 +47,33 @@ export function buildEpDispatchSteps(): Step<EpDispatchState>[] {
         dpSlots: [
           {
             id: 'dp0',
-            label: 'DP0: t0',
-            sub: 'KV0 本地',
-            topTag: '[1, D]',
+            label: 'DP0: $t_0$',
+            sub: '$KV_0$ 本地',
+            topTag: '$[1, D]$',
             tone: 'active',
             status: 'active',
           },
           {
             id: 'dp1',
-            label: 'DP1: t1',
-            sub: 'KV1 本地',
-            topTag: '[1, D]',
+            label: 'DP1: $t_1$',
+            sub: '$KV_1$ 本地',
+            topTag: '$[1, D]$',
             tone: 'active',
             status: 'active',
           },
           {
             id: 'dp2',
-            label: 'DP2: t2',
-            sub: 'KV2 本地',
-            topTag: '[1, D]',
+            label: 'DP2: $t_2$',
+            sub: '$KV_2$ 本地',
+            topTag: '$[1, D]$',
             tone: 'active',
             status: 'active',
           },
           {
             id: 'dp3',
-            label: 'DP3: t3',
-            sub: 'KV3 本地',
-            topTag: '[1, D]',
+            label: 'DP3: $t_3$',
+            sub: '$KV_3$ 本地',
+            topTag: '$[1, D]$',
             tone: 'active',
             status: 'active',
           },
@@ -80,7 +81,7 @@ export function buildEpDispatchSteps(): Step<EpDispatchState>[] {
         epSlots: [
           {
             id: 'ep0',
-            label: 'Rank 0 · E0',
+            label: 'Rank 0 · $E_0$',
             sub: '等待 Dispatch',
             topTag: '0 tok',
             tone: 'neutral',
@@ -88,7 +89,7 @@ export function buildEpDispatchSteps(): Step<EpDispatchState>[] {
           },
           {
             id: 'ep1',
-            label: 'Rank 1 · E1',
+            label: 'Rank 1 · $E_1$',
             sub: '等待 Dispatch',
             topTag: '0 tok',
             tone: 'neutral',
@@ -96,7 +97,7 @@ export function buildEpDispatchSteps(): Step<EpDispatchState>[] {
           },
           {
             id: 'ep2',
-            label: 'Rank 2 · E2',
+            label: 'Rank 2 · $E_2$',
             sub: '等待 Dispatch',
             topTag: '0 tok',
             tone: 'neutral',
@@ -104,7 +105,7 @@ export function buildEpDispatchSteps(): Step<EpDispatchState>[] {
           },
           {
             id: 'ep3',
-            label: 'Rank 3 · E3',
+            label: 'Rank 3 · $E_3$',
             sub: '等待 Dispatch',
             topTag: '0 tok',
             tone: 'neutral',
@@ -112,10 +113,38 @@ export function buildEpDispatchSteps(): Step<EpDispatchState>[] {
           },
         ],
         epTensors: [
-          { name: 'E0 Buf', shape: '[0, D]', tone: 'mask', stack: 1, muted: true, dashed: true },
-          { name: 'E1 Buf', shape: '[0, D]', tone: 'mask', stack: 1, muted: true, dashed: true },
-          { name: 'E2 Buf', shape: '[0, D]', tone: 'mask', stack: 1, muted: true, dashed: true },
-          { name: 'E3 Buf', shape: '[0, D]', tone: 'mask', stack: 1, muted: true, dashed: true },
+          {
+            name: '$E_0$ Buf',
+            shape: '$[0, D]$',
+            tone: 'mask',
+            stack: 1,
+            muted: true,
+            dashed: true,
+          },
+          {
+            name: '$E_1$ Buf',
+            shape: '$[0, D]$',
+            tone: 'mask',
+            stack: 1,
+            muted: true,
+            dashed: true,
+          },
+          {
+            name: '$E_2$ Buf',
+            shape: '$[0, D]$',
+            tone: 'mask',
+            stack: 1,
+            muted: true,
+            dashed: true,
+          },
+          {
+            name: '$E_3$ Buf',
+            shape: '$[0, D]$',
+            tone: 'mask',
+            stack: 1,
+            muted: true,
+            dashed: true,
+          },
         ],
         arcs: [],
         dpShape: '[1, D] / 卡',
@@ -132,32 +161,32 @@ export function buildEpDispatchSteps(): Step<EpDispatchState>[] {
         dpSlots: [
           {
             id: 'dp0',
-            label: 't0 -> E0,E1',
-            sub: 'w=[0.6,0.4]',
+            label: '$t_0 \\to E_0,E_1$',
+            sub: '$w=[0.6,0.4]$',
             topTag: 'Rank 0',
             tone: 'active',
             status: 'active',
           },
           {
             id: 'dp1',
-            label: 't1 -> E1,E2',
-            sub: 'w=[0.7,0.3]',
+            label: '$t_1 \\to E_1,E_2$',
+            sub: '$w=[0.7,0.3]$',
             topTag: 'Rank 1',
             tone: 'active',
             status: 'active',
           },
           {
             id: 'dp2',
-            label: 't2 -> E0,E1',
-            sub: 'w=[0.5,0.5]',
+            label: '$t_2 \\to E_0,E_1$',
+            sub: '$w=[0.5,0.5]$',
             topTag: 'Rank 2',
             tone: 'active',
             status: 'active',
           },
           {
             id: 'dp3',
-            label: 't3 -> E1,E2',
-            sub: 'w=[0.8,0.2]',
+            label: '$t_3 \\to E_1,E_2$',
+            sub: '$w=[0.8,0.2]$',
             topTag: 'Rank 3',
             tone: 'active',
             status: 'active',
@@ -289,7 +318,7 @@ export function buildEpDispatchSteps(): Step<EpDispatchState>[] {
             arcOffset: 10,
           },
         ],
-        arcBadge: { text: 'Top-2 偏斜路由 -> E1', tone: 'highlight' },
+        arcBadge: { text: 'Top-2 偏斜路由 $\\to E_1$', tone: 'highlight' },
         dpShape: '[1, D] / 卡',
         epShapeSkew: '[2, 4, 2, 0] 偏斜',
         commVolume: '8 份 Top-2 激活待发',
@@ -370,10 +399,17 @@ export function buildEpDispatchSteps(): Step<EpDispatchState>[] {
           },
         ],
         epTensors: [
-          { name: 'X_E0', shape: '[2, D]', tone: 'active', stack: 1, active: true },
-          { name: 'X_E1', shape: '[4, D]', tone: 'highlight', stack: 3, active: true },
-          { name: 'X_E2', shape: '[2, D]', tone: 'active', stack: 1, active: true },
-          { name: 'X_E3', shape: '[0, D]', tone: 'mask', stack: 1, muted: true, dashed: true },
+          { name: '$X_{E_0}$', shape: '$[2, D]$', tone: 'active', stack: 1, active: true },
+          { name: '$X_{E_1}$', shape: '$[4, D]$', tone: 'highlight', stack: 3, active: true },
+          { name: '$X_{E_2}$', shape: '$[2, D]$', tone: 'active', stack: 1, active: true },
+          {
+            name: '$X_{E_3}$',
+            shape: '$[0, D]$',
+            tone: 'mask',
+            stack: 1,
+            muted: true,
+            dashed: true,
+          },
         ],
         arcs: [
           {
@@ -536,10 +572,23 @@ export function buildEpDispatchSteps(): Step<EpDispatchState>[] {
           },
         ],
         epTensors: [
-          { name: 'Y_E0', shape: '[2, D] 就绪', tone: 'done', stack: 1 },
-          { name: 'Y_E1', shape: '[4, D] 计算中', tone: 'highlight', stack: 3, active: true },
-          { name: 'Y_E2', shape: '[2, D] 就绪', tone: 'done', stack: 1 },
-          { name: 'Y_E3', shape: '[0, D] 空转', tone: 'mask', stack: 1, muted: true, dashed: true },
+          { name: '$Y_{E_0}$', shape: '$[2, D]$ 就绪', tone: 'done', stack: 1 },
+          {
+            name: '$Y_{E_1}$',
+            shape: '$[4, D]$ 计算中',
+            tone: 'highlight',
+            stack: 3,
+            active: true,
+          },
+          { name: '$Y_{E_2}$', shape: '$[2, D]$ 就绪', tone: 'done', stack: 1 },
+          {
+            name: '$Y_{E_3}$',
+            shape: '$[0, D]$ 空转',
+            tone: 'mask',
+            stack: 1,
+            muted: true,
+            dashed: true,
+          },
         ],
         arcs: [],
         dpShape: '激活驻留待归还',
@@ -556,32 +605,32 @@ export function buildEpDispatchSteps(): Step<EpDispatchState>[] {
         dpSlots: [
           {
             id: 'dp0',
-            label: 't0 = Σ w·Y',
-            sub: '0.6E0 + 0.4E1',
+            label: '$t_0 = \\sum w\\cdot Y$',
+            sub: '$0.6E_0 + 0.4E_1$',
             topTag: '[1, D] DONE',
             tone: 'done',
             status: 'selected',
           },
           {
             id: 'dp1',
-            label: 't1 = Σ w·Y',
-            sub: '0.7E1 + 0.3E2',
+            label: '$t_1 = \\sum w\\cdot Y$',
+            sub: '$0.7E_1 + 0.3E_2$',
             topTag: '[1, D] DONE',
             tone: 'done',
             status: 'selected',
           },
           {
             id: 'dp2',
-            label: 't2 = Σ w·Y',
-            sub: '0.5E0 + 0.5E1',
+            label: '$t_2 = \\sum w\\cdot Y$',
+            sub: '$0.5E_0 + 0.5E_1$',
             topTag: '[1, D] DONE',
             tone: 'done',
             status: 'selected',
           },
           {
             id: 'dp3',
-            label: 't3 = Σ w·Y',
-            sub: '0.8E1 + 0.2E2',
+            label: '$t_3 = \\sum w\\cdot Y$',
+            sub: '$0.8E_1 + 0.2E_2$',
             topTag: '[1, D] DONE',
             tone: 'done',
             status: 'selected',
@@ -622,10 +671,35 @@ export function buildEpDispatchSteps(): Step<EpDispatchState>[] {
           },
         ],
         epTensors: [
-          { name: 'Y_E0 -> DP', shape: '[2, D] 释放', tone: 'done', stack: 1, dashed: true },
-          { name: 'Y_E1 -> DP', shape: '[4, D] 释放', tone: 'done', stack: 2, dashed: true },
-          { name: 'Y_E2 -> DP', shape: '[2, D] 释放', tone: 'done', stack: 1, dashed: true },
-          { name: 'Y_E3', shape: '[0, D]', tone: 'mask', stack: 1, muted: true, dashed: true },
+          {
+            name: '$Y_{E_0} \\to \\text{DP}$',
+            shape: '$[2, D]$ 释放',
+            tone: 'done',
+            stack: 1,
+            dashed: true,
+          },
+          {
+            name: '$Y_{E_1} \\to \\text{DP}$',
+            shape: '$[4, D]$ 释放',
+            tone: 'done',
+            stack: 2,
+            dashed: true,
+          },
+          {
+            name: '$Y_{E_2} \\to \\text{DP}$',
+            shape: '$[2, D]$ 释放',
+            tone: 'done',
+            stack: 1,
+            dashed: true,
+          },
+          {
+            name: '$Y_{E_3}$',
+            shape: '$[0, D]$',
+            tone: 'mask',
+            stack: 1,
+            muted: true,
+            dashed: true,
+          },
         ],
         arcs: [
           {
@@ -781,29 +855,26 @@ export default function EpDispatchExplainer({
             {s.arcBadge && (
               <g>
                 <rect
-                  x={STAGE_W / 2 - 74}
+                  x={STAGE_W / 2 - 78}
                   y={141}
-                  width={148}
+                  width={156}
                   height={22}
                   rx={4}
                   fill="var(--wisp-bg)"
                   stroke={`var(--wisp-sem-${s.arcBadge.tone})`}
                   strokeWidth={1}
                 />
-                <text
+                <SvgRichLabel
                   x={STAGE_W / 2}
                   y={152}
-                  textAnchor="middle"
-                  dominantBaseline="central"
-                  style={{
-                    fill: `var(--wisp-sem-${s.arcBadge.tone})`,
-                    fontFamily: 'var(--wisp-font-mono)',
-                    fontSize: 11,
-                    fontWeight: 600,
-                  }}
-                >
-                  {s.arcBadge.text}
-                </text>
+                  width={156}
+                  height={22}
+                  text={s.arcBadge.text}
+                  fontSize={11}
+                  fontWeight={600}
+                  color={`var(--wisp-sem-${s.arcBadge.tone})`}
+                  family="mono"
+                />
               </g>
             )}
 

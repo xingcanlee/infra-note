@@ -1,0 +1,76 @@
+<mxfile host="wisp-diagram">
+  <diagram id="deepseek-01-mla-matrix-absorption" name="MLA Matrix Absorption and Byte Ledger">
+    <mxGraphModel dx="800" dy="600" grid="1" gridSize="8" guides="1" page="0" math="1" shadow="0">
+      <root>
+        <mxCell id="0"/>
+        <mxCell id="1" parent="0"/>
+        <mxCell id="hdr" value="MLA 双向矩阵吸收（等价 1 头 MQA）：消除 Naive 解压 32× 膨胀并保持单拷贝 576 维潜缓存" style="text;html=1;whiteSpace=wrap;align=center;verticalAlign=middle;fontFamily=Inter;fontSize=12;fontColor=#5c6067;" vertex="1" parent="1">
+          <mxGeometry x="0" y="0" width="688" height="24" as="geometry"/>
+        </mxCell>
+        <mxCell id="cache_grp" value="Paged KV 单头共享" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f5e9;strokeColor=#2c522d;strokeWidth=1.25;verticalAlign=top;align=left;spacingLeft=12;spacingTop=6;fontFamily=Inter;fontSize=12;fontStyle=1;fontColor=#2c522d;container=0;" vertex="1" parent="1">
+          <mxGeometry x="8" y="32" width="160" height="224" as="geometry"/>
+        </mxCell>
+        <mxCell id="kv_lat" value="&lt;b&gt;联合潜缓存 \([S, 576]\)&lt;/b&gt;&lt;br&gt;\(c_s^{KV}\;(512)\;|\;k_s^R\;(64)\)&lt;br&gt;BF16：\(1152\;\text{B/tok}\)&lt;br&gt;FP8：\(656\;\text{B/tok}\)" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f5e9;strokeColor=#2c522d;strokeWidth=2;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="24" y="88" width="128" height="128" as="geometry"/>
+        </mxCell>
+        <mxCell id="naive_grp" value="反例：Naive 展开路径（Prefill 适用，Decode 禁用 — 引发 32× HBM 临时膨胀）" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#f4f4f2;strokeColor=#2f5783;strokeWidth=1;dashed=1;verticalAlign=top;align=left;spacingLeft=12;spacingTop=6;fontFamily=Inter;fontSize=12;fontStyle=1;fontColor=#2f5783;container=0;" vertex="1" parent="1">
+          <mxGeometry x="200" y="32" width="480" height="96" as="geometry"/>
+        </mxCell>
+        <mxCell id="n_dec" value="&lt;b&gt;上投影解压 \(K_C, V_C\)&lt;/b&gt;&lt;br&gt;\([S, 128, 128] = 16,384\) 维（×32）" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f2fb;strokeColor=#2f5783;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="216" y="64" width="216" height="48" as="geometry"/>
+        </mxCell>
+        <mxCell id="n_mha" value="&lt;b&gt;128 头 MHA 注意力&lt;/b&gt;&lt;br&gt;\(q\;[128, 192] \cdot [K_C; k_R]\)（吞吐受访存拖垮）" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f2fb;strokeColor=#2f5783;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="456" y="64" width="208" height="48" as="geometry"/>
+        </mxCell>
+        <mxCell id="abs_grp" value="正解：Decode 双向矩阵吸收（只搬 576 维潜向量，无损等价 1 头 MQA）" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#fbf2df;strokeColor=#7b5518;strokeWidth=1.25;verticalAlign=top;align=left;spacingLeft=12;spacingTop=6;fontFamily=Inter;fontSize=12;fontStyle=1;fontColor=#7b5518;container=0;" vertex="1" parent="1">
+          <mxGeometry x="200" y="144" width="480" height="112" as="geometry"/>
+        </mxCell>
+        <mxCell id="a_q" value="&lt;b&gt;1. 前吸收 Query&lt;/b&gt;&lt;br&gt;\(q_t^{\text{abs}} = q_t^C W^{UK}\)&lt;br&gt;\([h, 512]\;|\;q_t^R\;[h, 64]\)" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#fbf2df;strokeColor=#7b5518;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="216" y="176" width="144" height="64" as="geometry"/>
+        </mxCell>
+        <mxCell id="a_mqa" value="&lt;b&gt;2. 1 头 MQA 聚合&lt;/b&gt;&lt;br&gt;\(u_t = \sum_s a_{t,s}\, c_s^{KV}\)&lt;br&gt;\([h, 512]\)（除 \(\sqrt{192}\)）" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f5e9;strokeColor=#2c522d;strokeWidth=2;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="384" y="176" width="144" height="64" as="geometry"/>
+        </mxCell>
+        <mxCell id="a_v" value="&lt;b&gt;3. 后置上投影&lt;/b&gt;&lt;br&gt;\(o_t = u_t W^{UV} W^O\)&lt;br&gt;恢复 \([h, 128]\)" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#fbf2df;strokeColor=#7b5518;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="544" y="176" width="120" height="64" as="geometry"/>
+        </mxCell>
+        <mxCell id="led_grp" value="DeepSeek-V3 生产维度单 token 每层 KV 字节账本（相对 BF16 128 头 MHA 65,536 B / FP8 MHA 32,768 B）" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#f4f4f2;strokeColor=#5c6067;strokeWidth=1.25;verticalAlign=top;align=left;spacingLeft=12;spacingTop=6;fontFamily=Inter;fontSize=12;fontStyle=1;fontColor=#5c6067;container=0;" vertex="1" parent="1">
+          <mxGeometry x="8" y="272" width="672" height="168" as="geometry"/>
+        </mxCell>
+        <mxCell id="l_mha" value="&lt;b&gt;MHA-128H（FP8）&lt;/b&gt;&lt;br&gt;32,768 B/tok（BF16 达 65,536 B）" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#f4f4f2;strokeColor=#5c6067;strokeWidth=1;align=center;verticalAlign=middle;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="24" y="304" width="208" height="48" as="geometry"/>
+        </mxCell>
+        <mxCell id="l_gqa" value="&lt;b&gt;GQA-8（FP8）&lt;/b&gt;&lt;br&gt;4,096 B/tok（压缩 87.5%）" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f2fb;strokeColor=#2f5783;strokeWidth=1.25;align=center;verticalAlign=middle;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="248" y="304" width="200" height="48" as="geometry"/>
+        </mxCell>
+        <mxCell id="l_bf16" value="&lt;b&gt;MLA BF16&lt;/b&gt;&lt;br&gt;1,152 B/tok（省 98.2%）" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f5e9;strokeColor=#2c522d;strokeWidth=1.25;align=center;verticalAlign=middle;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="464" y="304" width="200" height="48" as="geometry"/>
+        </mxCell>
+        <mxCell id="l_fp8" value="&lt;b&gt;DS-V3.2 fp8_ds_mla 混合格式（共 656 B/tok，较 BF16 再省 43%）&lt;/b&gt;：FP8 \(c_s^{KV}\) (512 B) + 4×FP32 缩放 (16 B) + BF16 \(k_s^R\) (128 B)" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f5e9;strokeColor=#2c522d;strokeWidth=2;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="24" y="368" width="640" height="56" as="geometry"/>
+        </mxCell>
+        <mxCell id="e_nv" value="解压" style="endArrow=classic;startArrow=none;html=1;strokeColor=#2f5783;strokeWidth=1.25;dashed=1;edgeStyle=orthogonalEdgeStyle;rounded=1;exitX=1;exitY=0.25;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;fontFamily=Inter;fontSize=12;fontColor=#2f5783;labelBackgroundColor=#fcfcfb;" edge="1" parent="1" source="kv_lat" target="n_dec">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e_nv2" value="" style="endArrow=classic;startArrow=none;html=1;strokeColor=#2f5783;strokeWidth=1.25;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="n_dec" target="n_mha">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e_abs_kv" value="直接点积" style="endArrow=classic;startArrow=none;html=1;strokeColor=#2c522d;strokeWidth=1.5;edgeStyle=orthogonalEdgeStyle;rounded=1;exitX=1;exitY=0.75;exitDx=0;exitDy=0;entryX=0.5;entryY=1;entryDx=0;entryDy=0;fontFamily=Inter;fontSize=12;fontColor=#2c522d;labelBackgroundColor=#fbf2df;" edge="1" parent="1" source="kv_lat" target="a_mqa">
+          <mxGeometry x="-0.15" relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="184" y="184"/>
+              <mxPoint x="184" y="248"/>
+              <mxPoint x="456" y="248"/>
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e_q_mqa" value="" style="endArrow=classic;startArrow=none;html=1;strokeColor=#1d1d1f;strokeWidth=1.25;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="a_q" target="a_mqa">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e_mqa_v" value="" style="endArrow=classic;startArrow=none;html=1;strokeColor=#1d1d1f;strokeWidth=1.25;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="a_mqa" target="a_v">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

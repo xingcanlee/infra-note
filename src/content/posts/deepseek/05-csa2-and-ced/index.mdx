@@ -8,8 +8,6 @@ category: AI Infra
 toc: true
 ---
 
-import Csa2HsiExplainer from '../../../../explainers/deepseek/Csa2HsiExplainer';
-
 在多轮智能体（Agent）工作流里，工具调用每追加几十个报错输出或检索片段，就会触发一次围绕十几万字历史前缀的长上下文请求。即便 DeepSeek-V4 已经压窄了条目宽度并折叠了单层内的序列长度，只要网络中的每一层仍然各自写入全局缓存、各自扫描全长索引，HBM 容量、SSD 持久化池与跨节点缓存搬运带宽依然会迅速吃紧。
 
 DeepSeek-V4.1-Flash（主干 552B 参数、外挂条件记忆 Engram 196B、支持 1M 上下文）从**条目位宽 × 序列长度 × 网络层数**三个维度同时做乘法压缩[^paper]，并在前向执行上按半程编码-解码切分（Prefill 激活 8B，Decode 激活 16B）。
@@ -40,12 +38,9 @@ L20–L39 共 20 层解码器分为 5 组各 4 层，整段共用 L20 在 $m = 1
 
 在多卡流水线并行训练期间，共享缓存的源层与消费层经常跨卡分布；V4.1 通过在消费端放置共享参数的轻量影子副本，并在流水线点对点通信中携带中间路由器负载状态，保证梯度聚合与显存释放对上层透明[^paper]。
 
-图 1 以五步动态推演汇总了条目位宽缩减、40 层三态分配、HSI 两级候选筛选以及输出端逆 RoPE 恢复的全流程；图 2 则给出 40 层之间的缓存与索引接力路径。
+图 1 汇总了条目位宽缩减、40 层三态分配、HSI 两级候选筛选以及输出端逆 RoPE 恢复的全流程；图 2 则给出 40 层之间的缓存与索引接力路径。
 
-<Csa2HsiExplainer
-  client:visible
-  title="图 1：DeepSeek-V4.1 CSA2 三维压缩、HSI 两级稀疏索引与逆 RoPE 恢复"
-/>
+![DeepSeek-V4.1 CSA2 三维乘法压缩（890 B/tok）、40 层 Full/Reindex/Reuse 分工、HSI 两级候选筛选与 CED 加速总览](./diagrams/05-csa2-hsi-arch.drawio '图 1：DeepSeek-V4.1 CSA2 三维压缩、HSI 两级稀疏索引与逆 RoPE 恢复')
 
 ```mermaid caption="图 2：40 层 CSA2 Full/Reindex/Reuse 静态复用拓扑"
 flowchart TD

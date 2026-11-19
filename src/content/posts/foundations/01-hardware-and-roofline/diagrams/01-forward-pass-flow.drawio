@@ -1,0 +1,101 @@
+<mxfile host="wisp-diagram">
+  <diagram id="foundations-01-forward-pass-flow" name="Decoder Layer Forward Flow">
+    <mxGraphModel dx="800" dy="600" grid="1" gridSize="8" guides="1" page="0" math="1" shadow="0">
+      <root>
+        <mxCell id="0"/>
+        <mxCell id="1" parent="0"/>
+        <mxCell id="hdr" value="解码器单层前向张量流转与字节账本：\(B=2, S=4, D=8\)（2:1 GQA，SwiGLU \(D_{\text{ff}}=16\)）" style="text;html=1;whiteSpace=wrap;align=center;verticalAlign=middle;fontFamily=Inter;fontSize=12;fontColor=#5c6067;" vertex="1" parent="1">
+          <mxGeometry x="0" y="0" width="688" height="24" as="geometry"/>
+        </mxCell>
+        <mxCell id="attn_grp" value="注意力子层：\(X \to \text{RMSNorm}_1 \to \text{2:1 GQA} \to \text{Attn}+W_O \to X_{\text{mid}}\)" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#f4f4f2;strokeColor=#e2e2dd;strokeWidth=1;dashed=1;verticalAlign=top;align=left;spacingLeft=12;spacingTop=6;fontFamily=Inter;fontSize=12;fontStyle=1;fontColor=#5c6067;container=0;" vertex="1" parent="1">
+          <mxGeometry x="8" y="32" width="672" height="144" as="geometry"/>
+        </mxCell>
+        <mxCell id="n_x" value="输入 \(X\)&lt;br&gt;\([2, 4, 8]\)&lt;br&gt;BF16 激活" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#f4f4f2;strokeColor=#5c6067;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="24" y="72" width="88" height="64" as="geometry"/>
+        </mxCell>
+        <mxCell id="s1" value="&lt;b&gt;1. RMSNorm₁&lt;/b&gt;&lt;br&gt;\(\hat{X}\;[2,4,8]\)&lt;br&gt;Vector · 192 FLOPs" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e3f5f3;strokeColor=#0f766e;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="136" y="72" width="128" height="64" as="geometry"/>
+        </mxCell>
+        <mxCell id="s2" value="&lt;b&gt;2. GQA 投影&lt;/b&gt;&lt;br&gt;\(Q[2,4,8],\;K/V[2,4,4]\)&lt;br&gt;GEMM · 2,048 FLOPs" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f2fb;strokeColor=#2f5783;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="288" y="72" width="168" height="64" as="geometry"/>
+        </mxCell>
+        <mxCell id="s3" value="&lt;b&gt;3. 因果 Attn + W_O + 残差&lt;/b&gt;&lt;br&gt;\(X_{\text{mid}} = X + \text{Attn}\;[2,4,8]\)&lt;br&gt;GEMM+Softmax · 2,048 FLOPs" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f2fb;strokeColor=#2f5783;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="480" y="72" width="184" height="64" as="geometry"/>
+        </mxCell>
+        <mxCell id="ffn_grp" value="前馈子层：\(X_{\text{mid}} \to \text{RMSNorm}_2 \to \text{SwiGLU (Gate / Up / Down)} \to Y\)" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#f4f4f2;strokeColor=#e2e2dd;strokeWidth=1;dashed=1;verticalAlign=top;align=left;spacingLeft=12;spacingTop=6;fontFamily=Inter;fontSize=12;fontStyle=1;fontColor=#5c6067;container=0;" vertex="1" parent="1">
+          <mxGeometry x="8" y="192" width="672" height="144" as="geometry"/>
+        </mxCell>
+        <mxCell id="n_norm2" value="&lt;b&gt;4a. RMSNorm₂&lt;/b&gt;&lt;br&gt;\(\hat{X}_{\text{mid}}\;[2,4,8]\)&lt;br&gt;Vector 归约" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e3f5f3;strokeColor=#0f766e;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="24" y="232" width="120" height="64" as="geometry"/>
+        </mxCell>
+        <mxCell id="n_gateup" value="&lt;b&gt;4b. Gate &amp;amp; Up 双升维 (2× 宽)&lt;/b&gt;&lt;br&gt;\(h = \text{SiLU}(\hat{x}W_g) \odot \hat{x}W_u\;[2,4,16]\)&lt;br&gt;GEMM + SiLU 融合 · 4,096 FLOPs" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#fbf2df;strokeColor=#7b5518;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="168" y="232" width="216" height="64" as="geometry"/>
+        </mxCell>
+        <mxCell id="n_down" value="&lt;b&gt;4c. Down 降维&lt;/b&gt;&lt;br&gt;\(hW_{\text{down}}\;[2,4,8]\)&lt;br&gt;GEMM · 2,048 FLOPs" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#fbf2df;strokeColor=#7b5518;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="408" y="232" width="128" height="64" as="geometry"/>
+        </mxCell>
+        <mxCell id="s5" value="&lt;b&gt;5. 残差输出 \(Y\)&lt;/b&gt;&lt;br&gt;\(X_{\text{mid}} + \text{Down}\)&lt;br&gt;Elementwise Add" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e3f5f3;strokeColor=#0f766e;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="560" y="232" width="104" height="64" as="geometry"/>
+        </mxCell>
+        <mxCell id="ledger_grp" value="算力与 BF16 字节账本汇总（共 10,240 次 GEMM FLOPs + Vector 零碎带宽开销）" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#f4f4f2;strokeColor=#5c6067;strokeWidth=1.25;verticalAlign=top;align=left;spacingLeft=12;spacingTop=6;fontFamily=Inter;fontSize=12;fontStyle=1;fontColor=#5c6067;container=0;" vertex="1" parent="1">
+          <mxGeometry x="8" y="352" width="672" height="104" as="geometry"/>
+        </mxCell>
+        <mxCell id="l_vec" value="&lt;b&gt;Norm / Residual（Vector）&lt;/b&gt;&lt;br&gt;256 B 激活读写 · 192 FLOPs&lt;br&gt;带宽主导（GPU CUDA Core / NPU UB）" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e3f5f3;strokeColor=#0f766e;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="24" y="384" width="208" height="56" as="geometry"/>
+        </mxCell>
+        <mxCell id="l_attn" value="&lt;b&gt;QKV + Attn + O（2:1 GQA）&lt;/b&gt;&lt;br&gt;640 B 权重/激活 · 4,096 FLOPs&lt;br&gt;Tensor Core / Cube + Softmax 融合" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f2fb;strokeColor=#2f5783;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="248" y="384" width="208" height="56" as="geometry"/>
+        </mxCell>
+        <mxCell id="l_ffn" value="&lt;b&gt;SwiGLU 3 矩阵（占 60% GEMM）&lt;/b&gt;&lt;br&gt;768 B 中间激活 · 6,144 FLOPs&lt;br&gt;高计算密度（Prefill 主导）" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#fbf2df;strokeColor=#7b5518;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="472" y="384" width="192" height="56" as="geometry"/>
+        </mxCell>
+        <mxCell id="e1" value="" style="endArrow=classic;startArrow=none;html=1;strokeColor=#1d1d1f;strokeWidth=1.25;edgeStyle=orthogonalEdgeStyle;rounded=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="n_x" target="s1">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e2" value="" style="endArrow=classic;startArrow=none;html=1;strokeColor=#1d1d1f;strokeWidth=1.25;edgeStyle=orthogonalEdgeStyle;rounded=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="s1" target="s2">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e3" value="" style="endArrow=classic;startArrow=none;html=1;strokeColor=#1d1d1f;strokeWidth=1.25;edgeStyle=orthogonalEdgeStyle;rounded=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="s2" target="s3">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e_res1" value="+X" style="endArrow=classic;startArrow=none;html=1;strokeColor=#5c6067;strokeWidth=1.25;dashed=1;dashPattern=4 4;edgeStyle=orthogonalEdgeStyle;rounded=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=1;entryDx=0;entryDy=0;fontFamily=Inter;fontSize=12;fontColor=#5c6067;labelBackgroundColor=#f4f4f2;" edge="1" parent="1" source="n_x" target="s3">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="68" y="160"/>
+              <mxPoint x="572" y="160"/>
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e_mid" value="" style="endArrow=classic;startArrow=none;html=1;strokeColor=#1d1d1f;strokeWidth=1.25;edgeStyle=orthogonalEdgeStyle;rounded=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="s3" target="n_norm2">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="672" y="104"/>
+              <mxPoint x="672" y="184"/>
+              <mxPoint x="16" y="184"/>
+              <mxPoint x="16" y="264"/>
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e4a" value="" style="endArrow=classic;startArrow=none;html=1;strokeColor=#1d1d1f;strokeWidth=1.25;edgeStyle=orthogonalEdgeStyle;rounded=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="n_norm2" target="n_gateup">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e4b" value="" style="endArrow=classic;startArrow=none;html=1;strokeColor=#1d1d1f;strokeWidth=1.25;edgeStyle=orthogonalEdgeStyle;rounded=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="n_gateup" target="n_down">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e4c" value="" style="endArrow=classic;startArrow=none;html=1;strokeColor=#1d1d1f;strokeWidth=1.25;edgeStyle=orthogonalEdgeStyle;rounded=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="n_down" target="s5">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e_res2" value="+\(X_{\text{mid}}\)" style="endArrow=classic;startArrow=none;html=1;strokeColor=#5c6067;strokeWidth=1.25;dashed=1;dashPattern=4 4;edgeStyle=orthogonalEdgeStyle;rounded=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=1;entryDx=0;entryDy=0;fontFamily=Inter;fontSize=12;fontColor=#5c6067;labelBackgroundColor=#f4f4f2;" edge="1" parent="1" source="s3" target="s5">
+          <mxGeometry x="0.3" relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="572" y="184"/>
+              <mxPoint x="16" y="184"/>
+              <mxPoint x="16" y="320"/>
+              <mxPoint x="612" y="320"/>
+            </Array>
+          </mxGeometry>
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

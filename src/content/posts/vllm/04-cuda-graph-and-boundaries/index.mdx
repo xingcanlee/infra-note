@@ -7,8 +7,6 @@ series: { id: vllm, order: 5 }
 tags: [vLLM, CUDA Graph, PyTorch, KV Cache]
 ---
 
-import CudaGraphBoundariesExplainer from '../../../../explainers/vllm/CudaGraphBoundariesExplainer';
-
 分段编译能够把相邻的逐元素算子合并成少数 Triton 融合 Kernel 并把动态注意力隔离出去（见[第 3 章](../03-torch-compile-and-piecewise/)），但只要每次前向仍由 CPU 逐一提交 `cuLaunchKernel`，小批解码（decode）阶段的端到端延迟就依然受限于主机发射回路。在常见层数下，单步解码仅执行数微秒的计算算子却需要数十次到数百次调度入队，大量时间浪费在 Python 框架、PyTorch 分发器与驱动接口之间。
 
 要绕过主机侧的逐算子发射循环，推理引擎必须在预热阶段把一段甚至整张模型的算子序列提前录制成硬件级有向无环图（DAG），即 NVIDIA 的 **CUDA Graph**（对应昇腾上的 ACLGraph）。重放时，主机只需发起一次 `cudaGraphLaunch` 即可驱动整段算子链路连续执行，但这份零发射循环的收益建立在四道严格的硬件边界之上。
@@ -19,12 +17,9 @@ CUDA Graph 的运行分为捕获（Capture）与重放（Replay）两个阶段�
 
 进入重放阶段后，引擎彻底跳过 Python 控制流、PyTorch 算子分发与所有运行时形状分支判断，由 `GPU Command Processor` 按捕获期固化的指令包与指针表直接高速下发。因此重放期间绝不能改变任何被捕获张量的底层地址，也不能依赖运行时的张量数值来动态决定执行路径。
 
-为了把抽象规则落到具体数值上，假设我们为解码阶段捕获一张容量上限为 $B_{\text{cap}} = 4$、隐藏维度为 $H = 8$ 的静态图。捕获时，系统将输入缓冲区 `hidden_states` 锁定在虚拟地址 `0x7f00_1000`、KV 槽位表 `slot_mapping` 锁定在 `0x7f00_2000`、输出缓冲锁定在 `0x7f00_3000`。当真实请求批量为 $B = 3$ 时，运行期会把这 3 行真实激活原位拷入 `0x7f00_1000` 的前 3 槽，把第 4 槽输入清零并将槽位索引置为 $-1$，随后直接重放整张图。下面的交互视图以 $B_{\text{cap}} = 4$ 为例演示捕获、健康重放以及四道边界违例时的失效形态，可通过步进按钮逐帧观察。
+为了把抽象规则落到具体数值上，假设我们为解码阶段捕获一张容量上限为 $B_{\text{cap}} = 4$、隐藏维度为 $H = 8$ 的静态图。捕获时，系统将输入缓冲区 `hidden_states` 锁定在虚拟地址 `0x7f00_1000`、KV 槽位表 `slot_mapping` 锁定在 `0x7f00_2000`、输出缓冲锁定在 `0x7f00_3000`。当真实请求批量为 $B = 3$ 时，运行期会把这 3 行真实激活原位拷入 `0x7f00_1000` 的前 3 槽，把第 4 槽输入清零并将槽位索引置为 $-1$，随后直接重放整张图。图 1 以 $B_{\text{cap}} = 4$ 为例总结了捕获、健康重放以及四道边界违例时的失效形态。
 
-<CudaGraphBoundariesExplainer
-  client:visible
-  title="图 1：CUDA Graph 捕获、重放与四道硬件边界推演"
-/>
+![CUDA Graph 捕获与重放契约及四道边界：以 B_cap=4 为例对比健康原地拷贝重放与地址漂移、越界/脏填充、Host 同步与跨流未汇合四类违例](./diagrams/04-cuda-graph-capture-replay.drawio '图 1：CUDA Graph 捕获、重放与四道硬件边界机制')
 
 ## 四道硬件边界与防护实现
 
