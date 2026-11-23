@@ -1,5 +1,5 @@
 ---
-title: '03 MoE 跨卡通信与通算融合：从 DeepEP 双模式、昇腾 MC2 到双微批重叠（DBO）'
+title: '03 MoE 跨卡通信与通算融合：从 DeepEP 双模式、昇腾 MC2 到 DBO 双微批重叠'
 description: '拆解 MoE 专家并行 All-to-All 通信阻塞根源，对比 NVIDIA DeepEP 统一底座与昇腾 HCCL MC2、编译融合及共享专家流，并对照双微批重叠实现。'
 series: { id: distributed, order: 4 }
 pubDate: 2026-11-14
@@ -8,11 +8,11 @@ category: AI Infra
 toc: true
 ---
 
-在大型混合专家（MoE）模型中，每 token 的激活前馈计算量经稀疏路由大幅压缩后，把 token 送往目标专家卡、算完再收归原卡的两趟跨卡 `All-to-All` 通信直接成为端到端吞吐与尾延迟的主要瓶颈。同时，单批次内部的算子依赖会让计算核心在网络传输飞行窗口内处于等待空转状态。
+在大型 MoE（Mixture-of-Experts，混合专家架构）模型中，每 token 的激活前馈计算量经稀疏路由大幅压缩后，把 token 送往目标专家卡、算完再收归原卡的两趟跨卡 `All-to-All` 通信直接成为端到端吞吐与尾延迟的主要瓶颈。同时，单批次内部的算子依赖会让计算核心在网络传输飞行窗口内处于等待空转状态。
 
 ## 专家并行 All-to-All 通信的阻塞根源
 
-承接第 02 章对 `Attention DP + MoE EP` 路由轨迹的追踪，当偏斜路由把大批请求集中送往少数热点专家时，通用变长 `All-to-All（AllToAllV）` 原语的控制与数据流向如图 1 所示。两条支路分别对应传统串行等待与双硬件栈的通算融合及流水重叠路径。
+承接第 02 章对 `Attention DP + MoE EP` 路由轨迹的追踪，当偏斜路由把大批请求集中送往少数热点专家时，通用变长 `AllToAllV`（变长全对全通信）原语的控制与数据流向如图 1 所示。两条支路分别对应传统串行等待与双硬件栈的通算融合及流水重叠路径。
 
 ```mermaid caption="图 1：4 卡 MoE EP 分发计算归还流与双栈卸载路径"
 flowchart TD
@@ -39,7 +39,7 @@ flowchart TD
 
 ### 高吞吐与低延迟双模式的分化动因
 
-在早期 `vllm` 与 `DeepEP` 的演化中，由于预填充（大批量吞吐受限）和解码（小批量延迟受限）对硬件资源的诉求截然不同，系统曾拆分出高吞吐（HT，High-Throughput）与低延迟（LL，Low-Latency）两套独立通信引擎。
+在早期 `vllm` 与 `DeepEP` 的演化中，由于预填充（大批量吞吐受限）和解码（小批量延迟受限）对硬件资源的诉求截然不同，系统曾拆分出 HT（High-Throughput，高吞吐）与 LL（Low-Latency，低延迟）两套独立通信引擎。
 
 高吞吐模式在 `vllm` 中由 `DeepEPHTPrepareAndFinalize` 封装，面向多机 Prefill 大载荷，核心在于采用非对称两级中继（先跨机 RDMA 中继、后机内 NVLink 扇出）消除跨机冗余流量：跨节点先通过 RDMA 将同一 token 仅发一份到目标机器的对应转发卡，到达目标节点内部后再借由高带宽 NVLink 广播分发给具体驻留专家的目标卡[^deepep-hybrid]。为对齐硬件事务粒度，发送端对隐藏维按 512 字节原子块对齐；但因为每次前向接收到的 token 总数随动态路由实时变化，开启数据并行时该模式无法锁定固定张量形状，编译配置不得不强制禁用 CUDA Graph[^vllm-ht]。
 
@@ -51,11 +51,11 @@ flowchart TD
 
 ![NVIDIA DeepEP 与华为昇腾 HCCL MC2 通算融合架构对照](./diagrams/03-deepep-vs-mc2-arch.drawio '图 2：NVIDIA DeepEP v2 统一 EPBuffer 与华为昇腾 HCCL MC2 通算融合架构对比')
 
-统一底座通过四项工程折中将两种运行形态揉入同一套接口。首先，底层发射器依据跨节点数自动选择单机直连或两级中继 Kernel，并根据链路与显存带宽模型推算所需的流式多处理器（SM）与网卡队列对（QP）配额[^deepep-qps]。其次，在编译与调度策略上用动态展开与主机同步开关区分阶段：非图模式下的 Prefill 允许按实际接收量动态展开激活以节省显存，而开启 CUDA Graph 的 Decode 路径关闭一切主机同步，并将每卡最大 token 上限向上取整到 2 的幂，防止输入长度微小波动引发 JIT 重编译抖动[^vllm-v2-cg]。
+统一底座通过四项工程折中将两种运行形态揉入同一套接口。首先，底层发射器依据跨节点数自动选择单机直连或两级中继 Kernel，并根据链路与显存带宽模型推算所需的 **SM（Streaming Multiprocessor，流式多处理器）**与网卡 **QP（Queue Pair，队列对）**配额[^deepep-qps]。其次，在编译与调度策略上用动态展开与主机同步开关区分阶段：非图模式下的 Prefill 允许按实际接收量动态展开激活以节省显存，而开启 CUDA Graph 的 Decode 路径关闭一切主机同步，并将每卡最大 token 上限向上取整到 2 的幂，防止输入长度微小波动引发 JIT 重编译抖动[^vllm-v2-cg]。
 
 由于关闭了主机同步，CPU 线程在发射阶段并不知晓本次实际收到了多少有效 token；为此框架在 GPU 上追加一个轻量 Triton Kernel `_globalize_recv_topk_idx`，直接读取设备侧前缀和数组的末尾计数，将越界填充槽位或非本地专家索引原地标记为 `-1`，全程无需回传主机[^vllm-v2-triton]。
 
-此外，分发句柄会缓存目标槽位索引以便在 Combine 阶段跳过通知阶段[^deepep-cached]，尾段拷贝启用可编程依赖启动（PDL）实现核间尾波重叠，而 MXFP8 缩放因子也被紧凑打包进 4 字节整型随 token 一并传输[^vllm-v2-mxfp8]。支撑这一切无 CPU 干预直写能力的底层基石，是基于 CUDA 驱动虚拟内存映射构建的弹性对称显存：通过预留连续虚拟地址并跨进程导出文件描述符句柄，同机多进程无需额外拷贝即可直接向对端物理内存写入数据[^deepep-symm]。
+此外，分发句柄会缓存目标槽位索引以便在 Combine 阶段跳过通知阶段[^deepep-cached]，尾段拷贝启用 PDL（Programmatic Dependent Launch，可编程依赖启动）实现核间尾波重叠，而 MXFP8 缩放因子也被紧凑打包进 4 字节整型随 token 一并传输[^vllm-v2-mxfp8]。支撑这一切无 CPU 干预直写能力的底层基石，是基于 CUDA 驱动虚拟内存映射构建的弹性对称显存：通过预留连续虚拟地址并跨进程导出文件描述符句柄，同机多进程无需额外拷贝即可直接向对端物理内存写入数据[^deepep-symm]。
 
 ## 华为昇腾 MC2 通算融合与编译期通信消除
 
@@ -85,9 +85,9 @@ MC2（Matmul-Communication Fusion）之所以能够消除大部分通信气泡�
 
 ## 双微批重叠与共享专家异步流
 
-即便单个通信 Kernel 的带宽利用率已经逼近硬件链路上限，只要整批请求运行在同一条顺序依赖链上，Attention 计算完成前 Dispatch 依然无法启动，Dispatch 飞行期间后续算子也只能停滞。将整批输入（例如 $B = 1024$ 个 token）对半切分为两个微批 $\mu B_0$ 与 $\mu B_1$（每份 512 个 token），让两个微批在计算流与通信流之间交替错峰推进，便是**双微批重叠（DBO，Dual-Batch Overlap）**的核心机制。图 3 对照了串行基准、GPU 双微批乒乓模式以及昇腾单批 MC2 辅助流流水线。
+即便单个通信 Kernel 的带宽利用率已经逼近硬件链路上限，只要整批请求运行在同一条顺序依赖链上，Attention 计算完成前 Dispatch 依然无法启动，Dispatch 飞行期间后续算子也只能停滞。将整批输入（例如 $B = 1024$ 个 token）对半切分为两个微批 $\mu B_0$ 与 $\mu B_1$（每份 512 个 token），让两个微批在计算流与通信流之间交替错峰推进，便是 **DBO（Dual-Batch Overlap，双微批重叠）**的核心机制。图 3 对照了串行基准、GPU 双微批乒乓模式以及昇腾单批 MC2 辅助流流水线。
 
-![双微批重叠 DBO 与昇腾 MC2 异步流毫秒级流水线对比：串行 8.50ms、GPU DBO 5.40ms（算力利用 85.2%）与昇腾单批 Slice 流水](./diagrams/03-dbo-vs-mc2-timeline.drawio '图 3：双微批重叠（DBO）与昇腾 MC2 异步流毫秒级流水线对比')
+![双微批重叠 DBO 与昇腾 MC2 异步流毫秒级流水线对比：串行 8.50ms、GPU DBO 5.40ms（算力利用 85.2%）与昇腾单批 Slice 流水](./diagrams/03-dbo-vs-mc2-timeline.drawio '图 3：DBO（双微批重叠）与昇腾 MC2 异步流毫秒级流水线对比')
 
 如图 3 所示，在严格按毫秒比例对齐的泳道中，串行单批完成一层共耗时 8.50 ms（有效计算 4.60 ms，算力利用率 54.1%）；GPU 端对半切分后，$\mu B_1$ 的注意力槽位恰好填满了 $\mu B_0$ 的跨卡分发等待，后续 $\mu B_1$ 分发与 $\mu B_0$ 专家计算交叉推进，将单层耗时降至 5.40 ms，算力活跃度提高到 85.2%；而昇腾端则保留完整单批，在主流执行 MC2 算子内 Slice 流水的同时，由辅助计算流并发执行共享专家。
 
@@ -105,7 +105,7 @@ MC2（Matmul-Communication Fusion）之所以能够消除大部分通信气泡�
 
 与 NVIDIA 路线不同，当前 `vllm-ascend` 在模型状态机中显式禁用了 DBO[^ascend-nodbo]。背后的工程原因十分直接：首先，昇腾 MC2 已经在单一融合核内部按 Slice 粒度把自身的通信与计算重叠完毕；其次，将原本不大的批尺寸对半再切分，容易让单微批滑离 DaVinci Cube 核的高效矩阵分块区间，甚至掉出融合算子的最优工作点。
 
-为此，昇腾路径转而利用现代 MoE 模型自带的**常驻共享专家（Shared Experts）**特性——共享专家不依赖稀疏门控路由，所有 token 一律参与计算。在 `AscendMoERunner` 的调度编排中，一旦路由器输出就绪，引擎立即把共享专家的 Gate-Up 投影投递到专门的辅助计算流上，利用共享专家的计算去填补主流上路由 Top-K 排序与 `Dispatch` 的网络等待时间；待路由计算推进至激活与 Combine 里程碑时，两条流再完成结果汇合，而当 `MegaMoe` 启用核内全融合时则会直接跳过外部辅助流调用[^ascend-shared]。
+为此，昇腾路径转而利用现代 MoE 模型自带的 **Shared Experts（常驻共享专家）**特性——共享专家不依赖稀疏门控路由，所有 token 一律参与计算。在 `AscendMoERunner` 的调度编排中，一旦路由器输出就绪，引擎立即把共享专家的 Gate-Up 投影投递到专门的辅助计算流上，利用共享专家的计算去填补主流上路由 Top-K 排序与 `Dispatch` 的网络等待时间；待路由计算推进至激活与 Combine 里程碑时，两条流再完成结果汇合，而当 `MegaMoe` 启用核内全融合时则会直接跳过外部辅助流调用[^ascend-shared]。
 
 ### 双硬件栈 MoE 通信方案对照
 
@@ -129,7 +129,12 @@ rng = np.random.default_rng(7)
 e_num, dim, p_ranks = 4, 8, 4
 x_dp = rng.normal(size=(p_ranks, dim))
 w_experts = rng.normal(size=(e_num, dim, dim))
-routes = [[(0, 0.7), (1, 0.3)], [(1, 0.6), (2, 0.4)], [(1, 0.8), (0, 0.2)], [(1, 0.5), (2, 0.5)]]
+routes = [
+    [(0, 0.7), (1, 0.3)],
+    [(1, 0.6), (2, 0.4)],
+    [(1, 0.8), (0, 0.2)],
+    [(1, 0.5), (2, 0.5)],
+]
 
 # 单卡参考计算
 y_ref = np.zeros_like(x_dp)
@@ -146,7 +151,10 @@ for src_rank, pairs in enumerate(routes):
         recv_lists[eid].append(x_dp[src_rank])
         meta.append((src_rank, eid, pos, w))
 counts = [len(lst) for lst in recv_lists]
-expert_outs = [np.tanh(np.stack(lst) @ w_experts[e]) if lst else np.zeros((0, dim)) for e, lst in enumerate(recv_lists)]
+expert_outs = [
+    np.tanh(np.stack(lst) @ w_experts[e]) if lst else np.zeros((0, dim))
+    for e, lst in enumerate(recv_lists)
+]
 y_dist = np.zeros_like(x_dp)
 for src_rank, eid, pos, w in meta:
     y_dist[src_rank] += w * expert_outs[eid][pos]
@@ -169,7 +177,10 @@ def sim_stream(attn=2.20, moe=2.40, disp=2.00, comb=1.50, sync=0.20, ev=0.05):
 
 
 ts, td, tc = sim_stream()
-print(f"Serial={ts:.2f}ms ({100 * tc / ts:.1f}%) | DBO={td:.2f}ms ({100 * tc / td:.1f}%)")
+print(
+    f"Serial={ts:.2f}ms ({100 * tc / ts:.1f}%) | "
+    f"DBO={td:.2f}ms ({100 * tc / td:.1f}%)"
+)
 ```
 
 运行脚本可得数值校验与理论流水线耗时对比：

@@ -55,23 +55,35 @@
         <mxCell id="r_so_nic" value="昇腾参数面 RoCE 多轨网卡&lt;br&gt;片上集成多口 · DEVICE_RDMA / URMA" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#fbf2df;strokeColor=#7b5518;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
           <mxGeometry x="392" y="456" width="256" height="56" as="geometry"/>
         </mxCell>
-        <mxCell id="l_e1" value="" style="endArrow=classic;startArrow=none;html=1;strokeColor=#1d1d1f;strokeWidth=1.25;edgeStyle=orthogonalEdgeStyle;rounded=1;exitX=0.5;exitY=1.0;exitDx=0;exitDy=0;entryX=0.5;entryY=0.0;entryDx=0;entryDy=0;" edge="1" parent="1" source="l_t1" target="l_su">
+        <mxCell id="l_e1" value="" style="endArrow=classic;startArrow=none;html=1;strokeColor=#1d1d1f;strokeWidth=1.25;exitX=0.5;exitY=1.0;exitDx=0;exitDy=0;entryX=0.5;entryY=0.0;entryDx=0;entryDy=0;" edge="1" parent="1" source="l_t1" target="l_su">
           <mxGeometry relative="1" as="geometry"/>
         </mxCell>
-        <mxCell id="l_e2" value="MNNVL" style="endArrow=classic;startArrow=none;html=1;strokeColor=#1d1d1f;strokeWidth=1.25;edgeStyle=orthogonalEdgeStyle;rounded=1;exitX=0.5;exitY=1.0;exitDx=0;exitDy=0;entryX=0.5;entryY=0.0;entryDx=0;entryDy=0;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;labelBackgroundColor=#fcfcfb;" edge="1" parent="1" source="l_su_node" target="l_su_pod">
+        <mxCell id="l_e2" value="" style="endArrow=classic;startArrow=none;html=1;strokeColor=#1d1d1f;strokeWidth=1.25;exitX=0.5;exitY=1.0;exitDx=0;exitDy=0;entryX=0.5;entryY=0.0;entryDx=0;entryDy=0;" edge="1" parent="1" source="l_su_node" target="l_su_pod">
           <mxGeometry relative="1" as="geometry"/>
         </mxCell>
-        <mxCell id="l_e3" value="跨机 RDMA" style="endArrow=classic;startArrow=none;html=1;strokeColor=#5c6067;strokeWidth=1.25;edgeStyle=orthogonalEdgeStyle;rounded=1;dashed=1;dashPattern=4 4;exitX=0.5;exitY=1.0;exitDx=0;exitDy=0;entryX=0.5;entryY=0.0;entryDx=0;entryDy=0;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;labelBackgroundColor=#fcfcfb;" edge="1" parent="1" source="l_su" target="l_so">
+        <mxCell id="lbl_l_e2" value="MNNVL" style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;fontFamily=Inter;fontSize=12;fontColor=#5c6067;" vertex="1" parent="1">
+          <mxGeometry x="176" y="240" width="112" height="24" as="geometry"/>
+        </mxCell>
+        <mxCell id="l_e3" value="" style="endArrow=classic;startArrow=none;html=1;strokeColor=#5c6067;strokeWidth=1.25;dashed=1;dashPattern=4 4;exitX=0.5;exitY=1.0;exitDx=0;exitDy=0;entryX=0.5;entryY=0.0;entryDx=0;entryDy=0;" edge="1" parent="1" source="l_su" target="l_so">
           <mxGeometry relative="1" as="geometry"/>
         </mxCell>
-        <mxCell id="r_e1" value="" style="endArrow=classic;startArrow=none;html=1;strokeColor=#1d1d1f;strokeWidth=1.25;edgeStyle=orthogonalEdgeStyle;rounded=1;exitX=0.5;exitY=1.0;exitDx=0;exitDy=0;entryX=0.5;entryY=0.0;entryDx=0;entryDy=0;" edge="1" parent="1" source="r_t1" target="r_su">
+        <mxCell id="lbl_l_e3" value="跨机 RDMA" style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;fontFamily=Inter;fontSize=12;fontColor=#5c6067;" vertex="1" parent="1">
+          <mxGeometry x="176" y="360" width="120" height="24" as="geometry"/>
+        </mxCell>
+        <mxCell id="r_e1" value="" style="endArrow=classic;startArrow=none;html=1;strokeColor=#1d1d1f;strokeWidth=1.25;exitX=0.5;exitY=1.0;exitDx=0;exitDy=0;entryX=0.5;entryY=0.0;entryDx=0;entryDy=0;" edge="1" parent="1" source="r_t1" target="r_su">
           <mxGeometry relative="1" as="geometry"/>
         </mxCell>
-        <mxCell id="r_e2" value="Unified Bus" style="endArrow=classic;startArrow=none;html=1;strokeColor=#1d1d1f;strokeWidth=1.25;edgeStyle=orthogonalEdgeStyle;rounded=1;exitX=0.5;exitY=1.0;exitDx=0;exitDy=0;entryX=0.5;entryY=0.0;entryDx=0;entryDy=0;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;labelBackgroundColor=#fcfcfb;" edge="1" parent="1" source="r_su_node" target="r_su_pod">
+        <mxCell id="r_e2" value="" style="endArrow=classic;startArrow=none;html=1;strokeColor=#1d1d1f;strokeWidth=1.25;exitX=0.5;exitY=1.0;exitDx=0;exitDy=0;entryX=0.5;entryY=0.0;entryDx=0;entryDy=0;" edge="1" parent="1" source="r_su_node" target="r_su_pod">
           <mxGeometry relative="1" as="geometry"/>
         </mxCell>
-        <mxCell id="r_e3" value="跨机 RoCE" style="endArrow=classic;startArrow=none;html=1;strokeColor=#5c6067;strokeWidth=1.25;edgeStyle=orthogonalEdgeStyle;rounded=1;dashed=1;dashPattern=4 4;exitX=0.5;exitY=1.0;exitDx=0;exitDy=0;entryX=0.5;entryY=0.0;entryDx=0;entryDy=0;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;labelBackgroundColor=#fcfcfb;" edge="1" parent="1" source="r_su" target="r_so">
+        <mxCell id="lbl_r_e2" value="Unified Bus" style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;fontFamily=Inter;fontSize=12;fontColor=#5c6067;" vertex="1" parent="1">
+          <mxGeometry x="528" y="240" width="112" height="24" as="geometry"/>
+        </mxCell>
+        <mxCell id="r_e3" value="" style="endArrow=classic;startArrow=none;html=1;strokeColor=#5c6067;strokeWidth=1.25;dashed=1;dashPattern=4 4;exitX=0.5;exitY=1.0;exitDx=0;exitDy=0;entryX=0.5;entryY=0.0;entryDx=0;entryDy=0;" edge="1" parent="1" source="r_su" target="r_so">
           <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="lbl_r_e3" value="跨机 RoCE" style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;fontFamily=Inter;fontSize=12;fontColor=#5c6067;" vertex="1" parent="1">
+          <mxGeometry x="528" y="360" width="120" height="24" as="geometry"/>
         </mxCell>
       </root>
     </mxGraphModel>

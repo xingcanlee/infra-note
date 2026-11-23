@@ -8,10 +8,11 @@ const POSTS = join(SRC, 'content', 'posts');
 const PAGES = join(SRC, 'content', 'pages');
 
 const SERIES_EXPECTED = [
-  { id: 'foundations', count: 6 },
+  { id: 'foundations', count: 7 },
   { id: 'distributed', count: 4 },
   { id: 'deepseek', count: 11 },
-  { id: 'vllm', count: 8 },
+  { id: 'vllm', count: 7 },
+  { id: 'aclgraph', count: 7 },
 ] as const;
 
 type SeriesId = (typeof SERIES_EXPECTED)[number]['id'];
@@ -122,17 +123,17 @@ const bySeries = Object.fromEntries(
 const allPosts = SERIES_EXPECTED.flatMap(({ id }) => bySeries[id]);
 
 describe('infra-note content integrity', () => {
-  it('has exact 4-series structure, contiguous orders, and homepage ordering', () => {
+  it('has exact 5-series structure, contiguous orders, and homepage ordering', () => {
     for (const { id, count } of SERIES_EXPECTED) {
       expect(bySeries[id]).toHaveLength(count);
       expect(bySeries[id].map((p) => p.series)).toEqual(
         Array.from({ length: count }, (_, idx) => ({ id, order: idx + 1 })),
       );
     }
-    expect(allPosts).toHaveLength(29);
+    expect(allPosts).toHaveLength(36);
 
     const topDirs = readdirSync(POSTS).filter((d) => statSync(join(POSTS, d)).isDirectory());
-    expect(topDirs.sort()).toEqual(['deepseek', 'distributed', 'foundations', 'vllm']);
+    expect(topDirs.sort()).toEqual(['aclgraph', 'deepseek', 'distributed', 'foundations', 'vllm']);
 
     const orderedByUpdated = [...SERIES_EXPECTED]
       .map(({ id }) => ({
@@ -141,7 +142,13 @@ describe('infra-note content integrity', () => {
       }))
       .sort((a, b) => b.updated - a.updated || a.id.localeCompare(b.id))
       .map((s) => s.id);
-    expect(orderedByUpdated).toEqual(['foundations', 'distributed', 'deepseek', 'vllm']);
+    expect(orderedByUpdated).toEqual([
+      'foundations',
+      'distributed',
+      'deepseek',
+      'vllm',
+      'aclgraph',
+    ]);
   });
 
   it('uses shared explainers kit without hardcoded hex, gradients, or shadows', () => {
@@ -160,7 +167,7 @@ describe('infra-note content integrity', () => {
 
   it('removes legacy toy.py scripts and verifies 4-way visual routing + GPU/NPU code coverage', () => {
     const chapterPosts = allPosts.filter((p) => p.series.order >= 2);
-    expect(chapterPosts).toHaveLength(25);
+    expect(chapterPosts).toHaveLength(31);
 
     const aboutText = readFileSync(join(PAGES, 'about.md'), 'utf8');
     expect(aboutText).not.toMatch(/\btoy\.py\b|verify_toys/);
@@ -183,6 +190,12 @@ describe('infra-note content integrity', () => {
         );
       }
       const explainerCount = (post.raw.match(/<[A-Z]\w*Explainer\b/g) ?? []).length;
+      for (const expMatch of post.raw.matchAll(/<[A-Z]\w*Explainer\b[^>]*\/>/g)) {
+        expect(
+          expMatch[0],
+          `Explainer missing client: hydration directive in ${post.slug}`,
+        ).toMatch(/\bclient:/);
+      }
       const visualCount = mermaidCount + staticDiagramMatches.length + explainerCount;
 
       expect(visualCount, `Expected >= 1 visual in ${post.slug}`).toBeGreaterThanOrEqual(1);

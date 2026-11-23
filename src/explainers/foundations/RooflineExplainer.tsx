@@ -297,7 +297,7 @@ export function buildRooflineSteps(): Step<RooflineState>[] {
 }
 
 export default function RooflineExplainer({
-  title = '图 3：双硬件对数 Roofline 拐点、Decode/Prefill 状态迁移与 Cube/Vector 重叠',
+  title = '图 4：双硬件对数 Roofline 拐点、Decode/Prefill 状态迁移与 Cube/Vector 重叠',
 }: {
   title?: string;
 }) {

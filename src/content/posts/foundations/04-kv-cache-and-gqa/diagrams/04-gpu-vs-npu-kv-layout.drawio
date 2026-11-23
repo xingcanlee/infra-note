@@ -1,0 +1,139 @@
+<mxfile host="wisp-diagram">
+  <diagram id="foundations-04-gpu-vs-npu-kv-layout" name="GPU ND vs Ascend PA_NZ KV Layout">
+    <mxGraphModel dx="800" dy="600" grid="1" gridSize="8" guides="1" page="0" math="0" shadow="0">
+      <root>
+        <mxCell id="0"/>
+        <mxCell id="1" parent="0"/>
+        <mxCell id="hdr" value="分页 KV Cache 物理排布对照：vLLM GPU 行主序 ND (TMA 对齐) vs vllm-ascend PA_NZ 16x16 分形视图" style="text;html=1;whiteSpace=wrap;align=center;verticalAlign=middle;fontFamily=Inter;fontSize=12;fontColor=#5c6067;" vertex="1" parent="1">
+          <mxGeometry x="0" y="0" width="688" height="24" as="geometry"/>
+        </mxCell>
+        <mxCell id="kv_left" value="vLLM GPU Paged KV (flash_attn.py)" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f2fb;strokeColor=#2f5783;strokeWidth=1.25;verticalAlign=top;align=left;spacingLeft=12;spacingTop=6;fontFamily=Inter;fontSize=12;fontStyle=1;fontColor=#2f5783;container=0;" vertex="1" parent="1">
+          <mxGeometry x="0" y="32" width="336" height="520" as="geometry"/>
+        </mxCell>
+        <mxCell id="kv_right" value="vllm-ascend PA_NZ (mla_v1.py / attention_v1.py)" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e3f5f3;strokeColor=#0f766e;strokeWidth=1.25;verticalAlign=top;align=left;spacingLeft=12;spacingTop=6;fontFamily=Inter;fontSize=12;fontStyle=1;fontColor=#0f766e;container=0;" vertex="1" parent="1">
+          <mxGeometry x="352" y="32" width="336" height="520" as="geometry"/>
+        </mxCell>
+        <mxCell id="g_shape" value="物理张量池: [num_blocks, n_kv, block_size, 2*head_size]&lt;br&gt;do_kv_cache_update -&amp;gt; transpose(1,2).split(D)" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#f4f4f2;strokeColor=#5c6067;strokeWidth=1;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="24" y="80" width="288" height="72" as="geometry"/>
+        </mxCell>
+        <mxCell id="g_blk_title" value="单个物理块内的 K / V (ND 行主序)" style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;fontFamily=Inter;fontSize=12;fontStyle=1;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="24" y="168" width="224" height="24" as="geometry"/>
+        </mxCell>
+        <mxCell id="g_blk" value="" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f2fb;strokeColor=#2f5783;strokeWidth=2;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=14;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="24" y="192" width="288" height="128" as="geometry"/>
+        </mxCell>
+        <mxCell id="g_blk__sp0" value="" style="endArrow=none;startArrow=none;html=1;strokeColor=#2f5783;strokeWidth=1.25;dashed=1;dashPattern=4 4;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="24" y="224" as="sourcePoint"/>
+            <mxPoint x="312" y="224" as="targetPoint"/>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="g_blk__sp1" value="" style="endArrow=none;startArrow=none;html=1;strokeColor=#2f5783;strokeWidth=1.25;dashed=1;dashPattern=4 4;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="24" y="256" as="sourcePoint"/>
+            <mxPoint x="312" y="256" as="targetPoint"/>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="g_blk__sp2" value="" style="endArrow=none;startArrow=none;html=1;strokeColor=#2f5783;strokeWidth=1.25;dashed=1;dashPattern=4 4;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="24" y="288" as="sourcePoint"/>
+            <mxPoint x="312" y="288" as="targetPoint"/>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="g_blk_r0" value="tok 0..15" style="text;html=1;whiteSpace=wrap;align=center;verticalAlign=middle;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="24" y="192" width="288" height="32" as="geometry"/>
+        </mxCell>
+        <mxCell id="g_blk_r1" value="tok 16..31" style="text;html=1;whiteSpace=wrap;align=center;verticalAlign=middle;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="24" y="224" width="288" height="32" as="geometry"/>
+        </mxCell>
+        <mxCell id="g_blk_r2" value="tok 32..47" style="text;html=1;whiteSpace=wrap;align=center;verticalAlign=middle;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="24" y="256" width="288" height="32" as="geometry"/>
+        </mxCell>
+        <mxCell id="g_blk_r3" value="tok 48..63 (沿 head_size 连续)" style="text;html=1;whiteSpace=wrap;align=center;verticalAlign=middle;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="24" y="288" width="288" height="32" as="geometry"/>
+        </mxCell>
+        <mxCell id="g_blk_shape" value="切片视图: [num_blocks, block_size, n_kv, head_size]" style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;fontFamily=Inter;fontSize=12;fontColor=#5c6067;" vertex="1" parent="1">
+          <mxGeometry x="24" y="328" width="288" height="32" as="geometry"/>
+        </mxCell>
+        <mxCell id="g_op" value="写入: reshape_and_cache_flash(..., slot_mapping)&lt;br&gt;对齐契约: canonicalize_singleton_dim_strides (&amp;gt;=16B)" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#f4f4f2;strokeColor=#5c6067;strokeWidth=1;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="24" y="376" width="288" height="72" as="geometry"/>
+        </mxCell>
+        <mxCell id="g_blk_sz" value="默认 block_size: MultipleOf(16) · SM90 d512 FP8 取 64" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#fbf2df;strokeColor=#7b5518;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="24" y="464" width="288" height="56" as="geometry"/>
+        </mxCell>
+        <mxCell id="a_shape" value="基础池: (2, num_blocks, block_size, n_kv, head_size)&lt;br&gt;PA_NZ 折叠: [num_blocks, n_kv*D//16, block_size, 16]" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#f4f4f2;strokeColor=#5c6067;strokeWidth=1;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="376" y="80" width="288" height="72" as="geometry"/>
+        </mxCell>
+        <mxCell id="a_blk_title" value="PA_NZ 16x16 Cube 分形子块" style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;fontFamily=Inter;fontSize=12;fontStyle=1;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="376" y="168" width="224" height="24" as="geometry"/>
+        </mxCell>
+        <mxCell id="a_blk" value="" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e3f5f3;strokeColor=#0f766e;strokeWidth=2;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=14;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="376" y="192" width="288" height="128" as="geometry"/>
+        </mxCell>
+        <mxCell id="a_blk__sp0" value="" style="endArrow=none;startArrow=none;html=1;strokeColor=#0f766e;strokeWidth=1.25;dashed=1;dashPattern=4 4;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="448" y="192" as="sourcePoint"/>
+            <mxPoint x="448" y="320" as="targetPoint"/>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="a_blk__sp1" value="" style="endArrow=none;startArrow=none;html=1;strokeColor=#0f766e;strokeWidth=1.25;dashed=1;dashPattern=4 4;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="520" y="192" as="sourcePoint"/>
+            <mxPoint x="520" y="320" as="targetPoint"/>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="a_blk__sp2" value="" style="endArrow=none;startArrow=none;html=1;strokeColor=#0f766e;strokeWidth=1.25;dashed=1;dashPattern=4 4;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="592" y="192" as="sourcePoint"/>
+            <mxPoint x="592" y="320" as="targetPoint"/>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="a_blk__sp3" value="" style="endArrow=none;startArrow=none;html=1;strokeColor=#0f766e;strokeWidth=1.25;dashed=1;dashPattern=4 4;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="376" y="256" as="sourcePoint"/>
+            <mxPoint x="664" y="256" as="targetPoint"/>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="a_blk_c0" value="D[0:16]" style="text;html=1;whiteSpace=wrap;align=center;verticalAlign=middle;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="376" y="192" width="72" height="64" as="geometry"/>
+        </mxCell>
+        <mxCell id="a_blk_b0" value="16x16 子块" style="text;html=1;whiteSpace=wrap;align=center;verticalAlign=middle;fontFamily=Inter;fontSize=12;fontColor=#5c6067;" vertex="1" parent="1">
+          <mxGeometry x="376" y="256" width="72" height="64" as="geometry"/>
+        </mxCell>
+        <mxCell id="a_blk_c1" value="D[16:32]" style="text;html=1;whiteSpace=wrap;align=center;verticalAlign=middle;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="448" y="192" width="72" height="64" as="geometry"/>
+        </mxCell>
+        <mxCell id="a_blk_b1" value="16x16 子块" style="text;html=1;whiteSpace=wrap;align=center;verticalAlign=middle;fontFamily=Inter;fontSize=12;fontColor=#5c6067;" vertex="1" parent="1">
+          <mxGeometry x="448" y="256" width="72" height="64" as="geometry"/>
+        </mxCell>
+        <mxCell id="a_blk_c2" value="D[32:48]" style="text;html=1;whiteSpace=wrap;align=center;verticalAlign=middle;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="520" y="192" width="72" height="64" as="geometry"/>
+        </mxCell>
+        <mxCell id="a_blk_b2" value="16x16 子块" style="text;html=1;whiteSpace=wrap;align=center;verticalAlign=middle;fontFamily=Inter;fontSize=12;fontColor=#5c6067;" vertex="1" parent="1">
+          <mxGeometry x="520" y="256" width="72" height="64" as="geometry"/>
+        </mxCell>
+        <mxCell id="a_blk_c3" value="D[48:64]" style="text;html=1;whiteSpace=wrap;align=center;verticalAlign=middle;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="592" y="192" width="72" height="64" as="geometry"/>
+        </mxCell>
+        <mxCell id="a_blk_b3" value="16x16 子块" style="text;html=1;whiteSpace=wrap;align=center;verticalAlign=middle;fontFamily=Inter;fontSize=12;fontColor=#5c6067;" vertex="1" parent="1">
+          <mxGeometry x="592" y="256" width="72" height="64" as="geometry"/>
+        </mxCell>
+        <mxCell id="a_blk_shape" value="MLA view: [B, n_kv, D//16, Bs, 16] (C8 INT8 取 32)" style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;fontFamily=Inter;fontSize=12;fontColor=#5c6067;" vertex="1" parent="1">
+          <mxGeometry x="376" y="328" width="288" height="32" as="geometry"/>
+        </mxCell>
+        <mxCell id="a_op" value="写入: npu_scatter_pa_kv_cache (PA / PA_NZ)&lt;br&gt;读取: FIA _forward_decode (BSND_NBSD vs BNSD_NBSD)" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#f4f4f2;strokeColor=#5c6067;strokeWidth=1;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="376" y="376" width="288" height="72" as="geometry"/>
+        </mxCell>
+        <mxCell id="a_blk_sz" value="默认 block_size = 128 · 匹配 Cube 16x16 连续突发读取" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#fbf2df;strokeColor=#7b5518;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="376" y="464" width="288" height="56" as="geometry"/>
+        </mxCell>
+        <mxCell id="g_e1" value="" style="endArrow=classic;startArrow=none;html=1;strokeColor=#1d1d1f;strokeWidth=1.25;edgeStyle=orthogonalEdgeStyle;rounded=1;exitX=0.9;exitY=1.0;exitDx=0;exitDy=0;entryX=0.9;entryY=0.0;entryDx=0;entryDy=0;" edge="1" parent="1" source="g_shape" target="g_blk">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="a_e1" value="" style="endArrow=classic;startArrow=none;html=1;strokeColor=#1d1d1f;strokeWidth=1.25;edgeStyle=orthogonalEdgeStyle;rounded=1;exitX=0.9;exitY=1.0;exitDx=0;exitDy=0;entryX=0.9;entryY=0.0;entryDx=0;entryDy=0;" edge="1" parent="1" source="a_shape" target="a_blk">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

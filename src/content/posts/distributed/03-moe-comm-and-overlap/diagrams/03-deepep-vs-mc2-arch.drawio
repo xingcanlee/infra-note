@@ -46,19 +46,28 @@
         <mxCell id="r_mc2" value="A2 HCCS / A3 Unified Bus SDMA&lt;br&gt;Dispatch-FFN-Combine 算子级通算融合" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e3f5f3;strokeColor=#0f766e;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
           <mxGeometry x="376" y="424" width="288" height="56" as="geometry"/>
         </mxCell>
-        <mxCell id="l_e1" value="模式切换" style="endArrow=classic;startArrow=none;html=1;strokeColor=#1d1d1f;strokeWidth=1.25;edgeStyle=orthogonalEdgeStyle;rounded=1;exitX=0.5;exitY=1.0;exitDx=0;exitDy=0;entryX=0.5;entryY=0.0;entryDx=0;entryDy=0;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;labelBackgroundColor=#fcfcfb;" edge="1" parent="1" source="l_ht" target="l_ll">
+        <mxCell id="l_e1" value="" style="endArrow=classic;startArrow=none;html=1;strokeColor=#1d1d1f;strokeWidth=1.25;exitX=0.5;exitY=1.0;exitDx=0;exitDy=0;entryX=0.5;entryY=0.0;entryDx=0;entryDy=0;" edge="1" parent="1" source="l_ht" target="l_ll">
           <mxGeometry relative="1" as="geometry"/>
         </mxCell>
-        <mxCell id="l_e2" value="" style="endArrow=classic;startArrow=none;html=1;strokeColor=#1d1d1f;strokeWidth=1.25;edgeStyle=orthogonalEdgeStyle;rounded=1;exitX=0.5;exitY=1.0;exitDx=0;exitDy=0;entryX=0.5;entryY=0.0;entryDx=0;entryDy=0;" edge="1" parent="1" source="l_ll" target="l_v2">
+        <mxCell id="lbl_l_e1" value="模式切换" style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;fontFamily=Inter;fontSize=12;fontColor=#5c6067;" vertex="1" parent="1">
+          <mxGeometry x="176" y="144" width="96" height="24" as="geometry"/>
+        </mxCell>
+        <mxCell id="l_e2" value="" style="endArrow=classic;startArrow=none;html=1;strokeColor=#1d1d1f;strokeWidth=1.25;exitX=0.5;exitY=1.0;exitDx=0;exitDy=0;entryX=0.5;entryY=0.0;entryDx=0;entryDy=0;" edge="1" parent="1" source="l_ll" target="l_v2">
           <mxGeometry relative="1" as="geometry"/>
         </mxCell>
-        <mxCell id="r_e1" value="按偏移传给 GMM" style="endArrow=classic;startArrow=none;html=1;strokeColor=#1d1d1f;strokeWidth=1.25;edgeStyle=orthogonalEdgeStyle;rounded=1;exitX=0.5;exitY=1.0;exitDx=0;exitDy=0;entryX=0.5;entryY=0.0;entryDx=0;entryDy=0;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;labelBackgroundColor=#fcfcfb;" edge="1" parent="1" source="r_disp" target="r_gmm">
+        <mxCell id="r_e1" value="" style="endArrow=classic;startArrow=none;html=1;strokeColor=#1d1d1f;strokeWidth=1.25;exitX=0.5;exitY=1.0;exitDx=0;exitDy=0;entryX=0.5;entryY=0.0;entryDx=0;entryDy=0;" edge="1" parent="1" source="r_disp" target="r_gmm">
           <mxGeometry relative="1" as="geometry"/>
         </mxCell>
-        <mxCell id="r_e2" value="回传" style="endArrow=classic;startArrow=none;html=1;strokeColor=#1d1d1f;strokeWidth=1.25;edgeStyle=orthogonalEdgeStyle;rounded=1;exitX=0.5;exitY=1.0;exitDx=0;exitDy=0;entryX=0.5;entryY=0.0;entryDx=0;entryDy=0;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;labelBackgroundColor=#fcfcfb;" edge="1" parent="1" source="r_gmm" target="r_comb">
+        <mxCell id="lbl_r_e1" value="按偏移传给 GMM" style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;fontFamily=Inter;fontSize=12;fontColor=#5c6067;" vertex="1" parent="1">
+          <mxGeometry x="528" y="144" width="128" height="24" as="geometry"/>
+        </mxCell>
+        <mxCell id="r_e2" value="" style="endArrow=classic;startArrow=none;html=1;strokeColor=#1d1d1f;strokeWidth=1.25;exitX=0.5;exitY=1.0;exitDx=0;exitDy=0;entryX=0.5;entryY=0.0;entryDx=0;entryDy=0;" edge="1" parent="1" source="r_gmm" target="r_comb">
           <mxGeometry relative="1" as="geometry"/>
         </mxCell>
-        <mxCell id="r_e3" value="" style="endArrow=classic;startArrow=none;html=1;strokeColor=#1d1d1f;strokeWidth=1.25;edgeStyle=orthogonalEdgeStyle;rounded=1;exitX=0.5;exitY=1.0;exitDx=0;exitDy=0;entryX=0.5;entryY=0.0;entryDx=0;entryDy=0;" edge="1" parent="1" source="r_comb" target="r_mc2">
+        <mxCell id="lbl_r_e2" value="回传" style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;fontFamily=Inter;fontSize=12;fontColor=#5c6067;" vertex="1" parent="1">
+          <mxGeometry x="528" y="240" width="80" height="24" as="geometry"/>
+        </mxCell>
+        <mxCell id="r_e3" value="" style="endArrow=classic;startArrow=none;html=1;strokeColor=#1d1d1f;strokeWidth=1.25;exitX=0.5;exitY=1.0;exitDx=0;exitDy=0;entryX=0.5;entryY=0.0;entryDx=0;entryDy=0;" edge="1" parent="1" source="r_comb" target="r_mc2">
           <mxGeometry relative="1" as="geometry"/>
         </mxCell>
       </root>

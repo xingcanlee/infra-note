@@ -8,9 +8,9 @@ category: AI Infra
 toc: true
 ---
 
-在[03 DeepSeek 稀疏注意力（DSA）](../03-dsa/)中，闪电索引器把主注意力的单步计算量压到了 $O(Lk)$，却没有从显存里删掉任何历史条目：按 `fp8_ds_mla` 格式计，每个 token 在每层仍占 656 B 主缓存与 132 B 索引键。放到百万 token 上下文（$L = 10^6$）与高并发批处理场景下，线性增长的 $O(L)$ 容量依然会迅速耗尽 HBM。
+在[03 DSA 稀疏注意力](../03-dsa/)中，闪电索引器把主注意力的单步计算量压到了 $O(Lk)$，却没有从显存里删掉任何历史条目：按 `fp8_ds_mla` 格式计，每个 token 在每层仍占 656 B 主缓存与 132 B 索引键。放到百万 token 上下文（$L = 10^6$）与高并发批处理场景下，线性增长的 $O(L)$ 容量依然会迅速耗尽 HBM。
 
-既然 MLA 已经把单条潜向量的宽度压缩到了极限，继续打破长文本显存墙的下一条轴线就是直接压缩**序列长度轴 $L$**。DeepSeek-V4 提出了一对互补的序列压缩注意力架构——交错部署门控序列压缩稀疏注意力（CSA）与重度压缩注意力（HCA），配合 584 B 混合精度缓存，使 DeepSeek-V4-Flash 在 1M 上下文下的 KV 占用降至 V3.2 的 7%、单 token 推理计算量降至 10%[^dsv4-paper]。
+既然 MLA 已经把单条潜向量的宽度压缩到了极限，继续打破长文本显存墙的下一条轴线就是直接压缩**序列长度轴 $L$**。DeepSeek-V4 提出了一对互补的序列压缩注意力架构——交错部署 **CSA（Compressed Sparse Attention，门控序列压缩稀疏注意力）**与 **HCA（Heavily Compressed Attention，重度压缩注意力）**，配合 584 B 混合精度缓存，使 DeepSeek-V4-Flash 在 1M 上下文下的 KV 占用降至 V3.2 的 7%、单 token 推理计算量降至 10%[^dsv4-paper]。
 
 ## 分组序列压缩与环形尾缓冲
 
@@ -23,7 +23,10 @@ toc: true
 为了消除块边界割裂并保持净压缩率为 $1/m$（CSA 取 $m = 4$），CSA 设置两套独立的内容与打分投影 $(W^{aKV}, W^{bKV})$ 与 $(W^{aZ}, W^{bZ})$，并加上可学习的块内位置偏置 $B^a, B^b \in \mathbb{R}^{m \times c}$，把宽度为 $2m = 8$ 的重叠窗口折叠为单条压缩条目 $C_i^{\text{Comp}} \in \mathbb{R}^c$[^dsv4-paper]：
 
 $$
-[S_{mi:m(i+1)-1}^a;\, S_{m(i-1):mi-1}^b] = \operatorname{Softmax}_{\text{row}}\!\bigl([Z_{mi:m(i+1)-1}^a + B^a;\; Z_{m(i-1):mi-1}^b + B^b]\bigr)
+\begin{aligned}
+[S_{mi:m(i+1)-1}^a;\, S_{m(i-1):mi-1}^b]
+&= \operatorname{Softmax}_{\text{row}}\!\bigl([Z_{mi:m(i+1)-1}^a + B^a;\; Z_{m(i-1):mi-1}^b + B^b]\bigr)
+\end{aligned}
 $$
 
 $$
@@ -36,7 +39,7 @@ $$
 
 然而在流式解码生成 $t_9$ 的瞬间，新到达的 $t_8$ 与 $t_9$ 所在的分组 $[t_8 \dots t_{11}]$ 尚未凑满 4 个位置（$t_{10}, t_{11}$ 尚未生成），不可提前折叠固化。同时出于因果性限制，查询只能关注严格早于自身所在压缩块的已完成条目（$s < \lfloor t/m \rfloor$），从而对未闭合尾块及块内近邻存在盲区。
 
-为此，DeepSeek-V4 一方面在定长 FP32 环形状态槽位（`StateCache`）里暂存未闭合的尾部状态，另一方面为每层配对一条局部滑动窗口注意力（SWA，$n_{\text{win}} = 128$）保住逐 token 精细依赖[^dsv4-paper]。
+为此，DeepSeek-V4 一方面在定长 FP32 环形状态槽位（`StateCache`）里暂存未闭合的尾部状态，另一方面为每层配对局部 **SWA（Sliding Window Attention，滑动窗口注意力，$n_{\text{win}} = 128$）**保住逐 token 精细依赖[^dsv4-paper]。
 
 图 1 汇总了新 token 进入环形尾槽、凑满 $m=4$ 后双窗折叠写回、HCA 与 SWA 协同以及输出端逆旋转恢复与字节账本。
 
@@ -54,7 +57,7 @@ CSA 以 $m = 4$ 重叠折叠序列后，继续复用一层 FP4 闪电索引器�
 
 ### 与 MLA 的结构对比：双轨 RoPE 与输出逆旋转
 
-把 V4 与[01 多头潜在注意力（MLA）](../01-mla/)对照，就能看清为什么 MLA 的输出端不需要逆向旋转，而 V4 的压缩注意力必须补上这一步。在 V3 MLA 中，Key 与 Value 在位置通道上是解耦的：64 维 $k_s^R$ 携带绝对 RoPE 旋转 $R_s$，只参与 $Q \cdot K$ 点积算分；而充当 Value 的 512 维潜向量 $c_s^{KV}$ 完全不含位置编码，因此加权求和后的输出不含任何绝对旋转残余。
+把 V4 与[01 MLA 多头潜在注意力](../01-mla/)对照，就能看清为什么 MLA 的输出端不需要逆向旋转，而 V4 的压缩注意力必须补上这一步。在 V3 MLA 中，Key 与 Value 在位置通道上是解耦的：64 维 $k_s^R$ 携带绝对 RoPE 旋转 $R_s$，只参与 $Q \cdot K$ 点积算分；而充当 Value 的 512 维潜向量 $c_s^{KV}$ 完全不含位置编码，因此加权求和后的输出不含任何绝对旋转残余。
 
 DeepSeek-V4 为了压低存储并统一压缩条目格式，让每条 512 维压缩潜向量 $C_j^{\text{Comp}}$（前 448 维 NoPE + 末 64 维携带绝对 RoPE 旋转 $R_{k_{\text{pos}}(j)}$）**同时充当 Key 与 Value**，在单头 MQA 模式下运行，并采用 584 B 混合存储格式（448 B FP8 NoPE + 8 B 缩放因子 + 128 B BF16 RoPE）[^dsv4-paper]。
 
@@ -72,7 +75,7 @@ $$
 
 ## 流式环形调度、上下文并行与双端实现
 
-在流式生成和分布式训练中，序列压缩对上下游调度提出了两项额外要求。首先在长上下文训练的上下文并行（Context Parallelism，CP）下，每张卡分摊连续的 $s$ 个 token，而宽度为 $m$ 或 $m'$ 的压缩窗口经常横跨两张相邻显卡的边界，拼接样本末尾不足 $m$ 个 token 的残块还需按样本丢弃。
+在流式生成和分布式训练中，序列压缩对上下游调度提出了两项额外要求。首先在长上下文训练的 CP（Context Parallelism，上下文并行）下，每张卡分摊连续的 $s$ 个 token，而宽度为 $m$ 或 $m'$ 的压缩窗口经常横跨两张相邻显卡的边界，拼接样本末尾不足 $m$ 个 token 的残块还需按样本丢弃。
 
 为此 DeepSeek-V4 设计了二阶段 CP 通信[^dsv4-paper]：第一阶段各卡把尾部最后的 $m$ 个未压缩条目发往下一张卡，让相邻卡无缝折叠跨界块；第二阶段再全网收集各卡压缩条目并做掩码重排，使整体序列严格规整为整倍压缩长度。
 
@@ -92,13 +95,13 @@ flowchart TD
 
 在 `vllm-ascend` 昇腾 NPU 栈[^ascend-comp4][^ascend-comp41][^ascend-triton]上，V4 原生逻辑直接调度 CANN `compressor` 算子；到了 `DeepseekV41Compressor` 演化路径，设备侧在 `AscendCircularBufferSpec` 中预先算出环形索引，并针对达芬奇向量与矩阵单元的分块习惯，把 Triton 压缩过程拆为三阶段顺序执行。
 
-具体而言，第一段核函数以分块重排顺序完成 BF16 到 FP32 的投影矩阵乘；第二段在片上统一缓冲区（UB）约束内从环形缓存读回前导残差并完成两遍式分组 Softmax 折叠；第三段才将尾部仍未闭合的新状态写回环形缓存。第二段必须严格先于第三段完成，以免并发写回覆盖尚未被读出的前导残差。核心注意力计算完成后，再由 `AscendDSAV41Impl` 对末 64 维执行逆向旋转。
+具体而言，第一段核函数以分块重排顺序完成 BF16 到 FP32 的投影矩阵乘；第二段在片上 **UB（Unified Buffer，片上统一缓存）**约束内从环形缓存读回前导残差并完成两遍式分组 Softmax 折叠；第三段才将尾部仍未闭合的新状态写回环形缓存。第二段必须严格先于第三段完成，以免并发写回覆盖尚未被读出的前导残差。核心注意力计算完成后，再由 `AscendDSAV41Impl` 对末 64 维执行逆向旋转。
 
-| 核心阶段           | `vLLM` GPU[^vllm-comp41][^vllm-fused]     | `vllm-ascend` NPU[^ascend-comp4][^ascend-comp41] |
-| :----------------- | :---------------------------------------- | :----------------------------------------------- |
-| 环形尾缓存与元数据 | `CompressorStateCache` 托管 FP32 尾部状态 | `AscendCircularBufferSpec` 设备侧构环索引        |
-| 折叠与写回 Kernel  | 融合折叠归一写回（512 维 CuTe-DSL）       | V4 CANN 算子；V4.1 三段 Triton Kernel            |
-| 双轨 RoPE 与逆旋转 | `build_deepseek_v4_rope` 配融合逆 RoPE    | 双频谱复指数 RoPE 与输出 `inverse=True` 旋转     |
+| 核心阶段         | `vLLM` GPU[^vllm-comp41][^vllm-fused] | `vllm-ascend` NPU[^ascend-comp4][^ascend-comp41] |
+| :--------------- | :------------------------------------ | :----------------------------------------------- |
+| 环形尾缓存元数据 | `CompressorStateCache` 托管 FP32 尾态 | `AscendCircularBufferSpec` 构环索引              |
+| 折叠与写回       | 融合折叠归一写回（512 维 CuTe-DSL）   | V4 CANN 算子；V4.1 三段 Triton 核                |
+| 双轨 RoPE 逆旋转 | `build_deepseek_v4_rope` 配逆 RoPE    | 双频复指数 RoPE 与 `inverse=True`                |
 
 ## PyTorch 参考实现与数值核验
 
@@ -111,10 +114,15 @@ import torch.nn.functional as F
 
 
 def gptj_partial_rope(
-    x: torch.Tensor, pos: int, rope_dim: int = 16, theta: float = 10000.0, inverse: bool = False
+    x: torch.Tensor,
+    pos: int,
+    rope_dim: int = 16,
+    theta: float = 10000.0,
+    inverse: bool = False,
 ) -> torch.Tensor:
-    """仅对末尾 rope_dim 维施加 GPT-J 交错旋转；inverse=True 取 sin 负号实现 R_{-pos} 逆旋转。"""
-    inv_freq = 1.0 / (theta ** (torch.arange(0, rope_dim, 2, dtype=x.dtype, device=x.device) / rope_dim))
+    """仅对末尾 rope_dim 维施加 GPT-J 交错旋转；inverse=True 实现 R_{-pos}。"""
+    idx = torch.arange(0, rope_dim, 2, dtype=x.dtype, device=x.device)
+    inv_freq = 1.0 / (theta ** (idx / rope_dim))
     ang = pos * inv_freq
     # R_{-t} = R_t^T：仅需把正弦项取反即可在注意力输出端消去绝对位置偏置
     c, s = ang.cos(), (-ang.sin() if inverse else ang.sin())
@@ -146,11 +154,15 @@ class OverlapCSACompressor(nn.Module):
         self.b_a = nn.Parameter(torch.zeros(m, d_c))
         self.b_b = nn.Parameter(torch.zeros(m, d_c))
 
-    def forward(self, h_prev_block: torch.Tensor, h_curr_block: torch.Tensor) -> torch.Tensor:
-        c_win = torch.cat([self.w_kv_b(h_prev_block), self.w_kv_a(h_curr_block)], dim=0)  # [2m, d_c]
-        z_win = torch.cat(
-            [self.w_z_b(h_prev_block) + self.b_b, self.w_z_a(h_curr_block) + self.b_a], dim=0
-        )  # [2m, d_c]
+    def forward(
+        self, h_prev_block: torch.Tensor, h_curr_block: torch.Tensor
+    ) -> torch.Tensor:
+        kv_prev = self.w_kv_b(h_prev_block)
+        kv_curr = self.w_kv_a(h_curr_block)
+        c_win = torch.cat([kv_prev, kv_curr], dim=0)  # [2m, d_c]
+        z_prev = self.w_z_b(h_prev_block) + self.b_b
+        z_curr = self.w_z_a(h_curr_block) + self.b_a
+        z_win = torch.cat([z_prev, z_curr], dim=0)    # [2m, d_c]
         # 沿时间行做逐通道 Softmax 竞争（dim=0），让关键信号独享高权重而免遭平均稀释
         scores = F.softmax(z_win, dim=0)
         return (scores * c_win).sum(dim=0, keepdim=True)  # [1, d_c]

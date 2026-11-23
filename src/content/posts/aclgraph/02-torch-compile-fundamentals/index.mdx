@@ -1,0 +1,155 @@
+---
+title: '02 PyTorch 编译栈：TorchDynamo、符号形状与分段融合极限'
+description: '拆解 PyTorch Eager 模式下算子发射与 HBM 往返双重损耗，深入 TorchDynamo 字节码捕获、Dynamic Shapes 符号防抖与 AOTAutograd 降级链，对比 GPU Inductor 与昇腾 AscendCompiler 的后端融合机理并阐明编译器无法独立消灭 Host Launch 的原因。'
+series: { id: aclgraph, order: 3 }
+pubDate: 2026-10-17
+draft: false
+tags: [torch.compile, TorchDynamo, Symbolic Shapes, Inductor, AscendCompiler, Graph Break]
+---
+
+在[第 1 章](../01-heterogeneous-streams-and-events/)中，我们看到小颗粒算子会被主机发射成本切得支离破碎。工程上常见的直觉误区是认为开启 PyTorch 2.x 的 `torch.compile` 编译成“计算图”就能取代设备静态图；实际上，以 `vLLM` 与 `vllm-ascend` 为代表的推理引擎始终同时使用两级技术——先由 `torch.compile` 消减访存带宽，再在外层套接 `CUDAGraphWrapper` 或 `ACLGraphWrapper` 消除发射开销。
+
+## Eager 双重损耗与 TorchDynamo 字节码捕获
+
+PyTorch Eager 模式同时存在两类叠加开销：一是第 1 章分析过的逐算子主机派发成本 $T_{\text{launch}}$；二是零碎算子对 **HBM（High Bandwidth Memory，高带宽显存）**的重复读写。例如前馈网络常见的 SwiGLU（$\text{SiLU}(a) \odot b$）在 Eager 下须先后两次进出 HBM：先读 $a$ 算 `silu` 后写回完整激活张量，紧接着逐元素乘法再从 HBM 重读中间值并与 $b$ 相乘。
+
+PyTorch 2.x 引入的 **TorchDynamo** 通过 Python **PEP 523（Frame Evaluation API，栈帧求值接口）**在函数栈帧执行前接管字节码流，将纯张量计算片段提取为标准计算图[^vllm-compile-doc]：
+
+- **FX 图生成与 `Dynamo Guard`**：Dynamo 符号执行字节码指令并产出 `torch.fx.GraphModule`，同步登记前置条件校验规则 **`Dynamo Guard`** 以确认输入形状、类型与设备属性未发生变更。
+- **Graph Break 局部切分**：遇到 `print(x.item())` 或黑盒 C 扩展返回等无法静态追踪的逻辑时，Dynamo 先发出眼前截获的 FX 子图去编译，原位切回标准 Python 执行断点逻辑后再重新接力录图，从而避免整段失败。
+
+```mermaid caption="图 1：TorchDynamo 字节码捕获、Dynamo Guard 校验与 Graph Break 切分路径"
+flowchart TD
+    F["PEP 523 拦截 Python 栈帧"] --> G{"命中已有<br/>Dynamo Guard?"}
+    G -->|"命中"| R["直达缓存编译产物"]
+    G -->|"未命中"| T["符号追踪字节码生成 FX 图"]
+    T --> D{"遇数据依赖或<br/>.item() 断点?"}
+    D -->|"是 (Graph Break)"| S["截断子图下发 -> Python 执行断点"]
+    S --> T
+    D -->|"否"| A["完整 FX Subgraph 移交 AOTAutograd"]
+```
+
+![TorchDynamo、Dynamic Shapes、AOTAutograd 与 GPU/NPU 双端编译通路对比](./diagrams/02-dynamo-aot-inductor-vs-ascend.drawio '图 2：PyTorch 前端抓图降级管线及 GPU Inductor 与昇腾 AscendCompiler 后端分叉架构')
+
+## Dynamic Shapes、Symbolic Guards 与 0/1 特化陷阱
+
+服务批大小随时变化（上一毫秒 4 个解码 token、下一毫秒跳变至 512 个 Prefill token），若直接将张量维度固化为字面常量会导致每来新长度便重编数秒。PyTorch 基于 **Symbolic Shapes（`SymInt`）** 管理动态维度，关键语义边界如下[^vllm-debug-doc]：
+
+| 符号机制                     | 运行时行为与约束               | 在线风险与规避手段               |
+| ---------------------------- | ------------------------------ | -------------------------------- |
+| **Backed `SymInt` (`s0`)**   | 已知样本尺寸；分支注入模 Guard | 模余失效重编，`tlparse` 排查     |
+| **Unbacked `SymInt` (`u0`)** | `nonzero()` 等数据依赖动态维   | 视图/尺寸校验触发 Graph Break    |
+| **0/1 步长特化**             | `0` 或 `1` 维默认固化为常量    | `bs=1` 震荡；开无 Guard 包装跳过 |
+
+![vLLM 编译分段与动态形状符号守卫 tlparse 诊断视图](./images/vllm-torch-compile-flow.png '图 3：vLLM 中 TorchDynamo 捕获、按 Attention 分段切图、后端缓存编译 artifact 与外层静态图包装衔接链路（来源 vLLM 官方文档，Apache-2.0）')
+
+![tlparse 中因模余条件分支泄漏出的动态 Guard 堆栈](./images/vllm-dynamic-shapes-tlparse.png '图 4：线上调试工具 tlparse 暴露出的由 % 128 对齐分支注入的符号 Guard 约束堆栈，这类隐蔽守卫往往是动态批大小触发重编的祸首（来源 vLLM 官方文档，Apache-2.0）')
+
+## AOTAutograd 分片与后端编译路径分叉
+
+FX 图进入 **AOTAutograd** 阶段后，由轻量级 **FakeTensor**（仅持 Shape/DType/Device 元信息、零物理 HBM 占用）完成抽象追踪，同时执行 **Functionalization（函数化）**：将 `x.add_(y)` 或切片原位写等原地变异重写为纯无副作用 **Core ATen IR（核心张量中间表示）**数据流节点，让后端得以安全重排算子与融合访存而不致污染并发引用的底层张量[^vllm-compile-doc]。
+
+完成降级的 Core ATen IR 在 GPU 与华为昇腾 NPU 上走向两条截然不同的代码生成路线[^ascend-compile-doc]：
+
+| 后端比较维度 | NVIDIA GPU（`TorchInductor`）          | Ascend NPU（`AscendCompiler`）           |
+| ------------ | -------------------------------------- | ---------------------------------------- |
+| 核心优化方式 | 全局规划与 **Loop Fusion（循环融合）** | 禁 Inductor；FX 模式替换或 `npugraph_ex` |
+| 产物运行形态 | 生成 Triton/CUDA Kernel 减 HBM 写      | 对接 CANN `aclnn` / NNAL 重型融合算子    |
+| 共同调度边界 | 逐段出图，外层需 `CUDAGraph` 发射      | 按 `splitting_ops` 切段，接 `ACLGraph`   |
+
+### 为什么编译完成依然突破不了 Host 发射墙
+
+无论前端怎么合并逐元素算子，只要注意力算子（如 PagedAttention 或昇腾 `AscendDSAV41Impl`）高度依赖变长上下文与块表元数据，编译框架就必须通过 **`splitting_ops`** 把整图切分为多段 `artifact_0`、`artifact_1` 并在夹缝保留动态注意力 Kernel。
+
+以 40 层非对称 CED 架构的 **DeepSeek-V4.1-Flash** 为例（单步 Decode 仅激活 16B 参数、单 token 全局 KV 压缩为 890 B NVFP4[^v41-synth]）：哪怕编译融合把每层 mHC 四流混合、CSA2 压缩注意与 384 选 6 细粒度 MoE 等约 28 个零碎算子压降至 10 个大融合算子，40 层单步仍要由主机驱动约 400 次 Kernel 启动。下面这份纯 CPU 仿真代码定量核算了融合后的 HBM 节省比例、Guard 重编次数以及残余 Host 发射墙比例：
+
+```python
+from dataclasses import dataclass
+
+
+@dataclass
+class FxNode:
+    op: str
+    name: str
+    args: tuple[str, ...]
+    out_bytes: int
+
+
+def trace_swiglu_block(batch: int, hidden: int, inter: int) -> list[FxNode]:
+    bpe = 2  # BF16
+    return [
+        FxNode("placeholder", "x", (), batch * hidden * bpe),
+        FxNode("call_module", "w_gate", ("x",), batch * inter * bpe),
+        FxNode("call_function", "chunk", ("w_gate",), batch * inter * bpe),
+        FxNode("call_function", "silu", ("a",), batch * (inter // 2) * bpe),
+        FxNode("call_function", "mul", ("silu", "b"), batch * (inter // 2) * bpe),
+        FxNode("call_module", "w_down", ("mul",), batch * hidden * bpe),
+        FxNode("call_function", "add", ("x", "w_down"), batch * hidden * bpe),
+    ]
+
+
+nodes = trace_swiglu_block(batch=8, hidden=5120, inter=10240)
+print(f"[FX Nodes] total={len(nodes)}, ops={[n.name for n in nodes]}")
+
+# HBM 字节统计：未融合 (silu + mul) vs 融合 SwiGLU epilogue
+B, D_HALF, BPE = 8, 5120, 2
+# silu 读 a 并写中间 s；mul 读 s, b 并写回激活，合计 5 次访存
+unfused_bytes = B * D_HALF * BPE * (2 + 3)
+fused_bytes = B * D_HALF * BPE * 3  # 融合核单遍读 a, b 并写回一次
+
+# Symbolic Shape 0/1 Guard vs Backed Dynamic Shape 仿真
+def eval_guards(batches: list[int], zero_one_spec: bool) -> int:
+    compiled_variants = set()
+    recompiles = 0
+    for bs in batches:
+        key = ("spec_1" if bs <= 1 else "dyn_N") if zero_one_spec else "dyn_N"
+        if key not in compiled_variants:
+            compiled_variants.add(key)
+            recompiles += 1
+    return recompiles
+
+
+re_01 = eval_guards([4, 8, 1, 16, 1], zero_one_spec=True)
+re_sym = eval_guards([4, 8, 1, 16, 1], zero_one_spec=False)
+
+# 对照 DeepSeek-V4.1-Flash（40 层 CED，每层 ~28 Eager 算子 -> 10 融合算子）
+n_layers = 40
+ops_eager, ops_fused = 28, 10
+t_launch_us = 12.0
+t_kernel_fused_us = 8.5
+
+eager_host_us = n_layers * ops_eager * t_launch_us
+compiled_host_us = n_layers * ops_fused * t_launch_us
+compiled_dev_us = n_layers * ops_fused * t_kernel_fused_us
+
+saved_pct = 1 - fused_bytes / unfused_bytes
+print(
+    f"[HBM Elementwise] unfused={unfused_bytes/1024:.1f}KB -> "
+    f"fused={fused_bytes/1024:.1f}KB (-{saved_pct:.0%})"
+)
+print(f"[Guard Recompiles] 0/1_spec={re_01} vs uniform_dynamic={re_sym}")
+print(
+    f"[40-Layer V4.1-Flash Wall] EagerHost={eager_host_us:.0f}us, "
+    f"CompiledHost={compiled_host_us:.0f}us vs CompiledDev={compiled_dev_us:.0f}us "
+    f"(Host/Dev={compiled_host_us/compiled_dev_us:.2f}x)"
+)
+```
+
+脚本输出证实：算子融合成功消减了 40% 的点算级 HBM 读写并把主机派发从 13440 微秒降至 4800 微秒，但相对于 3400 微秒的残余硬件耗时，主机发射依然达到硬件执行时间的 1.41 倍。
+
+```text
+[FX Nodes] total=7, ops=['x', 'w_gate', 'chunk', 'silu', 'mul', 'w_down', 'add']
+[HBM Elementwise] unfused=400.0KB -> fused=240.0KB (-40%)
+[Guard Recompiles] 0/1_spec=2 vs uniform_dynamic=1
+[40-Layer V4.1-Flash Wall] EagerHost=13440us, CompiledHost=4800us vs CompiledDev=3400us (Host/Dev=1.41x)
+```
+
+要将剩余数千微秒的主机往返从热路径彻底移除，必须借助把整段任务拓扑直接固化在设备驱动侧的静态执行图。[第 3 章：CUDA Graph 原理与静态边界](../03-cuda-graph-fundamentals/)将拆解建立行业基线的 CUDA 静态图核心原理。
+
+[^vllm-compile-doc]: 参阅 `vllm`（提交 `bb23c0a8`）架构设计文档 `docs/design/torch_compile.md` 及其配套调试指南 `docs/design/debug_vllm_compile.md`。
+
+[^vllm-debug-doc]: 参阅 `vllm`（提交 `bb23c0a8`）文档 `docs/design/debug_vllm_compile.md` 关于 `BACKED`、`UNBACKED` 与 `BACKED_SIZE_OBLIVIOUS` 对 Guard 重编影响的讨论。
+
+[^v41-synth]: 关于 DeepSeek-V4.1-Flash 的 40 层 CED 主干、CSA2 压缩与 384 选 6 细粒度 MoE 细节，可对照本站[10 串珠成链：从 DeepSeek-V2 到 V4.1 的单步全链路与双硬件全景](../../deepseek/10-architecture-synthesis/)。
+
+[^ascend-compile-doc]: 参阅 `vllm-ascend`（提交 `3649b8ff`）设计文档 `docs/source/developer_guide/Design_Documents/npugraph_ex.md` 及特性手册 `docs/source/user_guide/feature_guide/graph_mode.md`。

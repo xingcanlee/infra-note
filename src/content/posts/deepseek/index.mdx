@@ -9,7 +9,7 @@ category: AI Infra
 toc: true
 ---
 
-当大模型推理进入百万 token 上下文与多轮工具调用阶段，真正卡住吞吐与部署成本的瓶颈主要落在三处：解码阶段注意力键值缓存（KV cache）的容量与显存带宽墙、稠密前馈网络（FFN）随总参数同步放大的激活计算量，以及深度堆叠网络里残差信号跨层传递的数值边界。本系列沿 DeepSeek-V2[^ds-v2]、V3[^ds-v3] 到 V4[^ds-v4] 与 V4.1[^ds-v41] 的时间线，拆解模型架构与推理算子如何协同改写这三道约束。
+当大模型推理进入百万 token 上下文与多轮工具调用阶段，真正卡住吞吐与部署成本的瓶颈主要落在三处：解码阶段注意力 **KV Cache（Key-Value Cache，键值缓存）**的容量与显存带宽墙、稠密 **FFN（Feed-Forward Network，前馈网络）**随总参数同步放大的激活计算量，以及深度堆叠网络里残差信号跨层传递的数值边界。本系列沿 DeepSeek-V2[^ds-v2]、V3[^ds-v3] 到 V4[^ds-v4] 与 V4.1[^ds-v41] 的时间线，拆解模型架构与推理算子如何协同改写这三道约束。
 
 关于硬件 Roofline 模型、RoPE、GQA、FlashAttention 与低比特量化底座，可先参阅[《推理与异构硬件基础》](../foundations/)；NVLink 与 HCCS 跨卡通信、PD 分离及专家并行通信调度见[《分布式并行与跨卡通信》](../distributed/)。
 
@@ -27,9 +27,9 @@ flowchart TD
 
 ## 两条核心演化轴线
 
-前五篇（第 01–05 篇）沿着注意力与 KV 压缩轴线推进。先是 V2/V3 的多头潜在注意力（MLA）用低秩联合投影与矩阵吸收在不削减多头表达力的前提下压缩单 token 缓存宽度；随后面对长序列计算瓶颈，社区与 DeepSeek 先后探索了原生三路硬件对齐稀疏（NSA）与面向单头潜空间的闪电索引器（DSA）；到 V4 与 V4.1 时，压缩进一步跨越单层边界，通过门控序列折叠（CSA/HCA）、跨层缓存与索引复用（CSA2）以及半程编码-解码切分（CED），把 40 层全局 KV 压到每 token 仅 890 B。
+前五篇（第 01–05 篇）沿着注意力与 KV 压缩轴线推进。先是 V2/V3 的 **MLA（Multi-Head Latent Attention，多头潜在注意力）**用低秩联合投影与矩阵吸收在不削减多头表达力的前提下压缩单 token 缓存宽度；随后面对长序列计算瓶颈，社区与 DeepSeek 先后探索了 **NSA（Native Sparse Attention，原生稀疏注意力）**与面向单头潜空间的 **DSA（DeepSeek Sparse Attention，DeepSeek 稀疏注意力）**闪电索引器；到 V4 与 V4.1 时，压缩进一步跨越单层边界，通过门控序列折叠 **CSA/HCA**、跨层缓存与索引复用 **CSA2** 以及半程 **CED（Causal Encoder-Decoder，因果编码-解码）**切分，把 40 层全局 KV 压到每 token 仅 890 B。
 
-后四篇（第 06–09 篇）则拆解主干计算稀疏、条件记忆与解码吞吐，并最终在第 10 篇合流。模型先用细粒度专家切分与无辅助损失偏置均衡把 671B 参数模型的单步激活压到 37B，再用 Engram 把局部固定搭配从多层推理外包给 $O(1)$ 哈希查表；同时以流形受限超连接（mHC）稳住四流残差增益，用 MTP 与 DSpark 打破每步仅生成一个 token 的权重访存限制。
+后四篇（第 06–09 篇）则拆解主干计算稀疏、条件记忆与解码吞吐，并最终在第 10 篇合流。模型先用细粒度专家切分与无辅助损失偏置均衡把 671B 参数模型的单步激活压到 37B，再用 Engram 把局部固定搭配从多层推理外包给 $O(1)$ 哈希查表；同时以 **mHC（Manifold-Constrained Hyper-Connections，流形受限超连接）**稳住四流残差增益，用 MTP 与 DSpark 打破每步仅生成一个 token 的权重访存限制。
 
 最终在第 10 篇，全系列将这些组件放入同一次单步解码前向流里，对照 NVIDIA（`vLLM` / `FlashMLA` / `DeepEP`）与华为昇腾（`vllm-ascend` / CANN）两条生产栈的实现落点[^ds-vllm][^ds-ascend]。
 
@@ -37,18 +37,18 @@ flowchart TD
 
 下表汇总了十篇文章各自切入的工程瓶颈与核心核验对象：
 
-| 篇目                                                       | 核心瓶颈与解决的问题               | 关键机制与核验重点                                       |
-| :--------------------------------------------------------- | :--------------------------------- | :------------------------------------------------------- |
-| [01 多头潜在注意力（MLA）](./01-mla/)                      | GQA 掉精度，直接压缩受阻于 RoPE    | 低秩潜向量 $c_t^{KV}$、解耦 RoPE 与双向矩阵吸收等价      |
-| [02 原生稀疏注意力（NSA）](./02-swa-and-nsa/)              | 固定滑窗丢失远处关键上下文         | Attention Sink 成因、三路门控与 GQA 组共享连续块         |
-| [03 DeepSeek 稀疏注意力（DSA）](./03-dsa/)                 | 静态分块难兼容单头 MLA，全扫太贵   | FP8 ReLU 闪电索引、Top-$k$ 稀疏筛选与 656 B + 132 B 布局 |
-| [04 序列压缩注意力（上）：CSA 与 HCA](./04-csa-and-hca/)   | 逐 token 缓存随上下文长度线性增长  | CSA（$m=4$ 重叠双窗）、HCA（$m'=128$）与输出逆 RoPE      |
-| [05 序列压缩注意力（下）：CSA2 与 CED](./05-csa2-and-ced/) | 跨层冗余缓存与多轮智能体前缀重算   | 三维压缩 890 B/token、HSI 两级索引、CED 与 SWA 有界重放  |
-| [06 细粒度混合专家（DeepSeekMoE）](./06-moe/)              | 稠密 FFN 激活全量参数，粗 MoE 冗余 | 细粒度切分与共享专家、无辅损偏置均衡与 EP 通信           |
-| [07 条件记忆（Engram）](./07-engram/)                      | 静态实体组合占用多层推理算力       | 多头质数哈希 $O(1)$ 查表、上下文门控与 DRAM 异步预取     |
-| [08 流形受限超连接（mHC）](./08-mhc/)                      | 拓宽 $n=4$ 残差流引发跨层信号发散  | Birkhoff 双随机流形、Sinkhorn 投影与单遍 Mega-mHC        |
-| [09 MTP 与动态推测解码（DSpark）](./09-mtp-and-dspark/)    | 单步只吐 1 token 浪费权重访存带宽  | 无损拒绝采样、V3 串联 MTP 与 V4.1 DSpark 草稿            |
-| [10 串珠成链与双硬件全景](./10-architecture-synthesis/)    | 多重机制如何在单步与双生态协同落地 | V4.1 单步全链路张量流与 NVIDIA / 昇腾双栈映射对照        |
+| 篇目                                                    | 核心瓶颈与问题               | 关键机制与核验重点                     |
+| :------------------------------------------------------ | :--------------------------- | :------------------------------------- |
+| [01 MLA 多头潜在注意力](./01-mla/)                      | GQA 掉精度，压缩受阻于 RoPE  | 低秩 $c_t^{KV}$、解耦 RoPE 与矩阵吸收  |
+| [02 NSA 原生稀疏注意力](./02-swa-and-nsa/)              | 固定滑窗丢失远处关键上下文   | Attention Sink、三路门控与 GQA 组块    |
+| [03 DSA 稀疏注意力](./03-dsa/)                          | 静态分块难兼容单头 MLA       | FP8 ReLU 闪电索引、Top-$k$ 与 656+132B |
+| [04 序列压缩（上）：CSA 与 HCA](./04-csa-and-hca/)      | 逐 token 缓存随上下文线增    | CSA（$m=4$）、HCA（$m'=128$）与逆 RoPE |
+| [05 序列压缩（下）：CSA2 与 CED](./05-csa2-and-ced/)    | 跨层冗余与多轮前缀重算       | 890 B/tok 三维压缩、HSI 与 CED 边界    |
+| [06 DeepSeekMoE 细粒度混合专家](./06-moe/)              | 稠密 FFN 激活全量且粗 MoE 冗 | 共享+细粒度专家、无辅损均衡与 EP       |
+| [07 Engram 条件记忆](./07-engram/)                      | 静态实体占用多层推理算力     | 多头质数哈希、上下文门控与 DRAM 预取   |
+| [08 mHC 流形受限超连接](./08-mhc/)                      | 四流残差引发跨层信号发散     | Birkhoff 双随机、Sinkhorn 与核融合     |
+| [09 MTP 与 DSpark 动态推测解码](./09-mtp-and-dspark/)   | 单步 1 token 浪费权重带宽    | 拒绝采样、V3 MTP 与 DSpark 草稿头      |
+| [10 串珠成链与双硬件全景](./10-architecture-synthesis/) | 多机制单步协同与双生态落地   | V4.1 全链路张量流与 NVIDIA/昇腾对照    |
 
 ## 参考实现与源码基线
 
@@ -56,7 +56,7 @@ flowchart TD
 
 文中对照的推理引擎与算子仓库（包括 `vllm`[^ds-vllm]、`vllm-ascend`[^ds-ascend]、`DeepSeek-V3`[^ds-v3-repo]、`FlashMLA`[^ds-flashmla]、`DeepEP`[^ds-deepep] 与 `Engram`[^ds-engram]）的具体版本与提交基线列于文末脚注。
 
-从下一篇[01 多头潜在注意力（MLA）](./01-mla/)开始，我们先看 DeepSeek 如何用线性代数把 128 个注意力头的 KV 缓存折叠成一条低秩向量；全部十篇读完后，可以顺势进入[《vLLM 与昇腾推理引擎》](../vllm/)追踪调度器、`torch.compile` 与静态图编排。
+从下一篇[01 MLA 多头潜在注意力](./01-mla/)开始，我们先看 DeepSeek 如何用线性代数把 128 个注意力头的 KV 缓存折叠成一条低秩向量；全部十篇读完后，可以顺势进入[《vLLM 与昇腾推理引擎》](../vllm/)追踪调度器、`torch.compile` 与静态图编排。
 
 [^ds-v2]: DeepSeek-AI，“DeepSeek-V2: A Strong, Economical, and Efficient Mixture-of-Experts Language Model”，2024。[arXiv:2405.04434](https://arxiv.org/abs/2405.04434)。
 

@@ -22,14 +22,20 @@
         <mxCell id="g_wait" value="AsyncOutput.get_output()&lt;br&gt;准备完 Step N+1 再兑现同步" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#f4f4f2;strokeColor=#5c6067;strokeWidth=1;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
           <mxGeometry x="24" y="320" width="288" height="64" as="geometry"/>
         </mxCell>
-        <mxCell id="e_g0" value="" style="endArrow=classic;startArrow=none;html=1;strokeColor=#1d1d1f;strokeWidth=1.25;edgeStyle=orthogonalEdgeStyle;rounded=1;" edge="1" parent="1" source="g_sched" target="g_comp">
+        <mxCell id="e_g0" value="" style="endArrow=classic;startArrow=none;html=1;strokeColor=#1d1d1f;strokeWidth=1.25;exitX=0.5;exitY=1.0;exitDx=0;exitDy=0;entryX=0.5;entryY=0.0;entryDx=0;entryDy=0;" edge="1" parent="1" source="g_sched" target="g_comp">
           <mxGeometry relative="1" as="geometry"/>
         </mxCell>
-        <mxCell id="e_g1" value="async copy" style="endArrow=classic;startArrow=none;html=1;strokeColor=#1d1d1f;strokeWidth=1.25;edgeStyle=orthogonalEdgeStyle;rounded=1;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;labelBackgroundColor=#fcfcfb;" edge="1" parent="1" source="g_comp" target="g_copy">
+        <mxCell id="e_g1" value="" style="endArrow=classic;startArrow=none;html=1;strokeColor=#1d1d1f;strokeWidth=1.25;exitX=0.5;exitY=1.0;exitDx=0;exitDy=0;entryX=0.5;entryY=0.0;entryDx=0;entryDy=0;" edge="1" parent="1" source="g_comp" target="g_copy">
           <mxGeometry relative="1" as="geometry"/>
         </mxCell>
-        <mxCell id="e_g2" value="copy_event" style="endArrow=classic;startArrow=none;html=1;strokeColor=#5c6067;strokeWidth=1.25;edgeStyle=orthogonalEdgeStyle;rounded=1;dashed=1;dashPattern=4 4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;labelBackgroundColor=#fcfcfb;" edge="1" parent="1" source="g_copy" target="g_wait">
+        <mxCell id="lbl_g1" value="async copy" style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;fontFamily=Inter;fontSize=12;fontColor=#5c6067;" vertex="1" parent="1">
+          <mxGeometry x="176" y="192" width="96" height="24" as="geometry"/>
+        </mxCell>
+        <mxCell id="e_g2" value="" style="endArrow=classic;startArrow=none;html=1;strokeColor=#5c6067;strokeWidth=1.25;dashed=1;dashPattern=4 4;exitX=0.5;exitY=1.0;exitDx=0;exitDy=0;entryX=0.5;entryY=0.0;entryDx=0;entryDy=0;" edge="1" parent="1" source="g_copy" target="g_wait">
           <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="lbl_g2" value="copy_event" style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;fontFamily=Inter;fontSize=12;fontColor=#5c6067;" vertex="1" parent="1">
+          <mxGeometry x="176" y="288" width="96" height="24" as="geometry"/>
         </mxCell>
         <mxCell id="n_sched" value="NPUModelRunner 主线程&lt;br&gt;异步下发 ACL Task 至 CANN 队列" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e3f5f3;strokeColor=#0f766e;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
           <mxGeometry x="384" y="40" width="288" height="64" as="geometry"/>
@@ -43,14 +49,20 @@
         <mxCell id="n_wait" value="aclrtSynchronizeEvent&lt;br&gt;推迟至必须读取 token 时等待" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#f4f4f2;strokeColor=#5c6067;strokeWidth=1;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
           <mxGeometry x="384" y="320" width="288" height="64" as="geometry"/>
         </mxCell>
-        <mxCell id="e_n0" value="" style="endArrow=classic;startArrow=none;html=1;strokeColor=#1d1d1f;strokeWidth=1.25;edgeStyle=orthogonalEdgeStyle;rounded=1;" edge="1" parent="1" source="n_sched" target="n_comp">
+        <mxCell id="e_n0" value="" style="endArrow=classic;startArrow=none;html=1;strokeColor=#1d1d1f;strokeWidth=1.25;exitX=0.5;exitY=1.0;exitDx=0;exitDy=0;entryX=0.5;entryY=0.0;entryDx=0;entryDy=0;" edge="1" parent="1" source="n_sched" target="n_comp">
           <mxGeometry relative="1" as="geometry"/>
         </mxCell>
-        <mxCell id="e_n1" value="async copy" style="endArrow=classic;startArrow=none;html=1;strokeColor=#1d1d1f;strokeWidth=1.25;edgeStyle=orthogonalEdgeStyle;rounded=1;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;labelBackgroundColor=#fcfcfb;" edge="1" parent="1" source="n_comp" target="n_copy">
+        <mxCell id="e_n1" value="" style="endArrow=classic;startArrow=none;html=1;strokeColor=#1d1d1f;strokeWidth=1.25;exitX=0.5;exitY=1.0;exitDx=0;exitDy=0;entryX=0.5;entryY=0.0;entryDx=0;entryDy=0;" edge="1" parent="1" source="n_comp" target="n_copy">
           <mxGeometry relative="1" as="geometry"/>
         </mxCell>
-        <mxCell id="e_n2" value="NPU Event" style="endArrow=classic;startArrow=none;html=1;strokeColor=#5c6067;strokeWidth=1.25;edgeStyle=orthogonalEdgeStyle;rounded=1;dashed=1;dashPattern=4 4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;labelBackgroundColor=#fcfcfb;" edge="1" parent="1" source="n_copy" target="n_wait">
+        <mxCell id="lbl_n1" value="async copy" style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;fontFamily=Inter;fontSize=12;fontColor=#5c6067;" vertex="1" parent="1">
+          <mxGeometry x="528" y="192" width="96" height="24" as="geometry"/>
+        </mxCell>
+        <mxCell id="e_n2" value="" style="endArrow=classic;startArrow=none;html=1;strokeColor=#5c6067;strokeWidth=1.25;dashed=1;dashPattern=4 4;exitX=0.5;exitY=1.0;exitDx=0;exitDy=0;entryX=0.5;entryY=0.0;entryDx=0;entryDy=0;" edge="1" parent="1" source="n_copy" target="n_wait">
           <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="lbl_n2" value="NPU Event" style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;fontFamily=Inter;fontSize=12;fontColor=#5c6067;" vertex="1" parent="1">
+          <mxGeometry x="528" y="288" width="96" height="24" as="geometry"/>
         </mxCell>
       </root>
     </mxGraphModel>

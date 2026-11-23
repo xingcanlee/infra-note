@@ -13,7 +13,7 @@ import SpecDecVerifyExplainer from '../../../../explainers/deepseek/SpecDecVerif
 
 自回归解码每输出 1 个 token，都要把整张大权重从 HBM 搬进计算单元一次。当批量较小或 KV 缓存访问占主导时，算术强度远低于 GPU 与 NPU 的 Roofline 算力拐点，绝大多数矩阵计算核心都在等待数据搬运。
 
-推测解码（Speculative Decoding）通过「廉价草稿先连猜 $\gamma$ 步、目标模型一次并行验证 $1 + \gamma$ 个位置」来摊薄单步权重读取开销[^spec-dec]。由于验证 1 个 token 和同时验证数个 token 搬运的权重总量相同，多算几个查询位置几乎不增加额外访存延迟；一旦验证通过前缀够长，平均每 token 分摊的权重访存就会成倍下降。
+**Speculative Decoding（推测解码）**通过「廉价草稿先连猜 $\gamma$ 步、目标模型一次并行验证 $1 + \gamma$ 个位置」来摊薄单步权重读取开销[^spec-dec]。由于验证 1 个 token 和同时验证数个 token 搬运的权重总量相同，多算几个查询位置几乎不增加额外访存延迟；一旦验证通过前缀够长，平均每 token 分摊的权重访存就会成倍下降。
 
 ## 无损拒绝采样与分布等价证明
 
@@ -33,13 +33,19 @@ import SpecDecVerifyExplainer from '../../../../explainers/deepseek/SpecDecVerif
 对词表中任意 token $x$，最终在这一位置输出 $x$ 的事件由「草稿选出 $x$ 且被接收」与「某个提案被拒后落入残差重采样并抽中 $x$」两个互斥事件组成。先求单步触发拒绝的总概率 $P(\text{reject})$：
 
 $$
-P(\text{reject}) = \sum_{y} q(y)\left(1 - \min\!\left(1, \frac{p(y)}{q(y)}\right)\right) = \sum_{y} \max\!\big(0,\, q(y) - p(y)\big)
+\begin{aligned}
+P(\text{reject}) &= \sum_{y} q(y)\left(1 - \min\!\left(1, \frac{p(y)}{q(y)}\right)\right) \\
+&= \sum_{y} \max\!\big(0,\, q(y) - p(y)\big)
+\end{aligned}
 $$
 
 由于 $\sum_y p(y) = \sum_y q(y) = 1$，草稿超出目标的概率质量之和与欠缺的概率质量之和必定相等，即 $\sum_y \max(0, q(y) - p(y)) = \sum_y \max(0, p(y) - q(y)) = Z$，恰好等于残差分布的分母 $Z$。因此最终采到任意 $x$ 的边缘概率为：
 
 $$
-P_{\text{final}}(x) = q(x)\min\!\left(1, \frac{p(x)}{q(x)}\right) + P(\text{reject}) \cdot \frac{\max(0, p(x) - q(x))}{Z} = \min(p(x), q(x)) + \max(0, p(x) - q(x)) = p(x)
+\begin{aligned}
+P_{\text{final}}(x) &= q(x)\min\!\left(1, \frac{p(x)}{q(x)}\right) + P(\text{reject}) \cdot \frac{\max(0, p(x) - q(x))}{Z} \\
+&= \min(p(x), q(x)) + \max(0, p(x) - q(x)) = p(x)
+\end{aligned}
 $$
 
 无论草稿模型多么粗糙，只要经过上述拒绝采样与残差重采样校正，单步乃至整条序列的联合分布都严格等于主干大模型独立自回归采样的结果，草稿质量只会影响期望接受长度而不会损伤输出分布。
@@ -52,16 +58,19 @@ $$
 
 ### DeepSeek-V3 因果 MTP 与串行层开销
 
-DeepSeek-V3 在预训练期间联合训练了多 token 预测模块（MTP）[^v3-mtp]。在 `vLLM` 实现的 `DeepSeekMultiTokenPredictorLayer` 中[^vllm-spec]，第 $k$ 步预测先把上一步主干隐藏状态与第 $k$ 步输入嵌入各自经 `hnorm`、`enorm` 归一化，沿特征维拼接后通过 `eh_proj` 从 $2H$ 压回 $H$；合并特征再穿过 1 个轻量级 `mtp_block` 写入草稿层自己的 KV 缓存，最后送入复用的共享输出头 `SharedHead` 采样第 $k$ 步草稿。这套设计复用了目标模型的嵌入层与输出投影，但受制于严格的自回归因果依赖：当预测深度 $K = 3$ 时，引擎仍须串行发起 3 次 `mtp_block` 前向与 3 次全词表采样，小批量下的 Kernel 启动与卡间 `AllReduce` 延迟会随步数线性累积（图 2 上泳道）。
+DeepSeek-V3 在预训练期间联合训练了 **MTP（Multi-Token Prediction，多 token 预测）**模块[^v3-mtp]。在 `vLLM` 实现的 `DeepSeekMultiTokenPredictorLayer` 中[^vllm-spec]，第 $k$ 步预测先把上一步主干隐藏状态与第 $k$ 步输入嵌入各自经 `hnorm`、`enorm` 归一化，沿特征维拼接后通过 `eh_proj` 从 $2H$ 压回 $H$；合并特征再穿过 1 个轻量级 `mtp_block` 写入草稿层自己的 KV 缓存，最后送入复用的共享输出头 `SharedHead` 采样第 $k$ 步草稿。这套设计复用了目标模型的嵌入层与输出投影，但受制于严格的自回归因果依赖：当预测深度 $K = 3$ 时，引擎仍须串行发起 3 次 `mtp_block` 前向与 3 次全词表采样，小批量下的 Kernel 启动与卡间 `AllReduce` 延迟会随步数线性累积（图 2 上泳道）。
 
 ### V4.1 DSpark 并行 SWA、低秩马尔可夫头与置信度调度
 
-为了突破串行草稿延迟，DSpark[^dspark-paper] 与 DeepSeek-V4.1-Flash[^v41-flash] 将多步串行起草改为「一次并行 Draft 模型特征提取 + 微秒级低秩马尔可夫链」的半自回归架构。对照 `DeepseekV41DSparkModel` 的实现[^ascend-spec]，Draft 模型从主模型挑选若干代表层的隐状态拼接起来，经 `main_proj`、`main_norm` 与 `context_wkv_proj` 一次性投影进 3 层滑动窗口注意力（SWA，窗宽 128）KV 槽位。随后 Draft 模型把上一轮的锚点 token 与 $\gamma - 1$ 个占位掩码拼成连续块，单次并行前向即可同时产出未来 $\gamma$ 个位置的基础 logits $\mathbf{z}_k^{\text{base}}$，消除了 Draft 前向耗时随 $\gamma$ 线性增长的限制。
+为了突破串行草稿延迟，DSpark[^dspark-paper] 与 DeepSeek-V4.1-Flash[^v41-flash] 将多步串行起草改为「一次并行 Draft 模型特征提取 + 微秒级低秩马尔可夫链」的半自回归架构。对照 `DeepseekV41DSparkModel` 的实现[^ascend-spec]，Draft 模型从主模型挑选若干代表层的隐状态拼接起来，经 `main_proj`、`main_norm` 与 `context_wkv_proj` 一次性投影进 3 层 SWA（Sliding Window Attention，滑动窗口注意力，窗宽 128）KV 槽位。随后 Draft 模型把上一轮的锚点 token 与 $\gamma - 1$ 个占位掩码拼成连续块，单次并行前向即可同时产出未来 $\gamma$ 个位置的基础 logits $\mathbf{z}_k^{\text{base}}$，消除了 Draft 前向耗时随 $\gamma$ 线性增长的限制。
 
 然而纯并行前向会丢失块内 token 之间的强条件依赖——当语境允许多个合法续写时（如 `"of course"` 与 `"no problem"`），各位置独立边缘分布采样容易混搭出 `"of problem"` 之类的碰撞错误[^dspark-paper]。为此，DSpark 在并行输出的基础 logits 上串接了一个低秩 $r = 256$ 的马尔可夫条件修正头 `DSparkMarkovHead`[^vllm-spec]，左到右依次补回相邻前驱 token $x_{k-1}$ 的转移偏置：
 
 $$
-\mathbf{z}_k = \mathbf{z}_k^{\text{base}} + \mathbf{W}_1[x_{k-1}]\, \mathbf{W}_2, \qquad \mathbf{W}_1 \in \mathbb{R}^{V \times r},\; \mathbf{W}_2 \in \mathbb{R}^{r \times V},\; r = 256
+\begin{aligned}
+\mathbf{z}_k &= \mathbf{z}_k^{\text{base}} + \mathbf{W}_1[x_{k-1}]\, \mathbf{W}_2 \\
+\mathbf{W}_1 &\in \mathbb{R}^{V \times r},\quad \mathbf{W}_2 \in \mathbb{R}^{r \times V},\quad r = 256
+\end{aligned}
 $$
 
 其中 $\mathbf{W}_1$ 相当于词表嵌入查找表，$\mathbf{W}_2$ 是窄瓶颈投影矩阵。每一步只需从 $\mathbf{W}_1$ 查出第 $x_{k-1}$ 行再做一次 $[B, 256] \times [256, V]$ 的极窄矩阵乘，就能在微秒级时间内串联起连续草稿的上下文连贯性（图 2 下泳道）。
@@ -83,7 +92,8 @@ def lossless_rejection_sample(
     """向量化无损拒绝采样：对草稿分布 q 采样并用残差分布 norm(max(0, p - q)) 补偿被拒位。"""
     # 1. 从草稿分布 q 采样候选 token，按 min(1, p(x)/q(x)) 概率接收
     drafts = torch.multinomial(q, n_samples, replacement=True)
-    accept_mask = torch.rand(n_samples, dtype=p.dtype) <= (p[drafts] / q[drafts]).clamp_max(1.0)
+    probs_ratio = (p[drafts] / q[drafts]).clamp_max(1.0)
+    accept_mask = torch.rand(n_samples, dtype=p.dtype) <= probs_ratio
 
     # 2. 构造残差补偿分布 p'(x) = norm(max(0, p(x) - q(x)))，补齐欠采样 token 的概率质量
     res = torch.clamp(p - q, min=0.0)
@@ -160,7 +170,7 @@ if __name__ == "__main__":
 
 ## 双硬件生产运行时：vLLM GPU 与 vllm-ascend
 
-把草稿起草与置信度裁剪真正接进多卡张量并行（TP）与静态图捕获（CUDA Graph / ACLGraph）时，`vLLM` GPU 与 `vllm-ascend` NPU 在词表并行、图模式路由与拒绝采样 Kernel 上走出了清晰差异，整体执行栈如图 3 所示。
+把草稿起草与置信度裁剪真正接进多卡 TP（Tensor Parallelism，张量并行）与 CUDA Graph / ACLGraph 静态图捕获时，`vLLM` GPU 与 `vllm-ascend` NPU 在词表并行、图模式路由与拒绝采样 Kernel 上走出了清晰差异，整体执行栈如图 3 所示。
 
 ![vLLM GPU 与 Ascend NPU Speculator 运行时栈对照](./diagrams/09-mtp-vllm-runtime.drawio '图 3：vLLM V1 GPU Speculator 与 vllm-ascend V2 混合扩展运行时栈对照')
 

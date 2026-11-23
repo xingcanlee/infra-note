@@ -8,9 +8,9 @@
           <mxGeometry x="0" y="0" width="688" height="24" as="geometry"/>
         </mxCell>
         <mxCell id="cap" value="&lt;b&gt;1. Stream Capture 静态捕获（\(B_{\text{cap}}=4\)）&lt;/b&gt;&lt;br&gt;绑定 global_graph_pool 固化 Kernel 与虚拟指针：&lt;br&gt;hidden @ 0x7f00_1000 · slot @ 0x7f00_2000 · out @ 0x7f00_3000" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f2fb;strokeColor=#2f5783;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
-          <mxGeometry x="8" y="32" width="320" height="80" as="geometry"/>
+          <mxGeometry x="8" y="32" width="312" height="80" as="geometry"/>
         </mxCell>
-        <mxCell id="rep" value="&lt;b&gt;2. 健康重放 Replay（实批 \(B=3 \to\) 桶 4，~0.08 ms）&lt;/b&gt;&lt;br&gt;InputBuffers.copy_() 原地覆写前 3 槽固定地址&lt;br&gt;第 4 槽置 is_padding=True 且 PAD_SLOT_ID=-1 跳过写 KV" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f2fb;strokeColor=#2f5783;strokeWidth=2;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+        <mxCell id="rep" value="&lt;b&gt;2. Replay 重放（cudaGraphLaunch · B=3→桶 4，~0.08 ms）&lt;/b&gt;&lt;br&gt;InputBuffers.copy_() 原地覆写前 3 槽固定地址&lt;br&gt;第 4 槽置 is_padding=True 且 PAD_SLOT_ID=-1 跳过写 KV" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f2fb;strokeColor=#2f5783;strokeWidth=2;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
           <mxGeometry x="352" y="32" width="328" height="80" as="geometry"/>
         </mxCell>
         <mxCell id="g_bnd" value="四道硬件边界：违例失效征兆 vs vLLM 运行时防御" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#f4f4f2;strokeColor=#e2e2dd;strokeWidth=1;dashed=1;verticalAlign=top;align=left;spacingLeft=12;spacingTop=6;fontFamily=Inter;fontSize=12;fontStyle=1;fontColor=#5c6067;container=0;" vertex="1" parent="1">
@@ -28,7 +28,7 @@
         <mxCell id="b4" value="&lt;b&gt;约束四 · 多流汇合与图池隔离&lt;/b&gt;&lt;br&gt;违例：copy_stream 未汇回主流报 Unjoined；劫持对称分配&lt;br&gt;防御：首调 sync_prev_onload / 尾调 join_after_forward&lt;br&gt;+ nccl_symm_mem_context 隔离 + weak_ref_tensors 释放末输出" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#fbf2df;strokeColor=#7b5518;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
           <mxGeometry x="352" y="280" width="312" height="104" as="geometry"/>
         </mxCell>
-        <mxCell id="e_cr" value="cudaGraphLaunch" style="endArrow=classic;startArrow=none;html=1;strokeColor=#2f5783;strokeWidth=1.25;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;fontFamily=Inter;fontSize=12;fontColor=#2f5783;labelBackgroundColor=#fcfcfb;" edge="1" parent="1" source="cap" target="rep">
+        <mxCell id="e_cr" value="" style="endArrow=classic;startArrow=none;html=1;strokeColor=#2f5783;strokeWidth=1.25;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="cap" target="rep">
           <mxGeometry relative="1" as="geometry"/>
         </mxCell>
       </root>

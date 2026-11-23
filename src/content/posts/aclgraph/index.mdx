@@ -1,0 +1,39 @@
+---
+title: '执行图与昇腾 ACL Graph：从异步算力流到生产推理全栈'
+description: '面向零基础 Infra 开发者的执行图专题导览：串联异构算力流、torch.compile 编译期静态化、CUDA Graph 静态捕获、ACL Graph 影子模型流机制，以及 vLLM-Ascend 四层生产栈。'
+series: { id: aclgraph, order: 1 }
+pubDate: 2026-10-15
+draft: false
+tags: [ACL Graph, CUDA Graph, torch.compile, CANN, Ascend, vLLM-Ascend]
+---
+
+在大型语言模型小批量自回归解码时，服务吞吐往往并不受限于算力或 **HBM（High Bandwidth Memory，高带宽显存）**带宽，而是卡在 **Host-bound Launch Wall（主机发射墙）**：CPU 构造任务、校验参数并提交驱动队列的耗时超过了单个算子在设备计算单元上的实际驻留时间，导致硬件波形出现密集空闲缝隙。
+
+消除发射墙需要逐层打通三层软硬边界：第一层是**异构异步队列与同步原语**，理解指令如何通过 **Stream（流）**与 **Event（事件）**进入设备调度器；第二层是**编译器静态化（`torch.compile`）**，通过图捕获与算子融合压低 Kernel 数量与 HBM 往返，同时看清编译层无法独自消灭主机发射成本；第三层是**设备端静态执行图（CUDA Graph 与昇腾 ACL Graph）**，一次录制任务拓扑与 Kernel 参数，将数百次发射压缩成单条驱动触发指令。
+
+![执行图三层技术栈导览](./diagrams/00-three-layer-execution-stack.drawio '图 1：从异构算力流、编译静态化到静态执行图的三层演进路线')
+
+## 六章演进路线与前置关联
+
+全系列结合[推理与异构硬件基础](../foundations/)、[DeepSeek 架构演进](../deepseek/)、[vLLM 与昇腾推理引擎](../vllm/)与[分布式并行与跨卡通信](../distributed/)，按自底向上因果链安排六章：
+
+| 章节                                                                                    | 核心问题                 | 底层核心对象                         |
+| --------------------------------------------------------------------------------------- | ------------------------ | ------------------------------------ |
+| [01 异构算力流与事件](./01-heterogeneous-streams-and-events/)                           | 异步队列并发与跨流依赖   | Pushbuffer、`TaskQueue`、`Event`     |
+| [02 PyTorch 编译栈与分段融合](./02-torch-compile-fundamentals/)                         | 消减访存与编译器发射上限 | TorchDynamo、`SymInt`、后端融合      |
+| [03 CUDA Graph 原理与静态边界](./03-cuda-graph-fundamentals/)                           | 一次发射百层与四道静态界 | Stream Capture、Fork-Join、条件节点  |
+| [04 ACL Graph 架构与流录制](./04-acl-graph-architecture-and-capture/)                   | 影子模型流与参数持久备份 | Shadow Stream、`CopyTaskArgs`、`RI`  |
+| [05 ACL Graph 动态扩展与条件子图](./05-acl-graph-task-update-and-conditional-subgraph/) | 变长刷新与设备侧分支循环 | `TaskGrp`/`TaskUpdate`、`CondHandle` |
+| [06 昇腾推理全栈集成与排障](./06-acl-graph-fullstack-and-vllm-ascend/)                  | 调度分桶与池上限排障定位 | `npugraph_ex`、`SQ/CQ`、错误码排障   |
+
+## 代码来源与实验基准
+
+本系列所有源码引用与验证基准均核对自固定开源提交：`cann/runtime`（`1954820a`）[^cann-rt]、`Ascend/pytorch`（`d09e29e4`）[^torch-npu]、`vllm`（`bb23c0a8`）[^vllm-repo] 以及 `vllm-ascend`（`3649b8ff`）[^vllm-ascend-repo]。第 1 至第 6 章均附带可在单机 CPU 环境直接执行的 Python 验证脚本，定量核算发射延迟、队列水位、热刷新状态迁移与故障触发边界。
+
+[^cann-rt]: CANN Runtime 开源仓库（`cann/runtime`，提交 `1954820a`），采用 CANN Open Software License Agreement Version 2.0 授权，涵盖 `aclmdlRI*` 接口、Stream Capture 模型录制实现与物理 `SQ/CQ` 资源池逻辑。
+
+[^torch-npu]: 华为昇腾 PyTorch 插件仓库（`Ascend/pytorch`，提交 `d09e29e4`），提供 `NPUGraph` C++ 与 Python 封装、自动更新调度模式及条件控制流模式。
+
+[^vllm-repo]: 上游推理引擎仓库（`vllm-project/vllm`，提交 `bb23c0a8`），采用 Apache-2.0 开源协议，包含 `torch.compile` 分段策略与 CUDA Graph 双重包装器设计。
+
+[^vllm-ascend-repo]: 昇腾推理后端插件仓库（`vllm-project/vllm-ascend`，提交 `3649b8ff`），采用 Apache-2.0 开源协议，实现面向 NPU 硬件栈的 `ACLGraphWrapper` 与 `npugraph_ex` 编译通道。

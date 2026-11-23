@@ -129,7 +129,7 @@ export function buildOnlineSoftmaxSteps(): Step<OnlineSoftmaxState>[] {
         accuracyText: '零 HBM 中间矩阵',
       },
       caption:
-        '设 $B_r=2, B_c=2, N=4$：仅将 $Q_{0:2}$ 与第 1 块 $K_{0:2}, V_{0:2}$ 搬入片上 SRAM，算出局部得分 $S^{(1)} = [[1,3],[4,2]]$。此时片上仅分配唯一一份在位状态 $(m, l, \\tilde{O})$，不落盘完整 $[4,4]$ 矩阵。',
+        '设 $B_r=2, B_c=2, N=4$：仅将 $Q_{0:2}$ 与第 1 块 $K_{0:2}, V_{0:2}$ 搬入片上 SRAM，算出局部得分 $S^{(1)} = [[1,3],[4,2]]$。此时片上仅分配唯一一份在位状态 $(m, l, \\tilde{O})$，不向 HBM 写回完整 $[4,4]$ 矩阵。',
     },
     {
       state: {

@@ -7,7 +7,7 @@ series: { id: vllm, order: 4 }
 tags: [vLLM, Ascend, PyTorch, torch.compile, CUDA Graph]
 ---
 
-跨步异步调度把调度逻辑与回传拷贝藏到了后台，但控制权一旦走进单步 `model.forward()`，PyTorch Eager 模式仍会让 `RMSNorm`、旋转位置编码、`SiLU` 与残差加法一个个穿过 C++ 分发器，频繁把中间激活写回高带宽显存（HBM）再重新读出，同时迫使 CPU 发起数百次 Kernel 发射。
+跨步异步调度把调度逻辑与回传拷贝藏到了后台，但控制权一旦走进单步 `model.forward()`，PyTorch Eager 模式仍会让 `RMSNorm`、**RoPE（Rotary Position Embedding，旋转位置编码）**、`SiLU` 与残差加法一个个穿过 C++ 分发器，频繁把中间激活写回 **HBM（High Bandwidth Memory，高带宽显存）**再重新读出，同时迫使 CPU 发起数百次 Kernel 发射。
 
 从直觉上看，开启 `torch.compile` 把整张模型图编译融合就能合并零碎算子、削减发射次数与访存流量；但在大语言模型推理场景下，直接对原生模型套用标准全图编译会在两处同时受阻。
 
@@ -30,7 +30,7 @@ flowchart TD
     S1 --> E1["直调手写分页注意力"]
 ```
 
-第一道桥梁是**用 PyTorch 自定义不透明算子（Custom Op）封装注意力以防止 `Graph Break`**。vLLM 将 KV Cache 写入与注意力计算分别注册为自定义算子（标准注意力的 `unified_kv_cache_update` 与 `unified_attention_with_output`，MLA 路径对应 `unified_mla_kv_cache_update` 与 `unified_mla_attention_with_output`，昇腾端 MLA 对应 `mla_forward`）[^vllm-custom-op][^vllm-mla-op][^ascend-mla-op]。
+第一道桥梁是**用 PyTorch Custom Op（自定义不透明算子）封装注意力以防止 `Graph Break`**。vLLM 将 KV Cache 写入与注意力计算分别注册为自定义算子（标准注意力的 `unified_kv_cache_update` 与 `unified_attention_with_output`，**MLA（Multi-Head Latent Attention，多头潜在注意力）**路径对应 `unified_mla_kv_cache_update` 与 `unified_mla_attention_with_output`，昇腾端 MLA 对应 `mla_forward`）[^vllm-custom-op][^vllm-mla-op][^ascend-mla-op]。
 
 写入算子通过注册 FakeTensor 抽象推导函数（`fake_impl`）返回一个零元素依赖占位张量传入注意力算子，从而在图里明确锁定“先更新 KV 再读取计算”的顺序，防止编译器重排；注意力算子则以原地写入参数列表 `mutates_args` 声明直接覆写预分配的 `output` 缓冲。Dynamo 追踪 `forward` 时只把整个注意力看作一个已知输入输出形状的黑盒节点，不再下钻内部页表逻辑，得以一次扫通完整 `fx.GraphModule`。
 
@@ -66,7 +66,7 @@ flowchart TD
 
 进入 `AscendCompiler.compile` 后，系统根据 `enable_npugraph_ex` 配置在两条编译路径间切换[^ascend-compiler]。当开启该开关时，引擎调用 `npugraph_ex_compile` 优先加载 `npugraph_ex` 后端（配置 `force_eager=True` 并在关闭原地重写 `inplace_pass=False` 后防止 GELU 回退至 CPU，同时按需开启静态核编译与 `SuperKernel` 优化）。
 
-若当前环境未安装 `npugraph_ex`，管线会自动兜底旧版 `torchair`（`reduce-overhead` 模式），把纯张量 FX 子图下沉交由 CANN **GE（图引擎，Graph Engine）** 管线优化，而隔离出的注意力子图则直调 **FIA（融合推理注意力，即 `npu_fused_infer_attention_score`）** 等 NPU 原生算子。
+若当前环境未安装 `npugraph_ex`，管线会自动兜底旧版 `torchair`（`reduce-overhead` 模式），把纯张量 FX 子图下沉交由 CANN **GE（Graph Engine，图引擎）**管线优化，而隔离出的注意力子图则直调 **FIA（Fused Infer Attention，融合推理注意力，即 `npu_fused_infer_attention_score`）**等 NPU 原生算子。
 
 当关闭 `enable_npugraph_ex` 时，编译流程进入 `fusion_pass_compile`，通过 `aot_autograd` 将子图交给 `GraphFusionPassManager` 执行 NPU 定制融合 Pass（包括 `AddRMSNormQuant` 融合、QK 归一化与 RoPE 融合、乘加融合以及行并行矩阵乘与 `ReduceScatter` 融合），不经 GE 静态图下沉而直接返回融合后的 FX 图[^ascend-compiler][^ascend-fusion-pass]。
 
@@ -126,7 +126,11 @@ submods = [n for n, _ in split_gm.named_children() if n.startswith("submod_")]
 x = torch.randn(4, 8)
 with torch.no_grad():
     max_diff = (model(x) - split_gm(x)).abs().max().item()
-assert submods == ["submod_0", "submod_1", "submod_2"] and split_ids == {1} and max_diff < 1e-6
+assert (
+    submods == ["submod_0", "submod_1", "submod_2"]
+    and split_ids == {1}
+    and max_diff < 1e-6
+)
 
 print(f"submods={submods}, split_ids={sorted(split_ids)}, max_diff={max_diff:.2e}")
 for name in submods:
@@ -169,11 +173,11 @@ else:
         f.write(py_code)
 ```
 
-| 分段编译维度       | NVIDIA GPU（`vllm` `bb23c0a8`）               | 华为昇腾 NPU（`vllm-ascend` `3649b8ff`）                  |
-| ------------------ | --------------------------------------------- | --------------------------------------------------------- |
-| 黑盒防断与无 Guard | Custom Op + `TorchCompileWithNoGuardsWrapper` | 复用入口外壳并补齐 `mla_forward` 等自定义算子             |
-| 子图切分与隔离     | `split_graph` 保序切分并合并空段              | 复用 `split_graph`；`FULL` 模式清空切分列表               |
-| 后端融合与缓存     | `TorchInductor` 生成 Triton 并落盘缓存        | `AscendCompiler` 切换 GE 下沉或 FX Pass，跳过 Triton 缓存 |
+| 分段编译维度   | GPU（`vllm` `bb23c0a8`）         | 昇腾 NPU（`vllm-ascend` `3649b8ff`）          |
+| -------------- | -------------------------------- | --------------------------------------------- |
+| 黑盒与无 Guard | Custom Op 配无 Guard 追踪包装    | 复用入口外壳并补齐 `mla_forward`              |
+| 子图切分与隔离 | `split_graph` 保序切分合并空段   | 复用切分器；`FULL` 清空切分表                 |
+| 后端融合与缓存 | `TorchInductor` 生成 Triton 落盘 | `AscendCompiler` 切换 GE/Pass，禁 Triton 缓存 |
 
 `torch.compile` 与 `split_graph` 把零碎逐元素算子融合进少量 Kernel、显著削减了中间激活的 HBM 读写往返；但在小批量解码下，CPU 仍需逐子图、逐层向驱动提交 Kernel 发射调用，发射墙的最后一程还没有走完。下一章[第 4 章：CUDA Graph 与四道硬边界](../04-cuda-graph-and-boundaries/)将进入硬件静态图，拆解推理引擎如何把整串算子录制成单次发射的指令拓扑，又必须守住哪四道内存与同步约束。
 

@@ -8,7 +8,7 @@ category: AI Infra
 toc: true
 ---
 
-在多轮智能体（Agent）工作流里，工具调用每追加几十个报错输出或检索片段，就会触发一次围绕十几万字历史前缀的长上下文请求。即便 DeepSeek-V4 已经压窄了条目宽度并折叠了单层内的序列长度，只要网络中的每一层仍然各自写入全局缓存、各自扫描全长索引，HBM 容量、SSD 持久化池与跨节点缓存搬运带宽依然会迅速吃紧。
+在多轮 **Agent（智能体）**工作流里，工具调用每追加几十个报错输出或检索片段，就会触发一次围绕十几万字历史前缀的长上下文请求。即便 DeepSeek-V4 已经压窄了条目宽度并折叠了单层内的序列长度，只要网络中的每一层仍然各自写入全局缓存、各自扫描全长索引，HBM 容量、SSD 持久化池与跨节点缓存搬运带宽依然会迅速吃紧。
 
 DeepSeek-V4.1-Flash（主干 552B 参数、外挂条件记忆 Engram 196B、支持 1M 上下文）从**条目位宽 × 序列长度 × 网络层数**三个维度同时做乘法压缩[^paper]，并在前向执行上按半程编码-解码切分（Prefill 激活 8B，Decode 激活 16B）。
 
@@ -22,7 +22,7 @@ DeepSeek-V4.1-Flash（主干 552B 参数、外挂条件记忆 Engram 196B、支�
 
 同时，V4.1 简化了压缩器结构：取消 V4 的 $2m$ 重叠双窗与压缩器内绝对位置偏置，直接从主压缩潜向量线性投影出 Indexer K（替代从隐状态单独投影），在序列压缩率上编码器段取 $m = 2$、解码器段保持 $m = 1$。
 
-真正的倍数缩减来自第三条轴——跨层复用与解耦。V4.1 将 40 层主干静态划分为三段：L0–L1 仅使用局部滑动窗口（SWA），贡献 0 份全局缓存；L2–L19 共 18 层编码器拆为 3 组各 6 层（L2–L7、L8–L13、L14–L19），每组首层按 $m = 2$ 生成 1 份全局缓存并由同组后 5 层共享，合计贡献 $3 \times 0.5 = 1.5$ 份等效槽位。
+真正的倍数缩减来自第三条轴——跨层复用与解耦。V4.1 将 40 层主干静态划分为三段：L0–L1 仅使用局部 SWA（Sliding Window Attention，滑动窗口注意力），贡献 0 份全局缓存；L2–L19 共 18 层编码器拆为 3 组各 6 层（L2–L7、L8–L13、L14–L19），每组首层按 $m = 2$ 生成 1 份全局缓存并由同组后 5 层共享，合计贡献 $3 \times 0.5 = 1.5$ 份等效槽位。
 
 L20–L39 共 20 层解码器分为 5 组各 4 层，整段共用 L20 在 $m = 1$ 下生成的那 1 份全局缓存，贡献 1.0 份等效槽位。全网 40 层平均每个 token 仅驻留 $0 + 1.5 + 1.0 = 2.5$ 份全局槽位，乘以单槽 356 B 精确得出 890 B/token——即使塞满整条 1M 上下文，40 层全局 KV 总计也仅占约 849 MiB。
 
@@ -32,7 +32,7 @@ L20–L39 共 20 层解码器分为 5 组各 4 层，整段共用 L20 在 $m = 1
 
 其余 30 层（编码器 15 层、解码器 15 层）均处于 **Reuse 模式**，同时复用上游主 KV 与最新选出的 Top-512 下标，直接省去索引计算；凭借算子融合，Reuse 层在 Decode 阶段每层仅执行 11 个融合 Kernel，Prefill 阶段也仅 15 个 Kernel[^paper]。
 
-即便 Reuse 模式跳过了 30 层索引，解码器的 4 个 Reindex 层在 1M 上下文下仍然面临线性扫描全长历史的开销。为此 V4.1 在解码器引入**两级分层稀疏索引器（HSI）**[^paper]：L20（Full）在扫描全长上下文并挑选自身 Top-512 的同时，按每 8 个连续槽位取块内最大索引分，保留得分最高的 2,048 个粗块，拼成固定容量 $2048 \times 8 = 16{,}384$ 的共享候选池（在 1M 上下文下仅占 1.64%）。
+即便 Reuse 模式跳过了 30 层索引，解码器的 4 个 Reindex 层在 1M 上下文下仍然面临线性扫描全长历史的开销。为此 V4.1 在解码器引入 **HSI（Hierarchical Sparse Indexer，两级分层稀疏索引器）**[^paper]：L20（Full）在扫描全长上下文并挑选自身 Top-512 的同时，按每 8 个连续槽位取块内最大索引分，保留得分最高的 2,048 个粗块，拼成固定容量 $2048 \times 8 = 16{,}384$ 的共享候选池（在 1M 上下文下仅占 1.64%）。
 
 后续 4 个 Reindex 层只需重扫这 16,384 个候选位置即可选出各自的 Top-512，把深层重索引开销从 $O(L)$ 降至常数 $O(1)$。这一候选过滤规则在后训练阶段同步开启，保证推理分布与训练一致；综合以上改进，上下文从 4K 扩展 256 倍到 1M 时，V4.1-Flash 的单 token Decode FLOPs 仅增加约 25%[^paper]。
 
@@ -54,11 +54,11 @@ flowchart TD
 
 下表核对了全网 40 层每 token 的全局缓存精确账本（890 B/token）：
 
-| 缓存分量         | 原始维度与分组精度                                     | 单槽位小计 | 全网每 token 分摊（2.5 份） |
-| :--------------- | :----------------------------------------------------- | ---------: | --------------------------: |
-| 全局主 KV        | 512 维（448 NoPE + 64 RoPE），E2M1 配每 16 维 E4M3     |      288 B |           2.5 × 288 = 720 B |
-| 全局 Indexer K   | 128 维，MXFP4 配每 32 维 UE8M0                         |       68 B |            2.5 × 68 = 170 B |
-| 全网全局 KV 合计 | L2–L19（$3 \times 1/2$）与 L20–L39（$1 \times 1$）合并 |      356 B |                 890 B/token |
+| 缓存分量       | 原始维度与分组精度                   | 单槽小计 | 全网每 token（2.5 份） |
+| :------------- | :----------------------------------- | -------: | ---------------------: |
+| 全局主 KV      | 512 维（448+64），E2M1 配 16 维 E4M3 |    288 B |        2.5×288 = 720 B |
+| 全局 Indexer K | 128 维，MXFP4 配 32 维 UE8M0         |     68 B |         2.5×68 = 170 B |
+| 全网 KV 合计   | L2–L19（3×1/2）与 L20–L39（1×1）合并 |    356 B |            890 B/token |
 
 ### 后 RoPE NVFP4 与单级缩放
 
@@ -66,13 +66,13 @@ V4.1 在主 KV 缓存与索引缓存上分别选用两种不同的 4 比特格�
 
 而主 KV 仅需压缩 HBM 与 SSD 存储占用，在核心注意力计算前会先反量化为 BF16，不受限于原生 FP4 矩阵乘格式约束，因而选用精度更高的 NVFP4 载荷格式：512 维全部采用 E2M1（256 B），每 16 维配 1 字节 E4M3 局部缩放因子（32 B），合计 288 B。
 
-而且主缓存省略了传统 NVFP4 常带的二级全局 FP32 缩放因子。原因在于出口 `RMSNorm` 的训练权重上界接近 1，使 512 维向量的 $L_2$ 范数被压在约 $\sqrt{512} \approx 22.6$ 以内；又由于旋转位置编码（RoPE）保持向量 $L_2$ 范数不变，旋转后每个通道的最大绝对值也天然低于 $\sqrt{512} \approx 22.6$（训练期间观察到的最大值约 10），远小于单级 E2M1 × E4M3 所能表达的 $448 \times 6 = 2688$ 上限。
+而且主缓存省略了传统 NVFP4 常带的二级全局 FP32 缩放因子。原因在于出口 `RMSNorm` 的训练权重上界接近 1，使 512 维向量的 $L_2$ 范数被压在约 $\sqrt{512} \approx 22.6$ 以内；又由于 RoPE 保持向量 $L_2$ 范数不变，旋转后每个通道的最大绝对值也天然低于 $\sqrt{512} \approx 22.6$（训练期间观察到的最大值约 10），远小于单级 E2M1 × E4M3 所能表达的 $448 \times 6 = 2688$ 上限。
 
 将量化放在 RoPE 之后执行，在精度上与 RoPE 前量化几乎无异，同时免去了 Decode 阶段读取后的额外旋转开销；局部 SWA 缓存则继续保留 FP8 以保护近端精度。
 
 ## CED 非对称编码-解码与 SWA 有界重放
 
-解决缓存容量之后，多轮智能体面对未命中前缀的 Prefill 算力压力依然沉重。受 YOCO 启发，DeepSeek-V4.1-Flash 采用**因果编码-解码架构（CED）**，把 40 层拆成 20 层因果编码器与 20 层解码器[^paper]。
+解决缓存容量之后，多轮智能体面对未命中前缀的 Prefill 算力压力依然沉重。受 YOCO 启发，DeepSeek-V4.1-Flash 采用 **CED（Causal Encoder-Decoder，因果编码-解码架构）**，把 40 层拆成 20 层因果编码器与 20 层解码器[^paper]。
 
 前 20 层在 Prefill 阶段仅激活 8B 参数，完整处理全部 $N$ 个输入 token；在编码器顶层输出 $H_{L/2}$ 处，后 20 层（L20–L39）的**全局分支**直接从 $H_{L/2}$ 一次性线性投影出全部所需的全局 KV 与压缩门控分，免去让长前缀穿行深层 MoE 网络（总激活在 Decode 时才回升至 16B）[^paper]：
 
@@ -106,12 +106,12 @@ $$
 
 执行索引筛选时，`DeepseekV41Indexer` 在各张量并行卡上复制全部索引头避免跨卡通信，通过 `npu_quant_lightning_indexer_v3`（或 A5 打包 MXFP4 算子）按模式参数切换生成候选池或仅在候选池内打分，最终由 `npu_sparse_flash_mla` 配合 `replay_block_table` 完成有界重放执行。
 
-| 论文机制（arXiv:2609.19969） | `vLLM` GPU 对应抽象                                 | `vllm-ascend` NPU 对应抽象                                |
-| :--------------------------- | :-------------------------------------------------- | :-------------------------------------------------------- |
-| Full / Reindex / Reuse 路由  | `is_kv_source` / `is_index_source` 路由标志         | `DeepseekV41LayerRole` 与 `DeepseekV41Topology`           |
-| HSI 两级候选筛选             | `DeepseekV4Indexer` 与共享 `candidate_block_buffer` | `DeepseekV41Indexer` 调 `npu_quant_lightning_indexer_v3`  |
-| 288 B NVFP4 与 MXFP4 布局    | `nvfp4_ds_mla`（288 B）配 `FlashMLAMegaAttnBackend` | `quantize_mxfp4_indexer` 配 `qsmla` / 稀疏 Flash MLA 算子 |
-| CED 截断与 Decoder 有界重放  | `DecoderReplayLayers` 按请求末窗口切分              | `AscendDSAV41Impl` 传 `replay_block_table` 执行           |
+| 论文机制（arXiv:2609.19969） | `vLLM` GPU 对应抽象                    | `vllm-ascend` NPU 对应抽象           |
+| :--------------------------- | :------------------------------------- | :----------------------------------- |
+| Full / Reindex / Reuse 路由  | `is_kv_source`、`is_index_source` 标志 | `DeepseekV41LayerRole` / `Topology`  |
+| HSI 两级候选筛选             | `DeepseekV4Indexer`、`candidate_block` | `DeepseekV41Indexer` 配 `indexer_v3` |
+| 288 B NVFP4 与 MXFP4         | `nvfp4_ds_mla` + `FlashMLAMegaAttn`    | `quantize_mxfp4_indexer` 配 `qsmla`  |
+| CED 截断与 Decoder 有界重放  | `DecoderReplayLayers` 按末窗口切分     | `AscendDSAV41Impl` 传 `replay_block` |
 
 ## PyTorch 参考实现与结构验证
 
@@ -133,26 +133,40 @@ class HierarchicalSparseIndexer(nn.Module):
         super().__init__()
         self.blk_sz, self.m_cand, self.k_top = blk_sz, m_cand, k_top
 
-    def select_full(self, q_idx: torch.Tensor, k_slots: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
+    def select_full(
+        self, q_idx: torch.Tensor, k_slots: torch.Tensor
+    ) -> tuple[torch.Tensor, torch.Tensor]:
         n_slots = k_slots.shape[0]
-        # 1. 按块长 blk_sz 分块并取每块最大内积，粗筛 m_cand 个候选块展开成 candidate_slots
+        # 1. 按块长 blk_sz 分块并取块极值，粗筛 m_cand 个候选块展开成 candidate_slots
         blk_max = (k_slots @ q_idx).view(n_slots // self.blk_sz, self.blk_sz).amax(dim=1)
         cand_blks = torch.topk(blk_max, k=self.m_cand, sorted=False).indices
-        cand_slots = (cand_blks.unsqueeze(1) * self.blk_sz + torch.arange(self.blk_sz)).reshape(-1)
+        offs = torch.arange(self.blk_sz)
+        cand_slots = (cand_blks.unsqueeze(1) * self.blk_sz + offs).reshape(-1)
         # 2. 在固定候选池内执行细粒度 Top-k（对应 Decoder L20 Full）
-        topk_ids = cand_slots[torch.topk(k_slots[cand_slots] @ q_idx, k=self.k_top, sorted=False).indices]
+        cand_scores = k_slots[cand_slots] @ q_idx
+        top_local = torch.topk(cand_scores, k=self.k_top, sorted=False).indices
+        topk_ids = cand_slots[top_local]
         return cand_slots, topk_ids
 
-    def select_reindex(self, q_idx: torch.Tensor, k_slots: torch.Tensor, cand_slots: torch.Tensor) -> torch.Tensor:
+    def select_reindex(
+        self, q_idx: torch.Tensor, k_slots: torch.Tensor, cand_slots: torch.Tensor
+    ) -> torch.Tensor:
         # 仅在共享候选池 cand_slots 上重打分，避免全量 O(L) 扫描
-        local_ids = torch.topk(k_slots[cand_slots] @ q_idx, k=self.k_top, sorted=False).indices
+        cand_scores = k_slots[cand_slots] @ q_idx
+        local_ids = torch.topk(cand_scores, k=self.k_top, sorted=False).indices
         return cand_slots[local_ids]
 
 
 class CSA2AttentionLayer(nn.Module):
     """CSA2 三态路由层（对应 vLLM `is_kv_source` 与 `is_index_source` 控制流）。"""
 
-    def __init__(self, d_model: int, d_idx: int, is_kv_source: bool, is_index_source: bool):
+    def __init__(
+        self,
+        d_model: int,
+        d_idx: int,
+        is_kv_source: bool,
+        is_index_source: bool,
+    ):
         super().__init__()
         self.is_kv_source, self.is_index_source = is_kv_source, is_index_source
         # 仅当本层是 KV 源层时才持有独立的全局 KV / Indexer-K 投影权重（CED 下由 H_{L/2} 投影）
@@ -168,7 +182,7 @@ class CSA2AttentionLayer(nn.Module):
         cand_slots: torch.Tensor | None = None,
         topk_ids: torch.Tensor | None = None,
     ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-        # 1. Full / Reuse 之间按 is_kv_source 决定新写还是复用上游全局缓存（CED 模式读取 h_enc_top）
+        # 1. Full / Reuse 按 is_kv_source 决定新写或复用（CED 模式读 h_enc_top）
         if self.is_kv_source:
             kv_src = h_enc_top if h_enc_top is not None else h
             shared_kv = self.kv_proj(kv_src)  # [n_slots, d_idx]
@@ -177,7 +191,8 @@ class CSA2AttentionLayer(nn.Module):
         if self.is_kv_source and self.is_index_source:
             cand_slots, topk_ids = self.indexer.select_full(self.q_proj(h[-1]), shared_kv)
         elif self.is_index_source:
-            topk_ids = self.indexer.select_reindex(self.q_proj(h[-1]), shared_kv, cand_slots)
+            q_vec = self.q_proj(h[-1])
+            topk_ids = self.indexer.select_reindex(q_vec, shared_kv, cand_slots)
         # else (Reuse 层): 直接沿用上游传来的 shared_kv 与 topk_ids，零索引开销
         return shared_kv, cand_slots, topk_ids
 
@@ -185,24 +200,36 @@ class CSA2AttentionLayer(nn.Module):
 if __name__ == "__main__":
     torch.manual_seed(42)
     n_slots, d_model, d_idx = 4096, 32, 32
-    full_layer = CSA2AttentionLayer(d_model, d_idx, is_kv_source=True, is_index_source=True)
-    reindex_layer = CSA2AttentionLayer(d_model, d_idx, is_kv_source=False, is_index_source=True)
-    reuse_layer = CSA2AttentionLayer(d_model, d_idx, is_kv_source=False, is_index_source=False)
+    full_layer = CSA2AttentionLayer(
+        d_model, d_idx, is_kv_source=True, is_index_source=True
+    )
+    reindex_layer = CSA2AttentionLayer(
+        d_model, d_idx, is_kv_source=False, is_index_source=True
+    )
+    reuse_layer = CSA2AttentionLayer(
+        d_model, d_idx, is_kv_source=False, is_index_source=False
+    )
 
     with torch.no_grad():
         h_enc_top = torch.randn(n_slots, d_model)
-        kv_shared, cand_slots, topk_full = full_layer(torch.randn(n_slots, d_model), h_enc_top=h_enc_top)
-        _, _, topk_reindex = reindex_layer(torch.randn(n_slots, d_model), shared_kv=kv_shared, cand_slots=cand_slots)
-        _, _, topk_reuse = reuse_layer(torch.randn(n_slots, d_model), shared_kv=kv_shared, topk_ids=topk_reindex)
+        x_in = torch.randn(n_slots, d_model)
+        kv_shared, cand_slots, topk_full = full_layer(x_in, h_enc_top=h_enc_top)
+        _, _, topk_reindex = reindex_layer(
+            torch.randn(n_slots, d_model), shared_kv=kv_shared, cand_slots=cand_slots
+        )
+        _, _, topk_reuse = reuse_layer(
+            torch.randn(n_slots, d_model), shared_kv=kv_shared, topk_ids=topk_reindex
+        )
         assert kv_shared.shape == (n_slots, d_idx)
-        assert cand_slots.shape == (64 * 8,) and topk_full.shape == topk_reindex.shape == topk_reuse.shape == (16,)
+        assert cand_slots.shape == (64 * 8,)
+        assert topk_full.shape == topk_reindex.shape == topk_reuse.shape == (16,)
 ```
 
 把全局缓存压到 890 B/token 并切出半程编码-解码，也带有几项明确的使用前提：4 比特 E2M1 每个数值区间仅有 15 个非零刻度，需要依靠每 16 维 E4M3 微缩放与后训练 QAT 才能稳住精度；同时 HSI 的 Reindex 与 Reuse 层假定解码器的注意力焦点落在大致相同的粗块范围内，跨多跳推理时若后半层焦点完全偏离 L20 选出的 16,384 候选槽位，便无法再读取落选块。
 
 在推理系统侧，调度器还必须把长周期 SSD 全局缓存（不少于 72 小时）与分钟级 DRAM SWA 热池拆开管理[^paper]。
 
-从 V2 MLA 到 V4.1 CSA2 + CED，注意力与 KV 缓存的压缩沿着宽度、序列与层数三维推进，单 token 全局缓存已降至 890 B。接下来的第二条演化轴线转向主干 FFN 的计算参数墙：看 [06 细粒度混合专家（DeepSeekMoE）](../06-moe/) 如何用专家细粒度切分、共享隔离与无辅损动态偏置在扩展总参数的同时控住单步激活量。
+从 V2 MLA 到 V4.1 CSA2 + CED，注意力与 KV 缓存的压缩沿着宽度、序列与层数三维推进，单 token 全局缓存已降至 890 B。接下来的第二条演化轴线转向主干 FFN 的计算参数墙：看 [06 DeepSeekMoE 细粒度混合专家](../06-moe/) 如何用专家细粒度切分、共享隔离与无辅损动态偏置在扩展总参数的同时控住单步激活量。
 
 [^paper]: DeepSeek-AI，“DeepSeek-V4.1-Flash Technical Report”，2026。[arXiv:2609.19969](https://arxiv.org/abs/2609.19969)，§2.1–2.4、§3.2 与 §4.2.1。
 

@@ -199,13 +199,17 @@ def build_01_nvlink_vs_hccs() -> None:
         font_size=12,
     )
 
-    c.connect("l_e1", "l_t1", "l_su", tone="fg", exit_xy=(0.5, 1.0), entry_xy=(0.5, 0.0))
-    c.connect("l_e2", "l_su_node", "l_su_pod", label="MNNVL", tone="fg", exit_xy=(0.5, 1.0), entry_xy=(0.5, 0.0))
-    c.connect("l_e3", "l_su", "l_so", label="跨机 RDMA", tone="muted", dashed=True, exit_xy=(0.5, 1.0), entry_xy=(0.5, 0.0))
+    c.connect("l_e1", "l_t1", "l_su", tone="fg", ortho=False, exit_xy=(0.5, 1.0), entry_xy=(0.5, 0.0))
+    c.connect("l_e2", "l_su_node", "l_su_pod", tone="fg", ortho=False, exit_xy=(0.5, 1.0), entry_xy=(0.5, 0.0))
+    c.text("lbl_l_e2", 180, 236, 112, 24, "MNNVL", size=12, tone="muted", align="left")
+    c.connect("l_e3", "l_su", "l_so", tone="muted", dashed=True, ortho=False, exit_xy=(0.5, 1.0), entry_xy=(0.5, 0.0))
+    c.text("lbl_l_e3", 180, 360, 120, 24, "跨机 RDMA", size=12, tone="muted", align="left")
 
-    c.connect("r_e1", "r_t1", "r_su", tone="fg", exit_xy=(0.5, 1.0), entry_xy=(0.5, 0.0))
-    c.connect("r_e2", "r_su_node", "r_su_pod", label="Unified Bus", tone="fg", exit_xy=(0.5, 1.0), entry_xy=(0.5, 0.0))
-    c.connect("r_e3", "r_su", "r_so", label="跨机 RoCE", tone="muted", dashed=True, exit_xy=(0.5, 1.0), entry_xy=(0.5, 0.0))
+    c.connect("r_e1", "r_t1", "r_su", tone="fg", ortho=False, exit_xy=(0.5, 1.0), entry_xy=(0.5, 0.0))
+    c.connect("r_e2", "r_su_node", "r_su_pod", tone="fg", ortho=False, exit_xy=(0.5, 1.0), entry_xy=(0.5, 0.0))
+    c.text("lbl_r_e2", 532, 236, 112, 24, "Unified Bus", size=12, tone="muted", align="left")
+    c.connect("r_e3", "r_su", "r_so", tone="muted", dashed=True, ortho=False, exit_xy=(0.5, 1.0), entry_xy=(0.5, 0.0))
+    c.text("lbl_r_e3", 532, 360, 120, 24, "跨机 RoCE", size=12, tone="muted", align="left")
 
     out_path = (
         POSTS_ROOT
@@ -295,10 +299,10 @@ def build_02_tp_sp_sharding() -> None:
         emphasis=True,
         font_size=12,
     )
-    c.connect("tp_c1", "tp_x", "tp_wcol", tone="fg", exit_xy=(1.0, 0.5), entry_xy=(0.0, 0.5))
-    c.connect("tp_c2", "tp_wcol", "tp_y", tone="fg", exit_xy=(1.0, 0.5), entry_xy=(0.0, 0.5))
-    c.connect("tp_c3", "tp_y", "tp_wrow", tone="fg", exit_xy=(1.0, 0.5), entry_xy=(0.0, 0.5))
-    c.connect("tp_c4", "tp_wrow", "tp_ar", tone="fg", exit_xy=(1.0, 0.5), entry_xy=(0.0, 0.5))
+    c.connect("tp_c1", "tp_x", "tp_wcol", tone="fg", ortho=False, exit_xy=(1.0, 0.5), entry_xy=(0.0, 0.5))
+    c.connect("tp_c2", "tp_wcol", "tp_y", tone="fg", ortho=False, exit_xy=(1.0, 0.5), entry_xy=(0.0, 0.5))
+    c.connect("tp_c3", "tp_y", "tp_wrow", tone="fg", ortho=False, exit_xy=(1.0, 0.5), entry_xy=(0.0, 0.5))
+    c.connect("tp_c4", "tp_wrow", "tp_ar", tone="fg", ortho=False, exit_xy=(1.0, 0.5), entry_xy=(0.0, 0.5))
 
     # Section 2: Sequence Parallelism (SP)
     c.group(
@@ -354,9 +358,9 @@ def build_02_tp_sp_sharding() -> None:
         tone="highlight",
         font_size=12,
     )
-    c.connect("sp_c1", "sp_rs", "sp_shard", tone="fg", exit_xy=(1.0, 0.5), entry_xy=(0.0, 0.5))
-    c.connect("sp_c2", "sp_shard", "sp_norm", tone="fg", exit_xy=(1.0, 0.5), entry_xy=(0.0, 0.5))
-    c.connect("sp_c3", "sp_norm", "sp_ag", tone="fg", exit_xy=(1.0, 0.5), entry_xy=(0.0, 0.5))
+    c.connect("sp_c1", "sp_rs", "sp_shard", tone="fg", ortho=False, exit_xy=(1.0, 0.5), entry_xy=(0.0, 0.5))
+    c.connect("sp_c2", "sp_shard", "sp_norm", tone="fg", ortho=False, exit_xy=(1.0, 0.5), entry_xy=(0.0, 0.5))
+    c.connect("sp_c3", "sp_norm", "sp_ag", tone="fg", ortho=False, exit_xy=(1.0, 0.5), entry_xy=(0.0, 0.5))
 
     # Section 3: Ring Context Parallelism (CP)
     c.group(
@@ -364,7 +368,7 @@ def build_02_tp_sp_sharding() -> None:
         0,
         344,
         CANVAS_W,
-        184,
+        216,
         title="3. Ring 上下文并行 (CP)：Qi 原地驻留，KVj 沿环接力轮转完成在线 Softmax",
         tone="highlight",
         dashed=True,
@@ -394,9 +398,9 @@ def build_02_tp_sp_sharding() -> None:
     c.node(
         "cp_attn0",
         168,
-        408,
+        384,
         144,
-        72,
+        120,
         "在线归并 (m0, l0)\n无需汇聚完整 KV",
         tone="neutral",
         font_size=12,
@@ -426,18 +430,28 @@ def build_02_tp_sp_sharding() -> None:
     c.node(
         "cp_attn1",
         512,
-        408,
+        384,
         160,
-        72,
+        120,
         "P2P Send/Recv\n通信掩盖在 Attention 内",
         tone="activation",
         font_size=12,
     )
-    c.connect("cp_c1", "cp_q0", "cp_attn0", tone="fg", exit_xy=(1.0, 0.5), entry_xy=(0.0, 0.3))
-    c.connect("cp_c2", "cp_kv0", "cp_attn0", tone="fg", exit_xy=(1.0, 0.5), entry_xy=(0.0, 0.7))
-    c.connect("cp_c3", "cp_kv0", "cp_kv1", label="Ring 轮转 KV", tone="muted", dashed=True, exit_xy=(1.0, 0.8), entry_xy=(0.0, 0.8))
-    c.connect("cp_c4", "cp_q1", "cp_attn1", tone="fg", exit_xy=(1.0, 0.5), entry_xy=(0.0, 0.3))
-    c.connect("cp_c5", "cp_kv1", "cp_attn1", tone="fg", exit_xy=(1.0, 0.5), entry_xy=(0.0, 0.7))
+    c.connect("cp_c1", "cp_q0", "cp_attn0", tone="fg", ortho=False, exit_xy=(1.0, 0.5), entry_xy=(0.0, 0.2))
+    c.connect("cp_c2", "cp_kv0", "cp_attn0", tone="fg", ortho=False, exit_xy=(1.0, 0.5), entry_xy=(0.0, 0.8))
+    c.connect(
+        "cp_c3",
+        "cp_kv0",
+        "cp_kv1",
+        tone="muted",
+        dashed=True,
+        exit_xy=(0.5, 1.0),
+        entry_xy=(0.5, 1.0),
+        points=[(76, 536), (412, 536)],
+    )
+    c.text("lbl_ring_kv", 184, 512, 120, 20, "Ring 轮转 KV", size=12, tone="muted", align="center")
+    c.connect("cp_c4", "cp_q1", "cp_attn1", tone="fg", ortho=False, exit_xy=(1.0, 0.5), entry_xy=(0.0, 0.2))
+    c.connect("cp_c5", "cp_kv1", "cp_attn1", tone="fg", ortho=False, exit_xy=(1.0, 0.5), entry_xy=(0.0, 0.8))
 
     out_path = (
         POSTS_ROOT
@@ -473,7 +487,7 @@ def build_02_pd_disaggregation() -> None:
         "g_prefill",
         0,
         80,
-        184,
+        176,
         304,
         title="Prefill 实例池 (算力密集)",
         tone="active",
@@ -481,7 +495,7 @@ def build_02_pd_disaggregation() -> None:
     )
     c.node(
         "p_cfg",
-        16,
+        12,
         112,
         152,
         48,
@@ -492,7 +506,7 @@ def build_02_pd_disaggregation() -> None:
     )
     c.node(
         "p_comp",
-        16,
+        12,
         184,
         152,
         56,
@@ -516,9 +530,9 @@ def build_02_pd_disaggregation() -> None:
     # Middle: Async KV Transfer Fabric
     c.group(
         "g_xfer",
-        232,
+        240,
         80,
-        224,
+        208,
         304,
         title="异步零拷贝 KV 传输引擎",
         tone="highlight",
@@ -526,9 +540,9 @@ def build_02_pd_disaggregation() -> None:
     )
     c.node(
         "xfer_nv",
-        240,
+        248,
         120,
-        208,
+        192,
         104,
         "NVIDIA 栈 · NIXL / Mooncake\n• UCX / GPUDirect / NVLink\n• Layer-wise 边算边推 KV 分页",
         tone="highlight",
@@ -537,9 +551,9 @@ def build_02_pd_disaggregation() -> None:
     )
     c.node(
         "xfer_npu",
-        240,
         248,
-        208,
+        248,
+        192,
         112,
         "昇腾栈 · MooncakeLayerwise\n+ MemFabric (接替 LLMDataDist)\n• SDMA / DEVICE_RDMA / URMA",
         tone="activation",
@@ -550,9 +564,9 @@ def build_02_pd_disaggregation() -> None:
     # Right: Decode Pool
     c.group(
         "g_decode",
-        504,
+        512,
         80,
-        184,
+        176,
         304,
         title="Decode 实例池 (访存密集)",
         tone="activation",
@@ -560,7 +574,7 @@ def build_02_pd_disaggregation() -> None:
     )
     c.node(
         "d_cfg",
-        520,
+        524,
         112,
         152,
         48,
@@ -571,7 +585,7 @@ def build_02_pd_disaggregation() -> None:
     )
     c.tensor_block(
         "d_kv",
-        520,
+        528,
         192,
         144,
         64,
@@ -583,7 +597,7 @@ def build_02_pd_disaggregation() -> None:
     )
     c.node(
         "d_gen",
-        520,
+        524,
         288,
         152,
         64,
@@ -592,15 +606,21 @@ def build_02_pd_disaggregation() -> None:
         font_size=12,
     )
 
-    c.connect("e_rp", "router", "g_prefill", label="1. Prefill 请求", tone="fg", exit_xy=(0.135, 1.0), entry_xy=(0.5, 0.0))
-    c.connect("e_rd", "router", "g_decode", label="2. 元数据建链", tone="muted", dashed=True, exit_xy=(0.865, 1.0), entry_xy=(0.5, 0.0))
-    c.connect("e_pc", "p_cfg", "p_comp", tone="fg", exit_xy=(0.5, 1.0), entry_xy=(0.5, 0.0))
-    c.connect("e_pk", "p_comp", "p_kv", tone="fg", exit_xy=(0.474, 1.0), entry_xy=(0.5, 0.0))
-    c.connect("e_p2nv", "p_kv", "xfer_nv", label="RDMA\nWrite", tone="fg", exit_xy=(1.0, 0.25), entry_xy=(0.0, 0.5))
-    c.connect("e_p2npu", "p_kv", "xfer_npu", label="SDMA /\nRoCE", tone="fg", exit_xy=(1.0, 0.75), entry_xy=(0.0, 0.5))
-    c.connect("e_nv2d", "xfer_nv", "d_kv", label="KV\nReady", tone="fg", exit_xy=(1.0, 0.5), entry_xy=(0.0, 0.25))
-    c.connect("e_npu2d", "xfer_npu", "d_kv", label="Notify", tone="fg", exit_xy=(1.0, 0.5), entry_xy=(0.0, 0.75))
-    c.connect("e_dstep", "d_kv", "d_gen", tone="fg", exit_xy=(0.5, 1.0), entry_xy=(0.474, 0.0))
+    c.connect("e_rp", "router", "g_prefill", tone="fg", ortho=False, exit_xy=(0.1279, 1.0), entry_xy=(0.5, 0.0))
+    c.text("lbl_rp", 96, 48, 112, 24, "1. Prefill 请求", size=12, tone="fg", align="left")
+    c.connect("e_rd", "router", "g_decode", tone="muted", dashed=True, ortho=False, exit_xy=(0.8721, 1.0), entry_xy=(0.5, 0.0))
+    c.text("lbl_rd", 480, 48, 112, 24, "2. 元数据建链", size=12, tone="muted", align="right")
+    c.connect("e_pc", "p_cfg", "p_comp", tone="fg", ortho=False, exit_xy=(0.5, 1.0), entry_xy=(0.5, 0.0))
+    c.connect("e_pk", "p_comp", "p_kv", tone="fg", ortho=False, exit_xy=(0.5, 1.0), entry_xy=(0.5, 0.0))
+    c.connect("e_p2nv", "p_kv", "xfer_nv", tone="fg", exit_xy=(1.0, 0.25), entry_xy=(0.0, 0.5), points=[(196, 288), (196, 172)])
+    c.text("lbl_p2nv", 198, 200, 40, 32, "RDMA\nWrite", size=11, tone="muted", align="center")
+    c.connect("e_p2npu", "p_kv", "xfer_npu", tone="fg", ortho=False, exit_xy=(1.0, 0.5), entry_xy=(0.0, 0.5))
+    c.text("lbl_p2npu", 184, 312, 48, 32, "SDMA\nRoCE", size=11, tone="muted", align="center")
+    c.connect("e_nv2d", "xfer_nv", "d_kv", tone="fg", exit_xy=(1.0, 0.5), entry_xy=(0.0, 0.25), points=[(480, 172), (480, 208)])
+    c.text("lbl_nv2d", 448, 144, 64, 20, "KV Ready", size=11, tone="muted", align="center")
+    c.connect("e_npu2d", "xfer_npu", "d_kv", tone="fg", exit_xy=(1.0, 0.5), entry_xy=(0.0, 0.75), points=[(480, 304), (480, 240)])
+    c.text("lbl_npu2d", 456, 312, 48, 20, "Notify", size=11, tone="muted", align="center")
+    c.connect("e_dstep", "d_kv", "d_gen", tone="fg", ortho=False, exit_xy=(0.5, 1.0), entry_xy=(0.5, 0.0))
 
     out_path = (
         POSTS_ROOT
@@ -764,11 +784,14 @@ def build_03_deepep_vs_mc2() -> None:
         font_size=12,
     )
 
-    c.connect("l_e1", "l_ht", "l_ll", label="模式切换", tone="fg", exit_xy=(0.5, 1.0), entry_xy=(0.5, 0.0))
-    c.connect("l_e2", "l_ll", "l_v2", tone="fg", exit_xy=(0.5, 1.0), entry_xy=(0.5, 0.0))
-    c.connect("r_e1", "r_disp", "r_gmm", label="按偏移传给 GMM", tone="fg", exit_xy=(0.5, 1.0), entry_xy=(0.5, 0.0))
-    c.connect("r_e2", "r_gmm", "r_comb", label="回传", tone="fg", exit_xy=(0.5, 1.0), entry_xy=(0.5, 0.0))
-    c.connect("r_e3", "r_comb", "r_mc2", tone="fg", exit_xy=(0.5, 1.0), entry_xy=(0.5, 0.0))
+    c.connect("l_e1", "l_ht", "l_ll", tone="fg", ortho=False, exit_xy=(0.5, 1.0), entry_xy=(0.5, 0.0))
+    c.text("lbl_l_e1", 180, 148, 96, 24, "模式切换", size=12, tone="muted", align="left")
+    c.connect("l_e2", "l_ll", "l_v2", tone="fg", ortho=False, exit_xy=(0.5, 1.0), entry_xy=(0.5, 0.0))
+    c.connect("r_e1", "r_disp", "r_gmm", tone="fg", ortho=False, exit_xy=(0.5, 1.0), entry_xy=(0.5, 0.0))
+    c.text("lbl_r_e1", 532, 148, 128, 24, "按偏移传给 GMM", size=12, tone="muted", align="left")
+    c.connect("r_e2", "r_gmm", "r_comb", tone="fg", ortho=False, exit_xy=(0.5, 1.0), entry_xy=(0.5, 0.0))
+    c.text("lbl_r_e2", 532, 236, 80, 24, "回传", size=12, tone="muted", align="left")
+    c.connect("r_e3", "r_comb", "r_mc2", tone="fg", ortho=False, exit_xy=(0.5, 1.0), entry_xy=(0.5, 0.0))
 
     out_path = (
         POSTS_ROOT

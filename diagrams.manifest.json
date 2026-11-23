@@ -2,25 +2,106 @@
   "version": 1,
   "generator": "wisp-diagram@1",
   "entries": {
-    "src/content/posts/deepseek/01-mla/diagrams/01-mla-arch.drawio": {
-      "source": "sha256-d4c324ccb8a887d720e4bcffa8b69b8d6e9f272aafebe50f3ef39ba622b501df",
+    "src/content/posts/aclgraph/01-heterogeneous-streams-and-events/diagrams/01-host-device-sqcq-arch.drawio": {
+      "source": "sha256-a61c876bcbb61b7dd73cded7a0f0b128c22757b50b0f814f70a6356fe7f1fe7c",
       "style": "clean",
       "exporter": "drawio-cli",
       "embedFonts": false,
       "outputs": {
-        "src/content/posts/deepseek/01-mla/diagrams/01-mla-arch.wisp.svg": "sha256-72a0f7dc422c2184a36a82a4d13f4096614ef3151f63322d70f17c5921131160"
+        "src/content/posts/aclgraph/01-heterogeneous-streams-and-events/diagrams/01-host-device-sqcq-arch.wisp.svg": "sha256-389c9d6b0598a81178c3b73ffebb2744bcaf95ae386434fe1833fb4b6b528039"
+      },
+      "pages": [
+        "Host Device SQ CQ Arch"
+      ]
+    },
+    "src/content/posts/aclgraph/02-torch-compile-fundamentals/diagrams/02-dynamo-aot-inductor-vs-ascend.drawio": {
+      "source": "sha256-e4426d4c4cffa86b162ef1db2e3ffe495e29da77d9f7d17ebcf08fc9f9c01ae9",
+      "style": "clean",
+      "exporter": "drawio-cli",
+      "embedFonts": false,
+      "outputs": {
+        "src/content/posts/aclgraph/02-torch-compile-fundamentals/diagrams/02-dynamo-aot-inductor-vs-ascend.wisp.svg": "sha256-d91cc00647be937c5902d8ab4ca65095ca194c3296afefa160a615d40820c1b2"
+      },
+      "pages": [
+        "Torch Compile Frontend and Backends"
+      ]
+    },
+    "src/content/posts/aclgraph/03-cuda-graph-fundamentals/diagrams/03-cuda-graph-four-boundaries.excalidraw": {
+      "source": "sha256-0007110a44a9109bc84acf3f8a7872afa5e876fefb70e97cf5e7f555383346fc",
+      "style": "hand",
+      "exporter": "excalidraw-playwright",
+      "embedFonts": false,
+      "outputs": {
+        "src/content/posts/aclgraph/03-cuda-graph-fundamentals/diagrams/03-cuda-graph-four-boundaries.wisp.svg": "sha256-04d0c1db6b58bd5fb5222da2c3cd5721cb68d180f22c417951481961c56d4417"
+      }
+    },
+    "src/content/posts/aclgraph/04-acl-graph-architecture-and-capture/diagrams/04-aclgraph-capture-replay-flow.drawio": {
+      "source": "sha256-8b1ed36be6a8f5b90118c4af230e4e50340566fc603ca29167d85330b98774e9",
+      "style": "clean",
+      "exporter": "drawio-cli",
+      "embedFonts": false,
+      "outputs": {
+        "src/content/posts/aclgraph/04-acl-graph-architecture-and-capture/diagrams/04-aclgraph-capture-replay-flow.wisp.svg": "sha256-0db8918c9899852c81bcf4efde9ffc06c4ce27259e6146db9a65c30f0aa2a034"
+      },
+      "pages": [
+        "ACL Graph Capture and Replay"
+      ]
+    },
+    "src/content/posts/aclgraph/05-acl-graph-task-update-and-conditional-subgraph/diagrams/05-cond-subgraph-runtime-flow.drawio": {
+      "source": "sha256-a6cbd111327454ed2522c47549879347ec70718d5282136e85bf26f7a6a7b93c",
+      "style": "clean",
+      "exporter": "drawio-cli",
+      "embedFonts": false,
+      "outputs": {
+        "src/content/posts/aclgraph/05-acl-graph-task-update-and-conditional-subgraph/diagrams/05-cond-subgraph-runtime-flow.wisp.svg": "sha256-2a22ea8f4a76d84611da3ac17ed0da9f4d98939207f07e882fc0b6d557870c4d"
+      },
+      "pages": [
+        "ACL Graph TaskUpdate and Cond Subgraph"
+      ]
+    },
+    "src/content/posts/aclgraph/06-acl-graph-fullstack-and-vllm-ascend/diagrams/06-aclgraph-four-layer-stack.drawio": {
+      "source": "sha256-935c0c2ecc0d404d54543c8fbd3b6605828624b945bb33f82327ee138b496ee3",
+      "style": "clean",
+      "exporter": "drawio-cli",
+      "embedFonts": false,
+      "outputs": {
+        "src/content/posts/aclgraph/06-acl-graph-fullstack-and-vllm-ascend/diagrams/06-aclgraph-four-layer-stack.wisp.svg": "sha256-b88abf53087288e84a40c76bfe303e71c71fbea3b9294ea727543b00864b0867"
+      },
+      "pages": [
+        "ACL Graph Four Layer Fullstack"
+      ]
+    },
+    "src/content/posts/aclgraph/diagrams/00-three-layer-execution-stack.drawio": {
+      "source": "sha256-b9bf95ca02b062969e3b69b06c159fad0c796326207b6802b309f0341a773833",
+      "style": "clean",
+      "exporter": "drawio-cli",
+      "embedFonts": false,
+      "outputs": {
+        "src/content/posts/aclgraph/diagrams/00-three-layer-execution-stack.wisp.svg": "sha256-74689cfd933f603c17a37e4c009233778862d6f87d0efe9c1d282cebc1acc705"
+      },
+      "pages": [
+        "ACL Graph Three Layer Execution Stack"
+      ]
+    },
+    "src/content/posts/deepseek/01-mla/diagrams/01-mla-arch.drawio": {
+      "source": "sha256-dcf0390cecf4e3954515570b8e55d445fd83cbe6a57f8500ee2b4792ac151bd2",
+      "style": "clean",
+      "exporter": "drawio-cli",
+      "embedFonts": false,
+      "outputs": {
+        "src/content/posts/deepseek/01-mla/diagrams/01-mla-arch.wisp.svg": "sha256-8fb817ca31af9660ff9bc6ee5ce6f219efe8f1b51d5f52a397542f310cd3256b"
       },
       "pages": [
         "01-mla-arch"
       ]
     },
     "src/content/posts/deepseek/01-mla/diagrams/01-mla-gpu-vs-npu-runtime.drawio": {
-      "source": "sha256-c4b8116f9dcfd8e286823c917c239d9b7251aa8894579ecdd295449c77a6b799",
+      "source": "sha256-18442e33a6a04b5d75df457ab0f34e8072b4bee259bc9090836638120b405025",
       "style": "clean",
       "exporter": "drawio-cli",
       "embedFonts": false,
       "outputs": {
-        "src/content/posts/deepseek/01-mla/diagrams/01-mla-gpu-vs-npu-runtime.wisp.svg": "sha256-bde115e27894229a1b3bb0da61834ef3373c0fd5ab58fabcae9b796a78dc8f78"
+        "src/content/posts/deepseek/01-mla/diagrams/01-mla-gpu-vs-npu-runtime.wisp.svg": "sha256-4da3a8ed2c40900aaec5caa3c2a46b67843cfa0054df72d30add222ce7a08402"
       },
       "pages": [
         "01-mla-runtime"
@@ -39,24 +120,24 @@
       ]
     },
     "src/content/posts/deepseek/02-swa-and-nsa/diagrams/02-nsa-gqa-tile-arch.drawio": {
-      "source": "sha256-6aede67bb14b1645cbabac6ee65bc7721c1e02090b463c64e4907c56a0a4200d",
+      "source": "sha256-1c5d403c4353a0beb2156ca5d89b401c6bbf65fda86d7fbf515989f41160cfd0",
       "style": "clean",
       "exporter": "drawio-cli",
       "embedFonts": false,
       "outputs": {
-        "src/content/posts/deepseek/02-swa-and-nsa/diagrams/02-nsa-gqa-tile-arch.wisp.svg": "sha256-ba897cd0b5ae1312e836373e9791e870104869af776f014d05a02500c9984af7"
+        "src/content/posts/deepseek/02-swa-and-nsa/diagrams/02-nsa-gqa-tile-arch.wisp.svg": "sha256-acd78e13ed025ec10477adc9b16c23df0c14f39ef26570b26898684171a2e2c0"
       },
       "pages": [
         "02-nsa-gqa-tile"
       ]
     },
     "src/content/posts/deepseek/02-swa-and-nsa/diagrams/02-nsa-three-branch.drawio": {
-      "source": "sha256-a0f944a0a7990d6f1d7b6fafe072c9e55e1631f1515a188a4b86c49eb5c3c702",
+      "source": "sha256-edbc140fda4fa7fce77e1d85bad38f3d26b1555fe90efc9e8d9024f7b09554dc",
       "style": "clean",
       "exporter": "drawio-cli",
       "embedFonts": false,
       "outputs": {
-        "src/content/posts/deepseek/02-swa-and-nsa/diagrams/02-nsa-three-branch.wisp.svg": "sha256-ae2338148a7ea020e3532567aa0caffd84e623d16d7e36131ffde6e43de0afa4"
+        "src/content/posts/deepseek/02-swa-and-nsa/diagrams/02-nsa-three-branch.wisp.svg": "sha256-cbf5bd36bffe0e4e9bd04095293cdc4038aa5ee5582ed2fa8e5d031bfdc323cc"
       },
       "pages": [
         "DeepSeek NSA Three-Branch Sparse Attention"
@@ -80,7 +161,7 @@
       "exporter": "drawio-cli",
       "embedFonts": false,
       "outputs": {
-        "src/content/posts/deepseek/03-dsa/diagrams/03-dsa-gpu-vs-npu-runtime.wisp.svg": "sha256-aaa1fc60c01d2a40593e5bd12c56f5f6c343d0c1ba21caeb65baa6d6526d779b"
+        "src/content/posts/deepseek/03-dsa/diagrams/03-dsa-gpu-vs-npu-runtime.wisp.svg": "sha256-503174e62dbdc324bf7e338f5419e138b69f473012ed64b482aca4a1d996cc82"
       },
       "pages": [
         "03-dsa-runtime"
@@ -99,12 +180,12 @@
       ]
     },
     "src/content/posts/deepseek/04-csa-and-hca/diagrams/04-csa-hca-arch.drawio": {
-      "source": "sha256-1f304dc3386ec9e26ac07da142ec2a2b238aaa185d4590a16d0f69c1bdbee0c6",
+      "source": "sha256-4a4412c704c3cc292e55b9193183984e50e73388d2e925a3a0a39a616f96926a",
       "style": "clean",
       "exporter": "drawio-cli",
       "embedFonts": false,
       "outputs": {
-        "src/content/posts/deepseek/04-csa-and-hca/diagrams/04-csa-hca-arch.wisp.svg": "sha256-ea1965ddefc5ead61933dfc3867ad75cba72a494354f1dc1bbb8a3537867bd77"
+        "src/content/posts/deepseek/04-csa-and-hca/diagrams/04-csa-hca-arch.wisp.svg": "sha256-9bb070988578372d21731490b80e1e4ae91cdd79ba78130484ca143c04ee59f8"
       },
       "pages": [
         "04-csa-hca"
@@ -123,36 +204,36 @@
       ]
     },
     "src/content/posts/deepseek/05-csa2-and-ced/diagrams/05-ced-prefix-arch.drawio": {
-      "source": "sha256-5063d927b45fc818a78964384fac35057039e99c093e472198772fceec30deb7",
+      "source": "sha256-4c95c7bfb4eb8cc57e82b2c7ccf1a32bb9ff594cf7b7e7e70eac212f05a901a3",
       "style": "clean",
       "exporter": "drawio-cli",
       "embedFonts": false,
       "outputs": {
-        "src/content/posts/deepseek/05-csa2-and-ced/diagrams/05-ced-prefix-arch.wisp.svg": "sha256-e12ea035ebe77ae79ac9d55a12d5b99d14a23137efd80a16633a57c4cae1c910"
+        "src/content/posts/deepseek/05-csa2-and-ced/diagrams/05-ced-prefix-arch.wisp.svg": "sha256-5e7887eb5ab6696418866969f3cc32d660d25ec5665ba4346ccd967a1b6f8460"
       },
       "pages": [
         "05-ced-prefix"
       ]
     },
     "src/content/posts/deepseek/05-csa2-and-ced/diagrams/05-csa2-hsi-arch.drawio": {
-      "source": "sha256-8b43f433f494cbe076e3a76707b6ae05a317c7559c131d56a32b7095cc600db9",
+      "source": "sha256-a2770b3df46eb1141eff5ec0b0d8882dc0a147d08ddaa7b4ea475974965292e4",
       "style": "clean",
       "exporter": "drawio-cli",
       "embedFonts": false,
       "outputs": {
-        "src/content/posts/deepseek/05-csa2-and-ced/diagrams/05-csa2-hsi-arch.wisp.svg": "sha256-8de8aa2dd4a9ce1c73c28fa7ed281d1baecb262f11b54078e42e5ba36b7f9e83"
+        "src/content/posts/deepseek/05-csa2-and-ced/diagrams/05-csa2-hsi-arch.wisp.svg": "sha256-6ebfb2b751f7e91b7bec5275e8e92b62c46822b4b7419f84723ab6f9b4ced1c1"
       },
       "pages": [
         "DeepSeek-V4.1 CSA2 and HSI Architecture"
       ]
     },
     "src/content/posts/deepseek/06-moe/diagrams/06-deepseekmoe-arch.drawio": {
-      "source": "sha256-fff815a6d4035614dcac30296254fff8903f867f699555e566d286eef060e03c",
+      "source": "sha256-dd6cadf97ccbf72fa6732dc1abc0100321cd9b0491ac460d5825d52a220a6cab",
       "style": "clean",
       "exporter": "drawio-cli",
       "embedFonts": false,
       "outputs": {
-        "src/content/posts/deepseek/06-moe/diagrams/06-deepseekmoe-arch.wisp.svg": "sha256-88d6a95dda402100845bdb2073139d0e037723c4e81de8d813cdfffd8ec1b7a5"
+        "src/content/posts/deepseek/06-moe/diagrams/06-deepseekmoe-arch.wisp.svg": "sha256-651b360a940e47fcab302fab65d980014d77d3c97c15853a3e033a094f1567da"
       },
       "pages": [
         "deepseekmoe-arch"
@@ -176,19 +257,19 @@
       "exporter": "drawio-cli",
       "embedFonts": false,
       "outputs": {
-        "src/content/posts/deepseek/07-engram/diagrams/11-engram-dist-lookup.wisp.svg": "sha256-e82b4a307047b3e59baf85c5ea63b926a2b349549f093be7aeff25fa915afeaf"
+        "src/content/posts/deepseek/07-engram/diagrams/11-engram-dist-lookup.wisp.svg": "sha256-abd0c0111d0a536f93acfe56cbd36ca1662cebc4995c7108326dd3aef8c77d18"
       },
       "pages": [
         "engram-dist-lookup"
       ]
     },
     "src/content/posts/deepseek/07-engram/diagrams/11-engram-gate-disambig.drawio": {
-      "source": "sha256-3ab022410afb09041c8ea839131f37e5590b28c1453a9052ca2c5ab8193eec84",
+      "source": "sha256-bdf771ab8b670df00c5e3089a86850f5210d8cb75fbbaf167d2235ae13f18c9e",
       "style": "clean",
       "exporter": "drawio-cli",
       "embedFonts": false,
       "outputs": {
-        "src/content/posts/deepseek/07-engram/diagrams/11-engram-gate-disambig.wisp.svg": "sha256-d7493c40378ef773c44e13782553256176b1dc16d67dd5a863b375d090df439a"
+        "src/content/posts/deepseek/07-engram/diagrams/11-engram-gate-disambig.wisp.svg": "sha256-453fc83cdcdd4147d4023b7f3dd73ce9094362f3cdc4d2f9e74518001fa5b743"
       },
       "pages": [
         "Engram Context Gate Disambiguation"
@@ -207,24 +288,24 @@
       ]
     },
     "src/content/posts/deepseek/07-engram/diagrams/11-engram-layer.drawio": {
-      "source": "sha256-5dbff03320c511b3808ea7c656d6892796fdfca2639b3288034f89b0e341384f",
+      "source": "sha256-106314e928bd303c1ceb04ba9359adcdc78f14fe8600e6c9a649360b2cb9fa80",
       "style": "clean",
       "exporter": "drawio-cli",
       "embedFonts": false,
       "outputs": {
-        "src/content/posts/deepseek/07-engram/diagrams/11-engram-layer.wisp.svg": "sha256-401784a59ff0f7370ab5da95e1663c61b737676df65968284ebf6725580dd1fb"
+        "src/content/posts/deepseek/07-engram/diagrams/11-engram-layer.wisp.svg": "sha256-68b3145844e68619da79119e4143df3fb2e89a86e50a8013d0ec20a4767b2ac2"
       },
       "pages": [
         "engram-layer"
       ]
     },
     "src/content/posts/deepseek/07-engram/diagrams/11-engram-runtime.drawio": {
-      "source": "sha256-64f7432a59b703dcbbcf8a94715fe1b25764c4512ab554b1b337cb1be3122c90",
+      "source": "sha256-6f792226bcf05b2441338ac5ede1d44c9fe4e8adfed18c56e35f24960106016d",
       "style": "clean",
       "exporter": "drawio-cli",
       "embedFonts": false,
       "outputs": {
-        "src/content/posts/deepseek/07-engram/diagrams/11-engram-runtime.wisp.svg": "sha256-ebc9a1f49b08eb1042bc80b0379b16f8e0f0f4dd5ff10eb396abe0489af27c5d"
+        "src/content/posts/deepseek/07-engram/diagrams/11-engram-runtime.wisp.svg": "sha256-604cd76e5c40dfbc995fcace945c694c8892f12fba4bd734932c74642921a937"
       },
       "pages": [
         "engram-runtime-prefetch"
@@ -236,16 +317,16 @@
       "exporter": "excalidraw-playwright",
       "embedFonts": false,
       "outputs": {
-        "src/content/posts/deepseek/07-engram/diagrams/11-shortconv-dilation.wisp.svg": "sha256-e5f498e4677b7ef8ab7a659dec55088b985cd6d443f470e763589f546721997e"
+        "src/content/posts/deepseek/07-engram/diagrams/11-shortconv-dilation.wisp.svg": "sha256-6654a90029149fd5449c052dc7be27997eda88267112f1ce4467f31dfd203f83"
       }
     },
     "src/content/posts/deepseek/08-mhc/diagrams/08-mhc-arch-comp.drawio": {
-      "source": "sha256-541c3f2cc241881908474832107cd7f63f6b9b13a1b98510f00e0ad30ad9aa2b",
+      "source": "sha256-706da1671ff077a9024825e0522b6a3fe253a505f119ae28ab05da2931f3ed13",
       "style": "clean",
       "exporter": "drawio-cli",
       "embedFonts": false,
       "outputs": {
-        "src/content/posts/deepseek/08-mhc/diagrams/08-mhc-arch-comp.wisp.svg": "sha256-c3315060d97680d6e9c3fc3272a70f3c7410780ca5764f3292ba0249f06c5256"
+        "src/content/posts/deepseek/08-mhc/diagrams/08-mhc-arch-comp.wisp.svg": "sha256-acd54169314423e53c16846f8654aad0a564c013f173242de3baad85820334f3"
       },
       "pages": [
         "mhc-arch-comp"
@@ -257,7 +338,7 @@
       "exporter": "drawio-cli",
       "embedFonts": false,
       "outputs": {
-        "src/content/posts/deepseek/08-mhc/diagrams/08-mhc-block-trace.wisp.svg": "sha256-1447fb52dc37150a95c08a69a92a595a526af36c6a0b3e2fa84e4e665fc62800"
+        "src/content/posts/deepseek/08-mhc/diagrams/08-mhc-block-trace.wisp.svg": "sha256-4cc1c24f5029111bddbd227f03980a379ee1f93d677fc4dcabb21c2ecde3d2bc"
       },
       "pages": [
         "mhc-block-trace"
@@ -269,7 +350,7 @@
       "exporter": "drawio-cli",
       "embedFonts": false,
       "outputs": {
-        "src/content/posts/deepseek/08-mhc/diagrams/08-mhc-single-pass.wisp.svg": "sha256-792f370fee84f7ecff6f498c525593d160b31357aea1af079325db0a2b061fd8"
+        "src/content/posts/deepseek/08-mhc/diagrams/08-mhc-single-pass.wisp.svg": "sha256-03490c53fc399a487842f4ecb84deba118090fc71df1cce0a4df2ed8164b2576"
       },
       "pages": [
         "mhc-single-pass"
@@ -281,7 +362,7 @@
       "exporter": "drawio-cli",
       "embedFonts": false,
       "outputs": {
-        "src/content/posts/deepseek/08-mhc/diagrams/08-mhc-sinkhorn-stability.wisp.svg": "sha256-b17101bc05ebbe6bb7f4cc9a2350e0be9669f2f7c04e4bfca1983e2094a4317c"
+        "src/content/posts/deepseek/08-mhc/diagrams/08-mhc-sinkhorn-stability.wisp.svg": "sha256-5836293c1f5bcb0e9347ed52530395feedb9f707867fae1b865fd0a3629df3c7"
       },
       "pages": [
         "mhc-sinkhorn-stability"
@@ -305,7 +386,7 @@
       "exporter": "drawio-cli",
       "embedFonts": false,
       "outputs": {
-        "src/content/posts/deepseek/09-mtp-and-dspark/diagrams/09-mtp-vllm-runtime.wisp.svg": "sha256-cdb14f6ed009f5bd12c1497c9365c109ef443517d52e228350318e811602cc6e"
+        "src/content/posts/deepseek/09-mtp-and-dspark/diagrams/09-mtp-vllm-runtime.wisp.svg": "sha256-557678107735aef584ac3edabf13b7f0148d26574e6a2b244b0e3d6c7af73951"
       },
       "pages": [
         "mtp-vllm-runtime"
@@ -324,60 +405,60 @@
       ]
     },
     "src/content/posts/deepseek/10-architecture-synthesis/diagrams/10-five-gen-ledger.drawio": {
-      "source": "sha256-8c27234b591e11d2f24e597fbc2716e14a883540adea929e28d2c9ad8e3319c2",
+      "source": "sha256-400dbf18576a33b254fc50fa4cedab789241f0d398e969b122b1c88e4936971a",
       "style": "clean",
       "exporter": "drawio-cli",
       "embedFonts": false,
       "outputs": {
-        "src/content/posts/deepseek/10-architecture-synthesis/diagrams/10-five-gen-ledger.wisp.svg": "sha256-6cffa125db9744ee1e0459e286f6f30ca68a6e212cad25b425dca56da1e65ea7"
+        "src/content/posts/deepseek/10-architecture-synthesis/diagrams/10-five-gen-ledger.wisp.svg": "sha256-9f61b1a1a0b9648affaa0758efbc690657a8f089d6912c7d1c0590e515d849a4"
       },
       "pages": [
         "five-gen-ledger"
       ]
     },
     "src/content/posts/deepseek/10-architecture-synthesis/diagrams/10-v41-layer-panoramic.drawio": {
-      "source": "sha256-aa353368657f043c24b9c874513edd6357de61407f22f300f11b5103712a07e5",
+      "source": "sha256-3903299648bab0213840e74f550e0c17361e6c05d3b61351781334c8c1a09835",
       "style": "clean",
       "exporter": "drawio-cli",
       "embedFonts": false,
       "outputs": {
-        "src/content/posts/deepseek/10-architecture-synthesis/diagrams/10-v41-layer-panoramic.wisp.svg": "sha256-f61c30904b12b24e7dcaddbcd48c1252055428e7d8aebb34ca28e3d498d52d03"
+        "src/content/posts/deepseek/10-architecture-synthesis/diagrams/10-v41-layer-panoramic.wisp.svg": "sha256-e603482031827a139f7d7c894401471319d4c974d707530f71f4a7223e0d0f4c"
       },
       "pages": [
         "DeepSeek-V4.1 Full Decode Step"
       ]
     },
     "src/content/posts/distributed/01-interconnects-and-collectives/diagrams/01-nvlink-vs-hccs-arch.drawio": {
-      "source": "sha256-e8b3a006c87272fef13140b213eb1e3ae7cd6b59adf783976d51b0073054992f",
+      "source": "sha256-f0f9abc730d3880f22b40c27b6adcb9b741b826315a0abe0bd8b8474da0ec2a0",
       "style": "clean",
       "exporter": "drawio-cli",
       "embedFonts": false,
       "outputs": {
-        "src/content/posts/distributed/01-interconnects-and-collectives/diagrams/01-nvlink-vs-hccs-arch.wisp.svg": "sha256-7ece5b483c4f5317ec831afb30c44a5d8ee919e7f0b8c1a9163128792180bd32"
+        "src/content/posts/distributed/01-interconnects-and-collectives/diagrams/01-nvlink-vs-hccs-arch.wisp.svg": "sha256-44ad80da6dd0efee69601ed225e0a0fc3c827f0d205a70dc52c08f45dce65737"
       },
       "pages": [
         "NVLink vs HCCS"
       ]
     },
     "src/content/posts/distributed/02-parallelism-and-disaggregation/diagrams/02-pd-disaggregation-arch.drawio": {
-      "source": "sha256-bdd3ef00aeff1f7b008eaf3f5c1fb2b8b1f1153d305f32df9a054be5964c958f",
+      "source": "sha256-6b01dcf9f88d9b9fb213a6a559502900810d0bae0c7fb4e38f8634a5d78dcb67",
       "style": "clean",
       "exporter": "drawio-cli",
       "embedFonts": false,
       "outputs": {
-        "src/content/posts/distributed/02-parallelism-and-disaggregation/diagrams/02-pd-disaggregation-arch.wisp.svg": "sha256-71aa11148d59116f952650c2c5675bfdea262b7a2380826607a7393b9c0ff193"
+        "src/content/posts/distributed/02-parallelism-and-disaggregation/diagrams/02-pd-disaggregation-arch.wisp.svg": "sha256-d7d648efd5b28ed462334615d8524fff81f8223b0a991f3e18715c06286de181"
       },
       "pages": [
         "PD Disaggregation"
       ]
     },
     "src/content/posts/distributed/02-parallelism-and-disaggregation/diagrams/02-tp-sp-sharding.drawio": {
-      "source": "sha256-12988f8c97396609147de18ba937e709de8f6956346dc35c4d5adbbcedee268b",
+      "source": "sha256-a390f95abf9e40788b7d4ff174163d15fb59d70c6778ee59a8143c8eca84ee9d",
       "style": "clean",
       "exporter": "drawio-cli",
       "embedFonts": false,
       "outputs": {
-        "src/content/posts/distributed/02-parallelism-and-disaggregation/diagrams/02-tp-sp-sharding.wisp.svg": "sha256-2f435ea5dc9f9191cc136537c1baff7cf9be4868e8d582768a2906e762067a52"
+        "src/content/posts/distributed/02-parallelism-and-disaggregation/diagrams/02-tp-sp-sharding.wisp.svg": "sha256-92d6ea142eb467bb13c63a3721998ebd6b94efa3ed12d2c78b6723109de577bd"
       },
       "pages": [
         "TP SP CP Sharding"
@@ -396,129 +477,165 @@
       ]
     },
     "src/content/posts/distributed/03-moe-comm-and-overlap/diagrams/03-deepep-vs-mc2-arch.drawio": {
-      "source": "sha256-d56bfca690785c45864d3e71f2fe779b7cf37917c571c9d96f0792761423dd0f",
+      "source": "sha256-f1042fec6fed4f7e6088d1fa3a14110930f732ee2d535b3cac6869d48f4ad1ea",
       "style": "clean",
       "exporter": "drawio-cli",
       "embedFonts": false,
       "outputs": {
-        "src/content/posts/distributed/03-moe-comm-and-overlap/diagrams/03-deepep-vs-mc2-arch.wisp.svg": "sha256-7e17919533672ef708a13736c814bb8550ee656a78f0921046088542a18b2dbf"
+        "src/content/posts/distributed/03-moe-comm-and-overlap/diagrams/03-deepep-vs-mc2-arch.wisp.svg": "sha256-a4cc597851b274f2fc092b43b07b09514fac2dad0e0c748bb8740a88303c15d0"
       },
       "pages": [
         "DeepEP vs MC2"
       ]
     },
-    "src/content/posts/foundations/01-hardware-and-roofline/diagrams/01-forward-pass-flow.drawio": {
-      "source": "sha256-5d6cbd40dca15247ab719a5efb29a310b0ec2bc96bc58b3e0c7083aa4c09fd46",
+    "src/content/posts/foundations/01-workload-and-roofline/diagrams/01-forward-pass-flow.drawio": {
+      "source": "sha256-06f9cf41fddc83a7b80f550074d2c35f1f82e1309e97b0c34ca7cca7c3fdac3b",
       "style": "clean",
       "exporter": "drawio-cli",
       "embedFonts": false,
       "outputs": {
-        "src/content/posts/foundations/01-hardware-and-roofline/diagrams/01-forward-pass-flow.wisp.svg": "sha256-4692b83ad4c6f87b8e36968408ced7a253eb7c52262864099198f6b93d2f5a63"
+        "src/content/posts/foundations/01-workload-and-roofline/diagrams/01-forward-pass-flow.wisp.svg": "sha256-16020a8e781c1731be6e9d7ffeb70f0487612767b40e3578b226fbdf82422287"
       },
       "pages": [
         "Decoder Layer Forward Flow"
       ]
     },
-    "src/content/posts/foundations/01-hardware-and-roofline/diagrams/01-gpu-vs-npu-arch.drawio": {
-      "source": "sha256-99e01e90033f24fab8289bb484509bd6b5a8799e72cd019b9191b74082c175e2",
+    "src/content/posts/foundations/01-workload-and-roofline/diagrams/01-kernel-fusion-hbm-trips.drawio": {
+      "source": "sha256-51eba3b113d5e08c7d7a19913d4771bfbe4c4b72aecff33f9d6d1091db6a74cd",
       "style": "clean",
       "exporter": "drawio-cli",
       "embedFonts": false,
       "outputs": {
-        "src/content/posts/foundations/01-hardware-and-roofline/diagrams/01-gpu-vs-npu-arch.wisp.svg": "sha256-ed986447407e07db5a58838e7451c4828cb39a5d3da2c1aceadfa3b14c7dd8ff"
+        "src/content/posts/foundations/01-workload-and-roofline/diagrams/01-kernel-fusion-hbm-trips.wisp.svg": "sha256-adf0d653a2b64a7bc2ef2c92bc2271b5f87c5a48dbfe200fe0d08f6292eeff2d"
       },
       "pages": [
-        "NVIDIA SM vs Ascend AI Core"
+        "Kernel Fusion HBM Trips"
       ]
     },
-    "src/content/posts/foundations/02-attention-and-rope/diagrams/02-yarn-spectrum.drawio": {
+    "src/content/posts/foundations/01-workload-and-roofline/diagrams/01-roofline-concept.drawio": {
+      "source": "sha256-278680065f0ebac211732fb380da639f57aaea4320089a838fb612ee6729af81",
+      "style": "clean",
+      "exporter": "drawio-cli",
+      "embedFonts": false,
+      "outputs": {
+        "src/content/posts/foundations/01-workload-and-roofline/diagrams/01-roofline-concept.wisp.svg": "sha256-df8a16836a8e2c7ed59acef82cdd89fcca1228783c1d75dfe9b25182335dac87"
+      },
+      "pages": [
+        "Single-Chip Roofline Concept"
+      ]
+    },
+    "src/content/posts/foundations/02-gpu-and-ascend-architecture/diagrams/02-sm-vs-aicore-floorplan.drawio": {
+      "source": "sha256-0bcff11b00d1e0b561d06516936aec489dec7cd8b8de717b52bf41139e1cfd0d",
+      "style": "clean",
+      "exporter": "drawio-cli",
+      "embedFonts": false,
+      "outputs": {
+        "src/content/posts/foundations/02-gpu-and-ascend-architecture/diagrams/02-sm-vs-aicore-floorplan.wisp.svg": "sha256-c6f0fcb470633daf706211c02277f6b4ad965c1dff1a6ba15d63c748206d5cb8"
+      },
+      "pages": [
+        "SM vs AI Core Floorplan"
+      ]
+    },
+    "src/content/posts/foundations/02-gpu-and-ascend-architecture/diagrams/02-tensor-core-vs-cube-tiling.drawio": {
+      "source": "sha256-f475966d3e7f77c7e8607d48ffb8aea3c3540916e4725a5177a684e57b754125",
+      "style": "clean",
+      "exporter": "drawio-cli",
+      "embedFonts": false,
+      "outputs": {
+        "src/content/posts/foundations/02-gpu-and-ascend-architecture/diagrams/02-tensor-core-vs-cube-tiling.wisp.svg": "sha256-df3eae8eec9471c64de076037bbf4fae97b8a7bac5cf436617a55a7f64d4cab9"
+      },
+      "pages": [
+        "Tensor Core vs Ascend Cube Geometry"
+      ]
+    },
+    "src/content/posts/foundations/03-attention-and-rope/diagrams/03-yarn-spectrum.drawio": {
       "source": "sha256-b551bf7905a72774163306797f17ecd464d95fb4f01fd50df0afcc330e543174",
       "style": "clean",
       "exporter": "drawio-cli",
       "embedFonts": false,
       "outputs": {
-        "src/content/posts/foundations/02-attention-and-rope/diagrams/02-yarn-spectrum.wisp.svg": "sha256-1b81379a292d1417030cbc49d34061d490967d952b34d29560810a34c3153cb2"
+        "src/content/posts/foundations/03-attention-and-rope/diagrams/03-yarn-spectrum.wisp.svg": "sha256-007fc017ac973a6fb2759ce85ab4fc2e16951dc039e331ac97ed18888a7d381b"
       },
       "pages": [
         "YaRN Frequency Ramp and Cache Layout"
       ]
     },
-    "src/content/posts/foundations/03-kv-cache-and-gqa/diagrams/03-gpu-vs-npu-kv-layout.drawio": {
-      "source": "sha256-c32828e88d0190a0449652740801cd706cafc19d87de41bb9876fa8c3671bfeb",
+    "src/content/posts/foundations/04-kv-cache-and-gqa/diagrams/04-gpu-vs-npu-kv-layout.drawio": {
+      "source": "sha256-1fe2dae0ead96ee5dfa691666aa026fb2b1d3dc2223ed7b481a36401e26b6a5d",
       "style": "clean",
       "exporter": "drawio-cli",
       "embedFonts": false,
       "outputs": {
-        "src/content/posts/foundations/03-kv-cache-and-gqa/diagrams/03-gpu-vs-npu-kv-layout.wisp.svg": "sha256-fbb47d33d33d7ba6eeaa25df146413983005946828cef258b85d9160186e6746"
+        "src/content/posts/foundations/04-kv-cache-and-gqa/diagrams/04-gpu-vs-npu-kv-layout.wisp.svg": "sha256-d2bc64cb8b2bc8a5d88b9cf407bf1a778c1e0f54917421637c92193ec0fd14c3"
       },
       "pages": [
         "GPU ND vs Ascend PA_NZ KV Layout"
       ]
     },
-    "src/content/posts/foundations/03-kv-cache-and-gqa/diagrams/03-mqa-gqa-arch.drawio": {
-      "source": "sha256-666765df77e86c65c2045887b6ed4f1f330fa3a5c2c6713d884e06597fbcc837",
+    "src/content/posts/foundations/04-kv-cache-and-gqa/diagrams/04-mqa-gqa-arch.drawio": {
+      "source": "sha256-666167a56087be107c8324aa5e2c9c9ed1cda60747e9cecb53df5f28bd65500c",
       "style": "clean",
       "exporter": "drawio-cli",
       "embedFonts": false,
       "outputs": {
-        "src/content/posts/foundations/03-kv-cache-and-gqa/diagrams/03-mqa-gqa-arch.wisp.svg": "sha256-a1ab930f446f05bc341200301a77aff41e4395a13bf0f07933cb2a364bb5c964"
+        "src/content/posts/foundations/04-kv-cache-and-gqa/diagrams/04-mqa-gqa-arch.wisp.svg": "sha256-be3cc7dd2ce7bf7aaf9c53930fdf9997522660c6f39791326387c6ff8574c559"
       },
       "pages": [
         "MHA GQA MQA Proportional KV"
       ]
     },
-    "src/content/posts/foundations/04-flash-attention/diagrams/04-flashmla-hardware-pipelines.drawio": {
+    "src/content/posts/foundations/05-flash-attention/diagrams/05-flashmla-hardware-pipelines.drawio": {
       "source": "sha256-993af705af91ba44fea70d4116f8a58013c12ceb312e0b961826776fd45359c6",
       "style": "clean",
       "exporter": "drawio-cli",
       "embedFonts": false,
       "outputs": {
-        "src/content/posts/foundations/04-flash-attention/diagrams/04-flashmla-hardware-pipelines.wisp.svg": "sha256-80f2e300b194f2eec728cb516bae415b4661d32b677b2ec8e03f0bdf62cc488d"
+        "src/content/posts/foundations/05-flash-attention/diagrams/05-flashmla-hardware-pipelines.wisp.svg": "sha256-377fecd9da7d09641d326c969adb4ee95a986c5d16c977a405bcfce0f8d8b3fd"
       },
       "pages": [
         "FlashMLA Multi-Hardware Pipeline Evolution"
       ]
     },
-    "src/content/posts/foundations/04-flash-attention/diagrams/04-sram-tiling-arch.drawio": {
-      "source": "sha256-a5a741f6296b17990cb3f415ab283b94add2aa6cc049cd88fdfbe7823c2dc0bb",
+    "src/content/posts/foundations/05-flash-attention/diagrams/05-sram-tiling-arch.drawio": {
+      "source": "sha256-35a59a9142bc2aa56c96b63da3423eb38185587ac33ba6e0e629acc7331125f0",
       "style": "clean",
       "exporter": "drawio-cli",
       "embedFonts": false,
       "outputs": {
-        "src/content/posts/foundations/04-flash-attention/diagrams/04-sram-tiling-arch.wisp.svg": "sha256-8c1d3524264e3a8fa6c9651e602ffea3feb0741c3e0105409ab214c9b1394e8d"
+        "src/content/posts/foundations/05-flash-attention/diagrams/05-sram-tiling-arch.wisp.svg": "sha256-c998893a82fbfc54d29e73c02bd4f10817465c7126ca703c1f493da7bd807baf"
       },
       "pages": [
         "SRAM Tiling Architecture"
       ]
     },
-    "src/content/posts/foundations/05-quantization/diagrams/05-bitformats-contrast.excalidraw": {
+    "src/content/posts/foundations/06-quantization/diagrams/06-bitformats-contrast.excalidraw": {
       "source": "sha256-130d2f4c121de5be0c67ed0bbd9ef3dcf7869d90fae17eb013b81ae2d760d65c",
       "style": "hand",
       "exporter": "excalidraw-playwright",
       "embedFonts": false,
       "outputs": {
-        "src/content/posts/foundations/05-quantization/diagrams/05-bitformats-contrast.wisp.svg": "sha256-4b246dbcebb25bac269d20edf336643b9bffcc7d02147327d2ac5ff238b26cc0"
+        "src/content/posts/foundations/06-quantization/diagrams/06-bitformats-contrast.wisp.svg": "sha256-a9fd74589c6f9461edec2234d435f4e4763eb4a98994e25e4454d0d133ad77bf"
       }
     },
-    "src/content/posts/foundations/05-quantization/diagrams/05-outlier-quant-comparison.drawio": {
+    "src/content/posts/foundations/06-quantization/diagrams/06-outlier-quant-comparison.drawio": {
       "source": "sha256-4246828009fa3612091e80a2d23a4acbba0b95e998dca734c3ae2b3592d1a9a9",
       "style": "clean",
       "exporter": "drawio-cli",
       "embedFonts": false,
       "outputs": {
-        "src/content/posts/foundations/05-quantization/diagrams/05-outlier-quant-comparison.wisp.svg": "sha256-5b569718fce043b4523b377effbb60d06e34bfb4b1c128824dcf258dbd6ca577"
+        "src/content/posts/foundations/06-quantization/diagrams/06-outlier-quant-comparison.wisp.svg": "sha256-51874b508609239e434102bdad0c9f24ca6d1641f30908f30781fa0e10e12e00"
       },
       "pages": [
         "Outlier Channel Trap and SQNR Recovery"
       ]
     },
     "src/content/posts/vllm/01-paged-attention-and-scheduler/diagrams/01-v1-scheduler-arch.drawio": {
-      "source": "sha256-ddfdc8b686178159dfa8de04776392d0a56d05703e6e69765fbf400531324cb7",
+      "source": "sha256-7f79a8bf6b0802f9d7f435acaf8f22b97eed3e1091be628a2b8debad27764f86",
       "style": "clean",
       "exporter": "drawio-cli",
       "embedFonts": false,
       "outputs": {
-        "src/content/posts/vllm/01-paged-attention-and-scheduler/diagrams/01-v1-scheduler-arch.wisp.svg": "sha256-6aa588fff60d9a8a4eaab10d83538c6f4feb962a3ed929717f97f7d72c57b90b"
+        "src/content/posts/vllm/01-paged-attention-and-scheduler/diagrams/01-v1-scheduler-arch.wisp.svg": "sha256-b3f6cab2ffdf005edd11d2d58db17d8875f255bffe758638c104120a2c99dd57"
       },
       "pages": [
         "V1 Scheduler Arch"
@@ -537,24 +654,24 @@
       ]
     },
     "src/content/posts/vllm/02-async-execution-and-launch-wall/diagrams/02-async-output-arch.drawio": {
-      "source": "sha256-ad7d1b1801131014dbfd565b7eb2995ad614c47dc33a8621db3aea645af58cb4",
+      "source": "sha256-3ee0c7277c5e79f711e7032351eb888583c717f67daf080b4de3358cd62bcb76",
       "style": "clean",
       "exporter": "drawio-cli",
       "embedFonts": false,
       "outputs": {
-        "src/content/posts/vllm/02-async-execution-and-launch-wall/diagrams/02-async-output-arch.wisp.svg": "sha256-30154a9d4231bbb6142db0b6a1a5c8c66a1034ec10c3166fdcd33f98788ac8bc"
+        "src/content/posts/vllm/02-async-execution-and-launch-wall/diagrams/02-async-output-arch.wisp.svg": "sha256-de127bcd16b3f772c892431c0a0a41e54ef938bf5488548bdd6e2692edf463b8"
       },
       "pages": [
         "AsyncOutput Arch"
       ]
     },
     "src/content/posts/vllm/03-torch-compile-and-piecewise/diagrams/03-fx-split-graph.drawio": {
-      "source": "sha256-76d15d87bc0b3dc5af7d3d0f2364b346897ec0366718f0016c221af99b513f76",
+      "source": "sha256-cba88d3adcf01e6be63c5cc89c70ccf547044e1ecafc653e2977364068245f11",
       "style": "clean",
       "exporter": "drawio-cli",
       "embedFonts": false,
       "outputs": {
-        "src/content/posts/vllm/03-torch-compile-and-piecewise/diagrams/03-fx-split-graph.wisp.svg": "sha256-276d73ef083e6bdd9c23c0969a278f3683614f547b696b913ed97875ae1c1a78"
+        "src/content/posts/vllm/03-torch-compile-and-piecewise/diagrams/03-fx-split-graph.wisp.svg": "sha256-91e8355f717d12bbd5ce9ccef447b02ab8618614ecc670ef052a192fba490e33"
       },
       "pages": [
         "FX Split Graph"
@@ -566,19 +683,19 @@
       "exporter": "drawio-cli",
       "embedFonts": false,
       "outputs": {
-        "src/content/posts/vllm/03-torch-compile-and-piecewise/diagrams/03-inductor-vs-ascend-compile.wisp.svg": "sha256-3c6c39f982bf1991b45829294c4b1f7e5fbdf59634cce3af26ed4e984375c5bf"
+        "src/content/posts/vllm/03-torch-compile-and-piecewise/diagrams/03-inductor-vs-ascend-compile.wisp.svg": "sha256-e054c925ae53f385921213534bc92a473f07e5e702297858e15921fc8c73ee3c"
       },
       "pages": [
         "Inductor vs AscendCompiler"
       ]
     },
     "src/content/posts/vllm/04-cuda-graph-and-boundaries/diagrams/04-cuda-graph-capture-replay.drawio": {
-      "source": "sha256-a7f9e6ebb7c1f460cc49c1d8e3fff3bc9424c1dea8a11fdd66fe9a31a88c3a61",
+      "source": "sha256-1b02cd73a780ab5e7f0fa8c4f48ff7189ea0034d286cc597b8c6b6d38824d941",
       "style": "clean",
       "exporter": "drawio-cli",
       "embedFonts": false,
       "outputs": {
-        "src/content/posts/vllm/04-cuda-graph-and-boundaries/diagrams/04-cuda-graph-capture-replay.wisp.svg": "sha256-ad9b2580f8c8efa3a31c070f419f9d3d1e1fdd970b254430f95107f77bf0302b"
+        "src/content/posts/vllm/04-cuda-graph-and-boundaries/diagrams/04-cuda-graph-capture-replay.wisp.svg": "sha256-93c9cfe17d8183189462ea642643777db68a2fed3637425a5c845e977f2e604a"
       },
       "pages": [
         "CUDA Graph Capture Replay and Four Boundaries"
@@ -590,7 +707,7 @@
       "exporter": "excalidraw-playwright",
       "embedFonts": false,
       "outputs": {
-        "src/content/posts/vllm/04-cuda-graph-and-boundaries/diagrams/04-four-boundaries-cards.wisp.svg": "sha256-72287f1d40fdadd1e5d744ba28ebabd73c35b716888b0c07dbf502026c7639be"
+        "src/content/posts/vllm/04-cuda-graph-and-boundaries/diagrams/04-four-boundaries-cards.wisp.svg": "sha256-833462beea23f13ef89154bb5fb5f01510a9c689375b1395e82b7827b28d8d91"
       }
     },
     "src/content/posts/vllm/05-runtime-dispatch-and-nesting/diagrams/05-dp-dispatch-consensus.drawio": {
@@ -605,37 +722,13 @@
         "DP Dispatch Consensus and Anti-Deadlock"
       ]
     },
-    "src/content/posts/vllm/06-ascend-aclgraph-and-npugraph/diagrams/06-aclgraph-hot-update-timeline.drawio": {
-      "source": "sha256-1134cf321e5cfca2973b2a79db4413b15111c656985972e59a3f8dae9347ec47",
-      "style": "clean",
-      "exporter": "drawio-cli",
-      "embedFonts": false,
-      "outputs": {
-        "src/content/posts/vllm/06-ascend-aclgraph-and-npugraph/diagrams/06-aclgraph-hot-update-timeline.wisp.svg": "sha256-79f432a2a5ad3eabccb008c8f9155a5a45acbe981f5001342becdc4a31d0012a"
-      },
-      "pages": [
-        "Ascend ACLGraph Sparse Buckets and UpdatableGraph Hot-Patch"
-      ]
-    },
-    "src/content/posts/vllm/06-ascend-aclgraph-and-npugraph/diagrams/06-aclgraph-vs-npugraph-arch.drawio": {
-      "source": "sha256-8b1c25a0ae54757ba7f31618e804366aa0f5be76563d845030573edf94160fed",
-      "style": "clean",
-      "exporter": "drawio-cli",
-      "embedFonts": false,
-      "outputs": {
-        "src/content/posts/vllm/06-ascend-aclgraph-and-npugraph/diagrams/06-aclgraph-vs-npugraph-arch.wisp.svg": "sha256-f07bcab3b7e6a092a6a873cdcc4d5323d2bbdeb763ebfb40661f684a1bf40ceb"
-      },
-      "pages": [
-        "ACLGraph vs npugraph_ex"
-      ]
-    },
-    "src/content/posts/vllm/07-profiling-and-debugging/diagrams/07-profiler-five-signatures.drawio": {
+    "src/content/posts/vllm/06-profiling-and-debugging/diagrams/06-profiler-five-signatures.drawio": {
       "source": "sha256-e2829f64cd1a05a0be77f40b0c2b8d293a6dc69c73c5c4791b8759691857f103",
       "style": "clean",
       "exporter": "drawio-cli",
       "embedFonts": false,
       "outputs": {
-        "src/content/posts/vllm/07-profiling-and-debugging/diagrams/07-profiler-five-signatures.wisp.svg": "sha256-252d82c2952b1e60db222e5317e349607a99d6db0ba7e0e36dc6b8a0279f5875"
+        "src/content/posts/vllm/06-profiling-and-debugging/diagrams/06-profiler-five-signatures.wisp.svg": "sha256-9adfa14231452a585be0c63905fd828e7cca15c60035530c45b335268a23bc15"
       },
       "pages": [
         "Five Profiler Timeline Signatures"

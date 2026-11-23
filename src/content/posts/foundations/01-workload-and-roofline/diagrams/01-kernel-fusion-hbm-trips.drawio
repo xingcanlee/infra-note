@@ -1,0 +1,82 @@
+<mxfile host="wisp-diagram">
+  <diagram id="foundations-01-kernel-fusion-hbm-trips" name="Kernel Fusion HBM Trips">
+    <mxGraphModel dx="800" dy="600" grid="1" gridSize="8" guides="1" page="0" math="0" shadow="0">
+      <root>
+        <mxCell id="0"/>
+        <mxCell id="1" parent="0"/>
+        <mxCell id="hdr" value="算子融合消除中间写回：实线↑ 从 HBM 读取 · 虚线↓ 写回 HBM · 横线→ 片上寄存器/UB 直连" style="text;html=1;whiteSpace=wrap;align=center;verticalAlign=middle;fontFamily=Inter;fontSize=12;fontColor=#5c6067;" vertex="1" parent="1">
+          <mxGeometry x="0" y="0" width="688" height="24" as="geometry"/>
+        </mxCell>
+        <mxCell id="fusion_left" value="未融合：3 次启动 · 6 次 HBM 往返" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#fbf2df;strokeColor=#7b5518;strokeWidth=1.25;verticalAlign=top;align=left;spacingLeft=12;spacingTop=6;fontFamily=Inter;fontSize=12;fontStyle=1;fontColor=#7b5518;container=0;" vertex="1" parent="1">
+          <mxGeometry x="0" y="32" width="336" height="280" as="geometry"/>
+        </mxCell>
+        <mxCell id="fusion_right" value="融合 Kernel：1 次启动 · 2 次 HBM 往返" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f2fb;strokeColor=#2f5783;strokeWidth=1.25;verticalAlign=top;align=left;spacingLeft=12;spacingTop=6;fontFamily=Inter;fontSize=12;fontStyle=1;fontColor=#2f5783;container=0;" vertex="1" parent="1">
+          <mxGeometry x="352" y="32" width="336" height="280" as="geometry"/>
+        </mxCell>
+        <mxCell id="u_sm_band" value="SM / Vector 片上算子（逐次启动）" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#f4f4f2;strokeColor=#5c6067;strokeWidth=1.25;verticalAlign=top;align=left;spacingLeft=12;spacingTop=6;fontFamily=Inter;fontSize=12;fontStyle=1;fontColor=#5c6067;container=0;" vertex="1" parent="1">
+          <mxGeometry x="24" y="72" width="288" height="80" as="geometry"/>
+        </mxCell>
+        <mxCell id="u_op1" value="RMSNorm" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#fbf2df;strokeColor=#7b5518;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="32" y="112" width="64" height="32" as="geometry"/>
+        </mxCell>
+        <mxCell id="u_op2" value="SiLU" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#fbf2df;strokeColor=#7b5518;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="136" y="112" width="64" height="32" as="geometry"/>
+        </mxCell>
+        <mxCell id="u_op3" value="× Mul" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#fbf2df;strokeColor=#7b5518;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="240" y="112" width="64" height="32" as="geometry"/>
+        </mxCell>
+        <mxCell id="u_hbm" value="片外 HBM 显存（6× 总线往返）" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#fbf2df;strokeColor=#7b5518;strokeWidth=2;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="24" y="232" width="288" height="40" as="geometry"/>
+        </mxCell>
+        <mxCell id="u_ld0" value="" style="endArrow=classic;startArrow=none;html=1;strokeColor=#1d1d1f;strokeWidth=1.25;exitX=0.0833;exitY=0.0;exitDx=0;exitDy=0;entryX=0.25;entryY=1.0;entryDx=0;entryDy=0;" edge="1" parent="1" source="u_hbm" target="u_op1">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="u_st0" value="" style="endArrow=classic;startArrow=none;html=1;strokeColor=#5c6067;strokeWidth=1.25;dashed=1;dashPattern=4 4;exitX=0.75;exitY=1.0;exitDx=0;exitDy=0;entryX=0.1944;entryY=0.0;entryDx=0;entryDy=0;" edge="1" parent="1" source="u_op1" target="u_hbm">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="u_ld1" value="" style="endArrow=classic;startArrow=none;html=1;strokeColor=#1d1d1f;strokeWidth=1.25;exitX=0.4444;exitY=0.0;exitDx=0;exitDy=0;entryX=0.25;entryY=1.0;entryDx=0;entryDy=0;" edge="1" parent="1" source="u_hbm" target="u_op2">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="u_st1" value="" style="endArrow=classic;startArrow=none;html=1;strokeColor=#5c6067;strokeWidth=1.25;dashed=1;dashPattern=4 4;exitX=0.75;exitY=1.0;exitDx=0;exitDy=0;entryX=0.5556;entryY=0.0;entryDx=0;entryDy=0;" edge="1" parent="1" source="u_op2" target="u_hbm">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="u_ld2" value="" style="endArrow=classic;startArrow=none;html=1;strokeColor=#1d1d1f;strokeWidth=1.25;exitX=0.8056;exitY=0.0;exitDx=0;exitDy=0;entryX=0.25;entryY=1.0;entryDx=0;entryDy=0;" edge="1" parent="1" source="u_hbm" target="u_op3">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="u_st2" value="" style="endArrow=classic;startArrow=none;html=1;strokeColor=#5c6067;strokeWidth=1.25;dashed=1;dashPattern=4 4;exitX=0.75;exitY=1.0;exitDx=0;exitDy=0;entryX=0.9167;entryY=0.0;entryDx=0;entryDy=0;" edge="1" parent="1" source="u_op3" target="u_hbm">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="f_sm_band" value="SM 寄存器 / 昇腾 UB（单 Kernel 链）" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f2fb;strokeColor=#2f5783;strokeWidth=1.25;verticalAlign=top;align=left;spacingLeft=12;spacingTop=6;fontFamily=Inter;fontSize=12;fontStyle=1;fontColor=#2f5783;container=0;" vertex="1" parent="1">
+          <mxGeometry x="376" y="72" width="288" height="80" as="geometry"/>
+        </mxCell>
+        <mxCell id="f_op1" value="RMSNorm" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e3f5f3;strokeColor=#0f766e;strokeWidth=2;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="384" y="112" width="64" height="32" as="geometry"/>
+        </mxCell>
+        <mxCell id="f_op2" value="SiLU" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e3f5f3;strokeColor=#0f766e;strokeWidth=2;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="488" y="112" width="64" height="32" as="geometry"/>
+        </mxCell>
+        <mxCell id="f_op3" value="× Mul" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e3f5f3;strokeColor=#0f766e;strokeWidth=2;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="592" y="112" width="64" height="32" as="geometry"/>
+        </mxCell>
+        <mxCell id="f_ch1" value="" style="endArrow=classic;startArrow=none;html=1;strokeColor=#1d1d1f;strokeWidth=2;exitX=1.0;exitY=0.5;exitDx=0;exitDy=0;entryX=0.0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="f_op1" target="f_op2">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="f_ch2" value="" style="endArrow=classic;startArrow=none;html=1;strokeColor=#1d1d1f;strokeWidth=2;exitX=1.0;exitY=0.5;exitDx=0;exitDy=0;entryX=0.0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="f_op2" target="f_op3">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="f_save" value="省 3× HBM 流量" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f2fb;strokeColor=#2f5783;strokeWidth=1.25;dashed=1;dashPattern=4 4;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="456" y="176" width="128" height="32" as="geometry"/>
+        </mxCell>
+        <mxCell id="f_hbm" value="片外 HBM 显存（仅首尾 2× 往返）" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f2fb;strokeColor=#2f5783;strokeWidth=2;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="376" y="232" width="288" height="40" as="geometry"/>
+        </mxCell>
+        <mxCell id="f_ld" value="" style="endArrow=classic;startArrow=none;html=1;strokeColor=#1d1d1f;strokeWidth=2;exitX=0.1389;exitY=0.0;exitDx=0;exitDy=0;entryX=0.5;entryY=1.0;entryDx=0;entryDy=0;" edge="1" parent="1" source="f_hbm" target="f_op1">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="f_st" value="" style="endArrow=classic;startArrow=none;html=1;strokeColor=#5c6067;strokeWidth=2;dashed=1;dashPattern=4 4;exitX=0.5;exitY=1.0;exitDx=0;exitDy=0;entryX=0.8611;entryY=0.0;entryDx=0;entryDy=0;" edge="1" parent="1" source="f_op3" target="f_hbm">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

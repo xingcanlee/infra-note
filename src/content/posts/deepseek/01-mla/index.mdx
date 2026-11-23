@@ -1,5 +1,5 @@
 ---
-title: '01 多头潜在注意力（MLA）：低秩联合压缩、解耦 RoPE 与矩阵吸收'
+title: '01 MLA 多头潜在注意力：低秩联合压缩、解耦 RoPE 与矩阵吸收'
 description: '拆解 DeepSeek-V2/V3 如何将每 token 的 KV 缓存压低 93.3%：从低秩联合压缩、解耦 RoPE 与双向矩阵吸收，到 Prefill/Decode 双路径算力账本及 GPU/NPU 落地。'
 series: { id: deepseek, order: 2 }
 pubDate: 2026-11-04
@@ -8,11 +8,11 @@ category: AI Infra
 toc: true
 ---
 
-在[03 KV Cache 与 GQA](../../foundations/03-kv-cache-and-gqa/)中，分组查询注意力（GQA）通过让多个 Query 头共用一组 KV 头来压缩显存，但直接削减独立 KV 头的数量会在从零预训练的多学科推理任务上带来精度损失[^dsv2-paper]。
+在[04 KV Cache 与 GQA](../../foundations/04-kv-cache-and-gqa/)中，GQA（Grouped-Query Attention，分组查询注意力）通过让多个 Query 头共用一组 KV 头来压缩显存，但直接削减独立 KV 头的数量会在从零预训练的多学科推理任务上带来精度损失[^dsv2-paper]。
 
-多头潜在注意力（Multi-Head Latent Attention，MLA）换了一条线性代数路线：把所有头的 Key 与 Value 写入显存前先联合压成一条共享的低秩潜在向量，在解码计算时再借助矩阵结合律绕过显式展开，在不缩减多头数量的前提下压低缓存体积。
+**MLA（Multi-Head Latent Attention，多头潜在注意力）**换了一条线性代数路线：把所有头的 Key 与 Value 写入显存前先联合压成一条共享的低秩潜在向量，在解码计算时再借助矩阵结合律绕过显式展开，在不缩减多头数量的前提下压低缓存体积。
 
-在 DeepSeek-V2 与 V3 的配置下，MLA 将每层每个 token 的 KV 缓存压至 576 个元素（512 维内容潜向量与 64 维旋转位置键），在 BF16 精度下仅占 1,152 B。相比 DeepSeek 67B 模型基线，DeepSeek-V2 借助 MLA 与细粒度 MoE 把 KV 缓存削减 93.3%，节省 42.5% 训练算力开销，在 8 卡 H800 上将最大生成吞吐提升至 5.76 倍（超过 50,000 tokens/s），同时基准成绩反超标准多头注意力（MHA）[^dsv2-paper]。
+在 DeepSeek-V2 与 V3 的配置下，MLA 将每层每个 token 的 KV 缓存压至 576 个元素（512 维内容潜向量与 64 维旋转位置键），在 BF16 精度下仅占 1,152 B。相比 DeepSeek 67B 模型基线，DeepSeek-V2 借助 MLA 与细粒度 MoE 把 KV 缓存削减 93.3%，节省 42.5% 训练算力开销，在 8 卡 H800 上将最大生成吞吐提升至 5.76 倍（超过 50,000 tokens/s），同时基准成绩反超标准 MHA（Multi-Head Attention，多头注意力）[^dsv2-paper]。
 
 ## 低秩联合压缩与矩阵吸收
 
@@ -34,13 +34,19 @@ $$
 利用矩阵乘法结合律，我们可以把这两次上投影分别移到 Query 侧与输出侧。在 Key 侧，单个查询头 $h$ 的向量 $q_{t,h}^C \in \mathbb{R}^8$ 与历史键 $k_{s,h}^C$ 的内积可以先左乘转置后的 $W_{UK,h}^\top \in \mathbb{R}^{6 \times 8}$ 压入 6 维潜空间，再与单份历史缓存直接点积：
 
 $$
-(q_{t,h}^C)^\top k_{s,h}^C = (q_{t,h}^C)^\top \bigl(W_{UK,h} c_s^{KV}\bigr) = \underbrace{\bigl(W_{UK,h}^\top q_{t,h}^C\bigr)^\top}_{(q_{t,h}^{\text{abs}})^\top \in \mathbb{R}^{1 \times d_c}} c_s^{KV}
+\begin{aligned}
+(q_{t,h}^C)^\top k_{s,h}^C &= (q_{t,h}^C)^\top \bigl(W_{UK,h} c_s^{KV}\bigr) \\
+&= \underbrace{\bigl(W_{UK,h}^\top q_{t,h}^C\bigr)^\top}_{(q_{t,h}^{\text{abs}})^\top \in \mathbb{R}^{1 \times d_c}} c_s^{KV}
+\end{aligned}
 $$
 
 Value 侧同样对称成立。由于 $W_{UV,h}$ 是与历史位置下标 $s$ 无关的常系数矩阵，线性加权求和中可以把 $W_{UV,h}$ 直接提到求和符号之外：
 
 $$
-\mathbf{o}_{t,h} = \sum_{s=1}^{t} a_{t,s,h} \bigl(W_{UV,h} c_s^{KV}\bigr) = W_{UV,h} \underbrace{\left(\sum_{s=1}^{t} a_{t,s,h} c_s^{KV}\right)}_{u_{t,h} \in \mathbb{R}^{d_c}}
+\begin{aligned}
+\mathbf{o}_{t,h} &= \sum_{s=1}^{t} a_{t,s,h} \bigl(W_{UV,h} c_s^{KV}\bigr) \\
+&= W_{UV,h} \underbrace{\left(\sum_{s=1}^{t} a_{t,s,h} c_s^{KV}\right)}_{u_{t,h} \in \mathbb{R}^{d_c}}
+\end{aligned}
 $$
 
 其中 $a_{t,s,h}$ 为 Softmax 归一化后的注意力权重，而潜输出向量 $u_{t,h}$ 的维度严格等于内容潜维 $d_c = 512$：后文引入的 64 维旋转位置键 $k_s^R$ 只参与计算注意力打分，不进入 Value 通道，因此加权聚合结果始终保持在 512 维的内容潜空间内。
@@ -55,13 +61,13 @@ $$
 
 ## 解耦 RoPE 与双分支架构
 
-上述结合律成立的前提，是 $q_{t,h}^C$ 与 $c_s^{KV}$ 之间只隔着与位置无关的常系数矩阵 $W_{UK,h}$。如果直接对展开后的 $k_{s,h}^C = W_{UK,h} c_s^{KV}$ 和 $q_{t,h}^C$ 施加旋转位置编码（RoPE），第 $t$ 步与第 $s$ 步的相对旋转矩阵 $R_{s-t} = R_t^\top R_s$ 就会横插在查询向量和权重矩阵之间：
+上述结合律成立的前提，是 $q_{t,h}^C$ 与 $c_s^{KV}$ 之间只隔着与位置无关的常系数矩阵 $W_{UK,h}$。如果直接对展开后的 $k_{s,h}^C = W_{UK,h} c_s^{KV}$ 和 $q_{t,h}^C$ 施加 RoPE（Rotary Position Embedding，旋转位置编码），第 $t$ 步与第 $s$ 步的相对旋转矩阵 $R_{s-t} = R_t^\top R_s$ 就会横插在查询向量和权重矩阵之间：
 
 $$
 (R_t q_{t,h})^\top \bigl(R_s W_{UK,h} c_s^{KV}\bigr) = q_{t,h}^\top R_{s-t} W_{UK,h} c_s^{KV}
 $$
 
-由于矩阵乘法不满足交换律（$R_{s-t} W_{UK,h} \neq W_{UK,h} R_{s-t}$），且 $R_{s-t}$ 随着每个历史位置 $s$ 变化，引擎无法在写入或查询前把 $W_{UK,h}$ 吸收进 $q_{t,h}$。DeepSeek-V2 与 V3 采用**解耦 RoPE（Decoupled RoPE）**绕开这一冲突[^dsv2-paper][^dsv3-paper]：把每个注意力头拆为无位置的内容支（NoPE）和轻量级的位置支（RoPE），如图 2 所示。
+由于矩阵乘法不满足交换律（$R_{s-t} W_{UK,h} \neq W_{UK,h} R_{s-t}$），且 $R_{s-t}$ 随着每个历史位置 $s$ 变化，引擎无法在写入或查询前把 $W_{UK,h}$ 吸收进 $q_{t,h}$。DeepSeek-V2 与 V3 采用**解耦 RoPE（Decoupled RoPE）**绕开这一冲突[^dsv2-paper][^dsv3-paper]：把每个注意力头拆为 **NoPE（No Positional Encoding，无位置内容支）**与轻量 **RoPE 位置支**，如图 2 所示。
 
 ![DeepSeek-V2 与 V3 中 MLA 双支低秩压缩、解耦 RoPE 与推理双路径架构](./diagrams/01-mla-arch.drawio '图 2：DeepSeek-V2/V3 MLA 双支低秩压缩、解耦 RoPE 与推理双路径架构')
 
@@ -95,7 +101,7 @@ $$
 
 此外，FlashMLA 的 Roofline 分析指出[^flashmla-dive]，在 H800 SXM5（降频后实际峰值约 865 TFLOPS、HBM 带宽 3.35 TB/s）上，当保留全部 $h_q = 128$ 个查询头共享同一份 576 维潜缓存时，算术强度约为 $2 h_q s_q \ge 256$ FLOPs/B，跨过了 $h_q s_q \ge 128$ 的计算受限拐点。
 
-不过，64 × 512 的 FP32 输出累加矩阵本身就会占用 32,768 个寄存器，而每个 Hopper SM 总共只有 65,536 个 32 位寄存器，放不下常规 FlashAttention-3 用于双缓冲乒乓调度的两份输出矩阵。为此 `FlashMLA` 改用双 Warpgroup「跷跷板（seesaw）」调度，把输出矩阵纵向切为左半 $O_L$（64 × 256）与右半 $O_R$（64 × 256）交错更新，把 CUDA Core 上的 Softmax 归一化掩蔽进 Tensor Core 的矩阵乘流水线里[^flashmla-dive]。
+不过，64 × 512 的 FP32 输出累加矩阵本身就会占用 32,768 个寄存器，而每个 Hopper SM 总共只有 65,536 个 32 位寄存器，放不下常规 FlashAttention-3 用于双缓冲乒乓调度的两份输出矩阵。为此 `FlashMLA` 改用双 Warpgroup「seesaw（跷跷板）」调度，把输出矩阵纵向切为左半 $O_L$（64 × 256）与右半 $O_R$（64 × 256）交错更新，把 CUDA Core 上的 Softmax 归一化掩蔽进 Tensor Core 的矩阵乘流水线里[^flashmla-dive]。
 
 ## GPU 与昇腾 NPU 的引擎实现对照
 
@@ -122,10 +128,13 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 
-def apply_rope(x: torch.Tensor, pos: torch.Tensor, base: float = 10000.0) -> torch.Tensor:
+def apply_rope(
+    x: torch.Tensor, pos: torch.Tensor, base: float = 10000.0
+) -> torch.Tensor:
     """对输入末尾偶数维施加标准 RoPE 旋转，支持 [S, R] 与 [1, N, R] 形状。"""
     half = x.shape[-1] // 2
-    inv_freq = 1.0 / (base ** (torch.arange(0, half, dtype=x.dtype, device=x.device) / half))
+    idx = torch.arange(0, half, dtype=x.dtype, device=x.device)
+    inv_freq = 1.0 / (base ** (idx / half))
     ang = pos.to(x.dtype).unsqueeze(-1) * inv_freq  # [S, half]
     c, s = ang.cos(), ang.sin()
     if x.ndim == 3:
@@ -144,7 +153,14 @@ class MiniMLA(nn.Module):
         (logits [N, S], out [N, d_nope])
     """
 
-    def __init__(self, d_model: int = 16, n_h: int = 4, d_nope: int = 8, d_rope: int = 4, d_c: int = 6):
+    def __init__(
+        self,
+        d_model: int = 16,
+        n_h: int = 4,
+        d_nope: int = 8,
+        d_rope: int = 4,
+        d_c: int = 6,
+    ):
         super().__init__()
         self.n_h, self.d_nope, self.d_rope, self.d_c = n_h, d_nope, d_rope, d_c
         # 注意力缩放因子按单头完整维度 (d_nope + d_rope) 计算
@@ -157,7 +173,7 @@ class MiniMLA(nn.Module):
         self.kv_b_proj = nn.Linear(d_c, n_h * 2 * d_nope, bias=False)
 
     def split_kv_b_proj(self) -> tuple[torch.Tensor, torch.Tensor]:
-        """对齐 vLLM `process_weights_after_loading`，拆出 W_UK_T [N, P, L] 与 W_UV [N, L, V]。"""
+        """对齐 `process_weights_after_loading`，拆出 W_UK_T 与 W_UV。"""
         w = self.kv_b_proj.weight.view(self.n_h, 2 * self.d_nope, self.d_c)
         w_uk_t, w_uv = w.split(self.d_nope, dim=1)
         return w_uk_t, w_uv.transpose(-1, -2)  # [N, P, L], [N, L, V]
@@ -165,25 +181,40 @@ class MiniMLA(nn.Module):
     def encode_kv(self, h_kv: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
         """写入 KV Cache 阶段仅缓存压缩潜向量 c_kv [S, L] 与单头旋转位置键 k_pe [S, R]。"""
         c_kv = self.w_dkv(h_kv)
-        k_pe = apply_rope(self.w_kr(h_kv), torch.arange(h_kv.shape[0], device=h_kv.device))
+        pos = torch.arange(h_kv.shape[0], device=h_kv.device)
+        k_pe = apply_rope(self.w_kr(h_kv), pos)
         return c_kv, k_pe
 
-    def forward_naive(self, q_nope: torch.Tensor, q_pe: torch.Tensor, c_kv: torch.Tensor, k_pe: torch.Tensor):
+    def forward_naive(
+        self,
+        q_nope: torch.Tensor,
+        q_pe: torch.Tensor,
+        c_kv: torch.Tensor,
+        k_pe: torch.Tensor,
+    ):
         """Prefill 路径（forward_mha）：将潜向量显式解压为 N 头完整 K/V 后执行标准 MHA。"""
         w_uk_t, w_uv = self.split_kv_b_proj()
         k_nope = torch.einsum("sc,hpc->shp", c_kv, w_uk_t)  # [S, N, P]
         # 共享单头 k_pe [S, R] 沿头维广播拼接至每头末尾 -> [S, N, P+R]
         k_mha = torch.cat([k_nope, k_pe.unsqueeze(1).expand(-1, self.n_h, -1)], dim=-1)
         v_mha = torch.einsum("sc,hcv->shv", c_kv, w_uv)     # [S, N, V]
-        logits = torch.einsum("hd,shd->hs", torch.cat([q_nope, q_pe], dim=-1), k_mha) * self.scale
+        q_full = torch.cat([q_nope, q_pe], dim=-1)
+        logits = torch.einsum("hd,shd->hs", q_full, k_mha) * self.scale
         out = torch.einsum("hs,shv->hv", F.softmax(logits, dim=-1), v_mha)
         return logits, out
 
-    def forward_absorb(self, q_nope: torch.Tensor, q_pe: torch.Tensor, c_kv: torch.Tensor, k_pe: torch.Tensor):
+    def forward_absorb(
+        self,
+        q_nope: torch.Tensor,
+        q_pe: torch.Tensor,
+        c_kv: torch.Tensor,
+        k_pe: torch.Tensor,
+    ):
         """Decode 路径（forward_mqa）：把 W_UK_T 吸进 Query、W_UV 延后到输出，全程不展开历史 KV。"""
         w_uk_t, w_uv = self.split_kv_b_proj()
-        # _prepare_mqa_query：将 q_nope [N, P] 乘 W_UK_T [N, P, L] 吸收至潜空间，拼接 q_pe -> [N, L+R]
-        q_mqa = torch.cat([torch.einsum("hp,hpc->hc", q_nope, w_uk_t), q_pe], dim=-1)
+        # _prepare_mqa_query：将 q_nope 乘 W_UK_T 吸收至潜空间并拼接 q_pe
+        q_abs = torch.einsum("hp,hpc->hc", q_nope, w_uk_t)
+        q_mqa = torch.cat([q_abs, q_pe], dim=-1)
         kv_joint = torch.cat([c_kv, k_pe], dim=-1)          # 单头联合缓存 [S, L+R]
         logits = (q_mqa @ kv_joint.T) * self.scale          # 1 头 MQA 打分 [N, S]
         attn_latent = F.softmax(logits, dim=-1) @ c_kv      # 在潜空间完成加权聚合 [N, L]
@@ -200,7 +231,8 @@ if __name__ == "__main__":
     with torch.no_grad():
         h_kv = torch.randn(s_kv, d_model, dtype=torch.float64)
         q_nope = torch.randn(n_h, d_nope, dtype=torch.float64)
-        q_pe = apply_rope(torch.randn(1, n_h, d_rope, dtype=torch.float64), torch.tensor([s_kv - 1]))[0]
+        q_raw = torch.randn(1, n_h, d_rope, dtype=torch.float64)
+        q_pe = apply_rope(q_raw, torch.tensor([s_kv - 1]))[0]
         c_kv, k_pe = mla.encode_kv(h_kv)
         assert c_kv.shape == (s_kv, d_c) and k_pe.shape == (s_kv, d_rope)
         logits_mha, out_mha = mla.forward_naive(q_nope, q_pe, c_kv, k_pe)
@@ -222,7 +254,7 @@ max_logit_diff=1.18e-16 max_out_diff=4.16e-17
 
 其次，吸收后的缓存等价于单头 MQA，一旦跨卡做张量并行切分 128 个 Query 头，每张卡仍需各自保存一份完整的 576 维 KV 缓存；因此 DeepSeek-V3 部署通常把注意力域保持在较小并行度（甚至采用数据并行去冗余），把更大并发留给后端的 MoE 专家并行[^dsv3-paper]。
 
-当单 token 的 KV 存储已经由 MLA 压到极限，长上下文推理的下一道瓶颈转向计算量与全量扫描延迟随序列长度 $L$ 增长的问题。在[02 原生稀疏注意力（NSA）](../02-swa-and-nsa/)中，我们将先看静态滑窗与 Attention Sink，再拆解动态块稀疏如何绕过全序列扫描。
+当单 token 的 KV 存储已经由 MLA 压到极限，长上下文推理的下一道瓶颈转向计算量与全量扫描延迟随序列长度 $L$ 增长的问题。在[02 NSA 原生稀疏注意力](../02-swa-and-nsa/)中，我们将先看静态滑窗与 Attention Sink，再拆解动态块稀疏如何绕过全序列扫描。
 
 [^dsv2-paper]: DeepSeek-AI，“DeepSeek-V2: A Strong, Economical, and Efficient Mixture-of-Experts Language Model”，2024。[arXiv:2405.04434](https://arxiv.org/abs/2405.04434)，§2.1 与附录 C、D。
 

@@ -292,10 +292,10 @@ def build_08_mhc_arch_comp() -> None:
     c.node("a_add", 32, 104, 32, 32, "⊕", tone="neutral", bold=True, font_size=14)
     c.node("a_out", 8, 56, 80, 24, r"\(\mathbf{x}_{l+1}\) [1, C]", tone="neutral", font_size=12)
 
-    c.connect("ea1", "a_xl", "a_add", tone="fg", exit_xy=(0.5, 0.0), entry_xy=(0.5, 1.0))
+    c.connect("ea1", "a_xl", "a_add", tone="fg", ortho=False, exit_xy=(0.5, 0.0), entry_xy=(0.5, 1.0))
     c.connect("ea2", "a_xl", "a_fn", tone="fg", exit_xy=(1.0, 0.5), entry_xy=(0.5, 1.0), points=[(104, 464)])
     c.connect("ea3", "a_fn", "a_add", tone="fg", exit_xy=(0.5, 0.0), entry_xy=(1.0, 0.5), points=[(104, 120)])
-    c.connect("ea4", "a_add", "a_out", tone="fg", exit_xy=(0.5, 0.0), entry_xy=(0.5, 1.0))
+    c.connect("ea4", "a_add", "a_out", tone="fg", ortho=False, exit_xy=(0.5, 0.0), entry_xy=(0.5, 1.0))
 
     # (b) 无约束超连接 HC 与 (c) 流形受限超连接 mHC
     specs = [
@@ -331,21 +331,21 @@ def build_08_mhc_arch_comp() -> None:
         c.node(f"{p}_fn", ox + 144, 256, 96, 32, r"Layer \(\mathcal{F}\)", tone="active", emphasis=True, font_size=12)
         c.node(f"{p}_hout", ox + 152, 208, 80, 24, r"\(\mathbf{h}_l^{\mathrm{out}}\) [1, C]", tone="neutral", font_size=12)
         c.node(f"{p}_post", ox + 136, 144, 112, 48, post_lbl, tone=map_tone, emphasis=False, font_size=12)
-        c.tensor_block(f"{p}_hpost", ox + 152, 104, 80, 24, r"\(\mathbf{h}_l^{\mathrm{post}}\)", tone="neutral", stack=2, font_size=12)
+        c.tensor_block(f"{p}_hpost", ox + 152, 104, 80, 32, r"\(\mathbf{h}_l^{\mathrm{post}}\)", tone="neutral", stack=2, font_size=12)
         c.node(f"{p}_add", ox + 48, 104, 32, 32, "⊕", tone="neutral", bold=True, font_size=14)
         c.tensor_block(f"{p}_out", ox + 16, 56, 96, 24, r"\(\mathbf{x}_{l+1}\) [n, C]", tone="neutral", stack=2, font_size=12)
 
-        c.connect(f"e{p}_1", f"{p}_xl", f"{p}_res", tone="fg", exit_xy=(0.5, 0.0), entry_xy=(0.5, 1.0))
+        c.connect(f"e{p}_1", f"{p}_xl", f"{p}_res", tone="fg", ortho=False, exit_xy=(0.5, 0.0), entry_xy=(0.5, 1.0))
         c.connect(f"e{p}_2", f"{p}_xl", f"{p}_pre", tone="fg", exit_xy=(1.0, 0.5), entry_xy=(0.5, 1.0), points=[(ox + 192, 464)])
-        c.connect(f"e{p}_3", f"{p}_res", f"{p}_hres", tone="fg", exit_xy=(0.5, 0.0), entry_xy=(0.5, 1.0))
-        c.connect(f"e{p}_4", f"{p}_hres", f"{p}_add", tone="fg", exit_xy=(0.5, 0.0), entry_xy=(0.5, 1.0))
-        c.connect(f"e{p}_5", f"{p}_add", f"{p}_out", tone="fg", exit_xy=(0.5, 0.0), entry_xy=(0.5, 1.0))
-        c.connect(f"e{p}_6", f"{p}_pre", f"{p}_hin", tone="fg", exit_xy=(0.5, 0.0), entry_xy=(0.5, 1.0))
-        c.connect(f"e{p}_7", f"{p}_hin", f"{p}_fn", tone="fg", exit_xy=(0.5, 0.0), entry_xy=(0.5, 1.0))
-        c.connect(f"e{p}_8", f"{p}_fn", f"{p}_hout", tone="fg", exit_xy=(0.5, 0.0), entry_xy=(0.5, 1.0))
-        c.connect(f"e{p}_9", f"{p}_hout", f"{p}_post", tone="fg", exit_xy=(0.5, 0.0), entry_xy=(0.5, 1.0))
-        c.connect(f"e{p}_10", f"{p}_post", f"{p}_hpost", tone="fg", exit_xy=(0.5, 0.0), entry_xy=(0.5, 1.0))
-        c.connect(f"e{p}_11", f"{p}_hpost", f"{p}_add", tone="fg", exit_xy=(0.0, 0.5), entry_xy=(1.0, 0.5))
+        c.connect(f"e{p}_3", f"{p}_res", f"{p}_hres", tone="fg", ortho=False, exit_xy=(0.5, 0.0), entry_xy=(0.5, 1.0))
+        c.connect(f"e{p}_4", f"{p}_hres", f"{p}_add", tone="fg", ortho=False, exit_xy=(0.5, 0.0), entry_xy=(0.5, 1.0))
+        c.connect(f"e{p}_5", f"{p}_add", f"{p}_out", tone="fg", ortho=False, exit_xy=(0.5, 0.0), entry_xy=(0.5, 1.0))
+        c.connect(f"e{p}_6", f"{p}_pre", f"{p}_hin", tone="fg", ortho=False, exit_xy=(0.5, 0.0), entry_xy=(0.5, 1.0))
+        c.connect(f"e{p}_7", f"{p}_hin", f"{p}_fn", tone="fg", ortho=False, exit_xy=(0.5, 0.0), entry_xy=(0.5, 1.0))
+        c.connect(f"e{p}_8", f"{p}_fn", f"{p}_hout", tone="fg", ortho=False, exit_xy=(0.5, 0.0), entry_xy=(0.5, 1.0))
+        c.connect(f"e{p}_9", f"{p}_hout", f"{p}_post", tone="fg", ortho=False, exit_xy=(0.5, 0.0), entry_xy=(0.5, 1.0))
+        c.connect(f"e{p}_10", f"{p}_post", f"{p}_hpost", tone="fg", ortho=False, exit_xy=(0.5, 0.0), entry_xy=(0.5, 1.0))
+        c.connect(f"e{p}_11", f"{p}_hpost", f"{p}_add", tone="fg", ortho=False, exit_xy=(0.0, 0.5), entry_xy=(1.0, 0.5))
 
     out = POSTS_ROOT / "08-mhc" / "diagrams" / "08-mhc-arch-comp.drawio"
     c.save(out, strict=True, build_svg=True)

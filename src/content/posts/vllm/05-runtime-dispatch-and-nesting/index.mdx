@@ -7,15 +7,15 @@ series: { id: vllm, order: 6 }
 tags: [vLLM, CUDA Graph, torch.compile, Scheduler]
 ---
 
-单张静态图守住四道边界后（见[第 4 章](../04-cuda-graph-and-boundaries/)），真实在线服务的动态性立刻带来了两重冲突。第一重冲突在单卡内部：第 $t$ 步可能全是单 token 均匀解码（decode），第 $t+1$ 步就混入了分块预填充（chunked prefill），不同注意力内核能否进整图的能力各不相同，引擎必须在同一个模型对象上动态切换整图（`FULL`）、分段图（`PIECEWISE`）与 Eager（`NONE`）三种运行时模式。
+单张静态图守住四道边界后（见[第 4 章](../04-cuda-graph-and-boundaries/)），真实在线服务的动态性立刻带来了两重冲突。第一重冲突在单卡内部：第 $t$ 步可能全是单 token 均匀 **Decode（解码）**，第 $t+1$ 步就混入了 **Chunked Prefill（分块预填充）**，不同注意力内核能否进整图的能力各不相同，引擎必须在同一个模型对象上动态切换整图（`FULL`）、分段图（`PIECEWISE`）与 Eager（`NONE`）三种运行时模式。
 
-第二重冲突出现在多卡数据并行（DP）集群上：当模型开启混合专家（MoE）并行时，各张计算卡的批构成往往各不相同，如果卡与卡各自按本地负载选了不同的图模式或填充长度，后续跨卡集合通信就会在形状或执行流上直接挂死。vLLM 用**三层同心包装结构**解决单卡无痛切换，并用**主机侧轻量 DP 共识**锁住跨卡一致性。
+第二重冲突出现在多卡 **DP（Data Parallelism，数据并行）**集群上：当模型开启 **MoE（Mixture-of-Experts，混合专家架构）**并行时，各张计算卡的批构成往往各不相同，如果卡与卡各自按本地负载选了不同的图模式或填充长度，后续跨卡集合通信就会在形状或执行流上直接挂死。vLLM 用**三层同心包装结构**解决单卡无痛切换，并用**主机侧轻量 DP 共识**锁住跨卡一致性。
 
 ## 多卡 DP 共识与集合通信防死锁
 
-理解跨卡模式对齐之前，需要先厘清拓扑前提。对于普通的稠密（Dense）模型，若仅做标准数据并行（DP）部署，每个 DP 副本独立持有完整权重并在本地完成前向计算，层间不产生跨 DP 卡的激活交换——此时 Rank 0 跑整图、Rank 1 跑分段图各自推进，互不干扰。
+理解跨卡模式对齐之前，需要先厘清拓扑前提。对于普通的 **Dense（稠密）**模型，若仅做标准 DP 部署，每个 DP 副本独立持有完整权重并在本地完成前向计算，层间不产生跨 DP 卡的激活交换——此时 Rank 0 跑整图、Rank 1 跑分段图各自推进，互不干扰。
 
-一旦进入 **MoE「Attention 走 DP + 专家层走 EP」**的混合并行拓扑，情况就彻底改变。每一层的注意力计算仍然在各 DP 卡本地独立完成，但紧接着的 MoE 专家分发（dispatch）与合并（combine）必须在整个 EP/DP 通信组内执行跨卡 `All-to-All` 集合通信[^vllm-dp-utils]。假如某一步里，Rank 0 仅承载 $4$ 个纯解码 token 并本地判定走 `FULL` 整图（对应形状 `(4, H)`），而 Rank 1 正在处理 $19$ 个混排预填充 token 且对齐到桶 $20$ 并退回 `PIECEWISE`（对应形状 `(20, H)`），两张卡抵达同一层 `All-to-All` 时传入的张量长度分别是 $4$ 与 $20$，集合通信不仅无法对齐收发缓冲，还会因两卡内核入图状态不一致而触发通信超时或死锁。
+一旦进入 **MoE「Attention 走 DP + 专家层走 EP（Expert Parallelism，专家并行）」**的混合并行拓扑，情况就彻底改变。每一层的注意力计算仍然在各 DP 卡本地独立完成，但紧接着的 MoE 专家 **Dispatch（分发）**与 **Combine（合并）**必须在整个 EP/DP 通信组内执行跨卡 `All-to-All` 集合通信[^vllm-dp-utils]。假如某一步里，Rank 0 仅承载 $4$ 个纯解码 token 并本地判定走 `FULL` 整图（对应形状 `(4, H)`），而 Rank 1 正在处理 $19$ 个混排预填充 token 且对齐到桶 $20$ 并退回 `PIECEWISE`（对应形状 `(20, H)`），两张卡抵达同一层 `All-to-All` 时传入的张量长度分别是 $4$ 与 $20$，集合通信不仅无法对齐收发缓冲，还会因两卡内核入图状态不一致而触发通信超时或死锁。
 
 为此，`GPUModelRunner` 在进入模型前向之前，会先调用 `dispatch_cg_and_sync_dp` 执行一次纯主机侧的状态汇总[^vllm-dp-utils][^vllm-model-runner]。具体来说，每张卡在 CPU 上把本地 `num_tokens`、期望图模式枚举值 `cg_mode`、`uniform_token_count`、`max_query_len`、`allow_ubatching`、`num_reqs` 与 `allow_skip_drafts` 共 $7$ 个整型状态写入一张形状为 `(7, dp_size)` 的 CPU 张量，并通过 `cpu_all_reduce_()` 完成跨卡交换，全程不阻塞 GPU 计算流。
 
@@ -90,7 +90,11 @@ def sync_dp_dispatch(
     bucket_tokens = next(b for b in buckets if b >= synced_tokens)
     has_non_uniform = bool(torch.any(rank_qlen == -1).item())
     qlen_agree = bool(torch.all(rank_qlen == rank_qlen[0]).item())
-    uniform_qlen = None if (has_non_uniform or not qlen_agree) else int(rank_qlen[0].item())
+    uniform_qlen = (
+        None
+        if (has_non_uniform or not qlen_agree)
+        else int(rank_qlen[0].item())
+    )
     return synced_mode, bucket_tokens, uniform_qlen
 
 
@@ -140,8 +144,14 @@ _, tr_full = run_three_layer(torch.zeros(2, 4), synced_mode=2, inner_pw=pw)
 _, tr_pw = run_three_layer(torch.zeros(2, 4), synced_mode=1, inner_pw=pw)
 assert tr_full[-1] == "pw_passthrough" and tr_pw[-1] == "pw_graph_replay"
 
-print(f"hetero_dp: mode={MODE_NAME[m1]}({m1}), bucket={b1}, uniform_qlen={q1}, trace={tr_pw}")
-print(f"decode_dp: mode={MODE_NAME[m2]}({m2}), bucket={b2}, uniform_qlen={q2}, trace={tr_full}")
+print(
+    f"hetero_dp: mode={MODE_NAME[m1]}({m1}), bucket={b1}, "
+    f"uniform_qlen={q1}, trace={tr_pw}"
+)
+print(
+    f"decode_dp: mode={MODE_NAME[m2]}({m2}), bucket={b2}, "
+    f"uniform_qlen={q2}, trace={tr_full}"
+)
 ```
 
 运行上述脚本，输出如下：
@@ -153,13 +163,13 @@ decode_dp: mode=FULL(2), bucket=8, uniform_qlen=1, trace=['outer_full_replay(inn
 
 下表对比了运行时模式状态机、多层同心包装与 DP 对齐逻辑在双仓中的落点。
 
-| 分发与包装层级     | NVIDIA GPU（`vllm` `bb23c0a8`）               | 华为昇腾 NPU（`vllm-ascend` `3649b8ff`）                        |
-| ------------------ | --------------------------------------------- | --------------------------------------------------------------- |
-| 模式枚举与描述符   | `CUDAGraphMode` 与 `BatchExecutionDescriptor` | 沿用相同枚举与 $O(1)$ 描述符索引                                |
-| 三层同心静态图结构 | `ModelCudaGraphManager` 协同内外两层静态图壳  | `ModelAclGraphManager` 复用相同透传不变量[^ascend-aclgraph-mgr] |
-| 多卡 DP 跨卡共识   | `dispatch_cg_and_sync_dp` 经主机归约对齐形状  | 复用同一 DP 共识协议并衔接更新流                                |
+| 分发与包装层级   | GPU（`vllm` `bb23c0a8`）             | 昇腾 NPU（`vllm-ascend` `3649b8ff`）                  |
+| ---------------- | ------------------------------------ | ----------------------------------------------------- |
+| 模式枚举与描述符 | `CUDAGraphMode` 与 $O(1)$ 描述符表   | 沿用同枚举与 $O(1)$ 描述符索引                        |
+| 三层同心静态图壳 | `ModelCudaGraphManager` 协同内外双壳 | `ModelAclGraphManager` 复用透传[^ascend-aclgraph-mgr] |
+| 多卡 DP 跨卡共识 | `dispatch_cg_and_sync_dp` 主机对齐   | 复用同共识协议并衔接更新流                            |
 
-在 NVIDIA GPU 上，从启动能力裁切、三层同心包装、$O(1)$ 分发到 DP 跨卡共识已经组成完整的静态图运行时链路。但把这套体系迁到华为昇腾 NPU 时，CANN 硬件底座的流资源配额上限与注意力算子的 Host 侧 Tiling 依赖，逼出了两套截然不同的图运行与编译基础设施——下一篇[第 6 章：昇腾 ACLGraph 与 npugraph_ex](../06-ascend-aclgraph-and-npugraph/) 将展开分析昇腾图引擎的设计与折中。
+在 NVIDIA GPU 上，从启动能力裁切、三层同心包装、$O(1)$ 分发到 DP 跨卡共识已经组成完整的静态图运行时链路。若想系统了解昇腾 NPU 上与之对应的影子模型流、CANN Runtime 物理队列配额、`TaskGrp` 原地刷新、条件子图及 `vllm-ascend` 四层集成细节，可以转入姊妹专题[《执行图与昇腾 ACL Graph》](../../aclgraph/)阅读；本系列的最后一章[第 6 章：性能观测与线上故障定位](../06-profiling-and-debugging/)将继续围绕通用服务指标与 Profiler 轨迹展开排障拆解。
 
 [^vllm-dp-utils]: `vllm` 项目（commit `bb23c0a8`），`vllm/v1/worker/gpu/dp_utils.py:49-353` 中的 `sync_cudagraph_and_dp_padding` 与 `dispatch_cg_and_sync_dp`（通过 `cpu_all_reduce_` 聚合 7 项调度状态并取保守图模式与最大 token 上限）。
 

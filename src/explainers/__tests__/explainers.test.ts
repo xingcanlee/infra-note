@@ -20,7 +20,16 @@ vi.mock('virtual:wisp/locale', () => ({ lang: 'zh-CN' }));
 import CausalAttentionExplainer, {
   buildCausalAttentionSteps,
 } from '../foundations/CausalAttentionExplainer';
+import ChipArchitectureMapExplainer, {
+  buildChipArchitectureMapSteps,
+} from '../foundations/ChipArchitectureMapExplainer';
 import KvCacheStepExplainer, { buildKvCacheStepSteps } from '../foundations/KvCacheStepExplainer';
+import MemoryCoalescingExplainer, {
+  buildMemoryCoalescingSteps,
+} from '../foundations/MemoryCoalescingExplainer';
+import MicroarchLatencyExplainer, {
+  buildMicroarchLatencySteps,
+} from '../foundations/MicroarchLatencyExplainer';
 import OnlineSoftmaxExplainer, {
   buildOnlineSoftmaxSteps,
 } from '../foundations/OnlineSoftmaxExplainer';
@@ -43,6 +52,16 @@ import SpecDecVerifyExplainer, {
 
 import PagedSchedulerExplainer, { buildPagedSchedulerSteps } from '../vllm/PagedSchedulerExplainer';
 
+import AclGraphDynamicControlExplainer, {
+  buildAclGraphDynamicControlSteps,
+} from '../aclgraph/AclGraphDynamicControlExplainer';
+import AclGraphShadowStreamExplainer, {
+  buildAclGraphShadowStreamSteps,
+} from '../aclgraph/AclGraphShadowStreamExplainer';
+import StreamEventPipelineExplainer, {
+  buildStreamEventPipelineSteps,
+} from '../aclgraph/StreamEventPipelineExplainer';
+
 interface ExplainerEntry {
   name: string;
   Component: ComponentType<{ title?: string }>;
@@ -51,6 +70,21 @@ interface ExplainerEntry {
 
 const ALL_EXPLAINERS: ExplainerEntry[] = [
   { name: 'Roofline', Component: RooflineExplainer, buildSteps: buildRooflineSteps },
+  {
+    name: 'ChipArchitectureMap',
+    Component: ChipArchitectureMapExplainer,
+    buildSteps: buildChipArchitectureMapSteps,
+  },
+  {
+    name: 'MicroarchLatency',
+    Component: MicroarchLatencyExplainer,
+    buildSteps: buildMicroarchLatencySteps,
+  },
+  {
+    name: 'MemoryCoalescing',
+    Component: MemoryCoalescingExplainer,
+    buildSteps: buildMemoryCoalescingSteps,
+  },
   {
     name: 'CausalAttention',
     Component: CausalAttentionExplainer,
@@ -76,11 +110,26 @@ const ALL_EXPLAINERS: ExplainerEntry[] = [
     Component: PagedSchedulerExplainer,
     buildSteps: buildPagedSchedulerSteps,
   },
+  {
+    name: 'StreamEventPipeline',
+    Component: StreamEventPipelineExplainer,
+    buildSteps: buildStreamEventPipelineSteps,
+  },
+  {
+    name: 'AclGraphShadowStream',
+    Component: AclGraphShadowStreamExplainer,
+    buildSteps: buildAclGraphShadowStreamSteps,
+  },
+  {
+    name: 'AclGraphDynamicControl',
+    Component: AclGraphDynamicControlExplainer,
+    buildSteps: buildAclGraphDynamicControlSteps,
+  },
 ];
 
-describe('all 10 interactive SVG explainers', () => {
-  it('covers exact 10 explainers across all 4 series', () => {
-    expect(ALL_EXPLAINERS).toHaveLength(10);
+describe('all 16 interactive SVG explainers', () => {
+  it('covers exact 16 explainers across all 5 series', () => {
+    expect(ALL_EXPLAINERS).toHaveLength(16);
   });
 
   it.each(ALL_EXPLAINERS)(

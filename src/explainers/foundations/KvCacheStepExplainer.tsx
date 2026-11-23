@@ -214,7 +214,7 @@ export function buildKvCacheStepSteps(): Step<KvCacheStepState>[] {
         focusRect: { x: 266, y: 16, w: 254, h: 196, label: '仅算第 3 行', tone: 'q' },
       },
       caption:
-        '第 3 步（$t=3$）：前 2 步的历史行已定型且无需再输出，$Q_3 [1, d]$ 与扩展后的 $K_{1:3} [3, d]$ 做向量-矩阵乘（GEMV），累计 KV 投影次数降为无缓存的一半（$3$ vs $6$）。',
+        '第 3 步（$t=3$）：前 2 步的历史行已定型且无需再输出，$Q_3 [1, d]$ 与扩展后的 $K_{1:3} [3, d]$ 做 GEMV（General Matrix-Vector Multiply，矩阵向量乘），累计 KV 投影次数降为无缓存的一半（$3$ vs $6$）。',
     },
     {
       state: {

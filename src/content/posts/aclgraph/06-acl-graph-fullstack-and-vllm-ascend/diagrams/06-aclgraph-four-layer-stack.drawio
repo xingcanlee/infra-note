@@ -1,0 +1,76 @@
+<mxfile host="wisp-diagram">
+  <diagram id="aclgraph-06-stack" name="ACL Graph Four Layer Fullstack">
+    <mxGraphModel dx="800" dy="600" grid="1" gridSize="8" guides="1" page="0" math="0" shadow="0">
+      <root>
+        <mxCell id="0"/>
+        <mxCell id="1" parent="0"/>
+        <mxCell id="s1" value="L1 · vLLM-Ascend 调度与编译层" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f2fb;strokeColor=#2f5783;strokeWidth=1.25;dashed=1;verticalAlign=top;align=left;spacingLeft=12;spacingTop=6;fontFamily=Inter;fontSize=12;fontStyle=1;fontColor=#2f5783;container=0;" vertex="1" parent="1">
+          <mxGeometry x="0" y="0" width="688" height="104" as="geometry"/>
+        </mxCell>
+        <mxCell id="l1_a" value="cudagraph_mode 分桶&lt;br&gt;FULL / PIECEWISE + MTP" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f2fb;strokeColor=#2f5783;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="16" y="32" width="200" height="56" as="geometry"/>
+        </mxCell>
+        <mxCell id="l1_b" value="npugraph_ex / XliteGraph&lt;br&gt;inplace_pass · 图模式替换" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f2fb;strokeColor=#2f5783;strokeWidth=2;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="232" y="32" width="216" height="56" as="geometry"/>
+        </mxCell>
+        <mxCell id="l1_c" value="ACLGraphWrapper&lt;br&gt;weak_ref 与 SuperKernel" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f2fb;strokeColor=#2f5783;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="464" y="32" width="208" height="56" as="geometry"/>
+        </mxCell>
+        <mxCell id="s2" value="L2 · PyTorch + torch_npu 框架桥接层" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#fbf2df;strokeColor=#7b5518;strokeWidth=1.25;dashed=1;verticalAlign=top;align=left;spacingLeft=12;spacingTop=6;fontFamily=Inter;fontSize=12;fontStyle=1;fontColor=#7b5518;container=0;" vertex="1" parent="1">
+          <mxGeometry x="0" y="144" width="688" height="104" as="geometry"/>
+        </mxCell>
+        <mxCell id="l2_a" value="NPUGraph 与 Pool 管理&lt;br&gt;capture_begin / replay" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#fbf2df;strokeColor=#7b5518;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="16" y="176" width="200" height="56" as="geometry"/>
+        </mxCell>
+        <mxCell id="l2_b" value="_GraphDispatchMode&lt;br&gt;自动包裹 TaskGrp 与更新流" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#fbf2df;strokeColor=#7b5518;strokeWidth=2;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="232" y="176" width="216" height="56" as="geometry"/>
+        </mxCell>
+        <mxCell id="l2_c" value="ExternalEvent 与条件流&lt;br&gt;update_capture_record 保序" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#fbf2df;strokeColor=#7b5518;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="464" y="176" width="208" height="56" as="geometry"/>
+        </mxCell>
+        <mxCell id="s3" value="L3 · CANN Runtime C++ 模型运行时 (cann/runtime)" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e3f5f3;strokeColor=#0f766e;strokeWidth=1.25;dashed=1;verticalAlign=top;align=left;spacingLeft=12;spacingTop=6;fontFamily=Inter;fontSize=12;fontStyle=1;fontColor=#0f766e;container=0;" vertex="1" parent="1">
+          <mxGeometry x="0" y="288" width="688" height="104" as="geometry"/>
+        </mxCell>
+        <mxCell id="l3_a" value="CaptureSession 拓扑校验&lt;br&gt;GLOBAL / LOCAL / RELAXED" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e3f5f3;strokeColor=#0f766e;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="16" y="320" width="200" height="56" as="geometry"/>
+        </mxCell>
+        <mxCell id="l3_b" value="CaptureModel &amp;amp; LogicSQ&lt;br&gt;CopyTaskArgs · IsUpdateSinkSqe" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e3f5f3;strokeColor=#0f766e;strokeWidth=2;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="232" y="320" width="216" height="56" as="geometry"/>
+        </mxCell>
+        <mxCell id="l3_c" value="DeviceSqCqPool &amp;amp; Notify&lt;br&gt;物理 SQ/CQ 上限 1024" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e3f5f3;strokeColor=#0f766e;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="464" y="320" width="208" height="56" as="geometry"/>
+        </mxCell>
+        <mxCell id="s4" value="L4 · Ascend HDK 驱动与 NPU 物理执行层" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#f4f4f2;strokeColor=#5c6067;strokeWidth=1.25;dashed=1;verticalAlign=top;align=left;spacingLeft=12;spacingTop=6;fontFamily=Inter;fontSize=12;fontStyle=1;fontColor=#5c6067;container=0;" vertex="1" parent="1">
+          <mxGeometry x="0" y="432" width="688" height="104" as="geometry"/>
+        </mxCell>
+        <mxCell id="l4_a" value="物理 SQ / CQ 硬件队列&lt;br&gt;超限触发错误码 207008" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#f4f4f2;strokeColor=#5c6067;strokeWidth=1;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="16" y="464" width="200" height="56" as="geometry"/>
+        </mxCell>
+        <mxCell id="l4_b" value="TS 固件与硬件调度器&lt;br&gt;Notify Wait / CondTask 状态机" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#f4f4f2;strokeColor=#1d1d1f;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="232" y="464" width="216" height="56" as="geometry"/>
+        </mxCell>
+        <mxCell id="l4_c" value="AICore / AICPU / HCCL&lt;br&gt;异常触发错误码 507011 / UAF" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#f4f4f2;strokeColor=#5c6067;strokeWidth=1;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="464" y="464" width="208" height="56" as="geometry"/>
+        </mxCell>
+        <mxCell id="st12" value="" style="endArrow=classic;startArrow=none;html=1;strokeColor=#1d1d1f;strokeWidth=1.25;edgeStyle=orthogonalEdgeStyle;rounded=1;exitX=0.5;exitY=1.0;exitDx=0;exitDy=0;entryX=0.5;entryY=0.0;entryDx=0;entryDy=0;" edge="1" parent="1" source="s1" target="s2">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="st23" value="" style="endArrow=classic;startArrow=none;html=1;strokeColor=#1d1d1f;strokeWidth=1.25;edgeStyle=orthogonalEdgeStyle;rounded=1;exitX=0.5;exitY=1.0;exitDx=0;exitDy=0;entryX=0.5;entryY=0.0;entryDx=0;entryDy=0;" edge="1" parent="1" source="s2" target="s3">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="st34" value="" style="endArrow=classic;startArrow=none;html=1;strokeColor=#1d1d1f;strokeWidth=1.25;edgeStyle=orthogonalEdgeStyle;rounded=1;exitX=0.5;exitY=1.0;exitDx=0;exitDy=0;entryX=0.5;entryY=0.0;entryDx=0;entryDy=0;" edge="1" parent="1" source="s3" target="s4">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="lbl_s12" value="封装捕获 / 重放语义" style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;fontFamily=Inter;fontSize=12;fontColor=#5c6067;" vertex="1" parent="1">
+          <mxGeometry x="360" y="112" width="200" height="24" as="geometry"/>
+        </mxCell>
+        <mxCell id="lbl_s23" value="下沉 C++ Runtime 逻辑队列" style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;fontFamily=Inter;fontSize=12;fontColor=#5c6067;" vertex="1" parent="1">
+          <mxGeometry x="360" y="256" width="200" height="24" as="geometry"/>
+        </mxCell>
+        <mxCell id="lbl_s34" value="分配并提交物理 SQ/CQ" style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;fontFamily=Inter;fontSize=12;fontColor=#5c6067;" vertex="1" parent="1">
+          <mxGeometry x="360" y="400" width="200" height="24" as="geometry"/>
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

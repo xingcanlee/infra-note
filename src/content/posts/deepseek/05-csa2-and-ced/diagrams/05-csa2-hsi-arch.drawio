@@ -40,8 +40,11 @@
         <mxCell id="ftr" value="&lt;b&gt;输出逆 RoPE 与 CED 减半&lt;/b&gt;：末 64 维乘 \(R_{-n}\) 恢复相对偏移；后 20 层由 \(H_{L/2}\) 直投全局 KV + \(n_{\text{win}}=128\) 有界重放（Prefill &lt;b&gt;2.00×&lt;/b&gt; 加速）" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#fbf2df;strokeColor=#7b5518;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
           <mxGeometry x="8" y="392" width="672" height="48" as="geometry"/>
         </mxCell>
-        <mxCell id="e_hsi" value="候选 16,384" style="endArrow=classic;startArrow=none;html=1;strokeColor=#1d1d1f;strokeWidth=1.25;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;labelBackgroundColor=#f4f4f2;" edge="1" parent="1" source="h_l1" target="h_l2">
+        <mxCell id="e_hsi" value="" style="endArrow=classic;startArrow=none;html=1;strokeColor=#1d1d1f;strokeWidth=1.25;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="h_l1" target="h_l2">
           <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="lbl_hsi" value="候选 16,384" style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;fontFamily=Inter;fontSize=12;fontColor=#5c6067;" vertex="1" parent="1">
+          <mxGeometry x="512" y="256" width="96" height="24" as="geometry"/>
         </mxCell>
       </root>
     </mxGraphModel>

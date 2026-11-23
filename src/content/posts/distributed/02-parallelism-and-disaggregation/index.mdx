@@ -10,13 +10,13 @@ toc: true
 
 import EpDispatchExplainer from '../../../../explainers/distributed/EpDispatchExplainer';
 
-分布式推理的显存压力始终来自两本账：一笔是静态常驻的模型权重，另一笔是随着序列长度与并发请求数线性增长的键值缓存（KV Cache）。第 01 章算清了单次跨卡传输的物理代价，而**并行维度的切分方式**决定了模型前向一共要支付多少次通信开销，又把哪一部分显存真正省了下来。
+分布式推理的显存压力始终来自两本账：一笔是静态常驻的模型权重，另一笔是随着序列长度与并发请求数线性增长的 KV Cache（Key-Value Cache，键值缓存）。第 01 章算清了单次跨卡传输的物理代价，而**并行维度的切分方式**决定了模型前向一共要支付多少次通信开销，又把哪一部分显存真正省了下来。
 
-在吞吐与时延的权衡里，推理系统还必须同时盯住两个核心指标：**首字延迟（TTFT，Time to First Token）**决定用户提交提示词后看到第一个输出词的等待时间，**逐 token 生成延迟（TPOT，Time per Output Token）**则决定后续流式吐字的间隔稳态。当单卡装不下权重或长上下文缓存时，集群设计沿着三条主线展开：算子与序列维度的切分、注意力与稀疏专家的混合并行，以及预填充与解码两个阶段的池化隔离。
+在吞吐与时延的权衡里，推理系统还必须同时盯住两个核心指标：**TTFT（Time to First Token，首字延迟）**决定用户提交提示词后看到第一个输出词的等待时间，**TPOT（Time per Output Token，逐 token 生成延迟）**则决定后续流式吐字的间隔稳态。当单卡装不下权重或长上下文缓存时，集群设计沿着三条主线展开：算子与序列维度的切分、注意力与稀疏专家的混合并行，以及预填充与解码两个阶段的池化隔离。
 
 ## 张量并行、序列并行与环形上下文并行
 
-当单个 Transformer 层的线性层权重超出单卡容量，或单条长输入需要多卡合力分担计算时，工程上依次引入张量并行（TP）、序列并行（SP）与环形上下文并行（Ring CP），三者的张量切分逻辑如图 1 所示。
+当单个 Transformer 层的线性层权重超出单卡容量，或单条长输入需要多卡合力分担计算时，工程上依次引入 TP（Tensor Parallelism，张量并行）、SP（Sequence Parallelism，序列并行）与 Ring CP（Context Parallelism，环形上下文并行），三者的张量切分逻辑如图 1 所示。
 
 ![TP Column/Row、序列并行 SP 与环形上下文并行 CP 张量切分对照](./diagrams/02-tp-sp-sharding.drawio '图 1：TP、SP 与 Ring CP 的张量切分及通信模式对照')
 
@@ -40,15 +40,17 @@ $$
 
 即使线性层权重已经切分，如果在 `AllReduce` 之后直接执行 `RMSNorm` 与残差累加，每张卡上仍不得不保存完整形状为 $[S, B, D]$ 的激活副本。以 $S = 8192$、$B = 4$、$D = 5120$ 的 BF16 张量为例，单张卡上的这一份激活副本就占用 320 MiB，在 8 卡间重复存储意味着整机多消耗 2.19 GiB 冗余显存。
 
-序列并行（SP，Sequence Parallelism）利用第 01 章给出的等价拆分，把原本的一步 `AllReduce` 还原为 `ReduceScatter` 接 `AllGather`（如图 1 中段所示）：行并行矩阵乘算完后，先沿序列维执行 `ReduceScatter`，使每张卡只保留 $[S/P, B, D]$ 的局部切片并独立完成归一化与残差相加；等到下一层列并行投影需要完整输入时，再用 `AllGather` 拼回 $[S, B, D]$。通信字节总量与原来完全相同，却把非张量并行算子的激活显存与计算量均匀压低了 $P$ 倍。
+SP（序列并行）利用第 01 章给出的等价拆分，把原本的一步 `AllReduce` 还原为 `ReduceScatter` 接 `AllGather`（如图 1 中段所示）：行并行矩阵乘算完后，先沿序列维执行 `ReduceScatter`，使每张卡只保留 $[S/P, B, D]$ 的局部切片并独立完成归一化与残差相加；等到下一层列并行投影需要完整输入时，再用 `AllGather` 拼回 $[S, B, D]$。通信字节总量与原来完全相同，却把非张量并行算子的激活显存与计算量均匀压低了 $P$ 倍。
 
-面对数十万 token 的超长输入预填充时，单纯扩大 TP 很快会受限于注意力头数上限——例如分组查询注意力（GQA）的 KV 头数往往只有 4 或 8 个，继续切分只能重复拷贝 KV 头。此时可以沿序列维开启环形上下文并行（Ring CP，Context Parallelism），将输入切分为 $P$ 份 $[S/P, H_q, d]$ 分摊到各卡（如图 1 下段所示）。
+面对数十万 token 的超长输入预填充时，单纯扩大 TP 很快会受限于注意力头数上限——例如 GQA（Grouped-Query Attention，分组查询注意力）的 KV 头数往往只有 4 或 8 个，继续切分只能重复拷贝 KV 头。此时可以沿序列维开启 Ring CP（环形上下文并行），将输入切分为 $P$ 份 $[S/P, H_q, d]$ 分摊到各卡（如图 1 下段所示）。
 
 前向计算时，每张卡原地固定自己的查询分片 $Q_i$，同时把本地块级键值 $KV_j$ 顺着逻辑环以点对点通信逐步接力传递；每收到一站新的块分片，记新旧两段的局部行最大值分别为 $m_0, m_1$、指数和为 $l_0, l_1$、未归一化分子为 $\tilde{O}_0, \tilde{O}_1$，则只需通过在线 Softmax 增量重缩放原地合并：
 
 $$
-m_{\text{new}} = \max(m_0, m_1), \qquad
-O_{\text{new}} = \frac{e^{m_0 - m_{\text{new}}} \tilde{O}_0 + e^{m_1 - m_{\text{new}}} \tilde{O}_1}{e^{m_0 - m_{\text{new}}} l_0 + e^{m_1 - m_{\text{new}}} l_1}
+\begin{aligned}
+m_{\text{new}} &= \max(m_0, m_1) \\
+O_{\text{new}} &= \frac{e^{m_0 - m_{\text{new}}} \tilde{O}_0 + e^{m_1 - m_{\text{new}}} \tilde{O}_1}{e^{m_0 - m_{\text{new}}} l_0 + e^{m_1 - m_{\text{new}}} l_1}
+\end{aligned}
 $$
 
 只要单个分块的矩阵计算时长能盖过点对点通信耗时，整条环传链路便能被计算掩盖，单卡自始至终无需在显存里凑齐完整的长序列 KV 缓存。
@@ -57,13 +59,13 @@ $$
 
 ## 注意力数据并行与专家并行混合布局
 
-当模型进入现代稀疏混合专家（MoE）与潜变量压缩时代，单纯扩大 TP 会带来严重的 KV Cache 存储冗余。在 GQA（例如只有 4 个 KV 头）模型上开启 8 卡张量并行（TP8），每组 KV 头不得不在 2 张卡上各存一份；而在 DeepSeek MLA 这类将键值压缩为仅有 **1 个**潜在表示头（每 token 仅 1 组 576 维潜向量）的架构上[^vllm-mla-cache]，开启 TP8 更是意味着 8 张卡存了 8 份一模一样的 KV Cache。
+当模型进入现代稀疏 MoE（Mixture-of-Experts，混合专家架构）与潜变量压缩时代，单纯扩大 TP 会带来严重的 KV Cache 存储冗余。在 GQA（例如只有 4 个 KV 头）模型上开启 TP8（8 卡张量并行），每组 KV 头不得不在 2 张卡上各存一份；而在 DeepSeek MLA 这类将键值压缩为仅有 **1 个**潜在表示头（每 token 仅 1 组 576 维潜向量）的架构上[^vllm-mla-cache]，开启 TP8 更是意味着 8 张卡存了 8 份一模一样的 KV Cache。
 
 以 60 层、每层 576 维 BF16 潜向量（每 token 每层 1152 字节）为例，一条 32K token 的请求仅单份缓存就占约 2.11 GiB；在 TP8 下整机重复保存 8 份就要吃掉 16.88 GiB，其中 87.5% 纯属冗余拷贝。
 
-为堵住这笔冗余开销，现代 MoE 集群普遍转向 **Attention DP + MoE EP** 混合并行架构。在注意力阶段，将这 8 张卡配置为 8 路数据并行（DP8）：不同并发请求散落到各自独立的计算卡上，每张卡只保存本地那批请求的分页 KV Cache，不仅把每卡分摊到的有效并发缓存空间扩大了 8 倍，还免除了注意力阶段的所有跨卡通信。
+为堵住这笔冗余开销，现代 MoE 集群普遍转向 **Attention DP + MoE EP** 混合并行架构。在注意力阶段，将这 8 张卡配置为 DP8（8 路数据并行）：不同并发请求散落到各自独立的计算卡上，每张卡只保存本地那批请求的分页 KV Cache，不仅把每卡分摊到的有效并发缓存空间扩大了 8 倍，还免除了注意力阶段的所有跨卡通信。
 
-到了 MoE 前馈阶段，若每张卡都复制全套上百个路由专家权重同样会耗尽显存，因此同一组卡切换为专家并行（EP8），把路由专家均匀拆散到各卡上，只通过跨卡 `All-to-All` 把 token 送去对应的专家卡计算。
+到了 MoE 前馈阶段，若每张卡都复制全套上百个路由专家权重同样会耗尽显存，因此同一组卡切换为 EP8（8 卡专家并行），把路由专家均匀拆散到各卡上，只通过跨卡 `All-to-All` 把 token 送去对应的专家卡计算。
 
 下面通过一个 4 卡 Top-2 路由的最小模型，观察激活张量如何在 DP 与 EP 两种布局之间切换。初始每张卡在 Attention DP 阶段各持有 1 个 token，激活形状为 $[1, D]$；可以通过图 2 中的步骤切换按钮依次查看门控计数握手、非对称重分发、局部专家矩阵乘以及加权还原五个阶段。
 
@@ -72,9 +74,9 @@ $$
   title="图 2：Attention DP + MoE EP 跨卡 Dispatch / Combine 全周期推演"
 />
 
-如图 2 所示，混合并行下的数据流沿着 `DP -> Dispatch -> Expert GEMM -> Combine -> DP` 的路径往返。在注意力阶段，各卡独立计算并保持规整的 $[1, D]$ 激活分布；进入 MoE 层后，路由器为每个 token 选出 $K$ 个目标专家，系统先经变长 `All-to-All（AllToAllV）` 的 Dispatch 阶段将激活副本发往专家所在的物理卡。
+如图 2 所示，混合并行下的数据流沿着 `DP -> Dispatch -> Expert GEMM -> Combine -> DP` 的路径往返。在注意力阶段，各卡独立计算并保持规整的 $[1, D]$ 激活分布；进入 MoE 层后，路由器为每个 token 选出 $K$ 个目标专家，系统先经变长 `AllToAllV`（变长全对全通信）的 Dispatch 阶段将激活副本发往专家所在的物理卡。
 
-一旦多个请求的路由结果集中命中同一个热点专家（如图 2 中原本均匀的 $[1, 1, 1, 1]$ 裂变为 $[2, 4, 2, 0] \times D$），不仅会在热点卡的接收缓冲区触发多对一的突发拥塞写入，更会把接下来的分组矩阵乘（`Grouped GEMM`）拖入木桶效应：没有命中任何 token 的冷门卡整轮空转，轻载卡早早算完却只能在同步点干等热点卡完成双倍载荷计算。
+一旦多个请求的路由结果集中命中同一个热点专家（如图 2 中原本均匀的 $[1, 1, 1, 1]$ 裂变为 $[2, 4, 2, 0] \times D$），不仅会在热点卡的接收缓冲区触发多对一的突发拥塞写入，更会把接下来的 `Grouped GEMM`（分组矩阵乘）拖入木桶效应：没有命中任何 token 的冷门卡整轮空转，轻载卡早早算完却只能在同步点干等热点卡完成双倍载荷计算。
 
 全部局部专家算完后，系统再经逆向的 `All-to-All Combine` 把输出矢量传回各自的源卡，按路由门控权重 $w_1 y_1 + w_2 y_2$ 加权累加，重新对齐成 $[1, D]$ 交还下一层 Attention DP。如何在底层通信栈与微批流水层面掩盖这两段跨卡 `All-to-All` 的等待时间，将在第 03 章专门展开拆解。
 
@@ -84,7 +86,7 @@ $$
 
 另一方面两者的硬件瓶颈完全相反：Prefill 处于计算受限区，适合开启大 TP 并行（如 TP4 或 TP8）用低批并发压低 TTFT；而 Decode 处于访存受限区，更需要高并发下的 Attention DP + MoE EP 来换取最大的 KV Cache 装机空间与稳态吞吐。
 
-将集群物理拆分为独立扩缩容的 Prefill 实例池与 Decode 实例池——即 **PD 分离（Prefill-Decode Disaggregation）**，成为兼顾 TTFT 与 TPOT 的标准系统架构（如图 3 所示）。
+将集群物理拆分为独立扩缩容的 Prefill 实例池与 Decode 实例池——即 **PD（Prefill-Decode Disaggregation，预填充-解码分离）**，成为兼顾 TTFT 与 TPOT 的标准系统架构（如图 3 所示）。
 
 ![Prefill-Decode 分离池与异步零拷贝 KV 传输引擎架构](./diagrams/02-pd-disaggregation-arch.drawio '图 3：PD 分离架构下的 NIXL / Mooncake 与昇腾 MemFabric 传输栈')
 
@@ -112,7 +114,7 @@ PD 分离把算力抢占矛盾转化为跨池状态迁移问题，整体执行�
 
 底层的 `MemfabricBackend` 与 `GlobalMemfabricTE` 则将传输协议抽离为配置项，对外暴露标准化的缓冲区注册与同步批量读取接口，从而在同一套业务代码下统一适配超节点内的 `sdma`、跨节点的 `device_rdma` 与面向新一代互连的 `device_urma` 协议栈，无需按机器型号编写分支逻辑[^ascend-memfabric]。
 
-无论使用 NVIDIA 还是昇腾栈，开启跨池前缀缓存（Prefix Caching）远端拉取时，Decode 节点仍需在建链阶段等待未命中的前缀块传输完毕；因此生产配置通常把热点系统提示词预热在本地或高带宽共享存储池中，以缩短首步生成前的跨池等待。
+无论使用 NVIDIA 还是昇腾栈，开启跨池 Prefix Caching（前缀缓存）远端拉取时，Decode 节点仍需在建链阶段等待未命中的前缀块传输完毕；因此生产配置通常把热点系统提示词预热在本地或高带宽共享存储池中，以缩短首步生成前的跨池等待。
 
 ## 算子切分与在线归并的 NumPy 验证
 
@@ -152,7 +154,10 @@ m_new = np.maximum(m0, m1)
 w0, w1_scale = np.exp(m0 - m_new), np.exp(m1 - m_new)
 o_cp = (num0 * w0 + num1 * w1_scale) / (l0 * w0 + l1 * w1_scale)
 assert o_cp.shape == (4, 8) and np.allclose(o_cp, o_ref, atol=1e-12)
-print(f"TP max_diff={np.max(np.abs(y_tp - y_ref)):.2e} | RingCP max_diff={np.max(np.abs(o_cp - o_ref)):.2e}")
+print(
+    f"TP max_diff={np.max(np.abs(y_tp - y_ref)):.2e} | "
+    f"RingCP max_diff={np.max(np.abs(o_cp - o_ref)):.2e}"
+)
 ```
 
 运行脚本得到两条切分路径与单卡基线的最大绝对误差输出：
@@ -163,7 +168,7 @@ TP max_diff=1.78e-15 | RingCP max_diff=2.22e-16
 
 两条路径的数值误差均落在双精度浮点机器精度量级（$10^{-15}$ 至 $10^{-16}$），验证了算子切分与上下文分块归并在数值上的等价性。
 
-但在 `Attention DP + MoE EP` 实际运行起来之后，每次前向连续发生的两趟跨卡 `All-to-All` 往往依然占据单层耗时的大半。下一章我们直接考察 NVIDIA `DeepEP`、华为昇腾 `HCCL MC2` 与双微批重叠的工程实现，看系统层如何消融这层通信气泡：[03 MoE 跨卡通信与通算融合：从 DeepEP 双模式、昇腾 MC2 到双微批重叠（DBO）](../03-moe-comm-and-overlap/)。
+但在 `Attention DP + MoE EP` 实际运行起来之后，每次前向连续发生的两趟跨卡 `All-to-All` 往往依然占据单层耗时的大半。下一章我们直接考察 NVIDIA `DeepEP`、华为昇腾 `HCCL MC2` 与双微批重叠的工程实现，看系统层如何消融这层通信气泡：[03 MoE 跨卡通信与通算融合：从 DeepEP 双模式、昇腾 MC2 到 DBO 双微批重叠](../03-moe-comm-and-overlap/)。
 
 [^vllm-linear]: 见 `vllm@bb23c0a8`：`vllm/model_executor/layers/linear.py` L619–637（`ColumnParallelLinear.forward` 条件执行 `tensor_model_parallel_all_gather`）及 L1859–1885（`RowParallelLinear.forward` 仅在 `tp_rank == 0` 叠加 `bias` 并执行 `tensor_model_parallel_all_reduce`）。
 

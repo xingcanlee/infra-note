@@ -36,20 +36,19 @@ flowchart TB
 
 在启动期，引擎先通过无 Guard 追踪一次捕获完整计算图，再沿注意力节点把模型拆成可静态编译的纯张量段与直调手写算子的隔离段，最后按预设批量桶捕获内外两层静态图并保留产物。
 
-进入运行期后，每一步前向先由调度器按统一 token 预算分配物理 KV 块，接着在数据并行（DP）各卡之间就图模式与填充尺寸达成一致，直接命中对应图桶重放，并借助独立拷贝流把采样结果异步传回主机，使 CPU 有余力提前编排下一轮输入。
+进入运行期后，每一步前向先由调度器按统一 token 预算分配物理 KV 块，接着在 **DP（Data Parallelism，数据并行）**各卡之间就图模式与填充尺寸达成一致，直接命中对应图桶重放，并借助独立拷贝流把采样结果异步传回主机，使 CPU 有余力提前编排下一轮输入。
 
-## 七章目录与学习路径
+## 六章目录与学习路径
 
-全系列按“显存分页与调度 → 主机发射与异步流 → 分段编译切图 → 静态图硬边界 → 运行时分发与 DP 共识 → 昇腾 NPU 图捕获落地 → Profiler 轨迹排障”七章递进展开：
+全系列按“显存分页与调度 → 主机发射与异步流 → 分段编译切图 → 静态图硬边界 → 运行时分发与 DP 共识 → Profiler 轨迹排障”六章递进展开：
 
-| 章节                                                                        | 核心机制                                       | 解决的关键痛点                     | 双平台对照焦距                                         |
-| --------------------------------------------------------------------------- | ---------------------------------------------- | ---------------------------------- | ------------------------------------------------------ |
-| [第 1 章：PagedAttention 与连续批调度](./01-paged-attention-and-scheduler/) | `BlockPool`、`null_block`、统一 `token_budget` | KV 显存碎片、前缀重复计算、阶段墙  | `reshape_and_cache_flash` vs `npu_scatter_pa_kv_cache` |
-| [第 2 章：异步执行与发射墙](./02-async-execution-and-launch-wall/)          | 异步 FIFO 入队、同步排空、`AsyncOutput`        | 小批解码设备空转、步间主机阻塞     | CUDA `copy_stream` vs CANN `TaskQueue`                 |
-| [第 3 章：torch.compile 与分段编译](./03-torch-compile-and-piecewise/)      | Custom Op 封装、无 Guard 追踪、`split_graph`   | 逐算子访存与动态注意力断图         | `TorchInductor` vs `AscendCompiler`                    |
-| [第 4 章：CUDA Graph 与四道硬边界](./04-cuda-graph-and-boundaries/)         | 指针冻结、安全填充、零同步、图内存池           | 重放读旧址、越界写与通信内存冲突   | `CUDAGraphWrapper` 与对称通信内存隔离                  |
-| [第 5 章：运行时分发与 DP 共识](./05-runtime-dispatch-and-nesting/)         | 三层包装（内外两层静态图壳）、模式共识         | 混合负载兼容与多卡 DP 集合通信死锁 | `CudaGraphManager` 与 DP 跨卡同步分发                  |
-| [第 6 章：昇腾 ACLGraph 与 npugraph_ex](./06-ascend-aclgraph-and-npugraph/) | 稀疏分桶、`UpdatableGraph`、`ExternalEvent`    | 流配额受限与动态参数原地刷新       | `ACLGraphWrapper` 与 `npugraph_ex`                     |
-| [第 7 章：性能观测与线上定位](./07-profiling-and-debugging/)                | 五类 Trace 指纹与二分隔离流程                  | 静默回退、隐式同步与尾槽串扰       | `nsys` vs `torch_npu.profiler`                         |
+| 章节                                                          | 核心机制                         | 解决痛点                 | 双平台对照                           |
+| ------------------------------------------------------------- | -------------------------------- | ------------------------ | ------------------------------------ |
+| [01 分页注意力与批调度](./01-paged-attention-and-scheduler/)  | `BlockPool`、统一 `token_budget` | KV 碎片、阶段隔离        | `reshape_and_cache` vs `npu_scatter` |
+| [02 异步执行与发射墙](./02-async-execution-and-launch-wall/)  | 异步 FIFO 入队、`AsyncOutput`    | 小批空转、步间阻塞       | CUDA `copy_stream` vs `TaskQueue`    |
+| [03 torch.compile 分段](./03-torch-compile-and-piecewise/)    | 无 Guard 追踪、`split_graph`     | 算子访存与动态注意力断图 | `TorchInductor` vs `AscendCompiler`  |
+| [04 CUDA Graph 硬边界](./04-cuda-graph-and-boundaries/)       | 指针锁定、`-1` 填充、共享图池    | 地址漂移、脏写与通信冲突 | `CUDAGraphWrapper` 与对称池隔离      |
+| [05 运行时分发与 DP 共识](./05-runtime-dispatch-and-nesting/) | 三层包装壳、DP 主机模式共识      | 混合批切换与集合死锁     | `CudaGraphManager` 与 DP 对齐        |
+| [06 性能观测与线上定位](./06-profiling-and-debugging/)        | 五类 Trace 指纹、二分隔离树      | 静默回退与尾槽越界       | `nsys` vs `torch_npu.profiler`       |
 
-建议从[第 1 章：PagedAttention 与连续批调度](./01-paged-attention-and-scheduler/)开始顺序阅读；需要补充硬件带宽模型、多卡集合通信语义或 DeepSeek 模型算子结构时，可随时对照[《推理与异构硬件基础》](../foundations/)、[《分布式并行与跨卡通信》](../distributed/)与[《DeepSeek 架构演进》](../deepseek/)。
+建议从[第 1 章：PagedAttention 与连续批调度](./01-paged-attention-and-scheduler/)开始顺序阅读；若希望专门深入昇腾底层算力流与 `Event`/`Notify` 原语、`torch.compile` 分层结构、ACL Graph 影子模型流与 `TaskGrp`/条件子图以及 `vllm-ascend` 四层全栈调优，可直接查阅姊妹系列[《执行图与昇腾 ACL Graph》](../aclgraph/)；需要补充硬件带宽模型、多卡集合通信语义或 DeepSeek 模型算子结构时，可随时对照[《推理与异构硬件基础》](../foundations/)、[《分布式并行与跨卡通信》](../distributed/)与[《DeepSeek 架构演进》](../deepseek/)。

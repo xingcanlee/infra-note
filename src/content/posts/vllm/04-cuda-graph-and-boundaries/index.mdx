@@ -7,13 +7,13 @@ series: { id: vllm, order: 5 }
 tags: [vLLM, CUDA Graph, PyTorch, KV Cache]
 ---
 
-分段编译能够把相邻的逐元素算子合并成少数 Triton 融合 Kernel 并把动态注意力隔离出去（见[第 3 章](../03-torch-compile-and-piecewise/)），但只要每次前向仍由 CPU 逐一提交 `cuLaunchKernel`，小批解码（decode）阶段的端到端延迟就依然受限于主机发射回路。在常见层数下，单步解码仅执行数微秒的计算算子却需要数十次到数百次调度入队，大量时间浪费在 Python 框架、PyTorch 分发器与驱动接口之间。
+分段编译能够把相邻的逐元素算子合并成少数 Triton 融合 Kernel 并把动态注意力隔离出去（见[第 3 章](../03-torch-compile-and-piecewise/)），但只要每次前向仍由 CPU 逐一提交 `cuLaunchKernel`，小批 **Decode（解码）**阶段的端到端延迟就依然受限于主机发射回路。在常见层数下，单步解码仅执行数微秒的计算算子却需要数十次到数百次调度入队，大量时间浪费在 Python 框架、PyTorch 分发器与驱动接口之间。
 
-要绕过主机侧的逐算子发射循环，推理引擎必须在预热阶段把一段甚至整张模型的算子序列提前录制成硬件级有向无环图（DAG），即 NVIDIA 的 **CUDA Graph**（对应昇腾上的 ACLGraph）。重放时，主机只需发起一次 `cudaGraphLaunch` 即可驱动整段算子链路连续执行，但这份零发射循环的收益建立在四道严格的硬件边界之上。
+要绕过主机侧的逐算子发射循环，推理引擎必须在预热阶段把一段甚至整张模型的算子序列提前录制成硬件级 **DAG（Directed Acyclic Graph，有向无环图）**，即 NVIDIA 的 **CUDA Graph**（对应昇腾上的 ACLGraph）。重放时，主机只需发起一次 `cudaGraphLaunch` 即可驱动整段算子链路连续执行，但这份零发射循环的收益建立在四道严格的硬件边界之上。
 
 ## 捕获与重放的两阶段契约
 
-CUDA Graph 的运行分为捕获（Capture）与重放（Replay）两个阶段。处于捕获模式时，提交到计算流上的算子不会立即写回计算结果，底层驱动改为记录 Kernel 函数指针、线程网格（Grid/Block）维度、张量输入输出的虚拟显存指针以及流间事件同步边，并在结束时固化为一张拓扑不可变的静态图。
+CUDA Graph 的运行分为 **Capture（捕获）**与 **Replay（重放）**两个阶段。处于捕获模式时，提交到计算流上的算子不会立即写回计算结果，底层驱动改为记录 Kernel 函数指针、**Grid/Block（线程网格与线程块）**维度、张量输入输出的虚拟显存指针以及流间事件同步边，并在结束时固化为一张拓扑不可变的静态图。
 
 进入重放阶段后，引擎彻底跳过 Python 控制流、PyTorch 算子分发与所有运行时形状分支判断，由 `GPU Command Processor` 按捕获期固化的指令包与指针表直接高速下发。因此重放期间绝不能改变任何被捕获张量的底层地址，也不能依赖运行时的张量数值来动态决定执行路径。
 
@@ -39,7 +39,7 @@ CUDA Graph 的运行分为捕获（Capture）与重放（Replay）两个阶段�
 
 静态图的网格维度与内存步长在捕获时全部固定，图内部既不能按输入标量动态申请张量，也无法临时扩容。因此实际批大小（请求数 `num_reqs` 或总 token 数 `num_tokens`）必须预先向上对齐到已捕获的分桶规格，满足 $B \le B_{\text{cap}}$ 或 $T \le T_{\text{cap}}$。
 
-分桶填充会带来一个容易被忽略的静默污染风险：假设上一轮分块预填充（chunked prefill）写满了容量为 $4$ 的槽位表 `[2, 3, 4, 5]`，下一轮批量缩小为 $B = 2$ 时，若调度层只更新前 2 个槽位，末尾第 3、4 槽仍残留着上一轮的合法物理块号 `4, 5`。重放时 KV 写入算子依然按 $B_{\text{cap}} = 4$ 发射，就会把 `Padding token` 的无效张量写进其他活跃请求正在使用的 KV 物理块。
+分桶填充会带来一个容易被忽略的静默污染风险：假设上一轮 **Chunked Prefill（分块预填充）**写满了容量为 $4$ 的槽位表 `[2, 3, 4, 5]`，下一轮批量缩小为 $B = 2$ 时，若调度层只更新前 2 个槽位，末尾第 3、4 槽仍残留着上一轮的合法物理块号 `4, 5`。重放时 KV 写入算子依然按 $B_{\text{cap}} = 4$ 发射，就会把 `Padding token` 的无效张量写进其他活跃请求正在使用的 KV 物理块。
 
 vLLM 在 MRV2 中通过双重隔离堵住这一漏洞：一方面，`BlockTables` 的槽位计算 Triton Kernel 从**实际 token 数**而非填充后的 token 数开始循环，一直刷写到 `max_num_tokens`，把所有超出真实长度的尾部 `Padding` 槽位显式置为 `PAD_SLOT_ID = -1`，使 KV 缓存写入 Kernel 自动跳过这些槽位[^vllm-block-table]；另一方面，`InputBuffers.is_padding` 在 `[num_tokens : num_tokens_after_padding]` 区间置为 `True`，隔离 MoE 路由与权重累加对 `Padding` 行的误计数[^vllm-input-batch][^vllm-model-runner]。
 
@@ -138,10 +138,16 @@ out_fixed = graph.replay().clone()
 assert ptr_match_fixed and torch.allclose(out_fixed[:2], torch.full((2, 4), 5.0))
 assert torch.allclose(out_fixed[2:], torch.zeros((2, 4)))
 
-print(f"rebind_ptr_match={ptr_match_buggy}, buggy_row0_val={out_buggy[0, 0].item():.1f} (stale_snapshot)")
+row0_bug = out_buggy[0, 0].item()
 print(
-    f"inplace_ptr_match={ptr_match_fixed}, fixed_row0_val={out_fixed[0, 0].item():.1f}, "
-    f"pad_row2_val={out_fixed[2, 0].item():.1f}, tail_slots={graph.static_slot[2:].tolist()}"
+    f"rebind_ptr_match={ptr_match_buggy}, "
+    f"buggy_row0_val={row0_bug:.1f} (stale_snapshot)"
+)
+print(
+    f"inplace_ptr_match={ptr_match_fixed}, "
+    f"fixed_row0_val={out_fixed[0, 0].item():.1f}, "
+    f"pad_row2_val={out_fixed[2, 0].item():.1f}, "
+    f"tail_slots={graph.static_slot[2:].tolist()}"
 )
 ```
 
@@ -160,7 +166,7 @@ inplace_ptr_match=True, fixed_row0_val=5.0, pad_row2_val=0.0, tail_slots=[-1, -1
 | 尾部填充与隔离保护 | `InputBuffers` 与 Kernel 刷写 $-1$ 槽位 | 复用 $-1$ 槽位并在算子端保护长效张量                       |
 | 副流汇合与通信池   | `join_after_forward` 与 NCCL 对称窗隔离 | `join_after_forward` 配合事件同步汇合                      |
 
-单张静态图的四道硬边界已经明确，但真实服务每一步的输入形态都在剧烈变化：单步可能全是均匀解码，下一步又混入分块预填充，而在多卡数据并行（DP）拓扑下，各张计算卡拿到的批长度甚至完全不同。引擎如何在同一个模型实例上无缝切换整图、分段图与 Eager 执行，又如何防止多卡各自为战引发集合通信死锁？下一篇[第 5 章：运行时分发与嵌套包装](../05-runtime-dispatch-and-nesting/)将拆解这套分层包装与跨卡共识协议。
+单张静态图的四道硬边界已经明确，但真实服务每一步的输入形态都在剧烈变化：单步可能全是均匀解码，下一步又混入分块预填充，而在多卡 **DP（Data Parallelism，数据并行）**拓扑下，各张计算卡拿到的批长度甚至完全不同。引擎如何在同一个模型实例上无缝切换整图、分段图与 Eager 执行，又如何防止多卡各自为战引发集合通信死锁？下一篇[第 5 章：运行时分发与嵌套包装](../05-runtime-dispatch-and-nesting/)将拆解这套分层包装与跨卡共识协议。
 
 [^vllm-input-batch]: `vllm` 项目（commit `bb23c0a8`），`vllm/v1/worker/gpu/input_batch.py:23-40` 中的 `InputBuffers`（预分配持久化缓冲区，含 `is_padding`）。
 

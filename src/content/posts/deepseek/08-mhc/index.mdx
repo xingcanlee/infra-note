@@ -1,5 +1,5 @@
 ---
-title: '08 流形受限超连接（mHC）：多流残差映射、双随机流形投影与单遍融合'
+title: '08 mHC 流形受限超连接：多流残差映射、双随机流形投影与单遍融合'
 description: '基于 DeepSeek mHC 原论文与 V4.1 源码，拆解 n=4 多流残差如何用 Pre、Res、Post 三组映射在不增子层 FLOPs 下拓宽残差容量，靠 Sinkhorn-Knopp 双随机投影稳住 60 层连乘，并以时移 Mega-mHC 将访存压至 10d。'
 series: { id: deepseek, order: 9 }
 pubDate: 2026-11-11
@@ -8,11 +8,11 @@ category: AI Infra
 toc: true
 ---
 
-在 [07 条件记忆（Engram）](../07-engram/) 的层间接口里，我们见到了 `mhc_post` 与 `mhc_pre` 两个算子，以及它们维护的四分支残差张量 `[T, 4, d]`。这里 $T$ 是 token 数量，$d$（mHC 原论文记作 $C$）是隐藏维，中间的通道维 $4$ 用来在算子外侧扩宽残差容量。
+在 [07 Engram 条件记忆](../07-engram/) 的层间接口里，我们见到了 `mhc_post` 与 `mhc_pre` 两个算子，以及它们维护的四分支残差张量 `[T, 4, d]`。这里 $T$ 是 token 数量，$d$（mHC 原论文记作 $C$）是隐藏维，中间的通道维 $4$ 用来在算子外侧扩宽残差容量。
 
-在经典 ResNet 与 Transformer 中，各层通过单流残差连接（Residual Connection）串联，即 $\mathbf{x}_{l+1} = \mathbf{x}_l + \mathcal{F}(\mathbf{x}_l, \mathcal{W}_l)$。想在不丢信息的前提下扩大层间特征容量，最直接的做法是把隐藏维 $C$ 扩大 $n$ 倍，但注意力与 FFN 的矩阵乘法计算量随宽度平方增长——宽度扩至 4 倍，FLOPs 会增至 16 倍。
+在经典 ResNet 与 Transformer 中，各层通过单流 Residual Connection（残差连接）串联，即 $\mathbf{x}_{l+1} = \mathbf{x}_l + \mathcal{F}(\mathbf{x}_l, \mathcal{W}_l)$。想在不丢信息的前提下扩大层间特征容量，最直接的做法是把隐藏维 $C$ 扩大 $n$ 倍，但注意力与 FFN 的矩阵乘法计算量随宽度平方增长——宽度扩至 4 倍，FLOPs 会增至 16 倍。
 
-超连接（Hyper-Connections，HC）改走另一条路：保持算子 $\mathcal{F}$ 内部宽度 $C$ 不变，仅把层间传递的隐藏状态扩宽为 $n = 4$ 条并行流 $\mathbf{x}_l \in \mathbb{R}^{4 \times C}$[^mhc-paper]。然而无约束线性映射会破坏标准残差的恒等映射性质：跨 60 个子层连乘后，27B 训练出现约 3000 倍的信号增益发散与损失尖峰，且显存读写随 $n$ 倍放大。DeepSeek 提出的流形受限超连接（mHC）[^mhc-paper] 与 V4.1 的单遍 `Mega-mHC`[^v41-flash] 分别从流形约束与算子时移两方面解开了这两个瓶颈。
+**HC（Hyper-Connections，超连接）**改走另一条路：保持算子 $\mathcal{F}$ 内部宽度 $C$ 不变，仅把层间传递的隐藏状态扩宽为 $n = 4$ 条并行流 $\mathbf{x}_l \in \mathbb{R}^{4 \times C}$[^mhc-paper]。然而无约束线性映射会破坏标准残差的恒等映射性质：跨 60 个子层连乘后，27B 训练出现约 3000 倍的信号增益发散与损失尖峰，且显存读写随 $n$ 倍放大。DeepSeek 提出的 **mHC（Manifold-Constrained Hyper-Connections，流形受限超连接）**[^mhc-paper]与 V4.1 的单遍 `Mega-mHC`[^v41-flash]分别从流形约束与算子时移两方面解开了这两个瓶颈。
 
 ## 三组映射架构与四流单层数值推演
 
@@ -27,7 +27,10 @@ toc: true
 首先由旁路聚合权重 $\mathcal{H}_l^{\mathrm{pre}} = [0.5, 0.2, 0.2, 0.1]$ 加权求和，把 `[4, C]` 压回算子所需的单流宽度 `[1, C]`，算出 $h_l^{\mathrm{in}} = 0.5 \times 10 + 0.2 \times 20 + 0.2 \times 30 + 0.1 \times 40 = 19.0$；经过 `RMSNorm` 与 $\mathcal{F}$ 算得单流增量 4.0——算子内部矩阵维度仍为 $C$，计算量零膨胀。与此同时，主干侧 4 条流直接左乘双随机矩阵 $\mathcal{H}_l^{\mathrm{res}}$ 原地交换跨流信息：
 
 $$
-\mathcal{H}_l^{\mathrm{res}} = \begin{bmatrix} 0.5 & 0.2 & 0.2 & 0.1 \\ 0.2 & 0.4 & 0.2 & 0.2 \\ 0.2 & 0.2 & 0.4 & 0.2 \\ 0.1 & 0.2 & 0.2 & 0.5 \end{bmatrix}, \quad \mathbf{h}_l^{\mathrm{res}} = \mathcal{H}_l^{\mathrm{res}} \begin{bmatrix} 10 \\ 20 \\ 30 \\ 40 \end{bmatrix} = \begin{bmatrix} 19.0 \\ 24.0 \\ 26.0 \\ 31.0 \end{bmatrix}
+\begin{aligned}
+\mathcal{H}_l^{\mathrm{res}} &= \begin{bmatrix} 0.5 & 0.2 & 0.2 & 0.1 \\ 0.2 & 0.4 & 0.2 & 0.2 \\ 0.2 & 0.2 & 0.4 & 0.2 \\ 0.1 & 0.2 & 0.2 & 0.5 \end{bmatrix} \\
+\mathbf{h}_l^{\mathrm{res}} &= \mathcal{H}_l^{\mathrm{res}} \begin{bmatrix} 10 \\ 20 \\ 30 \\ 40 \end{bmatrix} = \begin{bmatrix} 19.0 \\ 24.0 \\ 26.0 \\ 31.0 \end{bmatrix}
+\end{aligned}
 $$
 
 所得 $\mathbf{h}_l^{\mathrm{res}} = [19.0, 24.0, 26.0, 31.0]^\top$ 融合了其他分支的特征，而元素总和依然为 100.0，均值仍保持 25.0。最后旁路写回映射 $\mathcal{H}_l^{\mathrm{post}\,\top} = [1.2, 0.8, 0.5, 1.5]^\top$ 将算子增量 4.0 分配回 4 个分支得到 $[4.8, 3.2, 2.0, 6.0]^\top$，与 $\mathbf{h}_l^{\mathrm{res}}$ 相加输出 $\mathbf{x}_{l+1} = [23.8, 27.2, 28.0, 37.0]^\top$。
@@ -36,7 +39,7 @@ $$
 
 从图 1 和图 2 可以看出 `RMSNorm` 与残差主干的边界：`RMSNorm` 只位于右侧算子分支 $\mathcal{F}$ 内部，无法约束左侧 `Res` 直连主干。若往残差直连通道中也插入 `RMSNorm`，就会切断直连路径上的恒等导数，深层反向传播同样会出现梯度消失。而若为了稳定把 $\mathcal{H}_l^{\mathrm{res}}$ 固定为单位阵 $\mathbf{I}_4$（四流互不混合），原论文表 1 的消融已经给出了对比结论[^mhc-paper]：仅开 `Pre` 和 `Post` 而固定 $\mathcal{H}_l^{\mathrm{res}} = \mathbf{I}$ 时收益有限；放开可学习的 $\mathcal{H}_l^{\mathrm{res}}$ 单独一项就带来 -0.022 / -0.027（超过八成）的损失降幅，可见主干跨流混合正是超连接表达力的主要来源。
 
-要同时保住跨流混合和深层信号守恒，mHC 把 $\mathcal{H}_l^{\mathrm{res}}$ 限制在**双随机矩阵（Doubly Stochastic Matrix）**流形上。双随机矩阵满足三条性质：矩阵元素全为非负（$\mathcal{H}_{ij} \ge 0$），避免无约束 HC 中出现正负权重（如 -5.58 与 +6.77）互相抵消与放大；每行元素之和为 1（$\mathcal{H}_l^{\mathrm{res}}\mathbf{1}_4 = \mathbf{1}_4$），使输出每一维成为输入 4 条流的非负凸组合，输出幅值严格夹在旧值的最小与最大值之间；每列元素之和也为 1（$\mathbf{1}_4^\top\mathcal{H}_l^{\mathrm{res}} = \mathbf{1}_4^\top$），既让前向 4 条流总和守恒，又因为反向传播的雅可比矩阵恰为 $(\mathcal{H}_l^{\mathrm{res}})^\top$（原矩阵列和即转置矩阵行和），一并保证了反向梯度不爆炸。
+要同时保住跨流混合和深层信号守恒，mHC 把 $\mathcal{H}_l^{\mathrm{res}}$ 限制在 **Doubly Stochastic Matrix（双随机矩阵）**流形上。双随机矩阵满足三条性质：矩阵元素全为非负（$\mathcal{H}_{ij} \ge 0$），避免无约束 HC 中出现正负权重（如 -5.58 与 +6.77）互相抵消与放大；每行元素之和为 1（$\mathcal{H}_l^{\mathrm{res}}\mathbf{1}_4 = \mathbf{1}_4$），使输出每一维成为输入 4 条流的非负凸组合，输出幅值严格夹在旧值的最小与最大值之间；每列元素之和也为 1（$\mathbf{1}_4^\top\mathcal{H}_l^{\mathrm{res}} = \mathbf{1}_4^\top$），既让前向 4 条流总和守恒，又因为反向传播的雅可比矩阵恰为 $(\mathcal{H}_l^{\mathrm{res}})^\top$（原矩阵列和即转置矩阵行和），一并保证了反向梯度不爆炸。
 
 将神经网络预测的无约束实数打分 $\tilde{\mathcal{H}}_l^{\mathrm{res}}$ 投影到双随机流形，mHC 采用经典的 Sinkhorn-Knopp 算法[^mhc-paper]：先逐元素取指数 $\mathbf{M}^{(0)} = \exp(\tilde{\mathcal{H}}_l^{\mathrm{res}}) > 0$，随后交替执行列归一化 $\mathcal{T}_c$ 与行归一化 $\mathcal{T}_r$。用一个简单的 $2 \times 2$ 正矩阵手算 1 轮可见收敛速度：
 
@@ -54,11 +57,11 @@ $$
 
 阅读 mHC 原论文、DeepSeek-V4 技术报告与推理引擎源码时，常会碰到三套等价变量名。下表统一了各组映射符号及其流形约束[^mhc-paper][^dsv4-paper][^mhc-vllm][^mhc-ascend]：
 
-| 架构角色 | 论文 / V4 记号                                | 源码变量与形状             | 流形约束与含义                                               |
-| :------- | :-------------------------------------------- | :------------------------- | :----------------------------------------------------------- |
-| 输入聚合 | $\mathcal{H}^{\mathrm{pre}}_l$ / $A_l$        | `pre_mix` `[T, 1, 4]`      | $\sigma(\cdot)$ 非负加权汇聚 4 流至单流 `[1, d]`             |
-| 主干混合 | $\mathcal{H}^{\mathrm{res}}_l$ / $B_l$        | `comb_res_mix` `[T, 4, 4]` | Sinkhorn 投影至 Birkhoff 多面体 $\mathcal{M}^{\mathrm{res}}$ |
-| 输出写回 | $\mathcal{H}^{\mathrm{post}\,\top}_l$ / $C_l$ | `post_mix` `[T, 4, 1]`     | $2\sigma(\cdot)\in[0, 2]$，零初值对齐单位写回                |
+| 角色     | 论文 / V4 记号 | 源码变量与形状             | 流形约束与含义                               |
+| :------- | :------------- | :------------------------- | :------------------------------------------- |
+| 输入聚合 | $A_l$ / Pre    | `pre_mix` `[T, 1, 4]`      | $\sigma(\cdot)$ 非负加权汇聚 4 流至 `[1, d]` |
+| 主干混合 | $B_l$ / Res    | `comb_res_mix` `[T, 4, 4]` | Sinkhorn 投影至 Birkhoff 流形 $\mathcal{M}$  |
+| 输出写回 | $C_l$ / Post   | `post_mix` `[T, 4, 1]`     | $2\sigma(\cdot)\in[0,2]$，零初值对齐单位写回 |
 
 写回映射 $\mathcal{H}_l^{\mathrm{post}} = 2\sigma(\tilde{\mathcal{H}}_l^{\mathrm{post}})$ 乘上系数 2，使线性层零初始化时 $\sigma(0) \times 2 = 1.0$ 精确对齐标准残差的单位写回权重，同时保留向上放大学习特征至 2.0 的余量。
 
@@ -67,14 +70,17 @@ $$
 把单层方程从浅层 $l$ 递归展开到深层 $L$，得到多流跨层传播公式[^mhc-paper]：
 
 $$
-\mathbf{x}_{L} = \left(\prod_{i=1}^{L-l}\mathcal{H}_{L-i}^{\mathrm{res}}\right)\mathbf{x}_{l} + \sum_{i=l}^{L-1}\left(\prod_{j=1}^{L-1-i}\mathcal{H}_{L-j}^{\mathrm{res}}\right)\mathcal{H}_{i}^{\mathrm{post}\,\top}\mathcal{F}(\mathcal{H}_{i}^{\mathrm{pre}}\mathbf{x}_{i},\mathcal{W}_{i})
+\begin{aligned}
+\mathbf{x}_{L} &= \left(\prod_{i=1}^{L-l}\mathcal{H}_{L-i}^{\mathrm{res}}\right)\mathbf{x}_{l} \\
+&\quad + \sum_{i=l}^{L-1}\left(\prod_{j=1}^{L-1-i}\mathcal{H}_{L-j}^{\mathrm{res}}\right)\mathcal{H}_{i}^{\mathrm{post}\,\top}\mathcal{F}(\mathcal{H}_{i}^{\mathrm{pre}}\mathbf{x}_{i},\mathcal{W}_{i})
+\end{aligned}
 $$
 
 在无约束 HC 中，主干直连项是 60 个自由矩阵的连乘积。论文以复合矩阵的最大绝对行和度量前向信号增益、最大绝对列和度量反向梯度增益：在 27B MoE 实验里，无约束 HC 单层行和虽在 1 附近波动，连乘 60 子层后却在 12k 步处飙升至约 3000 倍复合增益并引发损失尖峰[^mhc-paper]。
 
 ![图 3 上半部分还原原论文 Fig. 8 27B 模型第 60 子层连乘复合矩阵，对比 HC 发散出 ±260 极值（~3000× 峰值）与 mHC 保持行和约 1.00、列和接近 1.00（≤1.6×）；下半部分展示 2×2 Sinkhorn-Knopp 投影四步收敛流程](./diagrams/08-mhc-sinkhorn-stability.drawio '图 3：27B 60 子层连乘复合矩阵对比与 Sinkhorn-Knopp 投影演算（对应原论文 Fig. 8）')
 
-图 3 上半部分还原了原论文 Fig. 8 的 27B 60 子层复合矩阵[^mhc-paper]：左侧 HC 连乘矩阵出现 +142.3 与 -139.3 的剧烈正负震荡，复合行和达到 +509.1、全序列峰值接近 3000 倍；右侧 mHC 连乘矩阵各元素平稳落在 0.21–0.29 之间，60 子层连乘行和仍保持在 1.00–1.01。这一长期稳定性来自双随机流形（Birkhoff 多面体）$\mathcal{M}^{\mathrm{res}}$ 的几何与代数结构：作为所有置换矩阵凸组合构成的凸包，双随机矩阵本身满足谱范数非膨胀（$\|\mathcal{H}_l^{\mathrm{res}}\|_2 \le 1$），单步不会放大任何方向的特征；更重要的是双随机矩阵集合对**矩阵乘法封闭**——任意两个双随机矩阵的乘积依然是双随机矩阵，因此无论网络堆到 60 个还是上百个子层，连乘项 $\prod \mathcal{H}_k^{\mathrm{res}}$ 始终留在同一守恒流形内而不发散。
+图 3 上半部分还原了原论文 Fig. 8 的 27B 60 子层复合矩阵[^mhc-paper]：左侧 HC 连乘矩阵出现 +142.3 与 -139.3 的剧烈正负震荡，复合行和达到 +509.1、全序列峰值接近 3000 倍；右侧 mHC 连乘矩阵各元素平稳落在 0.21–0.29 之间，60 子层连乘行和仍保持在 1.00–1.01。这一长期稳定性来自 **Birkhoff 多面体**（双随机流形）$\mathcal{M}^{\mathrm{res}}$ 的几何与代数结构：作为所有置换矩阵凸组合构成的凸包，双随机矩阵本身满足谱范数非膨胀（$\|\mathcal{H}_l^{\mathrm{res}}\|_2 \le 1$），单步不会放大任何方向的特征；更重要的是双随机矩阵集合对**矩阵乘法封闭**——任意两个双随机矩阵的乘积依然是双随机矩阵，因此无论网络堆到 60 个还是上百个子层，连乘项 $\prod \mathcal{H}_k^{\mathrm{res}}$ 始终留在同一守恒流形内而不发散。
 
 下表汇总原论文 27B 同算力基准（262B tokens、$t_{\max} = 20$ 步 Sinkhorn、训练端到端耗时仅增加 6.7%）的评测结果[^mhc-paper]：
 
@@ -90,7 +96,8 @@ $$
 
 $$
 \begin{aligned}
-\mathbf{x}^{\mathrm{flat}}_l &= \operatorname{flatten}(\mathbf{x}_l) \in \mathbb{R}^{1 \times 4C}, \qquad r = \frac{\|\mathbf{x}^{\mathrm{flat}}_l\|_2}{\sqrt{4C}} \\
+\mathbf{x}^{\mathrm{flat}}_l &= \operatorname{flatten}(\mathbf{x}_l) \in \mathbb{R}^{1 \times 4C} \\
+r &= \frac{\|\mathbf{x}^{\mathrm{flat}}_l\|_2}{\sqrt{4C}} \\
 [\tilde{\mathcal{H}}^{\mathrm{pre}}_l,\, \tilde{\mathcal{H}}^{\mathrm{post}}_l,\, \tilde{\mathcal{H}}^{\mathrm{res}}_l] &= \frac{1}{r}\Big(\alpha_l \odot (\mathbf{x}^{\mathrm{flat}}_l \varphi_l)\Big) + \mathbf{b}_l
 \end{aligned}
 $$
@@ -133,7 +140,7 @@ flowchart TD
 
 ## PyTorch 参考实现：从无约束 HC 到 mHC
 
-下面先给出标准无约束超连接（HC）的可运行参考实现，再仅替换归一化投影、流形激活、logit 空间偏置与首尾接口四处设计，落地带有不变量校验的 `ManifoldHyperConnection`。
+下面先给出标准无约束 HC 的可运行参考实现，再仅替换归一化投影、流形激活、logit 空间偏置与首尾接口四处设计，落地带有不变量校验的 `ManifoldHyperConnection`。
 
 ### 无约束 HC 实现与张量映射
 
@@ -233,12 +240,12 @@ class HyperConnection(nn.Module):
 
 从无约束 HC 升级到工程可稳健训练的 mHC，拓扑骨架保持不变，改动集中在以下四项对照：
 
-| 改动维度         | `HyperConnection`（HC）               | `ManifoldHyperConnection`（mHC）                           |
-| :--------------- | :------------------------------------ | :--------------------------------------------------------- |
-| 归一化与投影视野 | 逐流 `RMSNorm` 配共享投影（局部感知） | 展平 `[..., n * d]` 合并投影 $\varphi$（除法后置全局感知） |
-| 动态激活与约束   | `tanh` 加静态偏置，可正可负无守恒     | $\sigma(\cdot)$、$2\sigma(\cdot)$ 与 20 轮 FP32 Sinkhorn   |
-| 静态偏置空间     | 直接落在最终权重空间                  | 落在 logit 空间：$-\ln(n-1)$、$0$、$\gamma I_n$            |
-| 首尾流接口       | `unflatten` / `flatten` 维持多流      | 入口 `expand_streams` 复制，末层 `collapse_streams` 归并   |
+| 改动维度     | `HyperConnection`（HC）   | `ManifoldHyperConnection`（mHC）           |
+| :----------- | :------------------------ | :----------------------------------------- |
+| 归一化与投影 | 逐流 `RMSNorm` 配共享投影 | 展平 `[..., n * d]` 合并投影 $\varphi$     |
+| 激活与约束   | `tanh` 加静态偏置，无守恒 | $\sigma$、$2\sigma$ 与 20 轮 FP32 Sinkhorn |
+| 静态偏置空间 | 落在最终权重空间          | logit 空间：$-\ln(n-1)$、$0$、$\gamma I_n$ |
+| 首尾流接口   | `unflatten` / `flatten`   | `expand_streams` 复制与 `collapse_streams` |
 
 以下自包含实现将除法后置重排与 FP32 流形投影精度落地为 `ManifoldHyperConnection`，并在结尾同时验证了零初值残差等价性与 20 轮 Sinkhorn 双随机行和/列和收敛性。
 
@@ -428,7 +435,7 @@ def hc_post(self, x, residual, post, comb):
 
 即使单子层访存已被 `Mega-mHC` 压到 $10d$，仍有两笔成本无法绕开：层间驻留的 `[T, 4, d]` 残差体积始终是单流的 4 倍，流水线并行跨卡传输或向 DSpark 传入展平隐藏态时都必须按 $4d$ 规划带宽与显存[^mhc-paper][^mhc-ascend]；同时两套栈对投影权重、门控尺度与 20 轮 Sinkhorn 迭代均强制留在 FP32 精度，降低精度或缩减迭代步数留下的微小列和偏差，在 60 个子层连乘后依然会放大成数值漂移。
 
-到这里，我们已经拆解完主干网络上的两项关键创新：`Engram` 的 $O(1)$ 静态查表记忆与 `mHC` 的四流双随机残差。下一篇 [09 多 token 预测与动态推测解码（DSpark）](../09-mtp-and-dspark/) 将转向解码末端的权重带宽瓶颈，看模型如何一次前向并行验证多个草稿 token。
+到这里，我们已经拆解完主干网络上的两项关键创新：`Engram` 的 $O(1)$ 静态查表记忆与 `mHC` 的四流双随机残差。下一篇 [09 多 token 预测与 DSpark 动态推测解码](../09-mtp-and-dspark/) 将转向解码末端的权重带宽瓶颈，看模型如何一次前向并行验证多个草稿 token。
 
 [^mhc-paper]: Xie et al., _mHC: Manifold-Constrained Hyper-Connections_, [arXiv:2512.24880](https://arxiv.org/abs/2512.24880)（2025-12），Fig. 1、Fig. 8、§3.1–3.2 Table 1–2、§4.1–4.3 式 (3)–(20) 及 §5 Table 4。
 

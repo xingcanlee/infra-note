@@ -10,7 +10,7 @@ toc: true
 
 import RingCollectivesExplainer from '../../../../explainers/distributed/RingCollectivesExplainer';
 
-当模型权重、中间激活或长序列 KV Cache 超出单张加速卡的显存上限，多卡拆分后的推理端到端耗时由单卡计算访存与跨卡、跨机链路上的**集合通信（Collectives）**开销共同决定。估算一次跨卡传输耗时，需要将其拆解为固定延迟与链路带宽两项物理代价，再看软件栈如何依消息大小与互连拓扑选择最短路径。
+当模型权重、中间激活或长序列 KV Cache 超出单张加速卡的显存上限，多卡拆分后的推理端到端耗时由单卡计算访存与跨卡、跨机链路上的 **Collectives（集合通信）**开销共同决定。估算一次跨卡传输耗时，需要将其拆解为固定延迟与链路带宽两项物理代价，再看软件栈如何依消息大小与互连拓扑选择最短路径。
 
 ## 延迟带宽模型与环形及树形集合通信
 
@@ -22,7 +22,7 @@ $$
 
 其中 $\alpha$ 表示单跳控制面建链、Kernel 发射与协议握手的固定时延（通常为几微秒到数十微秒），而 $\beta = 1 / \text{BW}$ 是链路有效带宽 $\text{BW}$ 的倒数，即每传输 1 字节载荷所需的物理耗时（通常折算为 $\mu\text{s}/\text{B}$ 或 $\text{ns}/\text{B}$）。
 
-由这条公式可以直接区分推理阶段的两类典型压力区：解码（Decode）阶段每步通信通常只有几十 KB 的小消息，总耗时几乎由跳数相关的固定延迟 $\alpha$ 主导；预填充（Prefill）阶段一次需要归约数十 MB 激活张量，耗时则主要由载荷体积与带宽倒数 $\beta$ 决定。
+由这条公式可以直接区分推理阶段的两类典型压力区：Decode（解码）阶段每步通信通常只有几十 KB 的小消息，总耗时几乎由跳数相关的固定延迟 $\alpha$ 主导；Prefill（预填充）阶段一次需要归约数十 MB 激活张量，耗时则主要由载荷体积与带宽倒数 $\beta$ 决定。
 
 在多卡并行最频繁使用的全局求和归约（`AllReduce`）中，工程上常将 $P$ 张卡的协同拆分为 `ReduceScatter` 与 `AllGather` 两个连续阶段：第一阶段经过 $P - 1$ 步，每张卡先把长为 $S$ 字节的向量切为 $P$ 份，每步沿环向下一跳发送 $S / P$ 字节并原地累加，结束时第 $r$ 张卡刚好持有其中一个分片的完整全局和；第二阶段再经过 $P - 1$ 步，每张卡把刚算得的完整分片顺时针传递并直接覆写下游槽位，最终全组都集齐完整的归约向量。
 
@@ -49,19 +49,19 @@ $$
 
 ## 物理互连层级与超节点拓扑
 
-公式中的 $\alpha$ 与 $\beta$ 最终都锚定在硬件物理互连的层级结构上。阅读硬件拓扑时，区分**纵向扩展域（Scale-Up）**与**横向扩展域（Scale-Out）**的边界至关重要，NVIDIA GPU 与华为昇腾 NPU 的三层物理互联栈如图 2 所示。
+公式中的 $\alpha$ 与 $\beta$ 最终都锚定在硬件物理互连的层级结构上。阅读硬件拓扑时，区分 **Scale-Up（纵向扩展域）**与 **Scale-Out（横向扩展域）**的边界至关重要，NVIDIA GPU 与华为昇腾 NPU 的三层物理互联栈如图 2 所示。
 
 ![NVIDIA 与华为昇腾 Scale-Up vs Scale-Out 分层互联对比](./diagrams/01-nvlink-vs-hccs-arch.drawio '图 2：NVIDIA GPU 与昇腾 NPU 分层物理互联栈（Scale-Up vs Scale-Out）')
 
-自上而下看图 2 的第一层，数据搬运从单卡内部的存储引擎就已分道扬镳。NVIDIA GPU 围绕 Tensor Core 与高带宽显存（HBM3e）配备异步张量内存加速器（TMA，Tensor Memory Accelerator），由硬件直接完成全局显存与片上共享内存之间的多维张量块搬运；华为昇腾 NPU 则在 DaVinci AI Core 内部将负责矩阵乘的 Cube 核与负责向量算子的 Vector 核解耦，中间以片上 `UB（Unified Buffer）` 作为暂存，并由专职系统直接内存访问（SDMA）引擎异步承担片内外与卡间数据搬移。
+自上而下看图 2 的第一层，数据搬运从单卡内部的存储引擎就已分道扬镳。NVIDIA GPU 围绕 Tensor Core 与 HBM3e（High Bandwidth Memory 3e，高带宽显存）配备 TMA（Tensor Memory Accelerator，异步张量内存加速器），由硬件直接完成全局显存与片上共享内存之间的多维张量块搬运；华为昇腾 NPU 则在 DaVinci AI Core 内部将负责矩阵乘的 Cube 核与负责向量算子的 Vector 核解耦，中间以片上 `UB（Unified Buffer）` 作为暂存，并由专职 SDMA（System Direct Memory Access，系统直接内存访问）引擎异步承担片内外与卡间数据搬移。
 
 走出一张卡的封装边界，便进入决定高频算子切分上限的 Scale-Up 高速域。NVIDIA 在单机 8 卡内以 NVLink 4/5 接入 NVSwitch 全交叉交换网络（支持网内硬件归约 NVLS SHARP），并在机柜级进一步演进为 GB200 NVL72 多节点 NVLink（MNNVL）超节点，把 72 颗 GPU 拉进统一 NVLink 内存域。
 
-华为昇腾则在 Ascend 910B（A2）上通过全连接华为缓存一致性系统（HCCS，Huawei Cache Coherence System）环与 SDMA 零拷贝直写实现机内对等互联，并在 Ascend 910C（A3）与 CloudMatrix 384 超节点中借助 `Unified Bus（灵衢统一总线）` 把百卡级 NPU 纳入统一内存编址对等池，将高带宽内存语义从单机扩展到整机柜。
+华为昇腾则在 Ascend 910B（A2）上通过全连接 HCCS（Huawei Cache Coherence System，华为缓存一致性系统）环与 SDMA 零拷贝直写实现机内对等互联，并在 Ascend 910C（A3）与 CloudMatrix 384 超节点中借助 `Unified Bus（灵衢统一总线）` 把百卡级 NPU 纳入统一内存编址对等池，将高带宽内存语义从单机扩展到整机柜。
 
-当集群规模继续超出单一超节点的边界，跨节点流量才下沉到 Scale-Out 参数面网络。NVIDIA 集群通常经由 ConnectX-7/8 网卡接入 InfiniBand 或 RoCEv2 多轨交换网络，并借助 GPUDirect RDMA 与 GPU 侧直接发射队列（IBGDA，InfiniBand GPUDirect Async）让设备 Kernel 绕过 CPU 直接驱动网卡；昇腾集群则依靠片上集成的多轨 RoCE 端口走 `DEVICE_RDMA` 或 `DEVICE_URMA` 协议栈实现跨机点对点传输。
+当集群规模继续超出单一超节点的边界，跨节点流量才下沉到 Scale-Out 参数面网络。NVIDIA 集群通常经由 ConnectX-7/8 网卡接入 InfiniBand 或 RoCEv2 多轨交换网络，并借助 GPUDirect RDMA 与 IBGDA（InfiniBand GPUDirect Async，GPU 侧直接发射队列）让设备 Kernel 绕过 CPU 直接驱动网卡；昇腾集群则依靠片上集成的多轨 RoCE 端口走 `DEVICE_RDMA` 或 `DEVICE_URMA` 协议栈实现跨机点对点传输。
 
-由于跨机 Scale-Out 网络的单卡带宽通常比 Scale-Up 总线低一个数量级，且额外引入交换机转发跳数 $\alpha$，工程上几乎总是将每层同步两次的张量并行（TP，Tensor Parallelism）严格限制在 Scale-Up 域内，只将低频的数据并行（DP，Data Parallelism）、点对点 KV Cache 迁移或专家并行（EP，Expert Parallelism）推向 Scale-Out 网络。
+由于跨机 Scale-Out 网络的单卡带宽通常比 Scale-Up 总线低一个数量级，且额外引入交换机转发跳数 $\alpha$，工程上几乎总是将每层同步两次的 TP（Tensor Parallelism，张量并行）严格限制在 Scale-Up 域内，只将低频的 DP（Data Parallelism，数据并行）、点对点 KV Cache 迁移或 EP（Expert Parallelism，专家并行）推向 Scale-Out 网络。
 
 ## 运行时通信分发策略
 
@@ -137,11 +137,17 @@ def ring_allreduce(x: np.ndarray) -> np.ndarray:
     p = x.shape[0]
     buf = x.copy()
     for step in range(p - 1):  # ReduceScatter
-        msg = {((r + 1) % p, (r - step) % p): buf[r, (r - step) % p].copy() for r in range(p)}
+        msg = {
+            ((r + 1) % p, (r - step) % p): buf[r, (r - step) % p].copy()
+            for r in range(p)
+        }
         for (r, c), v in msg.items():
             buf[r, c] += v
     for step in range(p - 1):  # AllGather
-        msg = {((r + 1) % p, (r + 1 - step) % p): buf[r, (r + 1 - step) % p].copy() for r in range(p)}
+        msg = {
+            ((r + 1) % p, (r + 1 - step) % p): buf[r, (r + 1 - step) % p].copy()
+            for r in range(p)
+        }
         for (r, c), v in msg.items():
             buf[r, c] = v
     return buf

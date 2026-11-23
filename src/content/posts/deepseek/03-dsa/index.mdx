@@ -1,5 +1,5 @@
 ---
-title: '03 DeepSeek 稀疏注意力（DSA）：闪电索引器与潜空间动态稀疏筛选'
+title: '03 DSA 稀疏注意力：闪电索引器与潜空间动态稀疏筛选'
 description: '解释为什么不能把 NSA 块选择直接套进单头潜空间的 MLA：拆解 DeepSeek-V3.2 闪电索引器 ReLU 公式、64 头共享单键硬件考量、KL 蒸馏与 656 B/token 混合精度布局。'
 series: { id: deepseek, order: 4 }
 pubDate: 2026-11-06
@@ -8,17 +8,19 @@ category: AI Infra
 toc: true
 ---
 
-在[02 原生稀疏注意力（NSA）](../02-swa-and-nsa/)中，NSA 依靠 GQA 多组共享块选择把 64K 上下文的 KV 访存压缩了一个量级。但到了 DeepSeek-V3.2，团队并没有把 GQA-NSA 直接搬进生产主干：一方面，NSA 需要从头联合训练三路独立分支；另一方面，DeepSeek-V3.1-Terminus 底座的 128K 上下文已经建立在 MLA 之上，Decode 阶段通过矩阵吸收化归为单头 MQA 潜空间（128 个 Query 头共用 1 份 512 + 64 维潜向量）。
+在[02 NSA 原生稀疏注意力](../02-swa-and-nsa/)中，NSA 依靠 GQA 多组共享块选择把 64K 上下文的 KV 访存压缩了一个量级。但到了 DeepSeek-V3.2，团队并没有把 GQA-NSA 直接搬进生产主干：一方面，NSA 需要从头联合训练三路独立分支；另一方面，DeepSeek-V3.1-Terminus 底座的 128K 上下文已经建立在 MLA 之上，Decode 阶段通过矩阵吸收化归为单头 MQA 潜空间（128 个 Query 头共用 1 份 512 + 64 维潜向量）。
 
-若拆回多组 KV 会推翻 MLA 的显存收益，而用 128 个高精度头逐 token 全量打分又会退回 $O(L^2)$ 瓶颈。为此，DeepSeek-V3.2 提出的 **DeepSeek 稀疏注意力（DSA）**把「粗筛谁重要」和「精算怎么聚合」拆给算力预算完全不对称的两个模块[^ds32]：先由一个极轻量的**闪电索引器（Lightning Indexer）**快速扫过历史序列挑出 Top-$k$（生产取 $k = 2048$）槽位，再让主模型 128 头 MLA 只按索引 Gather 这 2048 条潜向量，把主注意力的复杂度从 $O(L^2)$ 压至 $O(Lk)$。
+若拆回多组 KV 会推翻 MLA 的显存收益，而用 128 个高精度头逐 token 全量打分又会退回 $O(L^2)$ 瓶颈。为此，DeepSeek-V3.2 提出的 **DSA（DeepSeek Sparse Attention，DeepSeek 稀疏注意力）**把「粗筛谁重要」和「精算怎么聚合」拆给算力预算完全不对称的两个模块[^ds32]：先由极轻量的 **Lightning Indexer（闪电索引器）**快速扫过历史序列挑出 Top-$k$（生产取 $k = 2048$）槽位，再让主模型 128 头 MLA 只按索引 Gather 这 2048 条潜向量，把主注意力的复杂度从 $O(L^2)$ 压至 $O(Lk)$。
 
 ## 闪电索引器定义与硬件对齐直觉
 
 对于当前位置 $t$ 的查询隐状态 $\mathbf{h}_t \in \mathbb{R}^d$ 与历史位置 $s$ 的隐状态 $\mathbf{h}_s \in \mathbb{R}^d$，闪电索引器按如下公式计算两者的稀疏索引分数 $I_{t,s}$，主模型随后仅在分数最高的 Top-$k$ 集合上执行注意力计算[^ds32]：
 
 $$
-I_{t,s} = \sum_{j=1}^{H^I} w_{t,j}^I \cdot \operatorname{ReLU}\!\left(\mathbf{q}_{t,j}^I \cdot \mathbf{k}_s^I\right), \qquad
-\mathbf{u}_t = \operatorname{Attn}\!\left(\mathbf{h}_t,\; \bigl\{\mathbf{c}_s \mid I_{t,s} \in \operatorname{Top-}k(I_{t,:})\bigr\}\right)
+\begin{aligned}
+I_{t,s} &= \sum_{j=1}^{H^I} w_{t,j}^I \cdot \operatorname{ReLU}\!\left(\mathbf{q}_{t,j}^I \cdot \mathbf{k}_s^I\right) \\
+\mathbf{u}_t &= \operatorname{Attn}\!\left(\mathbf{h}_t,\; \bigl\{\mathbf{c}_s \mid I_{t,s} \in \operatorname{Top-}k(I_{t,:})\bigr\}\right)
+\end{aligned}
 $$
 
 其中 $H^I = 64$ 是索引查询头数，单头维度 $d^I = 128$（前 64 维带 RoPE 旋转），$\mathbf{q}_{t,j}^I \in \mathbb{R}^{128}$ 复用了主模型 Query 潜向量 $c_t^Q \in \mathbb{R}^{1536}$ 下投映射而来；$w_{t,j}^I \in \mathbb{R}$ 是由 $\mathbf{h}_t$ 投影出的每头动态加权标量；而全部 64 个索引头共用**同一份索引键** $\mathbf{k}_s^I \in \mathbb{R}^{128}$。
@@ -56,11 +58,11 @@ flowchart TD
     SP --> MAIN
 ```
 
-在第一阶段（Dense Warm-up）中，主模型所有 671B 参数完全冻结，前向依然跑全量稠密 MLA。为了给单输出打分器 $I_{t,:}$ 构造唯一且平滑的监督信号，系统先把主注意力全部 128 个头的概率逐位置求和，再沿序列维做 L1 归一化，得到唯一的教师分布 $p_{t,:} \in \mathbb{R}^t$。
+在第一阶段 Dense Warm-up（稠密预热）中，主模型所有 671B 参数完全冻结，前向依然跑全量稠密 MLA。为了给单输出打分器 $I_{t,:}$ 构造唯一且平滑的监督信号，系统先把主注意力全部 128 个头的概率逐位置求和，再沿序列维做 L1 归一化，得到唯一的教师分布 $p_{t,:} \in \mathbb{R}^t$。
 
 随后直接用 KL 散度 $\sum_t D_{\mathrm{KL}}(p_{t,:} \,\|\, \operatorname{Softmax}(I_{t,:}))$ 单独训练闪电索引器。由于 671B 主干权重保持冻结，这一阶段可用较大的学习率（$10^{-3}$）快速拟合，仅消耗 1,000 步（每步 16 条 128K 序列，共 2.1B token）便完成对齐热身。
 
-进入第二阶段（Sparse Training）后，系统正式打开 Top-2048 稀疏筛选集合 $\mathcal{S}_t$，放开主干全部参数以 $7.3 \times 10^{-6}$ 的小学习率联合训练 15,000 步（480 条 128K 序列，共 943.7B token），同时将索引器的 KL 损失收窄到被选中集合 $\mathcal{S}_t$ 之上。
+进入第二阶段 Sparse Training（稀疏联合训练）后，系统正式打开 Top-2048 稀疏筛选集合 $\mathcal{S}_t$，放开主干全部参数以 $7.3 \times 10^{-6}$ 的小学习率联合训练 15,000 步（480 条 128K 序列，共 943.7B token），同时将索引器的 KL 损失收窄到被选中集合 $\mathcal{S}_t$ 之上。
 
 尤为关键的一步是对送入索引器的隐状态做 `detach` 梯度截断：索引器的参数更新仅由对齐主注意力的 KL 损失驱动，而 671B 主模型仅由语言建模交叉熵损失驱动。这样既让主干表示逐渐适应稀疏读取后的特征分布，又防止低比特粗糙排序引入的梯度噪声反向污染主网络表征。
 
@@ -76,7 +78,7 @@ flowchart TD
 
 到了算子执行层，Hopper H800 上暴露出一个关键的指令吞吐错配[^flashmla]：单个 SM 上的 Tensor Core 执行 64 个查询头的 MMA 只需约 34 个时钟周期，但 H800 缺乏 `fp8_e4m3` 直转 `bf16` 的硬件指令，CUDA Core 必须依次完成 E4M3 转 FP16、转 FP32、转 BF16 再乘缩放因子，单 token 反量化耗时高达约 50 个周期，导致解码核卡在反量化上。
 
-由于 128 个头共用同一份潜缓存（MQA），FlashMLA 把两个处理各 64 头的 CTA 编成大小为 2 的 CTA Cluster：每个 CTA 只从全局显存加载并反量化**一半**的潜向量（约 25 个周期，低于 34 周期的 MMA 耗时），再通过 Hopper 分布式共享内存（DSMEM）异步互换各自解好的一半，将反量化耗时藏进 Tensor Core 流水线之后。
+由于 128 个头在 MQA 吸收态下共用同一份潜缓存，FlashMLA 把两个处理各 64 头的 CTA 编成大小为 2 的 CTA Cluster：每个 CTA 只从全局显存加载并反量化**一半**的潜向量（约 25 个周期，低于 34 周期的 MMA 耗时），再通过 Hopper **DSMEM（Distributed Shared Memory，分布式共享内存）**异步互换各自解好的一半，将反量化耗时藏进 Tensor Core 流水线之后。
 
 在这一流水线调度下，`fp8_ds_mla` 解码 Kernel 在 `topk = 2048` 条件下跑出 410 TFLOPS，并在序列超过约 3,000 token 后反超稠密解码 Kernel。
 
@@ -86,12 +88,12 @@ flowchart TD
 
 ![vLLM GPU FlashMLA Sparse 与 vllm-ascend NPU AscendSFA 运行时对照](./diagrams/03-dsa-gpu-vs-npu-runtime.drawio '图 3：vLLM GPU（FlashMLA Sparse）与 vllm-ascend NPU（AscendSFA）运行时对照')
 
-| 对比维度     | `vLLM` GPU[^vllm]                             | `vllm-ascend` NPU[^ascend]                             |
-| :----------- | :-------------------------------------------- | :----------------------------------------------------- |
-| 入口与缓存类 | `Indexer` 与 `DeepseekV32IndexerCache`        | `AscendSFAImpl` 与 `AscendSFAIndexerBackend`           |
-| 物理分页粒度 | 统一按 64 token 组织页块                      | 物理对齐 128 块，逻辑按 1 token 粒度稀疏读取           |
-| 前置投影路径 | 键值/权重融合 GEMM + 量化 Q/RoPE 算子         | 三路预处理策略 + 独立流异步发射 Q                      |
-| 打分与读取   | `SparseAttnIndexer` + `FlashMLASparseBackend` | `npu_lightning_indexer` + `npu_sparse_flash_attention` |
+| 对比维度     | `vLLM` GPU[^vllm]                      | `vllm-ascend` NPU[^ascend]                 |
+| :----------- | :------------------------------------- | :----------------------------------------- |
+| 入口与缓存类 | `Indexer`、`DeepseekV32IndexerCache`   | `AscendSFAImpl`、`AscendSFAIndexerBackend` |
+| 物理分页粒度 | 统一按 64 token 组织页块               | 物理 128 块，逻辑按 1 tok 稀疏读取         |
+| 前置投影路径 | 键值/权重融合 GEMM + 量化 Q/RoPE       | 三路预处理 + 独立流异步发射 Q              |
+| 打分与读取   | `SparseAttnIndexer` + `FlashMLASparse` | `npu_lightning_indexer` + `npu_sparse_fa`  |
 
 ## PyTorch 参考实现与结构验证
 
@@ -114,21 +116,24 @@ class LightningIndexer(nn.Module):
         topk_ids: [T_q, k_top]（仅保留得分最高的 k_top 个历史 token 槽位下标）
     """
 
-    def __init__(self, d_model: int = 64, h_idx: int = 8, d_idx: int = 32, k_top: int = 16):
+    def __init__(
+        self, d_model: int = 64, h_idx: int = 8, d_idx: int = 32, k_top: int = 16
+    ):
         super().__init__()
         self.h_idx, self.d_idx, self.k_top = h_idx, d_idx, k_top
-        self.wq_b = nn.Linear(d_model, h_idx * d_idx, bias=False)  # 多头轻量索引查询
-        self.wk = nn.Linear(d_model, d_idx, bias=False)            # 全部索引头共享 1 份键（132 B/tok）
-        self.weights_proj = nn.Linear(d_model, h_idx, bias=False)  # 每头动态加权标量 w_{t,j}^I
+        self.wq_b = nn.Linear(d_model, h_idx * d_idx, bias=False)  # 多头索引查询
+        self.wk = nn.Linear(d_model, d_idx, bias=False)            # 共享键 (132 B/tok)
+        self.weights_proj = nn.Linear(d_model, h_idx, bias=False)  # 动态加权标量
 
     def forward(self, h_q: torch.Tensor, h_kv: torch.Tensor) -> torch.Tensor:
         q_idx = self.wq_b(h_q).view(-1, self.h_idx, self.d_idx)  # [T_q, H^I, d^I]
         k_idx = self.wk(h_kv)                                    # [L_ctx, d^I]（单头共享）
         w_idx = self.weights_proj(h_q)                           # [T_q, H^I]
 
-        # ReLU 截断负相关性并免除全序列 Softmax 同步，天然支持 FP8 低比特累加后排序
-        head_scores = F.relu(torch.einsum("thd,sd->ths", q_idx, k_idx))  # [T_q, H^I, L_ctx]
-        scores = (head_scores * w_idx.unsqueeze(-1)).sum(dim=1)          # [T_q, L_ctx]
+        # ReLU 截断负相关性并免除 Softmax 同步，支持 FP8 累加后排序
+        raw_scores = torch.einsum("thd,sd->ths", q_idx, k_idx)
+        head_scores = F.relu(raw_scores)                         # [T_q, H^I, L_ctx]
+        scores = (head_scores * w_idx.unsqueeze(-1)).sum(dim=1)  # [T_q, L_ctx]
         return torch.topk(scores, k=self.k_top, dim=-1, sorted=False).indices
 
 
@@ -140,14 +145,15 @@ def sparse_mla_decode(
     topk_ids: torch.Tensor,
     w_uv: torch.Tensor,
 ) -> torch.Tensor:
-    """只从 [L_ctx, ...] HBM 缓存中 Gather topk_ids 槽位并完成 1 头潜空间 MQA（复杂度 O(k_top)）。"""
+    """只从 [L_ctx, ...] HBM 缓存 Gather topk_ids 槽位并完成 1 头 MQA。"""
     # 仅搬运选中的 k_top 行，避免扫描全长上下文
     c_sel = c_kv_cache[topk_ids]                            # [k_top, d_c]
     k_pe_sel = k_pe_cache[topk_ids]                         # [k_top, d_rope]
     q_mqa = torch.cat([q_abs, q_pe], dim=-1)                # [N, d_c + d_rope]
     kv_sel = torch.cat([c_sel, k_pe_sel], dim=-1)           # [k_top, d_c + d_rope]
     scale = 1.0 / math.sqrt(q_mqa.shape[-1])
-    attn_latent = F.softmax((q_mqa @ kv_sel.T) * scale, dim=-1) @ c_sel  # [N, d_c]
+    attn_w = F.softmax((q_mqa @ kv_sel.T) * scale, dim=-1)
+    attn_latent = attn_w @ c_sel                            # [N, d_c]
     return torch.einsum("hc,hcv->hv", attn_latent, w_uv)    # [N, d_v]
 
 

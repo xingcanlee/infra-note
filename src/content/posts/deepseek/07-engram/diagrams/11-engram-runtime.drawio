@@ -6,12 +6,12 @@
         <mxCell id="1" parent="0"/>
         <mxCell id="pf__tk_0" value="" style="endArrow=none;startArrow=none;html=1;strokeColor=#e2e2dd;strokeWidth=1.0;dashed=1;dashPattern=4 4;" edge="1" parent="1">
           <mxGeometry relative="1" as="geometry">
-            <mxPoint x="136" y="16" as="sourcePoint"/>
-            <mxPoint x="136" y="168" as="targetPoint"/>
+            <mxPoint x="120" y="16" as="sourcePoint"/>
+            <mxPoint x="120" y="168" as="targetPoint"/>
           </mxGeometry>
         </mxCell>
         <mxCell id="pf__tl_0" value="0ms" style="text;html=1;whiteSpace=wrap;align=center;verticalAlign=middle;fontFamily=Inter;fontSize=12;fontColor=#5c6067;" vertex="1" parent="1">
-          <mxGeometry x="112" y="168" width="48" height="24" as="geometry"/>
+          <mxGeometry x="88" y="168" width="64" height="24" as="geometry"/>
         </mxCell>
         <mxCell id="pf__tk_25" value="" style="endArrow=none;startArrow=none;html=1;strokeColor=#e2e2dd;strokeWidth=1.0;dashed=1;dashPattern=4 4;" edge="1" parent="1">
           <mxGeometry relative="1" as="geometry">
@@ -20,76 +20,76 @@
           </mxGeometry>
         </mxCell>
         <mxCell id="pf__tl_25" value="2.5ms" style="text;html=1;whiteSpace=wrap;align=center;verticalAlign=middle;fontFamily=Inter;fontSize=12;fontColor=#5c6067;" vertex="1" parent="1">
-          <mxGeometry x="240" y="168" width="48" height="24" as="geometry"/>
+          <mxGeometry x="232" y="168" width="64" height="24" as="geometry"/>
         </mxCell>
         <mxCell id="pf__tk_50" value="" style="endArrow=none;startArrow=none;html=1;strokeColor=#e2e2dd;strokeWidth=1.0;dashed=1;dashPattern=4 4;" edge="1" parent="1">
           <mxGeometry relative="1" as="geometry">
-            <mxPoint x="392" y="16" as="sourcePoint"/>
-            <mxPoint x="392" y="168" as="targetPoint"/>
+            <mxPoint x="408" y="16" as="sourcePoint"/>
+            <mxPoint x="408" y="168" as="targetPoint"/>
           </mxGeometry>
         </mxCell>
         <mxCell id="pf__tl_50" value="5.0ms" style="text;html=1;whiteSpace=wrap;align=center;verticalAlign=middle;fontFamily=Inter;fontSize=12;fontColor=#5c6067;" vertex="1" parent="1">
-          <mxGeometry x="368" y="168" width="48" height="24" as="geometry"/>
+          <mxGeometry x="376" y="168" width="64" height="24" as="geometry"/>
         </mxCell>
         <mxCell id="pf__tk_75" value="" style="endArrow=none;startArrow=none;html=1;strokeColor=#e2e2dd;strokeWidth=1.0;dashed=1;dashPattern=4 4;" edge="1" parent="1">
           <mxGeometry relative="1" as="geometry">
-            <mxPoint x="520" y="16" as="sourcePoint"/>
-            <mxPoint x="520" y="168" as="targetPoint"/>
+            <mxPoint x="544" y="16" as="sourcePoint"/>
+            <mxPoint x="544" y="168" as="targetPoint"/>
           </mxGeometry>
         </mxCell>
         <mxCell id="pf__tl_75" value="7.5ms" style="text;html=1;whiteSpace=wrap;align=center;verticalAlign=middle;fontFamily=Inter;fontSize=12;fontColor=#5c6067;" vertex="1" parent="1">
-          <mxGeometry x="496" y="168" width="48" height="24" as="geometry"/>
+          <mxGeometry x="512" y="168" width="64" height="24" as="geometry"/>
         </mxCell>
         <mxCell id="pf__tk_100" value="" style="endArrow=none;startArrow=none;html=1;strokeColor=#e2e2dd;strokeWidth=1.0;dashed=1;dashPattern=4 4;" edge="1" parent="1">
           <mxGeometry relative="1" as="geometry">
-            <mxPoint x="648" y="16" as="sourcePoint"/>
-            <mxPoint x="648" y="168" as="targetPoint"/>
+            <mxPoint x="688" y="16" as="sourcePoint"/>
+            <mxPoint x="688" y="168" as="targetPoint"/>
           </mxGeometry>
         </mxCell>
         <mxCell id="pf__tl_100" value="10.0ms" style="text;html=1;whiteSpace=wrap;align=center;verticalAlign=middle;fontFamily=Inter;fontSize=12;fontColor=#5c6067;" vertex="1" parent="1">
-          <mxGeometry x="616" y="168" width="56" height="24" as="geometry"/>
+          <mxGeometry x="656" y="168" width="64" height="24" as="geometry"/>
         </mxCell>
-        <mxCell id="pf__ln0" value="Main Stream&lt;br&gt;主干解码流" style="text;html=1;whiteSpace=wrap;align=right;verticalAlign=middle;fontFamily=Inter;fontSize=14;fontStyle=1;fontColor=#1d1d1f;" vertex="1" parent="1">
-          <mxGeometry x="0" y="16" width="128" height="64" as="geometry"/>
+        <mxCell id="pf__ln0" value="Main Stream&lt;br&gt;主干解码流" style="text;html=1;whiteSpace=wrap;align=right;verticalAlign=middle;fontFamily=Inter;fontSize=12;fontStyle=1;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="0" y="16" width="112" height="64" as="geometry"/>
         </mxCell>
         <mxCell id="pf__bg0" value="" style="rounded=1;absoluteArcSize=1;arcSize=8;html=1;fillColor=#f4f4f2;strokeColor=#e2e2dd;strokeWidth=1;" vertex="1" parent="1">
-          <mxGeometry x="136" y="16" width="512" height="64" as="geometry"/>
+          <mxGeometry x="120" y="16" width="568" height="64" as="geometry"/>
         </mxCell>
-        <mxCell id="pf__b0_0" value="Embed +&lt;br&gt;Hash" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f2fb;strokeColor=#2f5783;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=14;fontColor=#1d1d1f;" vertex="1" parent="1">
-          <mxGeometry x="136" y="16" width="72" height="64" as="geometry"/>
+        <mxCell id="pf__b0_0" value="Embed +&lt;br&gt;Hash" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f2fb;strokeColor=#2f5783;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="120" y="16" width="80" height="64" as="geometry"/>
         </mxCell>
-        <mxCell id="pf__b0_1" value="Layer 0 全层计算&lt;br&gt;(mHC + Attn + MoE)" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f2fb;strokeColor=#2f5783;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=14;fontColor=#1d1d1f;" vertex="1" parent="1">
-          <mxGeometry x="208" y="16" width="184" height="64" as="geometry"/>
+        <mxCell id="pf__b0_1" value="Layer 0 全层计算&lt;br&gt;(mHC + Attn + MoE)" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f2fb;strokeColor=#2f5783;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="200" y="16" width="200" height="64" as="geometry"/>
         </mxCell>
-        <mxCell id="pf__b0_2" value="wait +&lt;br&gt;L1 Engram" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#fbf2df;strokeColor=#7b5518;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=14;fontColor=#1d1d1f;" vertex="1" parent="1">
-          <mxGeometry x="392" y="16" width="88" height="64" as="geometry"/>
+        <mxCell id="pf__b0_2" value="wait +&lt;br&gt;L1 Engram" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#fbf2df;strokeColor=#7b5518;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="400" y="16" width="80" height="64" as="geometry"/>
         </mxCell>
-        <mxCell id="pf__b0_3" value="Layer 1 Attn + MoE&lt;br&gt;-&amp;gt; L2..L13" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f2fb;strokeColor=#2f5783;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=14;fontColor=#1d1d1f;" vertex="1" parent="1">
-          <mxGeometry x="480" y="16" width="168" height="64" as="geometry"/>
+        <mxCell id="pf__b0_3" value="Layer 1 Attn + MoE&lt;br&gt;-&amp;gt; L2..L13" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f2fb;strokeColor=#2f5783;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="480" y="16" width="208" height="64" as="geometry"/>
         </mxCell>
-        <mxCell id="pf__ln1" value="Prefetch Stream&lt;br&gt;PCIe / HCCS 预取" style="text;html=1;whiteSpace=wrap;align=right;verticalAlign=middle;fontFamily=Inter;fontSize=14;fontStyle=1;fontColor=#1d1d1f;" vertex="1" parent="1">
-          <mxGeometry x="0" y="96" width="128" height="64" as="geometry"/>
+        <mxCell id="pf__ln1" value="Prefetch Stream&lt;br&gt;PCIe / HCCS 预取" style="text;html=1;whiteSpace=wrap;align=right;verticalAlign=middle;fontFamily=Inter;fontSize=12;fontStyle=1;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="0" y="96" width="112" height="64" as="geometry"/>
         </mxCell>
         <mxCell id="pf__bg1" value="" style="rounded=1;absoluteArcSize=1;arcSize=8;html=1;fillColor=#f4f4f2;strokeColor=#e2e2dd;strokeWidth=1;" vertex="1" parent="1">
-          <mxGeometry x="136" y="96" width="512" height="64" as="geometry"/>
+          <mxGeometry x="120" y="96" width="568" height="64" as="geometry"/>
         </mxCell>
-        <mxCell id="pf__b1_0" value="Host DDR 异步预取&lt;br&gt;-&amp;gt; staged_rows" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#fbf2df;strokeColor=#7b5518;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=14;fontColor=#1d1d1f;" vertex="1" parent="1">
-          <mxGeometry x="208" y="96" width="136" height="64" as="geometry"/>
+        <mxCell id="pf__b1_0" value="Host DDR 异步预取&lt;br&gt;-&amp;gt; staged_rows" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#fbf2df;strokeColor=#7b5518;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="200" y="96" width="160" height="64" as="geometry"/>
         </mxCell>
-        <mxCell id="pf__b1_1" value="Event" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#fbf2df;strokeColor=#7b5518;strokeWidth=1.25;dashed=1;dashPattern=4 4;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=14;fontColor=#1d1d1f;" vertex="1" parent="1">
-          <mxGeometry x="344" y="96" width="48" height="64" as="geometry"/>
+        <mxCell id="pf__b1_1" value="Event" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#fbf2df;strokeColor=#7b5518;strokeWidth=1.25;dashed=1;dashPattern=4 4;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="360" y="96" width="40" height="64" as="geometry"/>
         </mxCell>
-        <mxCell id="pf__b1_2" value="L14 Engram 异步预取&lt;br&gt;与主机查表预热" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#fbf2df;strokeColor=#7b5518;strokeWidth=1.25;dashed=1;dashPattern=4 4;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=14;fontColor=#1d1d1f;" vertex="1" parent="1">
-          <mxGeometry x="480" y="96" width="168" height="64" as="geometry"/>
+        <mxCell id="pf__b1_2" value="L14 Engram 异步预取&lt;br&gt;与主机查表预热" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#fbf2df;strokeColor=#7b5518;strokeWidth=1.25;dashed=1;dashPattern=4 4;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="480" y="96" width="208" height="64" as="geometry"/>
         </mxCell>
         <mxCell id="hw_note" value="双硬件 Host DDR 驻留与零拷贝预取机理" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#f4f4f2;strokeColor=#5c6067;strokeWidth=1.25;dashed=1;verticalAlign=top;align=left;spacingLeft=12;spacingTop=6;fontFamily=Inter;fontSize=12;fontStyle=1;fontColor=#5c6067;container=0;" vertex="1" parent="1">
-          <mxGeometry x="0" y="208" width="648" height="152" as="geometry"/>
+          <mxGeometry x="0" y="208" width="688" height="128" as="geometry"/>
         </mxCell>
-        <mxCell id="gpu_pf" value="NVIDIA GPU (vLLM)&lt;br&gt;_start_prefetch 副流向主机&lt;br&gt;Pinned 内存搬运；超阈值&lt;br&gt;大 batch 自动回退主流行内 lookup" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f2fb;strokeColor=#2f5783;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=14;fontColor=#1d1d1f;" vertex="1" parent="1">
-          <mxGeometry x="16" y="240" width="304" height="104" as="geometry"/>
+        <mxCell id="gpu_pf" value="NVIDIA GPU (vLLM)&lt;br&gt;_start_prefetch 用副流向主机 Pinned 内存发搬运&lt;br&gt;超阈值大 batch 自动回退主流行内 lookup" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f2fb;strokeColor=#2f5783;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="16" y="240" width="320" height="80" as="geometry"/>
         </mxCell>
-        <mxCell id="npu_pf" value="Huawei Ascend NPU (vllm-ascend)&lt;br&gt;aclrtHostRegisterV2 +&lt;br&gt;aclrtHostGetDevicePointer&lt;br&gt;Triton 直读 UVA，零 H2D 拷贝" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e3f5f3;strokeColor=#0f766e;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=14;fontColor=#1d1d1f;" vertex="1" parent="1">
-          <mxGeometry x="336" y="240" width="296" height="104" as="geometry"/>
+        <mxCell id="npu_pf" value="Huawei Ascend NPU (vllm-ascend)&lt;br&gt;aclrtHostRegisterV2 + aclrtHostGetDevicePointer&lt;br&gt;Triton gather 经 HCCS/PCIe 直读 UVA，零 H2D 拷贝" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e3f5f3;strokeColor=#0f766e;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="352" y="240" width="320" height="80" as="geometry"/>
         </mxCell>
       </root>
     </mxGraphModel>

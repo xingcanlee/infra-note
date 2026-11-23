@@ -9,7 +9,7 @@ description: '从 KV Cache 碎片成因与页表映射公式出发，拆解链�
 
 import PagedSchedulerExplainer from '../../../../explainers/vllm/PagedSchedulerExplainer';
 
-当几十条提示词长短不一、生成步数各异的请求同时涌入推理服务时，运行时在每个前向步都要面对两个耦合难题：如何为长度动态增长的键值缓存（KV Cache）分配显存而不留下大块碎片，以及如何在不阻塞已有解码请求延迟的前提下把新到达的提示词塞进同一批计算。
+当几十条提示词长短不一、生成步数各异的请求同时涌入推理服务时，运行时在每个前向步都要面对两个耦合难题：如何为长度动态增长的 **KV Cache（Key-Value Cache，键值缓存）**分配显存而不留下大块碎片，以及如何在不阻塞已有解码请求延迟的前提下把新到达的提示词塞进同一批计算。
 
 早期静态推理框架为每条请求预先申请长度为最大上下文上限 $L_{\max}$ 的连续显存数组。这种做法同时引发两类物理浪费：第一类是**内部碎片**，请求往往远未达到 $L_{\max}$ 就遇到结束符提前退出，已预留却从未写满的尾部槽位无法转借给其他请求；第二类是**外部碎片**，不同大小的连续内存块随请求到达与退出反复申请释放，很快把整块显存切割成零散空隙，即便空闲总字节数充足也凑不出一段足够长的连续空间，同时当前尚未生成到的未来解码步空间也被提前锁定而无法复用。
 
@@ -40,31 +40,34 @@ $$
 
 ## 链式前缀缓存与零拷贝共享
 
-多轮对话、系统提示词与少样本模板通常让大量并发请求拥有完全相同的开头前缀。前缀缓存（Prefix Caching）允许后续请求直接复用已经算好的历史 KV 物理块，省去重复前向计算与显存复制。
+多轮对话、系统提示词与少样本模板通常让大量并发请求拥有完全相同的开头前缀。**Prefix Caching（前缀缓存）**允许后续请求直接复用已经算好的历史 KV 物理块，省去重复前向计算与显存复制。
 
-vLLM 只将**写满的完整物理块（full block）**纳入标准前缀哈希索引[^vllm-kv-manager][^vllm-prefix-hash]。原因在于尚未写满的尾部块会在接下来的解码步继续追加新 token，其内部槽位内容仍在不断变化；如果允许共享未满块，多条请求后续各自生成不同 token 时就会在同一块上产生写冲突。此外，当整段提示词全部命中缓存时，`KVCacheManager` 会刻意将命中长度上限截断到 `prompt_length - 1`[^vllm-kv-manager]，确保至少重新计算最后一个 token 以产出采样所需的 logits。
+vLLM 只将 **full block（写满的完整物理块）**纳入标准前缀哈希索引[^vllm-kv-manager][^vllm-prefix-hash]。原因在于尚未写满的尾部块会在接下来的解码步继续追加新 token，其内部槽位内容仍在不断变化；如果允许共享未满块，多条请求后续各自生成不同 token 时就会在同一块上产生写冲突。此外，当整段提示词全部命中缓存时，`KVCacheManager` 会刻意将命中长度上限截断到 `prompt_length - 1`[^vllm-kv-manager]，确保至少重新计算最后一个 token 以产出采样所需的 logits。
 
 在构建哈希键时，`hash_block_tokens` 会把上一块的哈希结果串成链式输入，连同当前块的 $B_s$ 个 token 与附加键一起计算摘要[^vllm-prefix-hash]：
 
 $$
-h_k = \operatorname{Hash}\bigl(h_{k-1},\; \text{tuple}(\text{tokens}_k),\; \text{extra\_keys}_k\bigr), \qquad h_{-1} = \text{NONE\_HASH}
+\begin{aligned}
+h_k &= \operatorname{Hash}\bigl(h_{k-1},\; \text{tuple}(\text{tokens}_k),\; \text{extra\_keys}_k\bigr) \\
+h_{-1} &= \text{NONE\_HASH}
+\end{aligned}
 $$
 
 这种链式依赖源于因果自注意力的数学性质：位置 $t$ 生成的 Key 与 Value 状态不仅取决于当前词本身，还经过了前序注意力层与 $0 \dots t-1$ 所有历史 token 的上下文融合。如果省略父块哈希 $h_{k-1}$，两条系统设定截然不同、仅恰好出现相同后缀块文本的请求就会误判命中，进而读出污染后的历史 KV；附加字段 `extra_keys` 则进一步隔离多模态特征片段或 LoRA 适配器编号。
 
-物理块的零拷贝复用与淘汰顺序由 `BlockPool` 中的引用计数 `ref_cnt` 与双向空闲队列共同维持[^vllm-block-pool]。当新请求命中已缓存块时，池管理器执行 `touch` 将该块的 `ref_cnt` 加一（若原值为 $0$ 则顺便将其从空闲队列摘除）；当请求结束或被抢占并调用释放接口时，系统把 `ref_cnt` 减一。一旦 `ref_cnt` 归零，带有前缀哈希的块会被追加到空闲队列**尾部**按最近最少使用（LRU）顺序延后覆盖，而不带哈希的普通块直接插回队列**头部**供后继请求按后进先出（LIFO）立刻重用，从而在有限显存中尽可能保住热点前缀。
+物理块的零拷贝复用与淘汰顺序由 `BlockPool` 中的引用计数 `ref_cnt` 与双向空闲队列共同维持[^vllm-block-pool]。当新请求命中已缓存块时，池管理器执行 `touch` 将该块的 `ref_cnt` 加一（若原值为 $0$ 则顺便将其从空闲队列摘除）；当请求结束或被抢占并调用释放接口时，系统把 `ref_cnt` 减一。一旦 `ref_cnt` 归零，带有前缀哈希的块会被追加到空闲队列**尾部**按 **LRU（Least Recently Used，最近最少使用）**顺序延后覆盖，而不带哈希的普通块直接插回队列**头部**供后继请求按 **LIFO（Last-In First-Out，后进先出）**立刻重用，从而在有限显存中尽可能保住热点前缀。
 
 ## 统一预算调度与重算抢占
 
-早期 V0 引擎把预填充（Prefill）和解码（Decode）拆成两个互斥执行阶段，一旦队列里插进一条上万 token 的长提示词，整批正在进行的解码请求就必须停下来等待该预填充跑完，形成明显的延迟毛刺。
+早期 V0 引擎把 **Prefill（预填充）**和 **Decode（解码）**拆成两个互斥执行阶段，一旦队列里插进一条上万 token 的长提示词，整批正在进行的解码请求就必须停下来等待该预填充跑完，形成明显的延迟毛刺。
 
 vLLM V1 取消了这两类阶段的调度隔离，在每一步 `Scheduler.schedule()` 中只维护一个全局 token 配额上限 `token_budget` 与统一的调度映射 `num_scheduled_tokens`[^vllm-scheduler]。如机制注释所言，调度器眼里没有独立的 Prefill 或 Decode 模式，每条请求只记录“已计算长度 `num_computed_tokens`”与“含草稿在内的目标长度 `num_tokens_with_spec`”。图 2 展示了这套统一调度器到硬件 KV 写入算子的完整流向。
 
 ![V1 调度器与 GPU/NPU KV Cache 写入架构](./diagrams/01-v1-scheduler-arch.drawio '图 2：V1 统一调度与异构 KV 写入路径')
 
-每轮调度优先遍历正在运行的请求：处于自回归生成的请求通常只申请 $1$ 个新 token，仍在推进的长提示词切片（Chunked Prefill）则受单步长提示词阈值与剩余 `token_budget` 约束切出一段；还有剩余预算时再从等待队列接纳新请求。按照前文 16 token 预算的微例，两条处于解码态的请求各占 $1$ 个 token，剩余 $14$ 个预算正好分给一条长提示词切片，三者在同一个前向步内混合批执行。
+每轮调度优先遍历正在运行的请求：处于自回归生成的请求通常只申请 $1$ 个新 token，仍在推进的 **Chunked Prefill（分块预填充）**长提示词切片则受单步长提示词阈值与剩余 `token_budget` 约束切出一段；还有剩余预算时再从等待队列接纳新请求。按照前文 16 token 预算的微例，两条处于解码态的请求各占 $1$ 个 token，剩余 $14$ 个预算正好分给一条长提示词切片，三者在同一个前向步内混合批执行。
 
-并发骤增把 $B_1\text{–}B_{15}$ 全部分配殆尽后，若已有运行请求的解码扩容申请新块失败，调度器必须立即触发抢占[^vllm-scheduler]。在默认先到先服务（FCFS）策略下，引擎从运行队列末尾摘出最近加入或优先级最低的请求，回收它持有的物理块以释放空间保住高进度解码请求，再把被抢占请求的 `num_computed_tokens` 归零并插回等待队列头部等待后续重启——即 **Recompute（重算）抢占**。
+并发骤增把 $B_1\text{–}B_{15}$ 全部分配殆尽后，若已有运行请求的解码扩容申请新块失败，调度器必须立即触发抢占[^vllm-scheduler]。在默认 **FCFS（First-Come First-Served，先到先服务）**策略下，引擎从运行队列末尾摘出最近加入或优先级最低的请求，回收它持有的物理块以释放空间保住高进度解码请求，再把被抢占请求的 `num_computed_tokens` 归零并插回等待队列头部等待后续重启——即 **Recompute（重算）抢占**。
 
 与早期把被驱逐请求的 KV 整批拷回主机内存、恢复时再搬回显存的 Swap 策略相比，V1 默认采用 Recompute 抢占源于算力与带宽的现实对比：现代加速卡的矩阵乘算力极为充裕，且系统保留了未被覆盖的尾部缓存块，待资源宽裕时通过分段预填充重新计算一次前缀往往比维护复杂的跨 PCIe 换入换出状态机开销更低、尾部延迟也更稳定。图 3 总结了物理块在分配、前缀命中、抢占释放回 `free_block_queue` 与 `null_block` 占位防护四条路径之间的状态流转。
 
@@ -157,8 +160,16 @@ valid = slot_mapping >= 0
 kv_cache[slot_mapping[valid]] = new_kv[valid]
 assert kv_cache[0:block_size].sum().item() == 0.0
 
-print(f"req_a={req_a}, req_b={req_b}, shared_blk=1, ref_cnt={ref_cnt[1]}, free={len(free_queue)}")
-print(f"budget_used={sum(num_scheduled_tokens.values())}/16, slots={slot_mapping.tolist()}, null_sum={kv_cache[0:block_size].sum().item():.1f}")
+print(
+    f"req_a={req_a}, req_b={req_b}, shared_blk=1, "
+    f"ref_cnt={ref_cnt[1]}, free={len(free_queue)}"
+)
+budget_used = sum(num_scheduled_tokens.values())
+null_sum = kv_cache[0:block_size].sum().item()
+print(
+    f"budget_used={budget_used}/16, "
+    f"slots={slot_mapping.tolist()}, null_sum={null_sum:.1f}"
+)
 ```
 
 运行输出如下：
@@ -186,11 +197,11 @@ torch_npu.npu_scatter_pa_kv_cache(
 )
 ```
 
-| 调度与缓存维度   | NVIDIA GPU（`vllm` `bb23c0a8`）          | 华为昇腾 NPU（`vllm-ascend` `3649b8ff`）           |
-| ---------------- | ---------------------------------------- | -------------------------------------------------- |
-| 统一批配额调度   | `Scheduler.schedule` 维护单一 token 预算 | 完全复用上游 V1 调度框架                           |
-| 空块与负槽位哨兵 | 块 0 留作空块，尾部写 `PAD_SLOT_ID`      | 复用相同协议，算子按 Kernel 块粒度展开页表         |
-| KV 缓存写入实现  | `reshape_and_cache_flash` 跳过负槽位     | `npu_scatter_pa_kv_cache` 写入分形缓存且跳过负槽位 |
+| 调度与缓存维度 | GPU（`vllm` `bb23c0a8`）         | 昇腾 NPU（`vllm-ascend` `3649b8ff`） |
+| -------------- | -------------------------------- | ------------------------------------ |
+| 统一批配额调度 | `Scheduler.schedule` 单一配额    | 复用上游 V1 调度框架                 |
+| 占位块与负槽位 | `block 0` 占位，尾填 `-1`        | 同协议，Kernel 粒度展开页表          |
+| KV 写入实现    | `reshape_and_cache_flash` 跳负槽 | `npu_scatter_pa_kv_cache` 写分形池   |
 
 当融合算子物理块大小与调度块大小不同时，`AscendBlockTables` 会在写入设备前将管理器块号按倍率展开并维护 `int32` 类型的 `slot_mappings`，以对齐 CANN Scatter 写入算子的入参要求[^ascend-block-table]。
 

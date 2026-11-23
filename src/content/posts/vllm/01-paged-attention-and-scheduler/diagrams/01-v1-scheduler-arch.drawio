@@ -16,25 +16,28 @@
         <mxCell id="out_dict" value="num_scheduled_tokens&lt;br&gt;{req_id: tok_cnt}" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#fbf2df;strokeColor=#7b5518;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
           <mxGeometry x="464" y="32" width="208" height="56" as="geometry"/>
         </mxCell>
-        <mxCell id="e_rq_bd" value="按轮扫描" style="endArrow=classic;startArrow=none;html=1;strokeColor=#1d1d1f;strokeWidth=1.25;edgeStyle=orthogonalEdgeStyle;rounded=1;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;labelBackgroundColor=#fcfcfb;" edge="1" parent="1" source="req_q" target="budget">
+        <mxCell id="e_rq_bd" value="" style="endArrow=classic;startArrow=none;html=1;strokeColor=#1d1d1f;strokeWidth=1.25;" edge="1" parent="1" source="req_q" target="budget">
           <mxGeometry relative="1" as="geometry"/>
         </mxCell>
-        <mxCell id="e_bd_od" value="" style="endArrow=classic;startArrow=none;html=1;strokeColor=#1d1d1f;strokeWidth=1.25;edgeStyle=orthogonalEdgeStyle;rounded=1;" edge="1" parent="1" source="budget" target="out_dict">
+        <mxCell id="lbl_rq_bd" value="按轮扫描" style="text;html=1;whiteSpace=wrap;align=center;verticalAlign=middle;fontFamily=Inter;fontSize=12;fontColor=#5c6067;" vertex="1" parent="1">
+          <mxGeometry x="176" y="32" width="72" height="16" as="geometry"/>
+        </mxCell>
+        <mxCell id="e_bd_od" value="" style="endArrow=classic;startArrow=none;html=1;strokeColor=#1d1d1f;strokeWidth=1.25;" edge="1" parent="1" source="budget" target="out_dict">
           <mxGeometry relative="1" as="geometry"/>
         </mxCell>
         <mxCell id="kv_grp" value="KVCacheManager 与 BlockPool 物理块管理" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#f4f4f2;strokeColor=#5c6067;strokeWidth=1.25;dashed=1;verticalAlign=top;align=left;spacingLeft=12;spacingTop=6;fontFamily=Inter;fontSize=12;fontStyle=1;fontColor=#5c6067;container=0;" vertex="1" parent="1">
-          <mxGeometry x="0" y="144" width="688" height="112" as="geometry"/>
+          <mxGeometry x="0" y="152" width="688" height="112" as="geometry"/>
         </mxCell>
         <mxCell id="prefix" value="Prefix Cache 哈希树&lt;br&gt;满块命中即 ref_cnt += 1" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#fbf2df;strokeColor=#7b5518;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
-          <mxGeometry x="16" y="176" width="168" height="64" as="geometry"/>
+          <mxGeometry x="16" y="184" width="168" height="64" as="geometry"/>
         </mxCell>
         <mxCell id="pool" value="BlockPool (Free FIFO)&lt;br&gt;B0 永久保留为 null_block" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f2fb;strokeColor=#2f5783;strokeWidth=2;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
-          <mxGeometry x="264" y="176" width="176" height="64" as="geometry"/>
+          <mxGeometry x="264" y="184" width="176" height="64" as="geometry"/>
         </mxCell>
         <mxCell id="slot_map" value="slot_mapping[]&lt;br&gt;Padding 槽位填 PAD (-1)" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#f4f4f2;strokeColor=#5c6067;strokeWidth=1;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
-          <mxGeometry x="512" y="176" width="160" height="64" as="geometry"/>
+          <mxGeometry x="512" y="184" width="160" height="64" as="geometry"/>
         </mxCell>
-        <mxCell id="e_od_pl" value="alloc / free" style="endArrow=classic;startArrow=none;html=1;strokeColor=#1d1d1f;strokeWidth=1.25;edgeStyle=orthogonalEdgeStyle;rounded=1;exitX=0.5;exitY=1.0;exitDx=0;exitDy=0;entryX=0.65;entryY=0.0;entryDx=0;entryDy=0;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;labelBackgroundColor=#fcfcfb;" edge="1" parent="1" source="out_dict" target="pool">
+        <mxCell id="e_od_pl" value="" style="endArrow=classic;startArrow=none;html=1;strokeColor=#1d1d1f;strokeWidth=1.25;edgeStyle=orthogonalEdgeStyle;rounded=1;exitX=0.5;exitY=1.0;exitDx=0;exitDy=0;entryX=0.65;entryY=0.0;entryDx=0;entryDy=0;" edge="1" parent="1" source="out_dict" target="pool">
           <mxGeometry relative="1" as="geometry">
             <Array as="points">
               <mxPoint x="568" y="128"/>
@@ -42,33 +45,42 @@
             </Array>
           </mxGeometry>
         </mxCell>
-        <mxCell id="e_pf_pl" value="零拷贝复用" style="endArrow=classic;startArrow=none;html=1;strokeColor=#1d1d1f;strokeWidth=1.25;edgeStyle=orthogonalEdgeStyle;rounded=1;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;labelBackgroundColor=#fcfcfb;" edge="1" parent="1" source="prefix" target="pool">
+        <mxCell id="lbl_od_pl" value="alloc / free" style="text;html=1;whiteSpace=wrap;align=center;verticalAlign=middle;fontFamily=Inter;fontSize=12;fontColor=#5c6067;" vertex="1" parent="1">
+          <mxGeometry x="416" y="104" width="104" height="16" as="geometry"/>
+        </mxCell>
+        <mxCell id="e_pf_pl" value="" style="endArrow=classic;startArrow=none;html=1;strokeColor=#1d1d1f;strokeWidth=1.25;" edge="1" parent="1" source="prefix" target="pool">
           <mxGeometry relative="1" as="geometry"/>
         </mxCell>
-        <mxCell id="e_pl_sm" value="块内偏移" style="endArrow=classic;startArrow=none;html=1;strokeColor=#1d1d1f;strokeWidth=1.25;edgeStyle=orthogonalEdgeStyle;rounded=1;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;labelBackgroundColor=#fcfcfb;" edge="1" parent="1" source="pool" target="slot_map">
+        <mxCell id="lbl_pf_pl" value="零拷贝复用" style="text;html=1;whiteSpace=wrap;align=center;verticalAlign=middle;fontFamily=Inter;fontSize=12;fontColor=#5c6067;" vertex="1" parent="1">
+          <mxGeometry x="192" y="192" width="72" height="16" as="geometry"/>
+        </mxCell>
+        <mxCell id="e_pl_sm" value="" style="endArrow=classic;startArrow=none;html=1;strokeColor=#1d1d1f;strokeWidth=1.25;" edge="1" parent="1" source="pool" target="slot_map">
           <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="lbl_pl_sm" value="块内偏移" style="text;html=1;whiteSpace=wrap;align=center;verticalAlign=middle;fontFamily=Inter;fontSize=12;fontColor=#5c6067;" vertex="1" parent="1">
+          <mxGeometry x="448" y="192" width="64" height="16" as="geometry"/>
         </mxCell>
         <mxCell id="kv_hw_left" value="NVIDIA GPU · vLLM Kernel" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f2fb;strokeColor=#2f5783;strokeWidth=1.25;verticalAlign=top;align=left;spacingLeft=12;spacingTop=6;fontFamily=Inter;fontSize=12;fontStyle=1;fontColor=#2f5783;container=0;" vertex="1" parent="1">
-          <mxGeometry x="0" y="288" width="336" height="128" as="geometry"/>
+          <mxGeometry x="0" y="296" width="336" height="128" as="geometry"/>
         </mxCell>
         <mxCell id="kv_hw_right" value="Ascend NPU · vllm-ascend Kernel" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e3f5f3;strokeColor=#0f766e;strokeWidth=1.25;verticalAlign=top;align=left;spacingLeft=12;spacingTop=6;fontFamily=Inter;fontSize=12;fontStyle=1;fontColor=#0f766e;container=0;" vertex="1" parent="1">
-          <mxGeometry x="360" y="288" width="336" height="128" as="geometry"/>
+          <mxGeometry x="360" y="296" width="336" height="128" as="geometry"/>
         </mxCell>
         <mxCell id="gpu_kv" value="reshape_and_cache_flash&lt;br&gt;读 slot_mapping；遇到 slot &amp;lt; 0 直接跳过写回" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f2fb;strokeColor=#2f5783;strokeWidth=2;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
-          <mxGeometry x="24" y="328" width="288" height="72" as="geometry"/>
+          <mxGeometry x="24" y="336" width="288" height="72" as="geometry"/>
         </mxCell>
         <mxCell id="npu_kv" value="torch_npu.npu_scatter_pa_kv_cache&lt;br&gt;AICore 向量单元按 slot_mapping Scatter 写入物理 KV 块" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e3f5f3;strokeColor=#0f766e;strokeWidth=2;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
-          <mxGeometry x="384" y="328" width="288" height="72" as="geometry"/>
+          <mxGeometry x="384" y="336" width="288" height="72" as="geometry"/>
         </mxCell>
         <mxCell id="e_sm_gpu" value="" style="endArrow=classic;startArrow=none;html=1;strokeColor=#1d1d1f;strokeWidth=1.25;edgeStyle=orthogonalEdgeStyle;rounded=1;exitX=0.25;exitY=1.0;exitDx=0;exitDy=0;entryX=0.85;entryY=0.0;entryDx=0;entryDy=0;" edge="1" parent="1" source="slot_map" target="gpu_kv">
           <mxGeometry relative="1" as="geometry">
             <Array as="points">
-              <mxPoint x="552" y="272"/>
-              <mxPoint x="272" y="272"/>
+              <mxPoint x="552" y="280"/>
+              <mxPoint x="272" y="280"/>
             </Array>
           </mxGeometry>
         </mxCell>
-        <mxCell id="e_sm_npu" value="" style="endArrow=classic;startArrow=none;html=1;strokeColor=#1d1d1f;strokeWidth=1.25;edgeStyle=orthogonalEdgeStyle;rounded=1;exitX=0.75;exitY=1.0;exitDx=0;exitDy=0;entryX=0.86;entryY=0.0;entryDx=0;entryDy=0;" edge="1" parent="1" source="slot_map" target="npu_kv">
+        <mxCell id="e_sm_npu" value="" style="endArrow=classic;startArrow=none;html=1;strokeColor=#1d1d1f;strokeWidth=1.25;exitX=0.75;exitY=1.0;exitDx=0;exitDy=0;entryX=0.86;entryY=0.0;entryDx=0;entryDy=0;" edge="1" parent="1" source="slot_map" target="npu_kv">
           <mxGeometry relative="1" as="geometry"/>
         </mxCell>
       </root>
