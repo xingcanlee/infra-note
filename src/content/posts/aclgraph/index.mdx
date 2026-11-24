@@ -1,15 +1,19 @@
 ---
 title: '执行图与昇腾 ACL Graph：从异步算力流到生产推理全栈'
-description: '面向零基础 Infra 开发者的执行图专题导览：串联异构算力流、torch.compile 编译期静态化、CUDA Graph 静态捕获、ACL Graph 影子模型流机制，以及 vLLM-Ascend 四层生产栈。'
+description: '小批量推理常卡在 CPU 发射墙而非计算瓶颈。本专题从异构流与编译融合起步，串联 CUDA Graph、昇腾 ACL Graph 影子流与条件子图，直达 vLLM-Ascend 全栈调优。'
 series: { id: aclgraph, order: 1 }
 pubDate: 2026-10-15
 draft: false
 tags: [ACL Graph, CUDA Graph, torch.compile, CANN, Ascend, vLLM-Ascend]
 ---
 
-在大型语言模型小批量自回归解码时，服务吞吐往往并不受限于算力或 **HBM（High Bandwidth Memory，高带宽显存）**带宽，而是卡在 **Host-bound Launch Wall（主机发射墙）**：CPU 构造任务、校验参数并提交驱动队列的耗时超过了单个算子在设备计算单元上的实际驻留时间，导致硬件波形出现密集空闲缝隙。
+大模型进入小批量自回归解码后，单次算子在设备计算单元上往往只运行数微秒，算力与 **HBM（High Bandwidth Memory，高带宽显存）**带宽通常仍有富余。真正拖慢端到端吞吐的是 **Host-bound Launch Wall（主机发射墙）**：CPU 构造任务、校验参数并提交驱动队列的耗时超过了算子执行本身，在硬件时间线上留下大量空闲缝隙。
 
-消除发射墙需要逐层打通三层软硬边界：第一层是**异构异步队列与同步原语**，理解指令如何通过 **Stream（流）**与 **Event（事件）**进入设备调度器；第二层是**编译器静态化（`torch.compile`）**，通过图捕获与算子融合压低 Kernel 数量与 HBM 往返，同时看清编译层无法独自消灭主机发射成本；第三层是**设备端静态执行图（CUDA Graph 与昇腾 ACL Graph）**，一次录制任务拓扑与 Kernel 参数，将数百次发射压缩成单条驱动触发指令。
+消除主机发射墙需要自底向上打通三层软硬机制（如图 1 所示）：
+
+- 第一层是异构异步队列与同步原语，负责用 **Stream（流）**与 **Event（事件）**把指令送入设备调度器。
+- 第二层是编译器静态化（`torch.compile`），通过算子融合压低 HBM 往返次数，但仍受限于动态注意力切段。
+- 第三层是设备端静态执行图（CUDA Graph 与昇腾 ACL Graph），把整段拓扑固化到驱动或硬件侧，将数百次发射压缩为单条触发指令。
 
 ![执行图三层技术栈导览](./diagrams/00-three-layer-execution-stack.drawio '图 1：从异构算力流、编译静态化到静态执行图的三层演进路线')
 
@@ -17,18 +21,20 @@ tags: [ACL Graph, CUDA Graph, torch.compile, CANN, Ascend, vLLM-Ascend]
 
 全系列结合[推理与异构硬件基础](../foundations/)、[DeepSeek 架构演进](../deepseek/)、[vLLM 与昇腾推理引擎](../vllm/)与[分布式并行与跨卡通信](../distributed/)，按自底向上因果链安排六章：
 
-| 章节                                                                                    | 核心问题                 | 底层核心对象                         |
-| --------------------------------------------------------------------------------------- | ------------------------ | ------------------------------------ |
-| [01 异构算力流与事件](./01-heterogeneous-streams-and-events/)                           | 异步队列并发与跨流依赖   | Pushbuffer、`TaskQueue`、`Event`     |
-| [02 PyTorch 编译栈与分段融合](./02-torch-compile-fundamentals/)                         | 消减访存与编译器发射上限 | TorchDynamo、`SymInt`、后端融合      |
-| [03 CUDA Graph 原理与静态边界](./03-cuda-graph-fundamentals/)                           | 一次发射百层与四道静态界 | Stream Capture、Fork-Join、条件节点  |
-| [04 ACL Graph 架构与流录制](./04-acl-graph-architecture-and-capture/)                   | 影子模型流与参数持久备份 | Shadow Stream、`CopyTaskArgs`、`RI`  |
-| [05 ACL Graph 动态扩展与条件子图](./05-acl-graph-task-update-and-conditional-subgraph/) | 变长刷新与设备侧分支循环 | `TaskGrp`/`TaskUpdate`、`CondHandle` |
-| [06 昇腾推理全栈集成与排障](./06-acl-graph-fullstack-and-vllm-ascend/)                  | 调度分桶与池上限排障定位 | `npugraph_ex`、`SQ/CQ`、错误码排障   |
+| 章节                                                                                      | 核心问题                 | 底层核心对象                         |
+| ----------------------------------------------------------------------------------------- | ------------------------ | ------------------------------------ |
+| [01 异构算力流、硬件队列与事件同步机制](./01-heterogeneous-streams-and-events/)           | 异步队列并发与跨流依赖   | Pushbuffer、`TaskQueue`、`Event`     |
+| [02 PyTorch 编译栈与分段融合极限](./02-torch-compile-fundamentals/)                       | 消减访存与编译器发射上限 | TorchDynamo、`SymInt`、后端融合      |
+| [03 CUDA Graph 原理与四大静态边界](./03-cuda-graph-fundamentals/)                         | 一次发射百层与四道静态界 | Stream Capture、Fork-Join、条件节点  |
+| [04 ACL Graph 架构与影子模型流录制](./04-acl-graph-architecture-and-capture/)             | 影子模型流与参数持久备份 | Shadow Stream、`CopyTaskArgs`、`RI`  |
+| [05 ACL Graph 热更新与条件子图流控](./05-acl-graph-task-update-and-conditional-subgraph/) | 变长刷新与设备侧分支循环 | `TaskGrp`/`TaskUpdate`、`CondHandle` |
+| [06 ACL Graph 生产全栈与故障定位](./06-acl-graph-fullstack-and-vllm-ascend/)              | 调度分桶与池上限排障定位 | `npugraph_ex`、`SQ/CQ`、错误码排障   |
 
 ## 代码来源与实验基准
 
-本系列所有源码引用与验证基准均核对自固定开源提交：`cann/runtime`（`1954820a`）[^cann-rt]、`Ascend/pytorch`（`d09e29e4`）[^torch-npu]、`vllm`（`bb23c0a8`）[^vllm-repo] 以及 `vllm-ascend`（`3649b8ff`）[^vllm-ascend-repo]。第 1 至第 6 章均附带可在单机 CPU 环境直接执行的 Python 验证脚本，定量核算发射延迟、队列水位、热刷新状态迁移与故障触发边界。
+本系列所有源码路径、符号与行为描述均核对自 `cann/runtime`[^cann-rt]、`Ascend/pytorch`[^torch-npu]、`vllm`[^vllm-repo] 与 `vllm-ascend`[^vllm-ascend-repo] 的固定开源提交（具体 commit 见文末脚注）。
+
+第 1 至第 6 章均附带可在单机 CPU 环境直接执行的 Python 仿真脚本，用来核算发射延迟、队列水位、热刷新状态迁移与故障触发边界。
 
 [^cann-rt]: CANN Runtime 开源仓库（`cann/runtime`，提交 `1954820a`），采用 CANN Open Software License Agreement Version 2.0 授权，涵盖 `aclmdlRI*` 接口、Stream Capture 模型录制实现与物理 `SQ/CQ` 资源池逻辑。
 

@@ -4,7 +4,7 @@
       <root>
         <mxCell id="0"/>
         <mxCell id="1" parent="0"/>
-        <mxCell id="hdr" value="DeepSeek-V4.1 单 token 解码六阶段全景：四流残差（mHC）、CSA2/HSI、异步 Engram、MoE 与 DSpark" style="text;html=1;whiteSpace=wrap;align=center;verticalAlign=middle;fontFamily=Inter;fontSize=12;fontColor=#5c6067;" vertex="1" parent="1">
+        <mxCell id="hdr" value="DeepSeek-V4.1 单 token 解码六阶段全貌：四流残差（mHC）、CSA2/HSI、异步 Engram、MoE 与 DSpark" style="text;html=1;whiteSpace=wrap;align=center;verticalAlign=middle;fontFamily=Inter;fontSize=12;fontColor=#5c6067;" vertex="1" parent="1">
           <mxGeometry x="0" y="0" width="688" height="24" as="geometry"/>
         </mxCell>
         <mxCell id="s1" value="&lt;b&gt;1. Mega-mHC Pre-Mix&lt;/b&gt;&lt;br&gt;\([B,4,H]\to[B,H]\) 单遍读写 \(10d\)&lt;br&gt;20 轮 Sinkhorn 控制增益 \(\le 1.6\)&lt;br&gt;SM100 Shifted / NPU npu_hc_pre_v3" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f5e9;strokeColor=#2c522d;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">

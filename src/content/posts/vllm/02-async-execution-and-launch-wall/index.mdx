@@ -4,12 +4,12 @@ pubDate: 2026-10-27
 draft: false
 series: { id: vllm, order: 3 }
 tags: [vLLM, Ascend, PyTorch, Roofline, Profiling]
-description: '从同步等待与异步 FIFO 队列递推出发，拆解 Compute-bound 排空代价、Launch-bound 发射墙上限及两阶段异步调度交接机制。'
+description: '小批量解码时算子在硬件上只跑几微秒，CPU 主机逐个下发指令的速度却跟不上设备消费。本文通过异步队列时序模型定位发射墙上限，并对照 GPU 与昇腾的跨步异步调度与延迟同步。'
 ---
 
-连续批调度消除显存碎片并填满 token 配额后，小批量 **Decode（解码）**的 **Trace（执行时间线）**上仍会出现显著失衡：计算单元上的每一个 Kernel 本身只执行了短短几微秒，但算子之间的硬件时间轨却留出大片空白间隔。
+连续批调度消除显存碎片并填满 token 配额后，小批量 **Decode（解码）**的 **Trace（执行时间线）**上仍会出现显著失衡。计算单元上的每个 Kernel 本身只执行短短几微秒，算子之间的硬件时间轨却留出大片空白间隔。
 
-这种硬件等待直接源于 CPU 主机侧的指令供给速度落后于设备消耗速度，这一瓶颈在推理系统中称为 **Launch Wall（发射墙）**。在真实集群上，Python 线程通过 PyTorch C++ **Dispatcher（算子分发器）**向 CUDA 或昇腾 CANN 驱动提交单个轻量算子的开销通常在 5–15 μs 量级；一个 60 层 Transformer 单步前向就要穿过数百个归一化、激活、线性投影与残差加法节点，累计主机下发耗时往往达到 2–5 ms。
+这种硬件等待源于 CPU 主机侧的指令供给速度落后于设备消耗速度，在推理系统中称为 **Launch Wall（发射墙）**。在真实集群上，Python 线程通过 PyTorch C++ **Dispatcher（算子分发器）**向 CUDA 或昇腾 CANN 驱动提交单个轻量算子，通常需要 5–15 μs。一个 60 层 Transformer 单步前向要穿过数百个归一化、激活、线性投影与残差加法节点，累计主机下发耗时往往达到 2–5 ms。
 
 ## 同步发射与异步队列的两副面孔
 
@@ -21,7 +21,9 @@ $$
 
 其中 $t_{\text{cpu}, i}$ 为第 $i$ 个算子在主机侧的解析与提交耗时，$t_{\text{dev}, i}$ 为硬件执行耗时。在微缩算术比例下取 $5$ 个算子、$t_{\text{cpu}} = 0.8\text{ ms}$、$t_{\text{dev}} = 0.6\text{ ms}$，同步串行总耗时达到 $5 \times (0.8 + 0.6) = 7.00\text{ ms}$，设备利用率只有 $3.0 / 7.0 = 42.9\%$。
 
-PyTorch 默认采用**异步 FIFO（First-In First-Out，先进先出）队列**来打破逐个等待：Python 线程把 Kernel 描述符压入 **CUDA Stream（计算流）**或昇腾 CANN **TaskQueue（任务队列）**后立刻返回继续解析下一行代码，设备则按入队顺序从队头消费。设第 $i$ 个算子由主机完成提交的时刻为 $t_{\text{cpu}}^{(i)}$，在设备完成执行的时刻为 $t_{\text{dev}}^{(i)}$（初始 $t_{\text{cpu}}^{(0)} = t_{\text{dev}}^{(0)} = 0$），则异步流时序严格遵循递推关系：
+PyTorch 默认采用**异步 FIFO（First-In First-Out，先进先出）队列**来打破逐个等待。Python 线程把 Kernel 描述符压入 **CUDA Stream（计算流）**或昇腾 CANN **TaskQueue（任务队列）**后立刻返回继续解析下一行，设备则按入队顺序从队头消费。
+
+设第 $i$ 个算子由主机完成提交的时刻为 $t_{\text{cpu}}^{(i)}$，在设备完成执行的时刻为 $t_{\text{dev}}^{(i)}$（初始 $t_{\text{cpu}}^{(0)} = t_{\text{dev}}^{(0)} = 0$），异步流时序满足如下递推关系：
 
 $$
 \begin{aligned}
@@ -30,11 +32,11 @@ t_{\text{dev}}^{(i)} &= \max\bigl(t_{\text{cpu}}^{(i)},\; t_{\text{dev}}^{(i-1)}
 \end{aligned}
 $$
 
-从这组递推式可以看出，异步入队在不同负载比例下会呈现出截然不同的两副面孔。第一种情况是 **Compute-bound（计算或访存主导，$t_{\text{dev}} \ge t_{\text{cpu}}$）**，常见于较大批量的预填充阶段：取缩比参数 $t_{\text{cpu}} = 0.6\text{ ms} < t_{\text{dev}} = 0.8\text{ ms}$，第 1 个算子在 $0.60\text{ ms}$ 入队后，CPU 在 $3.00\text{ ms}$ 就把全部 $5$ 个算子填进队列，而硬件需要运行到 $0.6 + 5 \times 0.8 = 4.60\text{ ms}$。
+从这组递推式可以看出，异步入队在不同负载比例下会呈现出两副面孔。第一种情况是 **Compute-bound（计算或访存主导，$t_{\text{dev}} \ge t_{\text{cpu}}$）**，常见于较大批量的预填充阶段。取缩比参数 $t_{\text{cpu}} = 0.6\text{ ms} < t_{\text{dev}} = 0.8\text{ ms}$，第 1 个算子在 $0.60\text{ ms}$ 入队后，CPU 在 $3.00\text{ ms}$ 就把全部 $5$ 个算子填进队列，而硬件需要运行到 $0.6 + 5 \times 0.8 = 4.60\text{ ms}$。
 
 队列提前积攒出排队库存，把除首算子外的启动延迟完全掩盖，设备利用率升至 $87.0\%$（扩展到 $60$ 个算子时达 $98.8\%$）。但只要代码在结尾处调用一次 `.item()`、`.cpu()` 或 `torch.nonzero()`，主机就必须阻塞 $1.60\text{ ms}$ 等整条队列排空，已攒出的异步缓冲随之清零。
 
-第二种情况则是 **Launch-bound（发射主导，$t_{\text{cpu}} > t_{\text{dev}}$）**，这正是小批量解码的真实处境：取 $t_{\text{cpu}} = 0.8\text{ ms} > t_{\text{dev}} = 0.6\text{ ms}$（对应实机 5–15 μs 的下发开销对比 2–3 μs 的小批 Kernel），设备在 $1.40\text{ ms}$ 算完第 1 个算子时，CPU 要等到 $1.60\text{ ms}$ 才提交完第 2 个算子。
+第二种情况则是 **Launch-bound（发射主导，$t_{\text{cpu}} > t_{\text{dev}}$）**，这正是小批量解码的真实处境。取 $t_{\text{cpu}} = 0.8\text{ ms} > t_{\text{dev}} = 0.6\text{ ms}$（对应实机 5–15 μs 下发耗时对比 2–3 μs 小批算子），设备在 $1.40\text{ ms}$ 算完第 1 个算子时，CPU 要等到 $1.60\text{ ms}$ 才提交完第 2 个算子。
 
 由于每个算子恒有 $t_{\text{cpu}}^{(i)} > t_{\text{dev}}^{(i-1)}$，FIFO 队列里永远攒不出库存，硬件在每两个算子之间都要空等 $(t_{\text{cpu}} - t_{\text{dev}})$。对于连续 $N$ 个同类发射受限算子，总耗时化简为：
 
@@ -48,21 +50,21 @@ $$
 
 ## 跨步异步调度与两阶段采样交接
 
-把视角从单步内部拉高到连续推理步之间，还会碰到一个表面上自相矛盾的数据依赖：自回归生成时，Step $N+1$ 的模型输入恰好就是 Step $N$ 刚刚采样出的新 token；如果 CPU 不等设备把采样结果经 **D2H（Device-to-Host，设备到主机拷贝）**从显存传回主机，调度器又怎么敢提前编排并提交 Step $N+1$ 的前向计算？
+把视角从单步内部拉高到连续推理步之间，还会碰到一个表面上矛盾的数据依赖。自回归生成时，Step $N+1$ 的模型输入恰好就是 Step $N$ 刚刚采样出的新 token。如果 CPU 不等设备把采样结果经 **D2H（Device-to-Host，设备到主机拷贝）**传回主机，调度器又怎么提前编排并提交 Step $N+1$ 的前向计算？
 
 vLLM V1 通过**调度器乐观占位**、**设备侧持久化状态衔接**与**独立拷贝流延迟兑现**三段协作解开了这个环[^vllm-async-core][^vllm-async-sched][^vllm-mrv2-runner]。在核心调度循环 `step_with_batch_queue` 中，引擎维护一个在途批队列允许 CPU 领先设备向前推进[^vllm-async-core]。
 
-启用异步调度后，`AsyncScheduler` 在 Step $N$ 结束时就为解码请求提前登记 `num_output_placeholders` 输出占位计数（若开启投机解码则同时预留占位草稿槽位）[^vllm-async-sched]，只需在结构化输出语法掩码未就绪或请求已抵达 `max_tokens` 上限时才暂缓继续占位。
+启用异步调度后，`AsyncScheduler` 在 Step $N$ 结束时就为解码请求提前登记 `num_output_placeholders` 输出占位计数[^vllm-async-sched]。若开启投机解码，它还会同步预留占位草稿槽位，仅在结构化输出语法掩码未就绪或请求到达 `max_tokens` 上限时才暂缓占位。
 
-更关键的依赖消除发生在模型执行器内部：Step $N$ 采样出的 token 整数值只服务于**设备上下一步的词嵌入层**，而无需在发射前交由 CPU 调度器读取。在 `GPUModelRunner.sample_tokens` 阶段，主计算流采样完后紧接着在设备上运行后处理 Kernel，直接把生成的 token ID 原地写入设备常驻张量 `last_sampled_tokens` 与全序列缓存，并在显存内递增已计算 token 计数[^vllm-mrv2-runner][^vllm-input-batch]。
+更关键的依赖消除发生在模型执行器内部：Step $N$ 采样出的 token 整数值只服务于**设备上下一步的词嵌入层**，无需在发射前交由 CPU 调度器读取。在 `GPUModelRunner.sample_tokens` 阶段，主计算流采样完后紧接着运行后处理 Kernel。它直接把新 token ID 原地写入常驻张量 `last_sampled_tokens` 与全序列缓存，并在显存内递增已计算计数[^vllm-mrv2-runner][^vllm-input-batch]。
 
-当 Step $N+1$ 的异步批指令随后到达执行器时，输入拼装 Kernel 在主计算流上直接读取 `last_sampled_tokens` 填充下一轮的 `input_ids` 缓冲。整条 token ID 传递链全程留在 **HBM（High Bandwidth Memory，高带宽显存）**内部，由同一个计算流的先后入队顺序天然保证可见性，CPU 无需得知具体数字即可提前发射下一轮算子。
+Step $N+1$ 的异步批指令随后到达执行器时，输入拼装 Kernel 在主计算流上直接读取 `last_sampled_tokens` 填充下一轮 `input_ids` 缓冲。整条 token ID 传递链全程留在 **HBM（High Bandwidth Memory，高带宽显存）**内部，由同一个计算流的入队顺序保证可见性，CPU 无需得知具体数字即可提前发射下一轮算子。
 
-与此同时，为了把采样结果最终交还给外层调度器用于停机判断与文本返回，执行器会在创建后处理之前构造 `AsyncOutput`[^vllm-async-output]（见图 2）：让独立的 `copy_stream` 先等待主计算流到达采样完成点，再以 `non_blocking=True` 将采样 token ID、采样数量等轻量张量异步拷向 CPU **Pinned Memory（锁页内存）**，并记录一个阻塞型 `copy_event` 后立即向主线程返回控制权。
+与此同时，为了把采样结果最终交还外层调度器用于停机判断与文本返回，执行器会在创建后处理前构造 `AsyncOutput`（见图 2）[^vllm-async-output]。它让独立的 `copy_stream` 先等待主计算流到达采样完成点，再以 `non_blocking=True` 将采样 token ID 与数量异步拷向 CPU **Pinned Memory（锁页内存）**。最后它记录一个阻塞型 `copy_event`，并立即把控制权交还主线程。
 
 ![vLLM GPU 与 Ascend NPU 异步输出架构对比](./diagrams/02-async-output-arch.drawio '图 2：GPU AsyncOutput 与 NPU 异步事件机制对比')
 
-如此一来，CPU 在后台 DMA 引擎搬运 Step $N$ 采样结果的同时，已经着手组织并提交 Step $N+1$ 的计算任务；直到引擎必须读取真实 token 序列检查停止符或返回客户端时，才调用 `get_output()` 执行 `copy_event.synchronize()` 兑现同步[^vllm-async-output]。图 3 概括了这套两阶段交错周期。
+如此一来，CPU 在后台 **DMA（Direct Memory Access，直接内存访问）**引擎搬运 Step $N$ 采样结果的同时，已经开始组织并提交 Step $N+1$ 的计算任务。直到引擎必须读取真实 token 序列检查停止符或返回客户端时，才调用 `get_output()` 执行 `copy_event.synchronize()` 兑现同步[^vllm-async-output]。图 3 概括了这套两阶段交错周期。
 
 ```mermaid caption="图 3：Async Scheduling 两阶段流水与延迟兑现"
 flowchart TD
@@ -74,11 +76,11 @@ flowchart TD
     W1 --> L2["提交 Step N+1 发射与收尾处理"]
 ```
 
-在昇腾平台上，`vllm-ascend` 的 `NPUModelRunner` 继承了 V2 执行器的异步调度协议，将设备算子非阻塞压入 CANN `TaskQueue` 执行（并针对投机采样拒绝校正额外维护了锁页主机计数缓冲）[^ascend-v2-runner]；而运行时检查钩子则在外层封装了 `AscendAsyncOutput`[^ascend-async-guard]，把采样后检错逻辑推迟到内层 `AsyncOutput.get_output()` 完成事件同步并按有效长度裁剪之后触发，避免诊断钩子在主线程引入隐式流同步。
+在昇腾平台上，`vllm-ascend` 的 `NPUModelRunner` 继承了 V2 异步调度协议，将算子非阻塞压入 CANN `TaskQueue`，并针对投机采样校正维护锁页主机计数缓冲[^ascend-v2-runner]。运行时检查钩子则通过外层 `AscendAsyncOutput` 推迟触发[^ascend-async-guard]：等内层 `get_output()` 完成事件同步与有效长度裁剪后再执行检错，避免在主线程引入隐式流同步。
 
 ## 队列时序模拟与双平台异步输出对照
 
-下面的独立 Python 模拟脚本按给定参数量化验证了前述三组时序规律：在缩放时间尺度下对比同步阻塞基线、Compute-bound 异步队列遭遇 `.item()` 的排空代价、Launch-bound（$t_{\text{cpu}} > t_{\text{dev}}$）下异步队列无法消除的设备空转气泡，以及跨 4 个推理步使用异步输出重叠调度开销后的端到端耗时压缩比：
+下面的独立 Python 模拟脚本按给定参数量化验证了上述三组时序规律。脚本在缩放时间尺度下对比同步阻塞基线、Compute-bound 队列遭遇 `.item()` 的排空代价、Launch-bound（$t_{\text{cpu}} > t_{\text{dev}}$）空转气泡，以及跨 4 步异步重叠后的端到端耗时压缩比：
 
 ```python
 def simulate_fifo(
@@ -145,7 +147,7 @@ launch_bound(60 ops): total=48.60ms, dev_idle=12.60ms, util=74.1%
 4step_overlap: serial=22.8ms, async=15.9ms, ratio=1.43x
 ```
 
-模拟数字清晰印证了两条结构性边界：在算力主导区，算子个数增加到 $60$ 个可以把首包等待摊薄至 $98.8\%$ 利用率；但在发射主导区，就算扩展到 $60$ 个算子且不触发任何主机同步，设备依然有 $12.60\text{ ms}$ 耗在等待主机递交上，利用率始终受限于 $75.0\%$ 的理论比值以下。
+模拟数字印证了两条结构性边界：在算力主导区，算子数增至 $60$ 个可以把首包等待摊薄到 $98.8\%$ 利用率。但在发射主导区，即便扩展到 $60$ 个算子且不触发任何主机同步，设备仍有 $12.60\text{ ms}$ 耗在等待主机递交上，利用率始终被压在 $75.0\%$ 理论比值以下。
 
 对照上游双仓实现，GPU 与昇腾 NPU 在异步回传和延迟等待处保持了完全一致的非阻塞契约[^vllm-async-output][^ascend-async-guard]：
 
@@ -172,7 +174,7 @@ class AscendAsyncOutput(AsyncModelRunnerOutput):
 | 异步 D2H 拷贝路径 | 独立 `copy_stream` + 锁页内存非阻塞拷贝     | 继承 `copy_stream` 锁页回传与 CANN `TaskQueue` |
 | 延迟同步与检查    | `get_output` 调用 `copy_event.synchronize`  | 同步并裁剪后触发采样检错，拦截主线程隐式同步   |
 
-跨步异步调度虽然藏起了步间编排与 D2H 拷贝的延迟，但只要单步 `model.forward()` 内部仍要让 CPU 逐一穿过数百个分散算子，发射受限区间的设备空转就依然无解。要从根上把几百次 Kernel 发射调用压下去，第一步必须借助编译融合合并零碎张量算子。下一章[第 3 章：torch.compile 与分段编译](../03-torch-compile-and-piecewise/)将拆解 vLLM 如何用无 Guard 追踪与按算子切图技术跨过动态注意力的编译障碍。
+跨步异步调度藏起了步间编排与 D2H 拷贝延迟，但只要单步 `model.forward()` 仍由 CPU 逐一穿过数百个分散算子，发射受限区间的设备空转就依然无解。要从根上压低几百次 Kernel 发射调用，第一步必须借助编译融合合并零碎张量算子。下一章[第 3 章：torch.compile 分段编译与按算子切图](../03-torch-compile-and-piecewise/)将拆解 vLLM 如何用无 Guard 追踪与按算子切图跨过动态注意力的编译障碍。
 
 [^vllm-async-core]: `vllm`（commit `bb23c0a8`），`vllm/v1/engine/core.py:750-871`（`EngineCore.step_with_batch_queue` 维护在途批队列并重叠下轮调度与输出等待）。
 

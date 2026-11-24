@@ -108,12 +108,12 @@
       ]
     },
     "src/content/posts/deepseek/01-mla/diagrams/01-mla-matrix-absorption.drawio": {
-      "source": "sha256-79135126d303b75a306576b762f633dfb9c946162c34050cc674bd3caab28ac6",
+      "source": "sha256-c40c352f4996b2a0faf614a553beb9a70341f6c7ef1d5ca7446fee2a66576037",
       "style": "clean",
       "exporter": "drawio-cli",
       "embedFonts": false,
       "outputs": {
-        "src/content/posts/deepseek/01-mla/diagrams/01-mla-matrix-absorption.wisp.svg": "sha256-903a81a5221d3bbd3a894087edf887d97260c5ad1f02a7c1124ae2011f009e86"
+        "src/content/posts/deepseek/01-mla/diagrams/01-mla-matrix-absorption.wisp.svg": "sha256-a23eef422424f4616ab539cea2481aa75b43457389e2c6d677316d9f26c58079"
       },
       "pages": [
         "MLA Matrix Absorption and Byte Ledger"
@@ -144,12 +144,12 @@
       ]
     },
     "src/content/posts/deepseek/02-swa-and-nsa/diagrams/02-sink-swa-masks.drawio": {
-      "source": "sha256-af3c229e3d6049079c8b3e1a9e5b28294944231434fccba77f665bda030bab3e",
+      "source": "sha256-b110691901f35885e490841b18c014bb2516b841308548f475b4839f47dccc88",
       "style": "clean",
       "exporter": "drawio-cli",
       "embedFonts": false,
       "outputs": {
-        "src/content/posts/deepseek/02-swa-and-nsa/diagrams/02-sink-swa-masks.wisp.svg": "sha256-2153a36b8d9ca4d5e5577f01b65e5cdab90b41407d49ab957eec7338e42ae823"
+        "src/content/posts/deepseek/02-swa-and-nsa/diagrams/02-sink-swa-masks.wisp.svg": "sha256-7369e7f43869ddbc9a0c8b0dc770ff1bc223a2b4b99c553e0a235ddc99926d49"
       },
       "pages": [
         "Attention Sink vs Pure SWA Masks"
@@ -168,12 +168,12 @@
       ]
     },
     "src/content/posts/deepseek/03-dsa/diagrams/03-dsa-indexer-flow.drawio": {
-      "source": "sha256-e51d0ac4e6c6f457f8e885e4d180a17d7630c59131ea9170142b9608770ee5a6",
+      "source": "sha256-50e9b7e5ad8c5bc0e5b7ccd56cfc70514f4f6294930674ffa94ed1c943ecb926",
       "style": "clean",
       "exporter": "drawio-cli",
       "embedFonts": false,
       "outputs": {
-        "src/content/posts/deepseek/03-dsa/diagrams/03-dsa-indexer-flow.wisp.svg": "sha256-562d6d4fbbc57981cb8fbd81f9d989aede0062b55da9b607f85249e9909b7134"
+        "src/content/posts/deepseek/03-dsa/diagrams/03-dsa-indexer-flow.wisp.svg": "sha256-d7f2706771d4cc3d527524fd7b406e946a8b0aec3ee5e8e0861f0b4cb8edbd44"
       },
       "pages": [
         "DeepSeek-V3.2 DSA Indexer and Byte Ledger"
@@ -264,24 +264,24 @@
       ]
     },
     "src/content/posts/deepseek/07-engram/diagrams/11-engram-gate-disambig.drawio": {
-      "source": "sha256-bdf771ab8b670df00c5e3089a86850f5210d8cb75fbbaf167d2235ae13f18c9e",
+      "source": "sha256-cdc7bdb287ddc815158d3c5715afe0b2e73515f332c798c22010d12cfca0e046",
       "style": "clean",
       "exporter": "drawio-cli",
       "embedFonts": false,
       "outputs": {
-        "src/content/posts/deepseek/07-engram/diagrams/11-engram-gate-disambig.wisp.svg": "sha256-453fc83cdcdd4147d4023b7f3dd73ce9094362f3cdc4d2f9e74518001fa5b743"
+        "src/content/posts/deepseek/07-engram/diagrams/11-engram-gate-disambig.wisp.svg": "sha256-cca1b411976ae7c9ace2fd2e33838a339dbc2a5f929310e5b13235270d7c6b42"
       },
       "pages": [
         "Engram Context Gate Disambiguation"
       ]
     },
     "src/content/posts/deepseek/07-engram/diagrams/11-engram-hash.drawio": {
-      "source": "sha256-8030b64406a2edf6bc00a7a989af29c7e62d0d54165857b3c7082c8f9a643a7b",
+      "source": "sha256-2183242db6add7e38598ae50d65e2ee1c43687c3dbb7fd82ab13e241faea3d93",
       "style": "clean",
       "exporter": "drawio-cli",
       "embedFonts": false,
       "outputs": {
-        "src/content/posts/deepseek/07-engram/diagrams/11-engram-hash.wisp.svg": "sha256-1011d52ca6988937ff5ba27ed88b3aaef33c63999eb2854ad9efb39ea015f0c6"
+        "src/content/posts/deepseek/07-engram/diagrams/11-engram-hash.wisp.svg": "sha256-9a262862f81c8fe59084808b57f28eb7349edba80016a3e0678289aaa6d49111"
       },
       "pages": [
         "多头质数哈希与扁平分桶寻址"
@@ -300,12 +300,12 @@
       ]
     },
     "src/content/posts/deepseek/07-engram/diagrams/11-engram-runtime.drawio": {
-      "source": "sha256-6f792226bcf05b2441338ac5ede1d44c9fe4e8adfed18c56e35f24960106016d",
+      "source": "sha256-93ee58d66750f659401c8deb20a5a50742c65a5f0d7cd8e59c72a61631bcace8",
       "style": "clean",
       "exporter": "drawio-cli",
       "embedFonts": false,
       "outputs": {
-        "src/content/posts/deepseek/07-engram/diagrams/11-engram-runtime.wisp.svg": "sha256-604cd76e5c40dfbc995fcace945c694c8892f12fba4bd734932c74642921a937"
+        "src/content/posts/deepseek/07-engram/diagrams/11-engram-runtime.wisp.svg": "sha256-8df7fd204753f47df045d3e84cae3043cc54e94bba8b8623470a51d5738aa012"
       },
       "pages": [
         "engram-runtime-prefetch"
@@ -345,12 +345,12 @@
       ]
     },
     "src/content/posts/deepseek/08-mhc/diagrams/08-mhc-single-pass.drawio": {
-      "source": "sha256-0e7088ab317a628cc7f96fc5892bc99569d6fd545062383b26aaace18080a142",
+      "source": "sha256-6cc0b9672a1f692e081eed3178f364b97fe8e710965faad1e49993e4da970246",
       "style": "clean",
       "exporter": "drawio-cli",
       "embedFonts": false,
       "outputs": {
-        "src/content/posts/deepseek/08-mhc/diagrams/08-mhc-single-pass.wisp.svg": "sha256-03490c53fc399a487842f4ecb84deba118090fc71df1cce0a4df2ed8164b2576"
+        "src/content/posts/deepseek/08-mhc/diagrams/08-mhc-single-pass.wisp.svg": "sha256-3883acf8c31491f2f8e836bc485184581a9a36e243388d3c43457e948f67a338"
       },
       "pages": [
         "mhc-single-pass"
@@ -417,12 +417,12 @@
       ]
     },
     "src/content/posts/deepseek/10-architecture-synthesis/diagrams/10-v41-layer-panoramic.drawio": {
-      "source": "sha256-3903299648bab0213840e74f550e0c17361e6c05d3b61351781334c8c1a09835",
+      "source": "sha256-faf484a03ee3888a93c88eb8bb197ae063b62da130741345dd94059a39e16700",
       "style": "clean",
       "exporter": "drawio-cli",
       "embedFonts": false,
       "outputs": {
-        "src/content/posts/deepseek/10-architecture-synthesis/diagrams/10-v41-layer-panoramic.wisp.svg": "sha256-e603482031827a139f7d7c894401471319d4c974d707530f71f4a7223e0d0f4c"
+        "src/content/posts/deepseek/10-architecture-synthesis/diagrams/10-v41-layer-panoramic.wisp.svg": "sha256-f030a4b698e2de7c2992ca8303c0b39163dfb544a389bd08f3804f1c39d683ee"
       },
       "pages": [
         "DeepSeek-V4.1 Full Decode Step"

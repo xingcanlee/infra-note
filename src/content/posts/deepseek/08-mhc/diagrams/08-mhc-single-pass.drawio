@@ -67,7 +67,7 @@
         <mxCell id="n_s2" value="rms_norm_cast 一次归一化两路输出&lt;br&gt;同步产出 BF16 激活与 FP32 MoE 路由" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#fbf2df;strokeColor=#7b5518;strokeWidth=2;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
           <mxGeometry x="368" y="328" width="304" height="48" as="geometry"/>
         </mxCell>
-        <mxCell id="n_s3" value="每子层尾调 npu_hc_post 物化四流&lt;br&gt;L1 / L14 无需拆分支直接接入 AscendEngram" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f5e9;strokeColor=#2c522d;strokeWidth=1.25;dashed=1;dashPattern=4 4;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+        <mxCell id="n_s3" value="每子层尾调 npu_hc_post 写回四流&lt;br&gt;L1 / L14 无需拆分支直接接入 AscendEngram" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f5e9;strokeColor=#2c522d;strokeWidth=1.25;dashed=1;dashPattern=4 4;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
           <mxGeometry x="368" y="392" width="304" height="48" as="geometry"/>
         </mxCell>
         <mxCell id="eg1" value="" style="endArrow=classic;startArrow=none;html=1;strokeColor=#1d1d1f;strokeWidth=1.25;edgeStyle=orthogonalEdgeStyle;rounded=1;" edge="1" parent="1" source="g_s1" target="g_s2">

@@ -1,32 +1,33 @@
 ---
-title: '06 ACL Graph 生产全栈：vLLM-Ascend 集成、优化与故障定位'
-description: '贯通 vllm-ascend、torch_npu、cann/runtime 与 Ascend HDK 四层栈，全景剖析 cudagraph_mode 分桶矩阵、MTP 步长对齐、npugraph_ex 与 SuperKernel 图优化策略、207008 物理 SQ/CQ 池耗尽边界、507011 UAF 崩溃及异步同步竞争线上排障实战。'
+title: '06 ACL Graph 生产全栈与故障定位'
+description: '盲目配桶易撞穿 1024 队列上限或引发异步 UAF 崩溃。本文贯通 vLLM-Ascend 四层生产栈，梳理 cudagraph_mode 选型、MTP 对齐分桶与三大线上故障的二分排障流程。'
 series: { id: aclgraph, order: 7 }
 pubDate: 2026-10-21
 draft: false
 tags: [vLLM-Ascend, npugraph_ex, SuperKernel, XliteGraph, '207008', '507011', Profiling]
 ---
 
-在跨越底层队列（第 1 章）、编译融合（第 2 章）、静态边界（第 3 章）以及影子流与动态扩展（第 4 至第 5 章）后，本章将所有机制汇总到高并发 `vllm-ascend` 四层生产调用栈中，梳理模式选型、稀疏分桶与三大高频线上故障排查路径。
+把 ACL Graph 拉进 `vllm-ascend` 高并发生产栈后，收益与风险往往同时放大。若图模式选型失当或物理队列配额超限，服务会在预热阶段直接报错退出，或在线上并发期间触发隐蔽的异步显存崩溃与性能回退。
 
-## 生产四层软件硬件调用栈全景映射
+## 生产四层软硬件调用栈映射
 
 ![ACL Graph 在 vLLM-Ascend 全链路四层软硬件映射架构](./diagrams/06-aclgraph-four-layer-stack.drawio '图 1：ACL Graph 贯穿 vllm-ascend、torch_npu、cann/runtime 与 HDK/NPU 物理队列的四层调用栈映射')
 
-从上层框架到底层芯片固件，四层各自承担明确边界（对应图 1 与官方协同视图图 2）：
+从上层框架到底层芯片固件，生产全栈划分为边界明确的四层架构（见图 1 与图 2）：
 
-- **L1 · `vllm-ascend` 调度与编译层**（提交 `3649b8ff`[^vllm-ascend-acl][^vllm-ascend-npug]）：负责批大小稀疏分桶、按请求态分派 `FULL`/`PIECEWISE` 模式、`ACLGraphWrapper` 包装以及 `weak_ref_outputs` 输出缓存回收。
-- **L2 · `torch_npu` 框架桥接层**（提交 `d09e29e4`）：提供对齐 CUDA 语义的 `NPUGraph` 与全局内存池映射，经 `_GraphDispatchMode` 与控制流代理自动衔接 TaskGrp 热刷新与条件流。
-- **L3 · `cann/runtime` 原生底座**（提交 `1954820a`）：`CaptureSession` 执行拓扑闭合鉴权，`CaptureModel` 构造持久 `LogicSQ` 并做 Device Args 备份，`CondHandle` 管控共享 Notify，`DeviceSqCqPool` 分配物理队列。
-- **L4 · Ascend HDK 与 NPU 硬件层**：持有 `1024U` 上限的物理 `SQ/CQ`、8192 个 Notify 槽位与 65536 个 Event 状态字，由 TS 固件驱动 AICore、AICPU 与 HCCL 执行引擎。
+在最上层的 **L1 `vllm-ascend` 调度层**[^vllm-ascend-acl][^vllm-ascend-npug]，引擎负责批大小稀疏分桶、按请求态分派全图或分段模式，并用 `ACLGraphWrapper` 与 `weak_ref_outputs` 回收输出强引用。往下衔接 **L2 `torch_npu` 桥接层**，它提供对齐 CUDA 语义的 `NPUGraph`、全局图池映射，并经分发代理自动接入 TaskGrp 热刷新与条件控制流。
+
+到底层的 **L3 `cann/runtime` 原生底座**，`CaptureSession` 负责拓扑闭合鉴权，`CaptureModel` 则构造持久 `LogicSQ` 并备份设备参数。`CondHandle` 与 `DeviceSqCqPool` 分别管控条件唤醒和队列分配。
+
+最下方的 **L4 Ascend HDK 与硬件层**持有 1024U 上限的物理 SQ/CQ，并配备 8192 个 Notify 与 65536 个 Event 槽位。设备侧由 TS 固件直接驱动 AICore、AICPU 与 HCCL 执行。
 
 ![vLLM-Ascend 官方软硬件协同架构总览](./images/vllm-ascend-stack-overview.png '图 2：vllm-ascend 上下游对接 PyTorch/TorchNPU、Triton Ascend、CANN Ops/Toolkit 及底层 Ascend HDK/NPU 全栈定位（来源 vllm-ascend 官方文档，Apache-2.0）')
 
-## `cudagraph_mode` 选择矩阵、优化工具与分桶计算
+## 图模式选型与分桶配额计算
 
 上线部署的核心开关围绕 **`cudagraph_mode`** 与 **`npugraph_ex` 编译优化套件**组合配置[^vllm-ascend-graph][^vllm-ascend-acl]：
 
-| 模式 / 开关          | 核心机理           | 适用场景           | 关键边界              |
+| 模式 / 开关          | 核心机制           | 适用场景           | 关键边界              |
 | -------------------- | ------------------ | ------------------ | --------------------- |
 | `NONE`（Eager）      | 关静态图，逐算子发 | 纯 Prefill 或调试  | 解码受 Host 气泡拖累  |
 | `PIECEWISE`          | 隔离 Attention 编  | Chunked Prefill    | 留少量 CPU 调度       |
@@ -35,31 +36,37 @@ tags: [vLLM-Ascend, npugraph_ex, SuperKernel, XliteGraph, '207008', '507011', Pr
 | `npugraph_ex`        | 图替换、可退旧栈   | 小算子密集自定义图 | 含 Triton 跳缓存      |
 | `SuperKernel`        | 多算子超融合直通   | A3 / 950 极低延迟  | 需静态输入与白名单    |
 
-- **`npugraph_ex` 与 Triton 持久化约束**[^vllm-ascend-npug]：自定义 Triton Ascend Kernel 会在参数表内产生 **`kernel_side_table`** 动态外部地址跳转表，图编译器为防止跨进程加载失配会主动跳过磁盘缓存持久化，使每次冷启动重新触发该段子图的在线编译；必要时可通过 `force_eager` 将疑难自定义算子切出静态下沉通道。
-- **稀疏分桶预算与 MTP 对齐约束**：物理池总消费满足约束公式：
+启用 **`npugraph_ex`** 编译优化套件时，还需留意自定义 Triton Ascend Kernel 的持久化约束[^vllm-ascend-npug]。这类算子会在参数表内产生 **`kernel_side_table`** 动态外部地址跳转表，编译器为防止跨进程加载失配会跳过磁盘缓存，导致每次冷启动重新编译该子图。遇到此类情况可通过 `force_eager` 把疑难算子切出静态下沉通道。
+
+稀疏分桶的物理池总消费必须满足以下约束公式：
 
 $$
 N_{\text{SQ/CQ}} = |\text{aligned\_buckets}| \times N_{\text{streams}} \le 1024
 $$
 
-若盲目使用 1..256 全密集桶且每图挂接 4 条逻辑流（计算、HCCL、拷贝与同步辅助流），需求立刻突破 1024 硬限；生产应采用前密后疏的稀疏捕获桶表，并在启用 DeepSeek-V4.1-Flash **DSpark / MTP 多词元推测**时，将每档捕获桶容量对齐为 **`num_spec_tokens + 1` 的整数倍**（如单步验证 2 token 对齐为偶数倍），避免向上跳档造成大量无效 Padding 计算与脏写隐患。
+若盲目配置 1 到 256 的全密集桶且每图挂接 4 条逻辑流（计算、HCCL、拷贝与辅助同步流），通道需求立刻突破 1024 上限。生产环境应采用前密后疏的稀疏桶表。开启 **DSpark / MTP 多 token 推测**时，还须将每档桶容量对齐为 `num_spec_tokens + 1` 的整数倍。例如单步验证 2 token 就要对齐到偶数倍，减少无效 Padding 计算。
 
-## 生产三大高频故障机理与二分排障工具箱
+## 三大高频故障与二分排障路径
 
-线上启用 ACL Graph 后的疑难故障主要收敛为以下三类，按图 3 路径借助 `VLLM_ASCEND_ENABLE_ACLGRAPH=0`、`ASCEND_LAUNCH_BLOCKING=1` 与 `msprof` 可实现二分定位：
+线上启用 ACL Graph 后的常见故障主要分为三类。结合图 3 的决策路径，借助 `VLLM_ASCEND_ENABLE_ACLGRAPH=0`、`ASCEND_LAUNCH_BLOCKING=1` 与 `msprof` 即可完成二分定位：
 
-- **错误码 `207008`（`ACL_ERROR_RT_NO_STREAM_RESOURCE` / `EE1023`）**[^err-codes][^sqcq-6][^cap-6]
-  - **现象**：冷启动暖机预回放多档捕获桶时抛错退出，日志打印 `driver error:no stream resource`。
-  - **根因**：`CaptureModel::BuildSqCq`（`capture_model.cc` 第 1583 行）按 `StreamList_().size()` 划走通道时撞穿 `RT_DEVICE_SQCQ_RES_MAX_NUM = 1024U` 硬限，且仅调用 `aclmdlRIDestroy` 才释放归还。
-  - **定位与根治**：核算 $\text{桶数} \times \text{每图内部流数} \le 1024$，精简细碎桶位并收拢冗余副流。
-- **错误码 `507011`（`ACL_ERROR_RT_MODEL_EXECUTE`）**[^err-codes]
-  - **现象**：暖机样本正常运行，进入并发抢占与显存块回收后设备流突然挂死或报 `model execute failed`。
-  - **根因**：**设备侧内存 UAF（Use-After-Free，释放后重用）**。捕获期固化在 SQE 与 Args 中的虚拟地址（如 `sinks` 汇总缓冲、局部 `Workspace` 或被 `weak_ref_outputs` 过早释回的内存块）在重放前被分配器收回复用甚至 `empty_cache()` 解映射，再次访存即引发硬件异常。
-  - **定位与根治**：设置 `ASCEND_LAUNCH_BLOCKING=1` 同步报错行定位，为被图引用张量改用全局静态持久缓冲保活。
-- **Async Replay Race（异步重放踩踏）与 Profiler 回退识别**
-  - **现象**：无报错但偶尔生成乱码词元，或推理吞吐骤降退回 Eager 水平。
-  - **根因**：`aclmdlRIExecuteAsync` 非阻塞返回 CPU，外循环在第 $t$ 步模型影流读入旧数据前就原地覆盖第 $t+1$ 步静态输入缓冲；或因隐藏动态维/Triton 断点触发静默回退与未重置 `ExternalEvent` 阻塞等待。
-  - **定位与根治**：先切 `VLLM_ASCEND_ENABLE_ACLGRAPH=0` 排除权重与量化自身问题，再用 **`msprof`** 观察 `Task Scheduler` / `AICore` 轨与 `ACL` 轨——密集 Host Launch 柱说明回退分段 Eager，算子前长期空白带则锁定错置同步或未重置事件。
+### 错误码 207008 资源耗尽
+
+冷启动预热多档分桶时，进程可能报错 `ACL_ERROR_RT_NO_STREAM_RESOURCE`（错误码 207008，日志 EE1023）。日志通常还会打印 `driver error:no stream resource`[^err-codes][^sqcq-6][^cap-6]。
+
+这是因为 `CaptureModel::BuildSqCq` 按流数量分配通道时撞穿了 `RT_DEVICE_SQCQ_RES_MAX_NUM = 1024U` 硬限。并且这些通道必须到 `aclmdlRIDestroy` 才释放归还。排障时先按 $\text{桶数} \times \text{每图流数} \le 1024$ 核对预算，精简细碎分桶并收拢冗余副流即可根治。
+
+### 错误码 507011 设备内存异常
+
+暖机阶段运行正常，进入并发抢占与显存块回收后，设备流突然挂死并报 `ACL_ERROR_RT_MODEL_EXECUTE`（错误码 507011）[^err-codes]。这类故障的典型根因是设备侧内存 **UAF（Use-After-Free，释放后重用）**。
+
+捕获期固化在 SQE 与参数区的虚拟地址（如 `sinks` 汇总缓冲、局部 `Workspace` 或被 `weak_ref_outputs` 释回的内存块）在重放前可能被分配器回收。一旦再次访存就会触发硬件异常。定位时先设置 `ASCEND_LAUNCH_BLOCKING=1` 同步捕获报错位置，再将图内引用张量改用全局持久缓冲保活。
+
+### 异步重放踩踏与性能回退
+
+有时系统不报错却偶发输出乱码 token，或者推理吞吐掉回 Eager 水平。前者的常见原因在于 `aclmdlRIExecuteAsync` 会非阻塞返回 CPU，外循环在第 $t$ 步影子流读完旧数据前就提前覆写了第 $t+1$ 步的静态输入缓冲。后者则往往源于隐藏动态维触发静默回退，或 `ExternalEvent` 漏重置引起阻塞等待。
+
+排查时先设置 `VLLM_ASCEND_ENABLE_ACLGRAPH=0` 排除权重与量化自身问题，再用 `msprof` 观察计算轨与 `ACL` 轨时间线。如果发现密集的 Host Launch 柱说明已退回分段 Eager，算子前出现长段空白带则多半是错置同步或未重置事件。
 
 ```mermaid caption="图 3：ACL Graph 线上故障（207008、507011 与异步竞态）二分定位路径"
 flowchart TD
@@ -72,9 +79,9 @@ flowchart TD
     D -->|"性能回退"| P["msprof 查 Host 柱与气泡<br/>查分桶与 ExternalEvent"]
 ```
 
-## `SQ/CQ` 池配额求解与 UAF / 异步竞态诊断验证
+## 队列配额与内存越界仿真
 
-下面这则运行在纯 CPU 环境的 Python 验证器对标 `RT_DEVICE_SQCQ_RES_MAX_NUM = 1024U` 核算密集分桶与 MTP 对齐稀疏分桶的通道消耗边界，并复现 `sinks` 指针提前释放触发的 `507011` UAF 状态告警：
+下面的纯 CPU Python 脚本依据 `RT_DEVICE_SQCQ_RES_MAX_NUM = 1024U` 核算密集与稀疏分桶的通道余量。脚本同时复现了 `sinks` 指针提前释放触发的 507011 UAF 报错：
 
 ```python
 RT_DEVICE_SQCQ_RES_MAX_NUM = 1024  # cann/runtime device_sq_cq_pool.hpp
@@ -138,7 +145,7 @@ trk.free(sinks_ptr)
 print(f"[UAF Bug] {trk.check_replay([sinks_ptr, work_ptr])}")
 ```
 
-实测结果如下：257 档密集桶以 1028/1024 直接越界触发 `trigger_207008=True`，对齐 MTP 的 12 档稀疏桶仅用 48 组留出 976 组通道冗余，而未保活指针则在重放检查中精确捕获 `507011` UAF 错误：
+仿真输出显示，257 档密集桶消耗 1028 组通道并直接触发 `trigger_207008=True`，对齐 MTP 的 12 档稀疏桶仅用 48 组、留下 976 组余量。在生命周期追踪器中，未保活指针也在重放检查阶段触发了 507011 UAF 告警：
 
 ```text
 [Dense Bucketing] graphs=257, total_SQCQ=1028/1024, trigger_207008=True

@@ -4,16 +4,16 @@
       <root>
         <mxCell id="0" />
         <mxCell id="1" parent="0" />
-        <mxCell id="top_note" value="以位置 \(t =\)「景」为例：2 个 N-gram 阶 \(\times\) 每阶 8 个质数头 \(= 16\) 个确定性行号" style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;fontFamily=Inter;fontSize=12;fontColor=#5c6067;" vertex="1" parent="1">
+        <mxCell id="top_note" value="以位置 \(t =\)“景”为例：2 个 N-gram 阶 \(\times\) 每阶 8 个质数头 \(= 16\) 个确定性行号" style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;fontFamily=Inter;fontSize=12;fontColor=#5c6067;" vertex="1" parent="1">
           <mxGeometry x="0" y="0" width="624" height="24" as="geometry" />
         </mxCell>
         <mxCell id="seq_ids" value="压缩后规范 ID 序列：…  名(1825)   医(9412)   张(3104)   仲(7721)   景(5509)" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#eaedf2;strokeColor=#464e57;strokeWidth=1.25;fontFamily=Inter;fontSize=14;fontColor=#1d1d1f;" vertex="1" parent="1">
           <mxGeometry x="32" y="32" width="560" height="40" as="geometry" />
         </mxCell>
-        <mxCell id="win2" value="2-gram 后缀窗口&lt;br&gt;\(g_{t,2} = (7721,\,5509)\)（「仲景」）" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#f4f4f2;strokeColor=#5c6067;strokeWidth=1;fontFamily=Inter;fontSize=14;fontColor=#1d1d1f;" vertex="1" parent="1">
+        <mxCell id="win2" value="2-gram 后缀窗口&lt;br&gt;\(g_{t,2} = (7721,\,5509)\)（“仲景”）" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#f4f4f2;strokeColor=#5c6067;strokeWidth=1;fontFamily=Inter;fontSize=14;fontColor=#1d1d1f;" vertex="1" parent="1">
           <mxGeometry x="0" y="104" width="296" height="48" as="geometry" />
         </mxCell>
-        <mxCell id="win3" value="3-gram 后缀窗口&lt;br&gt;\(g_{t,3} = (3104,\,7721,\,5509)\)（「张仲景」）" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#f4f4f2;strokeColor=#5c6067;strokeWidth=1;fontFamily=Inter;fontSize=14;fontColor=#1d1d1f;" vertex="1" parent="1">
+        <mxCell id="win3" value="3-gram 后缀窗口&lt;br&gt;\(g_{t,3} = (3104,\,7721,\,5509)\)（“张仲景”）" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#f4f4f2;strokeColor=#5c6067;strokeWidth=1;fontFamily=Inter;fontSize=14;fontColor=#1d1d1f;" vertex="1" parent="1">
           <mxGeometry x="328" y="104" width="296" height="48" as="geometry" />
         </mxCell>
         <mxCell id="mix2" value="奇乘数异或混合（层种子隔离）&lt;br&gt;\(h_2 = (7721 \cdot m_1) \oplus (5509 \cdot m_0)\)" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#fbf2df;strokeColor=#7b5518;strokeWidth=1.25;fontFamily=Inter;fontSize=14;fontColor=#1d1d1f;" vertex="1" parent="1">

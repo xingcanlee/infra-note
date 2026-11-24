@@ -126,7 +126,7 @@ export function buildCausalAttentionSteps(): Step<CausalAttentionState>[] {
         focusRowText: '$S[2] = [0.5, 1.0, 0.5, 1.0]$',
       },
       caption:
-        '整体除以 $\\sqrt{d_k} = 2$ 后方差回归稳定的 $1.0$（对应 vLLM 中 self.scaling $= d_k^{-0.5}$）。第 2 行「垫」上 $S[2, 3] = 1.00$，表明此时仍能读取未来 token「上」。',
+        '整体除以 $\\sqrt{d_k} = 2$ 后方差回归稳定的 $1.0$（对应 vLLM 中 self.scaling $= d_k^{-0.5}$）。第 2 行“垫”上 $S[2, 3] = 1.00$，表明此时仍能读取未来 token“上”。',
     },
     {
       state: {
@@ -160,10 +160,10 @@ export function buildCausalAttentionSteps(): Step<CausalAttentionState>[] {
         scaleFormula: '$\\exp(-\\infty) = 0.000$',
         varianceText: '每行严格归一化至 1.00',
         maskCountText: '6 / 16 权重严格清零',
-        focusRowText: '$t=2$ 聚焦「坐在」(0.452)',
+        focusRowText: '$t=2$ 聚焦“坐在”(0.452)',
       },
       caption:
-        '逐行执行 Softmax：$\\exp(-\\infty) = 0$ 使未来权重清零，$t=2$ 行得到 $[0.274, 0.452, 0.274, 0]$，最聚焦于动词「坐在」；$t=3$ 行则均衡关注句首「猫」（$0.311$）与自身「上」（$0.311$）。',
+        '逐行执行 Softmax：$\\exp(-\\infty) = 0$ 使未来权重清零，$t=2$ 行得到 $[0.274, 0.452, 0.274, 0]$，最聚焦于动词“坐在”；$t=3$ 行则均衡关注句首“猫”（$0.311$）与自身“上”（$0.311$）。',
     },
     {
       state: {
@@ -182,7 +182,7 @@ export function buildCausalAttentionSteps(): Step<CausalAttentionState>[] {
         focusRowText: '$O_3$:[.41,.28,.50,.41]',
       },
       caption:
-        '最后由 $O = P \\cdot V$ 将各历史 token 的值向量按权重聚合，写出输出矩阵 $O \\in \\mathbb{R}^{4 \\times 4}$。行末位置「上」的输出 $[0.406, 0.283, 0.500, 0.406]$ 已融入主语「猫」的语义。',
+        '最后由 $O = P \\cdot V$ 将各历史 token 的值向量按权重聚合，写出输出矩阵 $O \\in \\mathbb{R}^{4 \\times 4}$。行末位置“上”的输出 $[0.406, 0.283, 0.500, 0.406]$ 已融入主语“猫”的语义。',
     },
   ];
 }

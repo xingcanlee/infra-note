@@ -4,9 +4,9 @@
 
 ## 全站架构：五大递进系列与双硬件主线
 
-站点将通用硬件、算子、分布式通信与执行图底层彻底拆分串联，形成**「异构硬件与量化基础 → 分布式并行与通信 → DeepSeek 模型架构演进 → vLLM 与昇腾运行时引擎 → 执行图与昇腾 ACL Graph」**五步递进路线。
+站点将通用硬件、算子、分布式通信与执行图底层彻底拆分串联，形成**“异构硬件与量化基础 → 分布式并行与通信 → DeepSeek 模型架构演进 → vLLM 与昇腾运行时引擎 → 执行图与昇腾 ACL Graph”**五步递进路线。
 
-每篇正文章遵循「问题切入 → 微型数字直觉与可视化 → 机制推导与架构 → Python 参考实现与源码对照 → 自然收束与过渡」的问题流向，所有前提、硬件限制与演进取舍随上下文自然展开，不设教案八股栏目。
+每篇正文章遵循“问题切入 → 微型数字直觉与可视化 → 机制推导与架构 → Python 参考实现与源码对照 → 自然衔接与过渡”的问题流向，所有前提、硬件限制与演进取舍随上下文自然展开，不设教案八股栏目。
 
 首页 `summarizeSeries` 按系列内最新 `pubDate` 降序排列，时间锚定使首页按学习顺序精确呈现 **`foundations`（1）→ `distributed`（2）→ `deepseek`（3）→ `vllm`（4）→ `aclgraph`（5）**。
 
@@ -65,7 +65,7 @@
 | `order` | 目录 / 篇目                          | 可视化工具组合         | 核心讲解与硬件对照                                               |
 | :-----: | :----------------------------------- | :--------------------- | :--------------------------------------------------------------- |
 |   `1`   | `vllm/index.mdx`                     | Mermaid                | vLLM V1 与 `vllm-ascend` 执行栈六章路线与快照基准                |
-|   `2`   | `01-paged-attention-and-scheduler`   | Explainer + Draw.io    | V1 统一 `token_budget`、Prefix Hash、`null_block` 映射与 PA 内核 |
+|   `2`   | `01-paged-attention-and-scheduler`   | Explainer + Draw.io    | V1 统一 `token_budget`、Prefix Hash、`null_block` 映射与 PA 算子 |
 |   `3`   | `02-async-execution-and-launch-wall` | Explainer + Draw.io    | CPU 发射队列、`.item()` `op5` 排水与 AsyncOutput/TaskQueue       |
 |   `4`   | `03-torch-compile-and-piecewise`     | Mermaid + Draw.io      | `split_graph` 分段路由、FX 算子融合与 Inductor vs `npugraph_ex`  |
 |   `5`   | `04-cuda-graph-and-boundaries`       | Explainer + Excalidraw | `0x7f00_1000` 固定地址重放、`B_cap` 填充与四象限静态图硬边界     |
@@ -81,15 +81,15 @@
 |   `1`   | `aclgraph/index.mdx`                                | Draw.io                | 算力流 → 编译静态化 → 静态执行图三层演进路线与上游源码快照基准                  |
 |   `2`   | `01-heterogeneous-streams-and-events`               | Explainer + Draw.io    | 异步队列、CUDA Pushbuffer vs CANN `SQ/CQ`、单流 FIFO、`Event`/`Notify` 同步     |
 |   `3`   | `02-torch-compile-fundamentals`                     | Draw.io + Official PNG | TorchDynamo、`SymInt`、0/1 Guard 特化、AOTAutograd、`Inductor` vs `npugraph_ex` |
-|   `4`   | `03-cuda-graph-fundamentals`                        | Excalidraw + PNG       | DeepSeek-V3 61 层账本、`Stream Capture`、Fork-Join、四大静态边界、条件节点      |
+|   `4`   | `03-cuda-graph-fundamentals`                        | Excalidraw + PNG       | DeepSeek-V3 61 层开销、`Stream Capture`、Fork-Join、四大静态边界、条件节点      |
 |   `5`   | `04-acl-graph-architecture-and-capture`             | Explainer + Draw.io    | 影子模型流、`CopyTaskArgsDeviceBuffer`、`ModelEndGraph` `Notify`、多流汇合      |
 |   `6`   | `05-acl-graph-task-update-and-conditional-subgraph` | Explainer + Draw.io    | `TaskGrp`/`TaskUpdate`、`ExternalEvent`、`CondHandle` 与共享 `subModelNotify_`  |
 |   `7`   | `06-acl-graph-fullstack-and-vllm-ascend`            | Draw.io + Official PNG | `vllm-ascend` 四层全栈、稀疏分桶、MTP 对齐、错误码 207008 与 507011 诊断        |
 
 ---
 
-## 质量门与站点校验（`src/content.test.ts` 与 `explainers.test.ts`）
+## 质量门与站点校验（`content.test.ts`、`style.test.ts` 与 `explainers.test.ts`）
 
 - **四选一可视化与零遗留**：全站 `36` 篇文章按需组合 `Mermaid`、`Draw.io`、`Excalidraw` 与交互式 `<Explainer>` 组件（共 `16` 枚），所有 `diagrams/` 目录零孤立未引用文件，`pnpm diagram lint --strict` 与 `pnpm diagram build` 零告警通过。
-- **交互组件与实现测试**：`src/explainers/__tests__/explainers.test.ts` 验证全部 16 个交互组件的步骤边界、公式配对与零硬编码 `#hex` SSR 渲染；全站无外部 `toy.py` 脚本，正文中均附 PyTorch/NumPy/Python 参考实现与 `cann/runtime` / `torch_npu` / `vllm` / `vllm-ascend` 源码对照。
+- **交互组件与风格门禁测试**：`src/explainers/__tests__/explainers.test.ts` 验证全部 16 个交互组件的步骤边界、公式配对与零硬编码 `#hex` SSR 渲染；`src/style.test.ts` 校验全站标题、小标题、句段长度、单段符号密度、直译黑名单与弯引号一致性；全站无外部 `toy.py` 脚本，正文中均附 PyTorch/NumPy/Python 参考实现与 `cann/runtime` / `torch_npu` / `vllm` / `vllm-ascend` 源码对照。
 - **写作与构建门禁**：`check_post.py --all --strict` 返回 `0 error / 0 warning`；`pnpm format:check`、`pnpm check` 与 `pnpm build` 全部通过。

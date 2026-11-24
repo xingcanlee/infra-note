@@ -85,7 +85,7 @@ export function buildAclGraphShadowStreamSteps(): Step<AclGraphShadowStreamState
         },
       },
       caption:
-        'Decode 阶段单算子在 NPU 上仅运行数微秒，而 CPU 侧框架构图与内核校验耗时超过执行时长，Stream 1 频频出现灰色等待气泡。',
+        'Decode 阶段单算子在 NPU 上仅运行数微秒，而 CPU 侧框架构图与算子校验耗时超过执行时长，Stream 1 频频出现灰色等待气泡。',
     },
     {
       state: {
@@ -209,7 +209,7 @@ export function buildAclGraphShadowStreamSteps(): Step<AclGraphShadowStreamState
         focusRect: { x: 228, y: 214, w: 208, h: 60, label: 'Device 参数备份', tone: 'active' },
       },
       caption:
-        'Runtime 将每次 Launch 的内核参数通过 CopyTaskArgsDeviceBuffer 备份到独立 Device 缓冲，同时生成对应 SQE 描述符保存至逻辑队列，全程遵循用户下发序。',
+        'Runtime 将每次 Launch 的算子参数通过 CopyTaskArgsDeviceBuffer 备份到独立 Device 缓冲，同时生成对应 SQE 描述符保存至逻辑队列，全程遵循用户下发序。',
     },
     {
       state: {

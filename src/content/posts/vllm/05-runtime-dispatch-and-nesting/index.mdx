@@ -1,33 +1,39 @@
 ---
-title: '05 运行时模式分发与嵌套包装：从 BatchExecutionDescriptor 到 DP 模式对齐'
-description: '解析 vLLM 三层同心包装（含内外两层静态图壳）与 NONE 透传不变量、注意力能力裁切下的双模式降级、BatchExecutionDescriptor 的 O(1) 查表以及 MoE DP 跨卡共识调度。'
+title: '05 运行时分发、三层包装与 DP 共识'
+description: '混排请求切换与 MoE 跨卡负载不均，会在单卡与多卡上同时引发图模式冲突和通信死锁。本文拆解三层同心包装、注意力能力裁切查表与主机 DP 共识，并对照双端实现。'
 pubDate: 2026-10-30
 draft: false
 series: { id: vllm, order: 6 }
 tags: [vLLM, CUDA Graph, torch.compile, Scheduler]
 ---
 
-单张静态图守住四道边界后（见[第 4 章](../04-cuda-graph-and-boundaries/)），真实在线服务的动态性立刻带来了两重冲突。第一重冲突在单卡内部：第 $t$ 步可能全是单 token 均匀 **Decode（解码）**，第 $t+1$ 步就混入了 **Chunked Prefill（分块预填充）**，不同注意力内核能否进整图的能力各不相同，引擎必须在同一个模型对象上动态切换整图（`FULL`）、分段图（`PIECEWISE`）与 Eager（`NONE`）三种运行时模式。
+单张静态图守住四道边界后（见[第 4 章](../04-cuda-graph-and-boundaries/)），真实在线服务的动态性立刻带来两重冲突。第一重冲突在单卡内部：第 $t$ 步可能全是单 token 均匀 **Decode（解码）**，第 $t+1$ 步就混入 **Chunked Prefill（分块预填充）**。不同注意力算子能否进整图的能力各不相同，引擎必须在同一模型上动态切换整图 `FULL`、分段图 `PIECEWISE` 与 Eager 模式 `NONE`。
 
-第二重冲突出现在多卡 **DP（Data Parallelism，数据并行）**集群上：当模型开启 **MoE（Mixture-of-Experts，混合专家架构）**并行时，各张计算卡的批构成往往各不相同，如果卡与卡各自按本地负载选了不同的图模式或填充长度，后续跨卡集合通信就会在形状或执行流上直接挂死。vLLM 用**三层同心包装结构**解决单卡无痛切换，并用**主机侧轻量 DP 共识**锁住跨卡一致性。
+第二重冲突出现在多卡 **DP（Data Parallelism，数据并行）**集群上。当模型开启 **MoE（Mixture-of-Experts，混合专家架构）**并行时，各张计算卡的批构成往往不同。如果各卡只按本地负载选择图模式或填充长度，后续跨卡集合通信就会因形状或执行流不一致而直接挂死。vLLM 用**三层同心包装结构**解决单卡无痛切换，并用**主机侧轻量 DP 共识**锁住跨卡一致性。
 
 ## 多卡 DP 共识与集合通信防死锁
 
-理解跨卡模式对齐之前，需要先厘清拓扑前提。对于普通的 **Dense（稠密）**模型，若仅做标准 DP 部署，每个 DP 副本独立持有完整权重并在本地完成前向计算，层间不产生跨 DP 卡的激活交换——此时 Rank 0 跑整图、Rank 1 跑分段图各自推进，互不干扰。
+理解跨卡模式对齐前，需要先厘清拓扑前提。对普通 **Dense（稠密）**模型做标准 DP 部署时，每个副本独立持有完整权重并在本地前向，层间不产生跨 DP 卡的激活交换。此时即便 Rank 0 跑整图、Rank 1 跑分段图，双方各自推进也互不干扰。
 
-一旦进入 **MoE「Attention 走 DP + 专家层走 EP（Expert Parallelism，专家并行）」**的混合并行拓扑，情况就彻底改变。每一层的注意力计算仍然在各 DP 卡本地独立完成，但紧接着的 MoE 专家 **Dispatch（分发）**与 **Combine（合并）**必须在整个 EP/DP 通信组内执行跨卡 `All-to-All` 集合通信[^vllm-dp-utils]。假如某一步里，Rank 0 仅承载 $4$ 个纯解码 token 并本地判定走 `FULL` 整图（对应形状 `(4, H)`），而 Rank 1 正在处理 $19$ 个混排预填充 token 且对齐到桶 $20$ 并退回 `PIECEWISE`（对应形状 `(20, H)`），两张卡抵达同一层 `All-to-All` 时传入的张量长度分别是 $4$ 与 $20$，集合通信不仅无法对齐收发缓冲，还会因两卡内核入图状态不一致而触发通信超时或死锁。
+一旦进入 **MoE“Attention 走 DP + 专家层走 EP（Expert Parallelism，专家并行）”**的混合并行拓扑，情况就会改变。每一层的注意力仍在各 DP 卡本地独立计算，但紧接着的 MoE 专家 **Dispatch（分发）**与 **Combine（合并）**必须在 EP/DP 通信组内执行跨卡 `All-to-All` 集合通信[^vllm-dp-utils]。
 
-为此，`GPUModelRunner` 在进入模型前向之前，会先调用 `dispatch_cg_and_sync_dp` 执行一次纯主机侧的状态汇总[^vllm-dp-utils][^vllm-model-runner]。具体来说，每张卡在 CPU 上把本地 `num_tokens`、期望图模式枚举值 `cg_mode`、`uniform_token_count`、`max_query_len`、`allow_ubatching`、`num_reqs` 与 `allow_skip_drafts` 共 $7$ 个整型状态写入一张形状为 `(7, dp_size)` 的 CPU 张量，并通过 `cpu_all_reduce_()` 完成跨卡交换，全程不阻塞 GPU 计算流。
+假设某一步中，Rank 0 仅承载 $4$ 个解码 token 并本地走 `FULL` 整图（形状 `(4, H)`）。Rank 1 则处理 $19$ 个混排 token，对齐到桶 $20$ 后退回 `PIECEWISE`（形状 `(20, H)`）。两张卡抵达同一层 `All-to-All` 时传入的张量长度分别是 $4$ 与 $20$，不仅收发缓冲无法对齐，还会因两卡算子入图状态不一致而触发通信超时或死锁。
 
-汇总结束后，所有存活卡按同一套保守规则联合裁决：全局图模式取枚举最小值 `min(cg_mode_across_dp)`（枚举值定义为 `NONE = 0`、`PIECEWISE = 1`、`FULL = 2`，因此只要任意一张卡需要降级，全体同步降级）；若全组仍有卡保持图执行，则统一取最大 token 数 `max(num_tokens_across_dp)` 并据此在共享档位中重新分桶对齐；一旦各卡对均匀查询长度 `uniform_token_count` 意见不一，即将其置为 `None`，迫使整组退出均匀解码专用路径[^vllm-dp-utils]。以上例中的 `(4, FULL)` 与 `(19, PIECEWISE)` 为例，全组最终一致对齐到 `PIECEWISE` 与分桶 $T = 20$，使所有 Rank 以对称的 `(20, H)` 张量穿越每一层 `All-to-All`。图 1 展示了从本地投票分化、未对齐死锁风险到主机共识对齐的完整链路。
+为此，`GPUModelRunner` 在进入模型前向之前，会先调用 `dispatch_cg_and_sync_dp` 执行一次纯主机侧的状态汇总[^vllm-dp-utils][^vllm-model-runner]。每张卡在 CPU 上把本地 `num_tokens`、`cg_mode`、`uniform_token_count` 与其余 $4$ 项批约束写入形状 $7 \times \text{dp\_size}$ 的 CPU 张量。随后通过 `cpu_all_reduce_()` 完成跨卡交换，全程不阻塞 GPU 计算流。
+
+汇总结束后，所有存活卡按同一套保守规则联合裁决：全局图模式取枚举最小值（`NONE = 0`、`PIECEWISE = 1`、`FULL = 2`），只要任意一卡需要降级，全体同步降级[^vllm-dp-utils]。若全组仍有卡保持图执行，则统一取最大 token 数在共享档位中重新分桶对齐；一旦对均匀查询长度意见不一，即置为 `None` 并退出均匀解码路径。
+
+沿用前面的 `(4, FULL)` 与 `(19, PIECEWISE)` 示例，全组最终一致对齐到 `PIECEWISE` 与分桶 $T = 20$。所有 Rank 从而以对称的 `(20, H)` 张量穿越每一层 `All-to-All`。图 1 展示了从本地投票分化到主机共识对齐的完整链路。
 
 ![多卡 DP 运行时模式对齐与防死锁共识：Rank 0 (4 tok FULL) 与 Rank 1 (19 tok PIECEWISE) 经 cpu_all_reduce_ 同步后保守裁决为 PIECEWISE 与 T=20 对称桶](./diagrams/05-dp-dispatch-consensus.drawio '图 1：多卡 DP 运行时模式对齐与防死锁共识')
 
 ## 三层同心包装与 NONE 透传不变量
 
-确定本步要执行的全局模式后，单卡模型对象如何在运行期在 `FULL`、`PIECEWISE` 与 `NONE` 之间瞬时切换，而不必在内存中维护两套重复权重？vLLM 在启动构图期将同一个 Python 模型由外到内构造成**三层同心包装结构（包含外、内两层静态图壳）**。最外层是 `ModelCudaGraphManager`，持有按批描述符索引的整模型 `FULL` 静态图集合，负责直接拦截并重放整张前向图[^vllm-cudagraph-manager]。包在它里面的是中层 `TorchCompileWithNoGuardsWrapper`，持有经过 `split_graph` 切分后的 `fx.GraphModule`，将模型拆成纯张量计算子模块（如 `submod_0`、`submod_2`）与受隔离的注意力子模块（如 `submod_1`）[^vllm-compile-wrapper][^vllm-backends]。最内层则是逐一包在每个纯张量编译子模块外围的 `CUDAGraphWrapper(PIECEWISE)`，而注意力子模块保持未包装的原生 Eager 状态[^vllm-backends]。
+确定全局模式后，单卡模型如何在运行期于 `FULL`、`PIECEWISE` 与 `NONE` 之间瞬时切换，而不必在内存里维护两份权重？vLLM 在启动构图期将同一个 Python 模型由外到内构造成**三层同心包装结构**，包含外、内两层静态图壳。最外层是 `ModelCudaGraphManager`，持有按批描述符索引的整模型 `FULL` 静态图集合，直接拦截并重放整张前向图[^vllm-cudagraph-manager]。
 
-这三层包装在运行时互不冲突，靠的是一条简洁的透传不变量：`CUDAGraphWrapper` 每次被调用时都会读取前向全局上下文中的 `cudagraph_runtime_mode`——只要上下文模式等于 `CUDAGraphMode.NONE`，或与自身绑定的模式不匹配，该包装器就不做任何捕获或重放，直接把调用原样透传给内部的 `self.runnable`[^vllm-cudagraph-wrapper]。图 2 给出了这套三层同心包装的完整分发决策树。
+中层是 `TorchCompileWithNoGuardsWrapper`，持有经 `split_graph` 切分的整图，把模型拆成纯张量子模块与受隔离的注意力子模块[^vllm-compile-wrapper][^vllm-backends]。最内层则是包在每个纯张量编译子模块外围的 `CUDAGraphWrapper`，按 `PIECEWISE` 捕获重放；注意力子模块则保持原生 Eager 状态[^vllm-backends]。
+
+这三层包装在运行时互不冲突，靠的是一条简洁的透传不变量：`CUDAGraphWrapper` 每次被调用时都会读取全局上下文中的 `cudagraph_runtime_mode`[^vllm-cudagraph-wrapper]。只要上下文模式等于 `NONE`，或与自身绑定的模式不匹配，该包装器就不做任何捕获或重放，直接把调用原样透传给内部的 `self.runnable`。图 2 给出了这套三层同心包装的完整分发决策树。
 
 ```mermaid caption="图 2：三层同心包装与双层静态图壳分发决策树"
 flowchart TD
@@ -41,15 +47,21 @@ flowchart TD
     E --> AT
 ```
 
-顺着这条不变量，三条运行时路径的开销与流向清晰可辨。当共识选中 `FULL` 模式时：重放阶段由最外层 `ModelCudaGraphManager.run_fullgraph` 直接触发整张设备图，直接绕过中层与内层的 Python 包装；而即使在启动期首次捕获 `FULL` 整图时，`ModelCudaGraphManager` 也会把内层上下文的 `cudagraph_runtime_mode` 显式设为 `CUDAGraphMode.NONE`[^vllm-cudagraph-manager]，令所有内层 `CUDAGraphWrapper(PIECEWISE)` 自动零开销透传到已融合的 Triton/Inductor Kernel，防止发生“外层抓整图、内层又试图重放分段图”的嵌套 `Stream Capture` 错误。当共识退回 `PIECEWISE` 时，外层整图管理器跳过拦截，请求进入中层编译图并逐段命中内层 `CUDAGraphWrapper(PIECEWISE)`，遇到 Attention 则落回原生 Eager；若处于热身、显存剖析或调试态（`NONE`），内外两层静态图壳全部透传。
+顺着这条不变量，三条运行时路径的开销与流向就清楚了。当共识选中 `FULL` 模式时，重放阶段由最外层调用 `run_fullgraph` 直接触发整张设备图，绕过中内层的 Python 包装。即便启动期首次捕获整图时，外层管理器也会把内层上下文设为 `NONE`[^vllm-cudagraph-manager]，让内层分段包装透传到融合 Kernel，避免触发嵌套 `Stream Capture` 错误。
 
-## 注意力能力裁切与 O(1) 描述符查表
+当共识退回 `PIECEWISE` 时，外层整图管理器跳过拦截，请求进入中层编译图并逐段命中内层分段静态图壳，遇到 Attention 则落回原生 Eager。若处于热身、显存剖析或调试态（`NONE`），内外两层静态图壳全部透传。
+
+## 注意力能力裁切与常量时间查表
 
 三层包装决定了运行时可以走哪些路，而启动期究竟能捕获哪些模式的静态图，取决于模型中注意力后端的实际硬件能力。现实里，只有少数采用统一计算路由的注意力后端（例如 FlashAttention-3，能力等级标记为 `AttentionCGSupport.ALWAYS`）能在单张静态图内同时处理变长预填充与解码[^vllm-attn-backend][^vllm-cg-design]。
 
-更多的后端（如 FlashMLA、FlashInfer）对规则单步解码（$q_{\text{len}} = 1$）或固定投机解码步长（$q_{\text{len}} = 1 + k$）使用规整的线程网格与静态索引步长，能够进入 `FULL` 整图；可一旦批中混入分块预填充，序列查询长度参差不齐，底层就需要动态切分块或变长调度表，无法放进固定形态的整图捕获中[^vllm-cg-design]。这类后端对应的能力等级为 `UNIFORM_BATCH` 或 `UNIFORM_SINGLE_TOKEN_DECODE`；若遇到暂不支持静态图的算子组合，则为 `NEVER`[^vllm-attn-backend]。
+更多的后端（如 FlashMLA、FlashInfer）对单步解码（$q_{\text{len}} = 1$）或固定投机解码步长（$q_{\text{len}} = 1 + k$）使用规整的线程网格与静态步长，能够进入 `FULL` 整图。可一旦批中混入分块预填充，序列查询长度参差不齐，底层就需要动态切分块或变长调度表，无法放进固定形态的整图捕获中[^vllm-cg-design]。这类后端对应 `UNIFORM_BATCH` 或 `UNIFORM_SINGLE_TOKEN_DECODE` 等级；若算子组合暂不支持静态图，则为 `NEVER`[^vllm-attn-backend]。
 
-为了让引擎在面对混合注意力架构时自动给出最优且安全的静态图组合，`vllm` 将用户侧的复合配置 `CUDAGraphMode` 设计为二元组 `(decode_mode, mixed_mode)`：其中 `FULL_DECODE_ONLY` 对应 `(FULL, NONE)`，`FULL_AND_PIECEWISE` 对应 `(FULL, PIECEWISE)`[^vllm-compilation-cfg]。启动协商阶段，`resolve_cudagraph_mode_and_sizes` 取模型内所有注意力层的最低能力作为上限，对照用户配置自动裁切：若请求全量 `FULL` 但后端仅达到 `UNIFORM_BATCH`，且分段编译开启，配置会自动安全降级为 `FULL_AND_PIECEWISE`；若分段编译关闭，则降为 `FULL_DECODE_ONLY`；若能力为 `NEVER`，则降为 `PIECEWISE` 或 `NONE`[^vllm-compilation-cfg]。图 3 展示了从启动能力裁切到运行时查表命中的完整链路。
+为了让混合注意力架构自动落到安全组合，vLLM 把用户侧复合配置 `CUDAGraphMode` 设为二元组 `(decode_mode, mixed_mode)`[^vllm-compilation-cfg]。其中 `FULL_DECODE_ONLY` 对应 `(FULL, NONE)`，而 `FULL_AND_PIECEWISE` 对应 `(FULL, PIECEWISE)`。
+
+启动协商阶段，`resolve_cudagraph_mode_and_sizes` 取全层最低注意力能力作为上限，对照用户配置自动裁切[^vllm-compilation-cfg]。如果请求全量 `FULL` 但后端仅达到 `UNIFORM_BATCH`，开启分段编译时就自动降为 `FULL_AND_PIECEWISE`，否则降为 `FULL_DECODE_ONLY`。
+
+若最低能力为 `NEVER`，配置就会进一步退回 `PIECEWISE` 或 `NONE`。图 3 展示了从启动能力裁切到运行时查表命中的完整链路。
 
 ```mermaid caption="图 3：启动期注意力能力裁切与运行时 O(1) 查表路径"
 flowchart TD
@@ -64,13 +76,15 @@ flowchart TD
     T --> D["运行期 dispatch 常量时间命中"]
 ```
 
-拿到裁切后的安全模式后，`CudaGraphManager` 在启动期会提前把所有捕获档位展开为 `BatchExecutionDescriptor`，字段涵盖 `(cg_mode, num_tokens, num_reqs, uniform_token_count, max_query_len, num_active_loras, num_ubatches)`[^vllm-cudagraph-manager]。为了避免线上每步都在数百个描述符里遍历或二分查找，它在初始化时预先展平两张哈希查找表：均匀解码批以 `(uniform_token_count, effective_loras, num_ubatches)` 为键，把请求数 $1, 2, \dots, N_{\max}$ 直接预填进定长数组；混合批或变长解码批则以 `(num_tokens, effective_loras)` 为键，把每个原始 token 数直接映射到按顺序排好的候选描述符列表。
+拿到裁切后的安全模式后，`CudaGraphManager` 在启动期会把所有捕获档位展开为 `BatchExecutionDescriptor`[^vllm-cudagraph-manager]。每个描述符记录图模式、token 数、请求数，以及均匀查询长度、最大查询长度、激活 LoRA 数和微批切分数。为了避免线上每步都在数百个描述符里遍历或二分查找，管理器在初始化时预先展平两张哈希表。
 
-线上调用 `CudaGraphManager.dispatch()` 时，只需按照当前批的 `num_reqs`、`num_tokens`、`uniform_token_count`、`max_query_len`、LoRA 激活数与微批切分数执行一次哈希查表并校验兼容性条件，即可在 $O(1)$ 时间内取回精确匹配的 `BatchExecutionDescriptor`[^vllm-cudagraph-manager]。
+均匀解码批以均匀长度、有效 LoRA 与微批数为键，把请求数 $1, 2, \dots, N_{\max}$ 直接预填进定长数组。混合批或变长解码批则以 `num_tokens` 与有效 LoRA 为键，把每个原始 token 数直接映射到按顺序排好的候选描述符列表。
+
+线上调用 `CudaGraphManager.dispatch()` 时，只需传入当前批的请求数、token 数、查询长度与 LoRA 等批形态字段[^vllm-cudagraph-manager]。经过一次哈希查表并校验兼容性条件，即可在 $O(1)$ 时间内取回匹配的 `BatchExecutionDescriptor`。
 
 ## PyTorch DP 模式共识实现与双仓对照
 
-下面的自包含 PyTorch 验证脚本同时覆盖了本篇的两条核心机制：第一部分还原 `dp_utils.py` 在双卡异构负载（Rank 0 解码 $4$ token vs Rank 1 混排 $19$ token）与双卡纯解码负载下的 `min(mode)` / `max(tokens)` 共识算法；第二部分模拟三层同心包装的透传契约，验证 `FULL` 态下内层 `PIECEWISE` 包装自动让道、`PIECEWISE` 态下内层独立重放。
+下面的自包含 PyTorch 验证脚本同时覆盖了本篇的两条核心机制。第一部分还原 `dp_utils.py` 在双卡异构负载（4 token 解码对比 19 token 混排）与纯解码负载下的 `min(mode)` / `max(tokens)` 共识算法。第二部分模拟三层同心包装的透传契约，验证 `FULL` 态下内层 `PIECEWISE` 自动让道、`PIECEWISE` 态下内层独立重放：
 
 ```python
 import torch
@@ -169,7 +183,7 @@ decode_dp: mode=FULL(2), bucket=8, uniform_qlen=1, trace=['outer_full_replay(inn
 | 三层同心静态图壳 | `ModelCudaGraphManager` 协同内外双壳 | `ModelAclGraphManager` 复用透传[^ascend-aclgraph-mgr] |
 | 多卡 DP 跨卡共识 | `dispatch_cg_and_sync_dp` 主机对齐   | 复用同共识协议并衔接更新流                            |
 
-在 NVIDIA GPU 上，从启动能力裁切、三层同心包装、$O(1)$ 分发到 DP 跨卡共识已经组成完整的静态图运行时链路。若想系统了解昇腾 NPU 上与之对应的影子模型流、CANN Runtime 物理队列配额、`TaskGrp` 原地刷新、条件子图及 `vllm-ascend` 四层集成细节，可以转入姊妹专题[《执行图与昇腾 ACL Graph》](../../aclgraph/)阅读；本系列的最后一章[第 6 章：性能观测与线上故障定位](../06-profiling-and-debugging/)将继续围绕通用服务指标与 Profiler 轨迹展开排障拆解。
+在 NVIDIA GPU 上，能力裁切、三层同心包装、$O(1)$ 分发与 DP 跨卡共识已经组成完整的静态图运行时链路。如果想系统了解昇腾 NPU 的影子模型流、物理队列配额、`TaskGrp` 原地刷新、条件子图及 `vllm-ascend` 四层集成细节，可转入姊妹专题[《执行图与昇腾 ACL Graph》](../../aclgraph/)。本系列最后一章[第 6 章：性能观测与线上故障定位](../06-profiling-and-debugging/)将继续围绕通用服务指标与 Profiler 轨迹展开排障。
 
 [^vllm-dp-utils]: `vllm` 项目（commit `bb23c0a8`），`vllm/v1/worker/gpu/dp_utils.py:49-353` 中的 `sync_cudagraph_and_dp_padding` 与 `dispatch_cg_and_sync_dp`（通过 `cpu_all_reduce_` 聚合 7 项调度状态并取保守图模式与最大 token 上限）。
 

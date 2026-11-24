@@ -198,7 +198,7 @@ def build_07_engram_runtime() -> None:
         ticks=[(0, "0ms"), (2.5, "2.5ms"), (5.0, "5.0ms"), (7.5, "7.5ms"), (10.0, "10.0ms")],
     )
 
-    c.group("hw_note", 0, 208, 688, 128, "双硬件 Host DDR 驻留与零拷贝预取机理", tone="neutral", dashed=True)
+    c.group("hw_note", 0, 208, 688, 128, "双硬件 Host DDR 驻留与零拷贝预取原理", tone="neutral", dashed=True)
     c.node(
         "gpu_pf",
         16,
@@ -629,7 +629,7 @@ def build_08_mhc_single_pass() -> None:
         ry + 128,
         rw,
         48,
-        "每子层尾调 npu_hc_post 物化四流\nL1 / L14 无需拆分支直接接入 AscendEngram",
+        "每子层尾调 npu_hc_post 写回四流\nL1 / L14 无需拆分支直接接入 AscendEngram",
         tone="done",
         dashed=True,
         font_size=12,
@@ -682,7 +682,7 @@ def build_09_mtp_runtime() -> None:
 
 
 def build_10_five_gen_ledger() -> None:
-    """10-five-gen-ledger.drawio：V2 -> V3 -> R1 -> V3.2 -> V4.1-Flash KV 字节账本、参数分工与双硬件执行栈。"""
+    """10-five-gen-ledger.drawio：V2 -> V3 -> R1 -> V3.2 -> V4.1-Flash KV 字节对比、参数分工与双硬件执行栈。"""
     c = DrawioCanvas(page_name="five-gen-ledger", diagram_id="ds-10-five-gen-ledger", width=688)
 
     c.proportional_strip(

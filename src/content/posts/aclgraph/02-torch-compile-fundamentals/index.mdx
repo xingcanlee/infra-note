@@ -1,22 +1,25 @@
 ---
-title: '02 PyTorch 编译栈：TorchDynamo、符号形状与分段融合极限'
-description: '拆解 PyTorch Eager 模式下算子发射与 HBM 往返双重损耗，深入 TorchDynamo 字节码捕获、Dynamic Shapes 符号防抖与 AOTAutograd 降级链，对比 GPU Inductor 与昇腾 AscendCompiler 的后端融合机理并阐明编译器无法独立消灭 Host Launch 的原因。'
+title: '02 PyTorch 编译栈与分段融合极限'
+description: '小算子在 Eager 下既吃发射开销又反复读写显存。本文解析 TorchDynamo 字节码捕获、Dynamic Shapes 守卫与 AOTAutograd 降级链，并对比 GPU 与昇腾后端的融合极限。'
 series: { id: aclgraph, order: 3 }
 pubDate: 2026-10-17
 draft: false
 tags: [torch.compile, TorchDynamo, Symbolic Shapes, Inductor, AscendCompiler, Graph Break]
 ---
 
-在[第 1 章](../01-heterogeneous-streams-and-events/)中，我们看到小颗粒算子会被主机发射成本切得支离破碎。工程上常见的直觉误区是认为开启 PyTorch 2.x 的 `torch.compile` 编译成“计算图”就能取代设备静态图；实际上，以 `vLLM` 与 `vllm-ascend` 为代表的推理引擎始终同时使用两级技术——先由 `torch.compile` 消减访存带宽，再在外层套接 `CUDAGraphWrapper` 或 `ACLGraphWrapper` 消除发射开销。
+小粒度算子在[异步队列](../01-heterogeneous-streams-and-events/)上不仅会触发高频主机发射，还伴随反复的显存读写。许多开发者误以为打开 `torch.compile` 编成“计算图”就能取代设备静态图。
 
-## Eager 双重损耗与 TorchDynamo 字节码捕获
+实际生产里，`vLLM` 与 `vllm-ascend` 始终把两级技术串联起来。它们先由 `torch.compile` 做算子融合并压低访存带宽，再由外层 `CUDAGraphWrapper` 或 `ACLGraphWrapper` 消除发射开销。
+
+## Eager 损耗与字节码捕获
 
 PyTorch Eager 模式同时存在两类叠加开销：一是第 1 章分析过的逐算子主机派发成本 $T_{\text{launch}}$；二是零碎算子对 **HBM（High Bandwidth Memory，高带宽显存）**的重复读写。例如前馈网络常见的 SwiGLU（$\text{SiLU}(a) \odot b$）在 Eager 下须先后两次进出 HBM：先读 $a$ 算 `silu` 后写回完整激活张量，紧接着逐元素乘法再从 HBM 重读中间值并与 $b$ 相乘。
 
-PyTorch 2.x 引入的 **TorchDynamo** 通过 Python **PEP 523（Frame Evaluation API，栈帧求值接口）**在函数栈帧执行前接管字节码流，将纯张量计算片段提取为标准计算图[^vllm-compile-doc]：
+PyTorch 2.x 引入的 **TorchDynamo** 借助 Python **PEP 523（Frame Evaluation API，栈帧求值接口）**接管函数执行前的字节码流，从中提取纯张量计算图[^vllm-compile-doc]。
 
-- **FX 图生成与 `Dynamo Guard`**：Dynamo 符号执行字节码指令并产出 `torch.fx.GraphModule`，同步登记前置条件校验规则 **`Dynamo Guard`** 以确认输入形状、类型与设备属性未发生变更。
-- **Graph Break 局部切分**：遇到 `print(x.item())` 或黑盒 C 扩展返回等无法静态追踪的逻辑时，Dynamo 先发出眼前截获的 FX 子图去编译，原位切回标准 Python 执行断点逻辑后再重新接力录图，从而避免整段失败。
+如图 1 所示，Dynamo 符号执行字节码指令后产出 `torch.fx.GraphModule`，同时登记前置校验规则 **`Dynamo Guard`**，用来确认后续调用的张量形状、类型与设备属性没有变化。
+
+一旦遇到 `print(x.item())` 或不透明 C 扩展等无法追踪的逻辑，Dynamo 会触发 **`Graph Break`（局部断图）**。它会先把已截获的 FX 子图送去编译，切回 Python 执行完断点逻辑后再重新接力录图。
 
 ```mermaid caption="图 1：TorchDynamo 字节码捕获、Dynamo Guard 校验与 Graph Break 切分路径"
 flowchart TD
@@ -31,7 +34,7 @@ flowchart TD
 
 ![TorchDynamo、Dynamic Shapes、AOTAutograd 与 GPU/NPU 双端编译通路对比](./diagrams/02-dynamo-aot-inductor-vs-ascend.drawio '图 2：PyTorch 前端抓图降级管线及 GPU Inductor 与昇腾 AscendCompiler 后端分叉架构')
 
-## Dynamic Shapes、Symbolic Guards 与 0/1 特化陷阱
+## 动态形状与符号守卫陷阱
 
 服务批大小随时变化（上一毫秒 4 个解码 token、下一毫秒跳变至 512 个 Prefill token），若直接将张量维度固化为字面常量会导致每来新长度便重编数秒。PyTorch 基于 **Symbolic Shapes（`SymInt`）** 管理动态维度，关键语义边界如下[^vllm-debug-doc]：
 
@@ -39,7 +42,7 @@ flowchart TD
 | ---------------------------- | ------------------------------ | -------------------------------- |
 | **Backed `SymInt` (`s0`)**   | 已知样本尺寸；分支注入模 Guard | 模余失效重编，`tlparse` 排查     |
 | **Unbacked `SymInt` (`u0`)** | `nonzero()` 等数据依赖动态维   | 视图/尺寸校验触发 Graph Break    |
-| **0/1 步长特化**             | `0` 或 `1` 维默认固化为常量    | `bs=1` 震荡；开无 Guard 包装跳过 |
+| **0/1 步长特化**             | 0 或 1 维默认固化为常量        | `bs=1` 震荡；开无 Guard 包装跳过 |
 
 ![vLLM 编译分段与动态形状符号守卫 tlparse 诊断视图](./images/vllm-torch-compile-flow.png '图 3：vLLM 中 TorchDynamo 捕获、按 Attention 分段切图、后端缓存编译 artifact 与外层静态图包装衔接链路（来源 vLLM 官方文档，Apache-2.0）')
 
@@ -47,7 +50,9 @@ flowchart TD
 
 ## AOTAutograd 分片与后端编译路径分叉
 
-FX 图进入 **AOTAutograd** 阶段后，由轻量级 **FakeTensor**（仅持 Shape/DType/Device 元信息、零物理 HBM 占用）完成抽象追踪，同时执行 **Functionalization（函数化）**：将 `x.add_(y)` 或切片原位写等原地变异重写为纯无副作用 **Core ATen IR（核心张量中间表示）**数据流节点，让后端得以安全重排算子与融合访存而不致污染并发引用的底层张量[^vllm-compile-doc]。
+FX 图进入 **AOTAutograd** 阶段后，先由不占物理显存的 **FakeTensor**（仅保留 Shape、DType 与 Device 元信息）完成抽象追踪。
+
+随后编译器执行 **Functionalization（函数化）**，将 `x.add_(y)` 或切片原位写重写为无副作用的 **Core ATen IR（核心张量中间表示）**节点。这样后端就能安全地重排算子与融合访存，不会污染共享底层存储的张量[^vllm-compile-doc]。
 
 完成降级的 Core ATen IR 在 GPU 与华为昇腾 NPU 上走向两条截然不同的代码生成路线[^ascend-compile-doc]：
 
@@ -59,9 +64,11 @@ FX 图进入 **AOTAutograd** 阶段后，由轻量级 **FakeTensor**（仅持 Sh
 
 ### 为什么编译完成依然突破不了 Host 发射墙
 
-无论前端怎么合并逐元素算子，只要注意力算子（如 PagedAttention 或昇腾 `AscendDSAV41Impl`）高度依赖变长上下文与块表元数据，编译框架就必须通过 **`splitting_ops`** 把整图切分为多段 `artifact_0`、`artifact_1` 并在夹缝保留动态注意力 Kernel。
+无论前端如何合并逐元素算子，注意力算子（如 PagedAttention 或昇腾 `AscendDSAV41Impl`）都高度依赖变长上下文与块表元数据。编译框架因此必须通过 **`splitting_ops`** 把整图切分为多段 `artifact_0`、`artifact_1`，在夹缝间保留动态注意力 Kernel。
 
-以 40 层非对称 CED 架构的 **DeepSeek-V4.1-Flash** 为例（单步 Decode 仅激活 16B 参数、单 token 全局 KV 压缩为 890 B NVFP4[^v41-synth]）：哪怕编译融合把每层 mHC 四流混合、CSA2 压缩注意与 384 选 6 细粒度 MoE 等约 28 个零碎算子压降至 10 个大融合算子，40 层单步仍要由主机驱动约 400 次 Kernel 启动。下面这份纯 CPU 仿真代码定量核算了融合后的 HBM 节省比例、Guard 重编次数以及残余 Host 发射墙比例：
+以 40 层非对称 CED 架构的 **DeepSeek-V4.1-Flash** 为例，它在单步解码时仅激活 16B 参数，并把单 token KV 压至 890 B NVFP4[^v41-synth]。即便编译融合把每层的四流混合、CSA2 与 384 选 6 MoE 等约 28 个算子压到 10 个融合算子，40 层单步仍需要主机提交约 400 次 Kernel 启动。
+
+下面的纯 CPU 仿真脚本定量核算了算子融合的 HBM 节省比例、Guard 重编次数以及残余的主机发射耗时：
 
 ```python
 from dataclasses import dataclass
@@ -135,7 +142,7 @@ print(
 )
 ```
 
-脚本输出证实：算子融合成功消减了 40% 的点算级 HBM 读写并把主机派发从 13440 微秒降至 4800 微秒，但相对于 3400 微秒的残余硬件耗时，主机发射依然达到硬件执行时间的 1.41 倍。
+脚本输出显示，算子融合将逐元素 HBM 读写压低了 40%，并把主机派发耗时从 13440 微秒降到 4800 微秒。但对比 3400 微秒的残余设备耗时，主机发射仍占到硬件执行时间的 1.41 倍。
 
 ```text
 [FX Nodes] total=7, ops=['x', 'w_gate', 'chunk', 'silu', 'mul', 'w_down', 'add']
@@ -144,12 +151,12 @@ print(
 [40-Layer V4.1-Flash Wall] EagerHost=13440us, CompiledHost=4800us vs CompiledDev=3400us (Host/Dev=1.41x)
 ```
 
-要将剩余数千微秒的主机往返从热路径彻底移除，必须借助把整段任务拓扑直接固化在设备驱动侧的静态执行图。[第 3 章：CUDA Graph 原理与静态边界](../03-cuda-graph-fundamentals/)将拆解建立行业基线的 CUDA 静态图核心原理。
+要从热路径拿掉这数千微秒的主机往返，必须把整段任务拓扑直接固化到设备驱动侧。[第 3 章：CUDA Graph 原理与四大静态边界](../03-cuda-graph-fundamentals/)将介绍确立行业基线的 CUDA 静态图实现。
 
 [^vllm-compile-doc]: 参阅 `vllm`（提交 `bb23c0a8`）架构设计文档 `docs/design/torch_compile.md` 及其配套调试指南 `docs/design/debug_vllm_compile.md`。
 
 [^vllm-debug-doc]: 参阅 `vllm`（提交 `bb23c0a8`）文档 `docs/design/debug_vllm_compile.md` 关于 `BACKED`、`UNBACKED` 与 `BACKED_SIZE_OBLIVIOUS` 对 Guard 重编影响的讨论。
 
-[^v41-synth]: 关于 DeepSeek-V4.1-Flash 的 40 层 CED 主干、CSA2 压缩与 384 选 6 细粒度 MoE 细节，可对照本站[10 串珠成链：从 DeepSeek-V2 到 V4.1 的单步全链路与双硬件全景](../../deepseek/10-architecture-synthesis/)。
+[^v41-synth]: 关于 DeepSeek-V4.1-Flash 的 40 层 CED 主干、CSA2 压缩与 384 选 6 细粒度 MoE 细节，可对照本站[10 串珠成链：V4.1 单步全链路与双硬件协同](../../deepseek/10-architecture-synthesis/)。
 
 [^ascend-compile-doc]: 参阅 `vllm-ascend`（提交 `3649b8ff`）设计文档 `docs/source/developer_guide/Design_Documents/npugraph_ex.md` 及特性手册 `docs/source/user_guide/feature_guide/graph_mode.md`。

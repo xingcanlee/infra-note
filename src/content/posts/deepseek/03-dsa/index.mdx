@@ -1,6 +1,6 @@
 ---
 title: '03 DSA 稀疏注意力：闪电索引器与潜空间动态稀疏筛选'
-description: '解释为什么不能把 NSA 块选择直接套进单头潜空间的 MLA：拆解 DeepSeek-V3.2 闪电索引器 ReLU 公式、64 头共享单键硬件考量、KL 蒸馏与 656 B/token 混合精度布局。'
+description: '单头 MLA 无法套用 GQA 组共享块稀疏，全量扫描又受限于平方复杂度；本文拆解 V3.2 闪电索引器、两阶段蒸馏与 656 B 混合精度格式，并对照双端稀疏实现。'
 series: { id: deepseek, order: 4 }
 pubDate: 2026-11-06
 tags: [DeepSeek, Sparse Attention, DSA, MLA, Quantization, vLLM, Ascend]
@@ -8,9 +8,13 @@ category: AI Infra
 toc: true
 ---
 
-在[02 NSA 原生稀疏注意力](../02-swa-and-nsa/)中，NSA 依靠 GQA 多组共享块选择把 64K 上下文的 KV 访存压缩了一个量级。但到了 DeepSeek-V3.2，团队并没有把 GQA-NSA 直接搬进生产主干：一方面，NSA 需要从头联合训练三路独立分支；另一方面，DeepSeek-V3.1-Terminus 底座的 128K 上下文已经建立在 MLA 之上，Decode 阶段通过矩阵吸收化归为单头 MQA 潜空间（128 个 Query 头共用 1 份 512 + 64 维潜向量）。
+在[02 NSA 原生稀疏注意力](../02-swa-and-nsa/)中，NSA 依靠 GQA 多组共享块选择把 64K 上下文的 KV 访存压缩了一个量级。但 DeepSeek-V3.2 并未把 GQA-NSA 直接搬进生产主干。
 
-若拆回多组 KV 会推翻 MLA 的显存收益，而用 128 个高精度头逐 token 全量打分又会退回 $O(L^2)$ 瓶颈。为此，DeepSeek-V3.2 提出的 **DSA（DeepSeek Sparse Attention，DeepSeek 稀疏注意力）**把「粗筛谁重要」和「精算怎么聚合」拆给算力预算完全不对称的两个模块[^ds32]：先由极轻量的 **Lightning Indexer（闪电索引器）**快速扫过历史序列挑出 Top-$k$（生产取 $k = 2048$）槽位，再让主模型 128 头 MLA 只按索引 Gather 这 2048 条潜向量，把主注意力的复杂度从 $O(L^2)$ 压至 $O(Lk)$。
+一方面，NSA 需要从头联合训练三路独立分支。另一方面，DeepSeek-V3.1-Terminus 底座已将 128K 上下文建立在 MLA 之上。在 Decode 阶段，128 个 Query 头经矩阵吸收共用 1 份 576 维潜向量。
+
+若拆回多组 KV 会推翻 MLA 的显存收益，而用 128 个高精度头逐 token 全量打分又会退回 $O(L^2)$ 瓶颈。为此，DeepSeek-V3.2 提出的 **DSA（DeepSeek Sparse Attention，DeepSeek 稀疏注意力）**把“粗筛谁重要”和“精算怎么聚合”拆给算力预算不同的两个模块[^ds32]。
+
+先由极轻量的 **Lightning Indexer（闪电索引器）**扫过历史序列，挑出 Top-$k$（生产取 $k = 2048$）槽位。再让主模型 128 头 MLA 只按索引 Gather 这 2048 条潜向量，把主注意力的复杂度从 $O(L^2)$ 压至 $O(Lk)$。
 
 ## 闪电索引器定义与硬件对齐直觉
 
@@ -23,25 +27,25 @@ I_{t,s} &= \sum_{j=1}^{H^I} w_{t,j}^I \cdot \operatorname{ReLU}\!\left(\mathbf{q
 \end{aligned}
 $$
 
-其中 $H^I = 64$ 是索引查询头数，单头维度 $d^I = 128$（前 64 维带 RoPE 旋转），$\mathbf{q}_{t,j}^I \in \mathbb{R}^{128}$ 复用了主模型 Query 潜向量 $c_t^Q \in \mathbb{R}^{1536}$ 下投映射而来；$w_{t,j}^I \in \mathbb{R}$ 是由 $\mathbf{h}_t$ 投影出的每头动态加权标量；而全部 64 个索引头共用**同一份索引键** $\mathbf{k}_s^I \in \mathbb{R}^{128}$。
+其中 $H^I = 64$ 是索引查询头数，单头维度 $d^I = 128$（前 64 维带 RoPE 旋转）。$\mathbf{q}_{t,j}^I \in \mathbb{R}^{128}$ 复用了主模型 Query 潜向量 $c_t^Q \in \mathbb{R}^{1536}$ 下投映射而来，$w_{t,j}^I \in \mathbb{R}$ 是由 $\mathbf{h}_t$ 投影出的每头动态加权标量。全部 64 个索引头共用**同一份索引键** $\mathbf{k}_s^I \in \mathbb{R}^{128}$。
 
-索引器选用 $\operatorname{ReLU}$ 激活以绕过 Softmax 的全序列指数和归约同步：$\operatorname{ReLU}$ 逐元素把负相关性截断为零，天然非负可加，可直接配合 FP8 低比特累加完成排序筛选。
+索引器选用 $\operatorname{ReLU}$ 激活以绕过 Softmax 的全序列指数和归约同步：$\operatorname{ReLU}$ 逐元素把负相关性截断为零，非负可加的特性可直接配合 FP8 低比特累加完成排序筛选。
 
-把索引器设计成「$H^I = 64$ 个查询头共享 1 份 FP8 索引键 $\mathbf{k}_s^I$」，背后是存储与计算双侧严密咬合的硬件考量[^ds32]。
+把索引器设计成“$H^I = 64$ 个查询头共享 1 份 FP8 索引键 $\mathbf{k}_s^I$”，背后是存储与计算双侧相互配合的硬件考量[^ds32]。
 
-在历史存储侧，全头共享 1 份键且每 128 维（即整条键）共用 1 个 4 B 的 UE8M0 块缩放因子（写入前先经过 FP32 层归一化稳住量级），把每 token 的索引缓存增量严格控制在 132 B（128 B FP8 键 + 4 B 缩放因子）。
+在历史存储侧，全头共享 1 份键且整条 128 维键共用 1 个 4 B 的 UE8M0 块缩放因子（写入前先经 FP32 层归一化稳住量级）。这把每 token 的索引缓存增量控制在 132 B（128 B FP8 键 + 4 B 缩放因子）。
 
-而在计算侧，如果单步 Decode（$T_q = 1$）只有 1 个索引头，查询矩阵高度退化为 $M = 1$ 的向量-矩阵乘，无法利用矩阵算力。配置 $H^I = 64$ 个头后，即使只解码 1 个 token，查询侧也天然排成 $64 \times 128$ 的矩阵块，使 $M = 64$ 恰好填满 GPU Tensor Core（如 Hopper `wgmma` 指令及底层核均偏好 32 或 64 个头）与昇腾达芬奇 Cube 16×16 矩阵乘分块（`Tile`，$64 = 4 \times 16$），同时从 HBM 读取的历史键仍然只有 1 份。
+而在计算侧，如果单步 Decode（$T_q = 1$）只有 1 个索引头，查询矩阵高度退化为 $M = 1$ 的向量-矩阵乘，无法利用矩阵算力。配置 $H^I = 64$ 个头后，即使只解码 1 个 token，查询侧也能排成 $64 \times 128$ 的矩阵块。$M = 64$ 恰好填满 GPU Tensor Core（如 Hopper `wgmma` 偏好 32 或 64 头）与昇腾 Cube 16×16 分块（`Tile`，$64 = 4 \times 16$）。同时，从 HBM 读取的历史键仍只有 1 份。
 
-算一笔单 token 的算力对比账：面对 128K（$L = 131{,}072$）历史上下文，如果直接跑稠密 128 头吸收态 MLA，每对查询与历史潜槽都需要 $128 \times (576 + 512) = 139{,}264$ 次 BF16 乘加；而闪电索引器每个历史位置只需 $64 \times 128 = 8{,}192$ 次 FP8 乘加（算术次数缩减 17 倍，叠乘 FP8 两倍硬件峰值后理论计算开销压低超过 30 倍）。随后主模型只需在挑出的 $k = 2048$ 个槽位上做高精度归约，把全序列扫描卸载到极轻量目录层。
+对照单 token 的算力开销即可看清收益：面对 128K（$L = 131{,}072$）历史上下文，稠密 128 头吸收态 MLA 每对潜槽需要 $128 \times (576 + 512) = 139{,}264$ 次 BF16 乘加。闪电索引器每个历史位置只需 $64 \times 128 = 8{,}192$ 次 FP8 乘加，算术次数缩减 17 倍，叠乘 FP8 两倍硬件峰值后理论计算开销压低超过 30 倍。主模型随后只需在挑出的 $k = 2048$ 个槽位上做高精度归约，把全序列扫描卸载到极轻量目录层。
 
 看一个 8 槽位微型算例：假设当前查询 $q_7$ 对历史槽位 $s_0 \dots s_7$ 算得非负索引分数 $[0.0, 3.8, 0.4, 5.1, 0.0, 2.6, 0.2, 4.3]$，若截取 $k = 3$，则只选中 $\{s_1, s_3, s_7\}$ 三条潜向量送入主注意力，其余 5 条（含已被 $\operatorname{ReLU}$ 归零的 $s_0, s_4$）全部跳过。
 
-放大到生产尺寸（$L = 131{,}072$、$k = 2048$）时，主模型 128 个高精度头每步仅从 HBM 稀疏读取约 1.56% 的历史潜向量，在几乎不损长上下文精度的前提下大幅压缩主注意力算力（DeepSeek-V3.2-Exp 在 AA-LCR 与 Fiction.liveBench 上持平乃至略微反超稠密基线 DeepSeek-V3.1-Terminus）[^ds32]。
+放大到生产尺寸（$L = 131{,}072$、$k = 2048$）时，主模型 128 个高精度头每步仅从 HBM 稀疏读取约 1.56% 的历史潜向量。主注意力算力随之大幅压缩，而长上下文精度不受影响。DeepSeek-V3.2-Exp 在 AA-LCR 与 Fiction.liveBench 上，持平或反超稠密基线 V3.1-Terminus[^ds32]。
 
-图 1 展示了这组 8 槽位算例的 ReLU 打分、Top-$k$ 筛选、按索引 Gather、生产字节账本与序列长度交叉点。
+图 1 展示了这组 8 槽位算例的 ReLU 打分、Top-$k$ 筛选、按索引 Gather、生产字节开销与序列长度交叉点。
 
-![DeepSeek-V3.2 DSA 闪电索引器流程：64 头共享单 FP8 键 ReLU 打分、Top-k 离散筛选、FlashMLA 稀疏 Gather 与 656 B + 132 B 双精度缓存账本](./diagrams/03-dsa-indexer-flow.drawio '图 1：DeepSeek-V3.2 DSA 闪电索引器、Top-K 按索引 Gather 与 656 B + 132 B 账本')
+![DeepSeek-V3.2 DSA 闪电索引器流程：64 头共享单 FP8 键 ReLU 打分、Top-k 离散筛选、FlashMLA 稀疏 Gather 与 656 B + 132 B 双精度缓存开销](./diagrams/03-dsa-indexer-flow.drawio '图 1：DeepSeek-V3.2 DSA 闪电索引器、Top-K 按索引 Gather 与 656 B + 132 B 字节开销')
 
 ## 两阶段蒸馏预热与梯度隔离
 
@@ -62,7 +66,7 @@ flowchart TD
 
 随后直接用 KL 散度 $\sum_t D_{\mathrm{KL}}(p_{t,:} \,\|\, \operatorname{Softmax}(I_{t,:}))$ 单独训练闪电索引器。由于 671B 主干权重保持冻结，这一阶段可用较大的学习率（$10^{-3}$）快速拟合，仅消耗 1,000 步（每步 16 条 128K 序列，共 2.1B token）便完成对齐热身。
 
-进入第二阶段 Sparse Training（稀疏联合训练）后，系统正式打开 Top-2048 稀疏筛选集合 $\mathcal{S}_t$，放开主干全部参数以 $7.3 \times 10^{-6}$ 的小学习率联合训练 15,000 步（480 条 128K 序列，共 943.7B token），同时将索引器的 KL 损失收窄到被选中集合 $\mathcal{S}_t$ 之上。
+进入第二阶段 Sparse Training（稀疏联合训练）后，系统开启 Top-2048 稀疏筛选集合 $\mathcal{S}_t$。随后放开主干全部参数，以 $7.3 \times 10^{-6}$ 学习率联合训练 15,000 步（480 条 128K 序列，共 943.7B token）。同时，索引器的 KL 损失收窄到被选中集合 $\mathcal{S}_t$ 之上。
 
 尤为关键的一步是对送入索引器的隐状态做 `detach` 梯度截断：索引器的参数更新仅由对齐主注意力的 KL 损失驱动，而 671B 主模型仅由语言建模交叉熵损失驱动。这样既让主干表示逐渐适应稀疏读取后的特征分布，又防止低比特粗糙排序引入的梯度噪声反向污染主网络表征。
 
@@ -70,21 +74,21 @@ flowchart TD
 
 把主注意力算力降至 $O(Lk)$ 后，随机下标的按索引 Gather 使每 token 缓存字节大小直接决定 HBM 搬运上限。在标准 BF16 下，每条 512 + 64 维 MLA 潜向量占 1,152 B，按 128K 上下文 × 62 层（61 主干层 + 1 MTP 层）计单请求高达 8.72 GiB。
 
-为此 DeepSeek-V3.2 与 FlashMLA 设计了 `fp8_ds_mla` 混合精度格式[^flashmla]：将 512 维无位置内容潜向量 $c_s^{KV}$ 以 `fp8_e4m3` 存储（512 B），每 128 维配 1 个 FP32 分块缩放因子（共 4 × 4 B = 16 B），而对量化噪声高度敏感的 64 维 RoPE 位置键 $k_s^R$ 完整保留 BF16（128 B）。
+为此 DeepSeek-V3.2 与 FlashMLA 设计了 `fp8_ds_mla` 混合精度格式[^flashmla]。512 维无位置内容潜向量 $c_s^{KV}$ 以 `fp8_e4m3` 存储（512 B），每 128 维配 1 个 FP32 缩放因子（共 16 B）。对量化敏感的 64 维 RoPE 位置键 $k_s^R$ 则保留 BF16（128 B）。
 
-三项合计恰好为 656 B/token，使 128K × 62 层主缓存从 8.72 GiB 降至 4.96 GiB；再叠加前文所述的 132 B/token 索引器缓存，单请求长上下文总缓存压至每层每 token 788 B。
+三项合计恰好为 656 B/token，使 128K × 62 层主缓存从 8.72 GiB 降至 4.96 GiB。再叠加前文所述的 132 B/token 索引器缓存，单请求长上下文总缓存压至每层每 token 788 B。
 
-两者连缩放因子的表示精度也各自贴合用途：索引器键只需做相对排序，因此 `DeepseekV32IndexerCache` 对整条 128 维键共用 1 个仅占 4 字节的纯指数 UE8M0 块缩放因子，换取更小的目录体积与更简单的整数移位对齐；主潜缓存则直接参与高精度加权求和，保留 4 个完整 FP32 缩放因子与 BF16 旋转键。
+两者的缩放因子精度也各自贴合用途。索引器键只需做相对排序，`DeepseekV32IndexerCache` 让整条 128 维键共用 1 个 4 字节纯指数 UE8M0 块缩放因子，换取更小的目录体积与整数移位对齐。主潜缓存直接参与高精度加权求和，因此保留 4 个 FP32 缩放因子与 BF16 旋转键。
 
-到了算子执行层，Hopper H800 上暴露出一个关键的指令吞吐错配[^flashmla]：单个 SM 上的 Tensor Core 执行 64 个查询头的 MMA 只需约 34 个时钟周期，但 H800 缺乏 `fp8_e4m3` 直转 `bf16` 的硬件指令，CUDA Core 必须依次完成 E4M3 转 FP16、转 FP32、转 BF16 再乘缩放因子，单 token 反量化耗时高达约 50 个周期，导致解码核卡在反量化上。
+到了算子执行层，Hopper H800 上暴露出一项指令吞吐错配[^flashmla]。单个 SM 上的 Tensor Core 执行 64 个查询头的 MMA 只需约 34 个时钟周期，但 H800 缺乏 `fp8_e4m3` 直转 `bf16` 的硬件指令。CUDA Core 必须依次完成 E4M3 转 FP16、转 FP32、转 BF16 再乘缩放因子，单 token 反量化耗时约 50 个周期，导致解码核卡在反量化上。
 
-由于 128 个头在 MQA 吸收态下共用同一份潜缓存，FlashMLA 把两个处理各 64 头的 CTA 编成大小为 2 的 CTA Cluster：每个 CTA 只从全局显存加载并反量化**一半**的潜向量（约 25 个周期，低于 34 周期的 MMA 耗时），再通过 Hopper **DSMEM（Distributed Shared Memory，分布式共享内存）**异步互换各自解好的一半，将反量化耗时藏进 Tensor Core 流水线之后。
+128 个头在吸收态下共用 1 份潜缓存。FlashMLA 因此把两个各处理 64 头的 **CTA（CUDA Thread Block，CUDA 线程块）**编成大小为 2 的 Cluster。每个 CTA 只从全局显存加载并反量化**一半**潜向量，耗时降到约 25 个周期（低于 34 周期的 MMA）。两个 CTA 再通过 Hopper **DSMEM（Distributed Shared Memory，分布式共享内存）**异步互换各自解好的一半，把反量化耗时藏进流水线之后。
 
 在这一流水线调度下，`fp8_ds_mla` 解码 Kernel 在 `topk = 2048` 条件下跑出 410 TFLOPS，并在序列超过约 3,000 token 后反超稠密解码 Kernel。
 
-图 3 对照了 NVIDIA GPU（`vLLM`[^vllm]）与华为昇腾 NPU（`vllm-ascend`[^ascend]）的运行时组件与分页对齐差异。在 NVIDIA GPU 上，`Indexer` 将键值映射与每头权重映射融合为一次 BF16 GEMM，并利用融合算子完成 Q 的 RoPE 旋转与量化，分页块统一按 64 token 粒度喂给 `SparseAttnIndexer` 与 `FlashMLASparseBackend`。
+图 3 对照了 NVIDIA GPU（`vLLM`[^vllm]）与华为昇腾 NPU（`vllm-ascend`[^ascend]）的运行时组件与分页对齐差异。在 NVIDIA GPU 上，`Indexer` 将键值映射与每头权重映射融合为一次 BF16 GEMM，并利用融合算子完成 Q 的 RoPE 旋转与量化。分页块统一按 64 token 粒度喂给 `SparseAttnIndexer` 与 `FlashMLASparseBackend`。
 
-在华为昇腾 NPU 上，`AscendSFAImpl` 根据硬件代际与量化开关路由三类预处理路径（融合前端 prolog、组合量化投影或原生投影），并可用独立流并行发射索引查询与键量化。尽管昇腾物理分页对齐至达芬奇 Cube 友好的 128 token 大小，`npu_sparse_flash_attention` 在内部按索引 Gather 时仍能按逻辑粒度 1 逐 token 精确读取选中的潜向量。
+在华为昇腾 NPU 上，`AscendSFAImpl` 根据硬件代际与量化开关路由三类预处理路径（融合前端 prolog、组合量化投影或原生投影），并可用独立流并行发射索引查询与键量化。尽管昇腾物理分页对齐至达芬奇 Cube 友好的 128 token 大小，`npu_sparse_flash_attention` 仍能按逻辑粒度 1 逐 token 读取选中的潜向量。
 
 ![vLLM GPU FlashMLA Sparse 与 vllm-ascend NPU AscendSFA 运行时对照](./diagrams/03-dsa-gpu-vs-npu-runtime.drawio '图 3：vLLM GPU（FlashMLA Sparse）与 vllm-ascend NPU（AscendSFA）运行时对照')
 
@@ -97,7 +101,7 @@ flowchart TD
 
 ## PyTorch 参考实现与结构验证
 
-下面的自包含 PyTorch 代码分别用 `LightningIndexer` 实现 $H^I$ 头共享单键的 $\operatorname{ReLU}$ 索引筛选，用 `sparse_mla_decode` 演示仅稀疏读取 `topk_ids` 槽位后的 1 头 MQA 计算，并校验前后张量形状：
+下面的自包含 PyTorch 代码演示两步算子流程。`LightningIndexer` 实现 $H^I$ 头共享单键的 $\operatorname{ReLU}$ 索引筛选，`sparse_mla_decode` 则稀疏读取 `topk_ids` 槽位完成 1 头 MQA 计算，并校验张量形状：
 
 ```python
 import math
@@ -172,11 +176,11 @@ if __name__ == "__main__":
         assert out.shape == (n_h, d_v)
 ```
 
-DSA 的加速收益在序列长度跨过约 3,000 token 后才开始显现：索引打分 Kernel 启动与非连续按索引 Gather 存在固定开销，当序列短于约 3,000 token 时，DSA 的实际执行时间高于稠密 FlashMLA（因此 V3.2 对短文本 Prefill 提供了掩码 MHA 回退模式）[^ds32][^flashmla]。同时，闪电索引器每步仍要线性扫过所有历史 $\mathbf{k}_s^I$，本质上是一个常数因子极小的 $O(L^2)$ 目录检索。
+DSA 的加速收益在序列长度跨过约 3,000 token 后才显现：索引打分 Kernel 启动与非连续按索引 Gather 存在固定开销。当序列短于约 3,000 token 时，DSA 的实际耗时高于稠密 FlashMLA，V3.2 因此对短文本 Prefill 提供了掩码 MHA 回退模式[^ds32][^flashmla]。同时，闪电索引器每步仍要线性扫过全部历史 $\mathbf{k}_s^I$，本质上是常数因子极小的 $O(L^2)$ 目录检索。
 
 更关键的是，DSA 只把主注意力的计算量压到了 $O(Lk)$，并没有从显存中削减哪怕一个历史 token——全部 $L$ 条 656 B 主潜向量与 132 B 索引键仍按 $O(L)$ 占满 HBM。
 
-要支撑百万 token 并发推理，必须继续沿着**序列长度轴 $L$** 做压缩，这正是下一篇 [04 序列压缩注意力（上）：DeepSeek-V4 的 CSA 与 HCA 双重配方](../04-csa-and-hca/) 要解决的问题。
+要支撑百万 token 并发推理，必须继续压缩**序列长度 $L$**，这正是下一篇[04 序列压缩注意力（上）：V4 CSA 与 HCA](../04-csa-and-hca/)要解决的问题。
 
 [^ds32]: DeepSeek-AI，“DeepSeek-V3.2: Pushing the Frontier of Open Large Language Models”，2025。[arXiv:2512.02556](https://arxiv.org/abs/2512.02556)，§2.1–2.3 式 (1)–(4)。
 

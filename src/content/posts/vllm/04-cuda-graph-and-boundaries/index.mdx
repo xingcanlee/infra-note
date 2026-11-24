@@ -1,29 +1,31 @@
 ---
-title: '04 CUDA Graph 与四道硬边界：地址锁定、静态填充与图内存池'
-description: '从 Stream Capture 与 Replay 原理出发，拆解显存地址锁定、分桶安全填充、零主机同步、多流分叉汇合四道硬边界及图内存池隔离机制。'
+title: '04 CUDA Graph 四道硬边界与共享图池'
+description: '分段编译后 CPU 仍需逐子图下发指令，而直接录制硬件静态图又极易因动态地址或同步踩坑。本文剖析静态图四道硬边界与共享图池隔离，并对照 GPU 与昇腾实现。'
 pubDate: 2026-10-29
 draft: false
 series: { id: vllm, order: 5 }
 tags: [vLLM, CUDA Graph, PyTorch, KV Cache]
 ---
 
-分段编译能够把相邻的逐元素算子合并成少数 Triton 融合 Kernel 并把动态注意力隔离出去（见[第 3 章](../03-torch-compile-and-piecewise/)），但只要每次前向仍由 CPU 逐一提交 `cuLaunchKernel`，小批 **Decode（解码）**阶段的端到端延迟就依然受限于主机发射回路。在常见层数下，单步解码仅执行数微秒的计算算子却需要数十次到数百次调度入队，大量时间浪费在 Python 框架、PyTorch 分发器与驱动接口之间。
+分段编译把逐元素算子合并成少数 Triton 融合 Kernel 并隔离了动态注意力（见[第 3 章](../03-torch-compile-and-piecewise/)）。但只要每次前向仍由 CPU 逐一提交 `cuLaunchKernel`，小批 **Decode（解码）**阶段的端到端延迟就依然受限于主机发射回路。在常见层数下，单步解码仅执行数微秒的计算算子却需要数十至数百次入队，大量时间耗在 Python 框架、PyTorch 分发器与驱动接口之间。
 
-要绕过主机侧的逐算子发射循环，推理引擎必须在预热阶段把一段甚至整张模型的算子序列提前录制成硬件级 **DAG（Directed Acyclic Graph，有向无环图）**，即 NVIDIA 的 **CUDA Graph**（对应昇腾上的 ACLGraph）。重放时，主机只需发起一次 `cudaGraphLaunch` 即可驱动整段算子链路连续执行，但这份零发射循环的收益建立在四道严格的硬件边界之上。
+要绕过主机侧的逐算子发射循环，引擎必须在预热阶段把算子序列录制成硬件级 **DAG（Directed Acyclic Graph，有向无环图）**。这就是 NVIDIA 的 **CUDA Graph**，对应昇腾平台上的 ACLGraph。重放时，主机只需发起一次 `cudaGraphLaunch` 即可驱动整段算子连续执行，但这份零发射循环的收益建立在四道硬件边界之上。
 
 ## 捕获与重放的两阶段契约
 
-CUDA Graph 的运行分为 **Capture（捕获）**与 **Replay（重放）**两个阶段。处于捕获模式时，提交到计算流上的算子不会立即写回计算结果，底层驱动改为记录 Kernel 函数指针、**Grid/Block（线程网格与线程块）**维度、张量输入输出的虚拟显存指针以及流间事件同步边，并在结束时固化为一张拓扑不可变的静态图。
+CUDA Graph 的运行分为 **Capture（捕获）**与 **Replay（重放）**两个阶段。处于捕获模式时，提交到计算流上的算子不会立即写回计算结果。底层驱动改为记录 Kernel 函数指针、**Grid/Block（线程网格与线程块）**维度、张量虚拟显存指针与流间事件同步边，在结束时固化成不可变静态图。
 
-进入重放阶段后，引擎彻底跳过 Python 控制流、PyTorch 算子分发与所有运行时形状分支判断，由 `GPU Command Processor` 按捕获期固化的指令包与指针表直接高速下发。因此重放期间绝不能改变任何被捕获张量的底层地址，也不能依赖运行时的张量数值来动态决定执行路径。
+进入重放阶段后，引擎跳过 Python 控制流、PyTorch 算子分发与运行时形状分支，由 `GPU Command Processor` 按捕获期固化的指令包与指针表直接下发。因此重放期间绝不能改变任何被捕获张量的底层地址，也不能依赖运行时张量数值动态决定执行路径。
 
-为了把抽象规则落到具体数值上，假设我们为解码阶段捕获一张容量上限为 $B_{\text{cap}} = 4$、隐藏维度为 $H = 8$ 的静态图。捕获时，系统将输入缓冲区 `hidden_states` 锁定在虚拟地址 `0x7f00_1000`、KV 槽位表 `slot_mapping` 锁定在 `0x7f00_2000`、输出缓冲锁定在 `0x7f00_3000`。当真实请求批量为 $B = 3$ 时，运行期会把这 3 行真实激活原位拷入 `0x7f00_1000` 的前 3 槽，把第 4 槽输入清零并将槽位索引置为 $-1$，随后直接重放整张图。图 1 以 $B_{\text{cap}} = 4$ 为例总结了捕获、健康重放以及四道边界违例时的失效形态。
+为了把抽象规则落到具体数值上，假设我们为解码阶段捕获一张容量上限为 $B_{\text{cap}} = 4$、隐藏维度为 $H = 8$ 的静态图。捕获时，输入缓冲 `hidden_states` 锁定在虚拟地址 `0x7f00_1000`。KV 槽位表 `slot_mapping` 与输出缓冲则分别锁在 `0x7f00_2000` 和 `0x7f00_3000`。
+
+当真实请求批量为 $B = 3$ 时，运行期会把这 3 行真实激活原位拷入 `0x7f00_1000` 的前 3 槽，把第 4 槽输入清零并将槽位索引置为 $-1$，随后直接重放整张图。图 1 以 $B_{\text{cap}} = 4$ 为例总结了捕获、健康重放以及四道边界违例时的失效形态。
 
 ![CUDA Graph 捕获与重放契约及四道边界：以 B_cap=4 为例对比健康原地拷贝重放与地址漂移、越界/脏填充、Host 同步与跨流未汇合四类违例](./diagrams/04-cuda-graph-capture-replay.drawio '图 1：CUDA Graph 捕获、重放与四道硬件边界机制')
 
 ## 四道硬件边界与防护实现
 
-工程实践中，任何一处看似普通的动态写法都会破坏静态图契约，且不同边界违规带来的后果截然不同——有的在捕获期直接崩溃，有的则在重放期悄无声息地算出错误结果。图 2 对这四项硬件约束与典型违规征兆做了汇总对照。
+工程实践中，任何一处看似普通的动态写法都会破坏静态图契约，且不同边界违规带来的后果各异——有的在捕获期直接崩溃，有的则在重放期悄无声息地算出错误结果。图 2 对这四项硬件约束与典型违规征兆做了汇总对照。
 
 ![静态图四项硬件约束与违规征兆](./diagrams/04-four-boundaries-cards.excalidraw '图 2：CUDA/ACL Graph 四项硬件约束与违规征兆对照')
 
@@ -31,23 +33,27 @@ CUDA Graph 的运行分为 **Capture（捕获）**与 **Replay（重放）**两�
 
 底层驱动在捕获期将每个 Kernel 参数中的设备虚拟指针（`data_ptr()`）硬编码进图节点。重放阶段跳过 Python 变量重绑定，静态图只认捕获瞬间记录下来的那片物理显存位置。
 
-一旦调用方在重放前未执行原地拷贝，而是通过赋值或切片生成新张量（例如把输入变量重新绑定到位于 `0x7f00_9000` 的新内存），重放过程不会抛出异常，图内节点直接静默读取旧地址 `0x7f00_1000` 里残留的历史数据，导致整批输出与当前请求脱节。
+一旦调用方在重放前未执行原地拷贝，而是通过赋值或切片生成新张量（例如把输入变量重新绑定到 `0x7f00_9000` 的新内存），重放过程不会抛出异常。图内节点会直接读取旧地址 `0x7f00_1000` 里残留的历史数据，导致整批输出与当前请求脱节。
 
-为此，vLLM MRV2 的 `InputBuffers` 在初始化阶段预分配持久化的设备缓冲区（包含 `input_ids`、`positions`、`is_padding`、`query_start_loc` 与 `seq_lens`），每步调度仅通过 `.copy_()` 原地覆写这批固定指针的数据[^vllm-input-batch]。在调试排查时，`CUDAGraphWrapper` 会在开启 `VLLM_LOGGING_LEVEL=DEBUG` 后把捕获期记录的 `input_addresses` 与重放期输入指针逐一比对，一旦发现地址漂移立即断言中止[^vllm-cudagraph-wrapper]。
+为此，vLLM MRV2 的 `InputBuffers` 在初始化时预分配持久化设备缓冲，涵盖 `input_ids`、`positions`、`is_padding` 等张量[^vllm-input-batch]。每步调度仅用 `.copy_()` 原地覆写这批固定指针。
+
+在调试排查时，打开 `VLLM_LOGGING_LEVEL=DEBUG` 会触发 `CUDAGraphWrapper` 核验地址[^vllm-cudagraph-wrapper]。它会把捕获期记录的 `input_addresses` 与重放输入指针逐一比对，一旦发现漂移立刻断言中止。
 
 ### 静态张量形状与分桶安全填充
 
 静态图的网格维度与内存步长在捕获时全部固定，图内部既不能按输入标量动态申请张量，也无法临时扩容。因此实际批大小（请求数 `num_reqs` 或总 token 数 `num_tokens`）必须预先向上对齐到已捕获的分桶规格，满足 $B \le B_{\text{cap}}$ 或 $T \le T_{\text{cap}}$。
 
-分桶填充会带来一个容易被忽略的静默污染风险：假设上一轮 **Chunked Prefill（分块预填充）**写满了容量为 $4$ 的槽位表 `[2, 3, 4, 5]`，下一轮批量缩小为 $B = 2$ 时，若调度层只更新前 2 个槽位，末尾第 3、4 槽仍残留着上一轮的合法物理块号 `4, 5`。重放时 KV 写入算子依然按 $B_{\text{cap}} = 4$ 发射，就会把 `Padding token` 的无效张量写进其他活跃请求正在使用的 KV 物理块。
+分桶填充会带来一个易被忽略的静默污染风险。假设上一轮 **Chunked Prefill（分块预填充）**写满了容量为 $4$ 的槽位表 `[2, 3, 4, 5]`，下一轮批量缩容为 $B = 2$。若调度层只更新前 2 个槽位，第 3、4 槽仍残留着上一轮的物理块号 `4, 5`；重放按 $B_{\text{cap}} = 4$ 发射时，就会把 `Padding token` 的无效张量写进其他请求的活跃 KV 块。
 
-vLLM 在 MRV2 中通过双重隔离堵住这一漏洞：一方面，`BlockTables` 的槽位计算 Triton Kernel 从**实际 token 数**而非填充后的 token 数开始循环，一直刷写到 `max_num_tokens`，把所有超出真实长度的尾部 `Padding` 槽位显式置为 `PAD_SLOT_ID = -1`，使 KV 缓存写入 Kernel 自动跳过这些槽位[^vllm-block-table]；另一方面，`InputBuffers.is_padding` 在 `[num_tokens : num_tokens_after_padding]` 区间置为 `True`，隔离 MoE 路由与权重累加对 `Padding` 行的误计数[^vllm-input-batch][^vllm-model-runner]。
+vLLM 在 MRV2 中通过双重隔离堵住这一漏洞。第一道在槽位层：`BlockTables` 的槽位计算 Kernel 从**实际 token 数**起循环刷写到 `max_num_tokens`[^vllm-block-table]。它把尾部全设为 `PAD_SLOT_ID = -1`，使 KV 写入算子自动跳过这些槽位。
+
+第二道在掩码层：`InputBuffers.is_padding` 会将超出真实长度的填充区间置为 `True`[^vllm-input-batch][^vllm-model-runner]。这层掩码能直接隔绝 MoE 路由与权重累加对 `Padding` 行的误计数。
 
 ### 零主机同步与无数据依赖分支
 
 在 `Stream Capture` 模式下，计算流进入录制状态而非实际求值阶段，硬件并未产生任何中间计算结果，要等到后续 `cudaGraphLaunch` 重放时才会真正算完。
 
-如果在捕获区间内调用 `.item()`、`.cpu()`、`.tolist()`、`torch.nonzero()` 或写出依赖设备张量值的 `if tensor.sum() > 0:` 条件分支，主机线程就会尝试立即读取尚未计算的设备结果，或者要求依据运行时张量值动态切换算子拓扑。这种行为直接打破 `Stream Capture` 语义，驱动当场抛出 `cudaErrorStreamCaptureUnsupported` 错误中止捕获。
+如果在捕获区间内调用 `.item()`、`.cpu()` 或 `torch.nonzero()` 等同步接口，或者写出依赖设备张量值的条件分支，主机线程就会尝试立即读取尚未计算的设备结果。这种行为和动态算子拓扑直接打破 `Stream Capture` 语义，驱动会当场抛出 `cudaErrorStreamCaptureUnsupported` 错误中止捕获。
 
 因此，所有依赖批形态的判断（例如当前批是否属于均匀解码、是否包含预填充行、命中哪一个分桶描述符）必须在入图前由 CPU 依据调度器元数据预先计算完毕。同时，vLLM 在预热后激活 `VLLM_GPU_SYNC_CHECK` 检测机制，在热路径上拦截未声明 `gpu_sync_allowed()` 的隐式主机设备同步，避免同步语句意外溜入静态图区间[^vllm-sync-debug]。
 
@@ -55,19 +61,23 @@ vLLM 在 MRV2 中通过双重隔离堵住这一漏洞：一方面，`BlockTables
 
 现代推理引擎常借助旁路流重叠计算与搬运，例如 `Weight Offload（Offloader）` 在 `copy_stream` 上异步预取下一层权重。如果在静态图捕获窗口内部通过事件等待从主流分叉出了副流操作，那么这些副流任务也会被纳入同一张捕获拓扑中。
 
-CUDA 图捕获对流拓扑有一条硬性拓扑约束：凡是在捕获期间从捕获主流派生出去的旁路流，必须在主流结束捕获之前通过事件同步重新汇合回主流；否则图引擎在收尾时无法完成整张 DAG 的拓扑汇合，会直接报错 `cudaErrorStreamCaptureUnjoined`。即使没有立即报错，前一步预留的未汇合拷贝任务也可能在下一步重放覆盖静态缓冲区时形成读写竞态。
+CUDA 图捕获对流拓扑有一条硬约束：凡是在捕获期间从捕获主流派生出的旁路流，必须在主流结束捕获之前通过事件同步重新汇合回主流。否则图引擎在收尾时无法闭合 DAG 拓扑，会直接报错 `cudaErrorStreamCaptureUnjoined`；即便未立即报错，前一步预留的拷贝任务也可能在下次重放覆盖缓冲时引发读写竞态。
 
-为此，vLLM 在模型封装层引入了明确的跨流起止协议：进入捕获或每次重放之前，外层调用 `get_offloader().sync_prev_onload()`，确保前序滞留的异步预取拷贝全部完成；而在前向结束、即将退出捕获上下文之前，必须调用 `get_offloader().join_after_forward()`，逐一为主流挂上针对捕获期未等待预取事件的 `wait_event`，强制让 `copy_stream` 在结束捕获前完成同步汇合[^vllm-offloader-prefetch][^vllm-cudagraph-wrapper]。
+为此，vLLM 在模型封装层引入了明确的跨流起止协议[^vllm-offloader-prefetch][^vllm-cudagraph-wrapper]。进入捕获或每次重放前，外层先调用 `get_offloader().sync_prev_onload()`，确保前序滞留的异步预取拷贝全部完成。前向结束、即将退出捕获上下文前，再调用 `get_offloader().join_after_forward()`。它为主流挂上针对未等待预取事件的 `wait_event`，强制让 `copy_stream` 在捕获结束前完成汇合。
 
 ## 全局图内存池与对称通信窗口隔离
 
 解决了单图内部的四道边界后，显存容量很快成为第二重制约。若引擎为 `1, 2, 4, 8, ...` 等几十个请求分桶各自开辟独立的激活工作区，重复占用的临时显存会迅速挤干 KV Cache 配额。为此，同一张设备上的所有静态图共同绑定到全局唯一的 `global_graph_pool`[^vllm-cudagraph-wrapper][^vllm-cudagraph-manager]。
 
-几十个不同规格的静态图共用同一个图内存池不会互相踩踏，背后有两项关键机制支撑。第一，线上推理每个前向步只会选中**其中一个**分桶重放，不同分桶之间的中间激活张量在时间线上完全互斥，PyTorch 图池分配器可以把同一组物理显存页安全地复用到多个分桶的中间激活上。第二，`ModelCudaGraphManager` 严格按照先 `PIECEWISE` 后 `FULL`、且各模式内部按 token 数从大到小降序的顺序执行捕获[^vllm-cudagraph-manager]——只要 `FULL` 图的宽度不超过已捕获的最大 `PIECEWISE` 图，它就能直接复用池中已经切好的激活缓冲页，无需额外向系统申请新显存。
+几十个不同规格的静态图共用同一个图内存池不会互相踩踏，背后有两项关键机制支撑。第一，线上推理每个前向步只会选中**其中一个**分桶重放，不同分桶之间的中间激活张量在时间线上完全互斥，图池分配器可以把同一组物理显存页安全地复用到多个分桶上。
 
-但共用图池必须配合严格的引用生命周期管理。在分段图捕获中，如果 Python 侧长期持有最后一段子图输出 `output` 的强引用，图池分配器就会认为该输出对应的显存块在整个服务期间始终处于活跃状态，进而拒绝将该显存页回收复用给后续捕获的图分桶，引发隐性显存泄漏。因此 `CUDAGraphWrapper` 会在最后一段子图结束及保存 `entry.output` 时调用 `weak_ref_tensors()`[^vllm-cudagraph-wrapper][^vllm-weak-ref]，剥离 Python 对象对底层存储的强持有（中间子图的输出仍需传给下一段子图消费，故仅在末图及外部缓存字典中置为弱引用）。
+第二，`ModelCudaGraphManager` 按先 `PIECEWISE` 后 `FULL`、且各模式内部按 token 数从大到小降序执行捕获[^vllm-cudagraph-manager]。只要 `FULL` 图的宽度不超过已捕获的最大 `PIECEWISE` 图，它就能直接复用池中切好的激活缓冲页，无需额外向系统申请新显存。
 
-更微妙的冲突来自多卡对称内存通信。启用 NCCL 对称内存时，通信原语要求使用 `ncclMemAlloc` 分配跨卡地址对齐的对称显存，并向通信器注册基址窗口（`register_comm_window_raw`），以便其他卡通过 NVLink 或 RDMA 直接读写[^vllm-pynccl-alloc]。如果这段显存分配发生在静态图池绑定的捕获流上，PyTorch 会把分配请求截留到当前设备私有的 `global_graph_pool` 中，导致分配出的本地显存页无法形成跨卡对称映射。图 3 展示了完整图内存池、对称通信窗口隔离与旁路流汇合的执行边界。
+共用图池还必须配合精细的引用生命周期管理。分段图捕获中，如果 Python 侧长期持有末段子图输出 `output` 的强引用，图池分配器就会认为该显存块在整个服务期间始终活跃，拒绝将其回收给后续捕获的图分桶，引发隐性显存泄漏。
+
+因此 `CUDAGraphWrapper` 会在末段子图结束及保存 `entry.output` 时调用 `weak_ref_tensors()`，剥离 Python 对底层存储的强持有[^vllm-cudagraph-wrapper][^vllm-weak-ref]。中间子图的输出仍需传给下一段消费，故只在末图及外部缓存字典中置为弱引用。
+
+更微妙的冲突来自多卡对称内存通信。启用 NCCL 对称内存时，需用 `ncclMemAlloc` 分配跨卡地址对齐的对称显存，并注册基址窗口（`register_comm_window_raw`）[^vllm-pynccl-alloc]。其他卡随后就能通过 NVLink 或 RDMA 直接读写。如果这段分配发生在静态图池绑定的捕获流上，PyTorch 会把请求截留到当前设备私有的 `global_graph_pool` 中，导致无法形成跨卡对称映射。图 3 展示了共享图池、对称通信窗口隔离与旁路流汇合的生命周期。
 
 ```mermaid caption="图 3：共享图内存池、对称通信窗口隔离与副流汇合生命周期"
 flowchart TD
@@ -82,11 +92,11 @@ flowchart TD
     J --> W["weak_ref_tensors 释放末图输出"]
 ```
 
-如图所示，当捕获期遇到跨卡对称内存窗口初始化时，`nccl_symm_mem_context` 会先检测当前流是否处于捕获状态，随即调用底层接口暂停当前线程向图内存池分配，切入独立的 `nccl_mem_pool` 完成 `ncclMemAlloc` 与窗口登记，退出上下文后再恢复原有的 `global_graph_pool` 分配绑定，从而在不打断整图录制的前提下避开私有池劫持[^vllm-pynccl-alloc][^vllm-cudagraph-pool]。
+如图所示，当捕获期遇到跨卡对称内存窗口初始化时，`nccl_symm_mem_context` 会先检测当前流是否处于捕获状态，随即暂停当前线程向图内存池分配。随后它切入独立的 `nccl_mem_pool` 完成分配与窗口登记，退出上下文后再恢复原有的 `global_graph_pool` 绑定，从而在不打断录制的前提下避开私有池劫持[^vllm-pynccl-alloc][^vllm-cudagraph-pool]。
 
 ## PyTorch 指针漂移复现与双仓对照
 
-下面的自包含 PyTorch 脚本构造了一个 `FrozenReplayGraph` 模拟器：初始化时捕获闭包直接绑定 `static_x` 与 `static_out` 的底层缓冲区对象，用来复现两种真实运行行为——若调用方把局部引用 `buf_ref` 重新绑定到新分配的张量，重放仍只读取冻结旧指针里的陈旧快照；只有通过原地 `.copy_()` 写入原缓冲，同时把缩容后的尾部 `static_slot` 刷写为 $-1$，结果才随新输入准确更新。
+下面的自包含 PyTorch 脚本构造了一个 `FrozenReplayGraph` 模拟器：初始化捕获闭包直接绑定 `static_x` 与 `static_out` 的底层缓冲区。若调用方把 `buf_ref` 重绑定到新张量，重放仍只读取冻结旧指针里的陈旧快照。只有原地 `.copy_()` 写入原缓冲，同时把缩容后的尾部 `static_slot` 刷写为 $-1$，结果才随新输入更新：
 
 ```python
 import torch
@@ -166,7 +176,7 @@ inplace_ptr_match=True, fixed_row0_val=5.0, pad_row2_val=0.0, tail_slots=[-1, -1
 | 尾部填充与隔离保护 | `InputBuffers` 与 Kernel 刷写 $-1$ 槽位 | 复用 $-1$ 槽位并在算子端保护长效张量                       |
 | 副流汇合与通信池   | `join_after_forward` 与 NCCL 对称窗隔离 | `join_after_forward` 配合事件同步汇合                      |
 
-单张静态图的四道硬边界已经明确，但真实服务每一步的输入形态都在剧烈变化：单步可能全是均匀解码，下一步又混入分块预填充，而在多卡 **DP（Data Parallelism，数据并行）**拓扑下，各张计算卡拿到的批长度甚至完全不同。引擎如何在同一个模型实例上无缝切换整图、分段图与 Eager 执行，又如何防止多卡各自为战引发集合通信死锁？下一篇[第 5 章：运行时分发与嵌套包装](../05-runtime-dispatch-and-nesting/)将拆解这套分层包装与跨卡共识协议。
+单张静态图的四道硬边界已经明确，但真实服务每一步的输入形态都在剧烈变化：单步可能全是均匀解码，下一步又混入分块预填充。在多卡 **DP（Data Parallelism，数据并行）**拓扑下，各张计算卡拿到的批长度甚至完全不同。引擎如何在同一模型上切换整图、分段图与 Eager，又如何防止多卡各自为战引发死锁？下一篇[第 5 章：运行时分发、三层包装与 DP 共识](../05-runtime-dispatch-and-nesting/)将拆解这套分层包装与跨卡共识协议。
 
 [^vllm-input-batch]: `vllm` 项目（commit `bb23c0a8`），`vllm/v1/worker/gpu/input_batch.py:23-40` 中的 `InputBuffers`（预分配持久化缓冲区，含 `is_padding`）。
 

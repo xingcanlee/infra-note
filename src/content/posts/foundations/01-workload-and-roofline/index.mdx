@@ -1,6 +1,6 @@
 ---
-title: '01 Transformer 计算类型与 Roofline 瓶颈：为什么 Prefill 吃算力而 Decode 卡带宽'
-description: '从 Transformer 解码器单层前向拆解出稠密矩阵乘、向量归约与序列交互三类计算负载，对比算子融合对 HBM 往返的压缩效果，并用 Roofline 模型推导 Prefill 与 Decode 性能分化。'
+title: '01 Transformer 负载与 Roofline 瓶颈'
+description: '单层前向里的算子性质迥异，为何 Prefill 很快打满算力而 Decode 却卡在显存带宽？本文归类三类计算负载并引入 Roofline 模型，对照 NVIDIA H800 与昇腾剖面推导拐点迁移与算子融合收益。'
 series: { id: foundations, order: 2 }
 pubDate: 2026-11-15
 tags: [Roofline, Transformer, Kernel Fusion, NVIDIA, Ascend]
@@ -10,9 +10,9 @@ toc: true
 
 import RooflineExplainer from '@/explainers/foundations/RooflineExplainer';
 
-理解大模型推理系统的性能边界，首先要回答一个核心问题：一个 Transformer 解码器层在加速卡上究竟触发了哪几类性质截然不同的计算负载。按“计算密度与访存特征”把单层算子归类之后，就能看清为什么逐元素算子必须融合、为什么 **Prefill（预填充）**阶段很快撞上算力天花板，而自回归 **Decode（解码）**阶段却长期受困于 **HBM（High Bandwidth Memory，高带宽显存）**的搬运速率。
+理解大模型推理系统的性能边界，首先要回答一个核心问题：一个 Transformer 解码器层在加速卡上究竟触发了哪几类计算负载。按“计算密度与访存特征”归类后，就能看清为什么逐元素算子必须融合。同时也能理解为何 **Prefill（预填充）**阶段很快撞上算力天花板，而自回归 **Decode（解码）**阶段却长期受困于 **HBM（High Bandwidth Memory，高带宽显存）**的搬运速率。
 
-## 从 Transformer 单层拆解三类计算负载
+## 单层前向里的三类计算负载
 
 不论模型属于哪一代开源分支，主流大语言模型的解码器单层都由两条残差连接串联注意力子层与 **SwiGLU（Swish-Gated Linear Unit，门控线性单元）**前馈子层。沿着从输入 $X \in \mathbb{R}^{M \times D}$（其中 $B$ 为批大小、$S$ 为序列长度、$M = B \times S$ 为整批活跃 token 总数、$D$ 为隐藏层维度）到输出 $Y \in \mathbb{R}^{M \times D}$ 的纵向前向流，整层全部算子可收敛为三类物理特征迥异的计算负载，如图 1 所示。
 
@@ -24,7 +24,9 @@ import RooflineExplainer from '@/explainers/foundations/RooflineExplainer';
 | **B · 向量与逐元素** | $\text{RMSNorm}_{1/2}$、$\text{SiLU}$、$\odot$、$+$ | $I = O(1)$（恒低）        | 算子融合减少 HBM 写回        |
 | **C · 序列交互**     | 因果 $QK^\top$、Softmax、$PV$                       | 随上下文 $S$ 与 $g$ 变化  | GQA 共享、片上融合与 KV 量化 |
 
-三类负载的数量级差距决定了单层推理的资源矛盾。第一，类型 A（**GEMM，General Matrix Multiply，通用稠密矩阵乘法**）贡献了全层 99% 以上的 **FLOPs（Floating-Point Operations，浮点运算次数）**。形状 $(M, K)$ 与 $(K, N)$ 的矩阵乘需要 $2MNK$ 次浮点运算；在现代 SwiGLU **FFN（Feed-Forward Network，前馈网络）**子层中，升维拆成门控矩阵与数值矩阵两路线性投影，激活后经 Down 矩阵压回隐藏维 $D$：
+三类负载的数量级差距决定了单层的资源矛盾。首先，类型 A 指代 **GEMM（General Matrix Multiply，通用稠密矩阵乘法）**。它贡献了全层 99% 以上的 **FLOPs（Floating-Point Operations，浮点运算次数）**。
+
+形状 $(M, K)$ 与 $(K, N)$ 的矩阵乘需要 $2MNK$ 次浮点运算。在现代 SwiGLU **FFN（Feed-Forward Network，前馈网络）**子层中，升维拆成门控和数值两路投影，激活后经 Down 矩阵压回隐藏维 $D$：
 
 $$
 \begin{aligned}
@@ -33,17 +35,19 @@ h &= g \odot u \in \mathbb{R}^{D_{\text{ff}}}
 \end{aligned}
 $$
 
-其中 $\text{SiLU}(z) = z \cdot \sigma(z)$ 为 **SiLU（Sigmoid Linear Unit）**激活函数（$\sigma(z)$ 为 Sigmoid 函数），工程上常取 $D_{\text{ff}} \approx \frac{8}{3}D$ 并对齐硬件分块粒度（例如 $D = 4096$ 时取 $D_{\text{ff}} = 11008$，使三矩阵参数总量与传统两矩阵 $4D$ 前馈层相当）。前馈层三矩阵占全层 GEMM 运算量 60% 以上，算力密度很高，线性投影权重体积只取决于模型维度而与上下文长度无关。
+其中 $\text{SiLU}(z) = z \cdot \sigma(z)$ 为 **SiLU（Sigmoid Linear Unit，Sigmoid 线性单元）**激活函数，$\sigma(z)$ 为 Sigmoid 函数。工程上常取 $D_{\text{ff}} \approx \frac{8}{3}D$ 并对齐硬件分块粒度，例如 $D = 4096$ 时取 $D_{\text{ff}} = 11008$，使三矩阵参数总量与传统两矩阵 $4D$ 前馈层相当。前馈层三矩阵占全层 GEMM 运算量 60% 以上，线性投影权重体积只取决于模型维度，与上下文长度无关。
 
-第二，类型 B（向量归约与逐元素算子）占比不足 1% FLOPs，却对片外显存带宽最为敏感。每次 **RMSNorm（Root Mean Square Normalization，均方根归一化）** $\text{RMSNorm}(x) = (x / \text{rms}(x)) \odot \gamma$ 都需要扫描 token 向量求取均方根 $\text{rms}(x) = \sqrt{\frac{1}{D}\sum_{i=1}^{D} x_i^2 + \varepsilon}$；紧随其后的 $\text{SiLU}$ 非线性激活、门控逐元素相乘 $g \odot u$ 以及两次残差相加，单元素只做寥寥数次标量运算就必须读写整份激活张量。若把每个逐元素算子单独发射为独立 **Kernel（设备端计算核函数）**，中间张量每做完一步就会先写回片外 HBM 再被下一个 Kernel 重新读入。通过算子融合把一串逐元素操作留存在片上寄存器或向量缓存内连续消费，即可砍掉中间写回与重读，如图 2 所示（以连续三步归一化、激活与门控乘法为例，HBM 总线往返次数从 6 次降至 2 次）。
+其次，类型 B（向量归约与逐元素算子）占比不足 1% FLOPs，却对片外显存带宽最为敏感。每次 **RMSNorm（Root Mean Square Normalization，均方根归一化）** $\text{RMSNorm}(x) = (x / \text{rms}(x)) \odot \gamma$ 都需要扫描 token 向量，先求均方根 $\text{rms}(x) = \sqrt{\frac{1}{D}\sum_{i=1}^{D} x_i^2 + \varepsilon}$ 再缩放。
+
+紧随其后的 $\text{SiLU}$ 激活、门控乘法 $g \odot u$ 与两次残差相加，每个元素只做寥寥数次标量运算就得读写整份激活张量。若每个算子都单独启动 **Kernel（设备端计算核函数）**，中间结果会先写回 HBM 再被下一个 Kernel 读入。通过算子融合让中间张量留在片上寄存器或向量缓存中连续消费，就能大幅砍掉访存往返，如图 2 所示，连续三步操作的总线往返从 6 次降至 2 次。
 
 ![未融合 3 个独立 Kernel 与融合后单 Kernel 的片上驻留及 HBM 往返次数对比](./diagrams/01-kernel-fusion-hbm-trips.drawio '图 2：未融合算子 6 次 HBM 往返与融合 Kernel 2 次 HBM 往返对照')
 
-第三，类型 A 与类型 B 全部在单个 token 内部逐位置独立完成，彼此不产生跨序列交互；唯有类型 C（**Self-Attention，自注意力**，即序列交互）需要跨越序列维比较历史键值并加权聚合，是上下文长度直接推高计算与带宽开销的根源，第 03 至 05 章将围绕它展开专题剖析。
+最后，类型 A 与类型 B 都在单个 token 内部独立完成，彼此不产生跨序列交互。唯有类型 C 的 **Self-Attention（自注意力）**需要跨越序列维比较历史键值并加权聚合，这也是上下文长度推高计算与带宽开销的根源，第 03 至 05 章将专题拆解。
 
-## Roofline 模型与 Prefill/Decode 瓶颈分化
+## Roofline 模型与阶段瓶颈分化
 
-要将算子账本映射到芯片实际运行速度，需要借助 **Roofline 模型**[^roofline-paper]。设芯片的理论矩阵峰值算力为 $P_{\text{peak}}$，高带宽显存的持续读写带宽为 $BW_{\text{HBM}}$，任意一段计算的 **Arithmetic Intensity（算术强度）**定义为总浮点运算数与片外总访存字节数之比，由此可写出实测算力上限与 **Ridge Point（算力拐点）** $I^*$：
+要将算子开销映射到芯片实际运行速度，需要借助 **Roofline 模型**[^roofline-paper]。设芯片的理论矩阵峰值算力为 $P_{\text{peak}}$，高带宽显存的持续读写带宽为 $BW_{\text{HBM}}$，任意计算的 **Arithmetic Intensity（算术强度）**定义为总浮点运算数与片外总访存字节数之比。由此可写出实测算力上限与 **Ridge Point（算力拐点）** $I^*$：
 
 $$
 \begin{aligned}
@@ -52,10 +56,11 @@ P_{\text{attained}} &= \min\!\left(P_{\text{peak}},\ I \cdot BW_{\text{HBM}}\rig
 \end{aligned}
 $$
 
-当 $I < I^*$ 时，算子落在向左倾斜的 **Memory-bound（带宽受限区）**，吞吐受 HBM 搬运速度线决定；当 $I \ge I^*$ 时，算子进入水平的 **Compute-bound（算力受限区）**，受制于矩阵算力单元吞吐上限。代入类型 A 与类型 B 各自的公式，两类算子随并发批大小 $M$ 的走势瞬间明朗：
+当 $I < I^*$ 时，算子落在向左倾斜的 **Memory-bound（带宽受限区）**，吞吐受 HBM 搬运速度线决定。当 $I \ge I^*$ 时，算子进入水平的 **Compute-bound（算力受限区）**，性能转由矩阵算力上限封顶。代入类型 A 与类型 B 的公式后，两类算子随并发批大小 $M$ 的走势立刻清楚。
 
-- 类型 B（向量归约与逐元素算子）的算术强度恒为 $I = O(1) \ll I^*$。无论活跃 token 数 $M$ 是 1 还是 4096，分子分母同步按 $M$ 等比例放大，约分之后算术强度始终低于 1 FLOP/B，在所有推理阶段均处于极度带宽受限区。
-- 类型 A（**BF16，Brain Floating Point 16，16 比特脑浮点，每元素 2 字节**，线性投影 GEMM）的算术强度随并发 token 数 $M$ 近似线性迁移。将形状为 $(M, K)$ 的激活乘以 $(K, N)$ 的权重需要 $2MNK$ 次浮点运算，片外至少搬运权重与输入输出激活共 $2(KN + MK + MN)$ 字节。当并发规模远小于权重维度（$M \ll K, N$）时，权重字节数在分母中占据主导，算术强度约简为并发 token 数本身：
+类型 B 算子的算术强度恒为 $I = O(1) \ll I^*$。无论活跃 token 数 $M$ 是 1 还是 4096，分子分母都按 $M$ 等比例放大，约分后算术强度始终低于 1 FLOP/B，在所有推理阶段都高度受限于带宽。
+
+在每元素占 2 字节的 **BF16（Brain Floating Point 16，16 比特脑浮点）**下，类型 A 的算术强度随并发 token 数 $M$ 近似线性迁移。形状 $(M, K)$ 与 $(K, N)$ 的矩阵乘需要 $2MNK$ 次浮点运算，片外至少搬运 $2(KN + MK + MN)$ 字节。当并发规模 $M \ll K, N$ 时，权重字节数在分母中占主导，算术强度约简为并发 token 数本身：
 
 $$
 I_{\text{GEMM}} = \frac{2MNK}{2(KN + MK + MN)} \approx \frac{2MNK}{2KN} = M
@@ -65,20 +70,24 @@ $$
 
 ![单卡 Roofline 模型几何结构：带宽斜坡 Memory-bound、算力拐点 I*、算力平台 Compute-bound 与两类负载迁移](./diagrams/01-roofline-concept.drawio '图 3：单卡 Roofline 模型几何结构——带宽斜坡、算力拐点 I*、算力平台与负载迁移')
 
-以 FlashMLA 技术报告校准的 NVIDIA H800 SXM5（标称 990 **TFLOPS，每秒万亿次浮点运算**、3.35 TB/s，拐点 $I^* \approx 295.5\text{ FLOP/B}$）[^flashmla-doc] 与昇腾示例剖面（320 TFLOPS、1.60 TB/s，拐点 $I^* = 200\text{ FLOP/B}$）为双平台基准，图 4 在对数坐标系上绘制了生产维度 $D = 4096,\,D_{\text{ff}} = 11008$ SwiGLU FFN（BF16 权重总计 258 MiB）在不同并发工况下的迁移轨迹。
+我们选取两个双平台基准来校准曲线。NVIDIA H800 SXM5 标称 990 **TFLOPS（每秒万亿次浮点运算）**与 3.35 TB/s 带宽，拐点 $I^* \approx 295.5\text{ FLOP/B}$[^flashmla-doc]。昇腾示例剖面取 320 TFLOPS 与 1.60 TB/s，拐点为 $I^* = 200\text{ FLOP/B}$。图 4 在对数坐标系上绘制了生产维度 $D = 4096,\,D_{\text{ff}} = 11008$ 的 SwiGLU FFN（BF16 权重 258 MiB）在不同并发下的迁移轨迹。
 
 <RooflineExplainer
   client:visible
   title="图 4：双硬件对数 Roofline 拐点、Decode/Prefill 状态迁移与 Cube/Vector 重叠"
 />
 
-沿图 4 的五个步进状态追踪推理工作负载，可以清楚看到并发规模变化如何驱动芯片性能拐点转移。在单请求 Decode（$M = 1$）工况下，每吐出 1 个 token 都必须把全部 258 MiB 权重从 HBM 搬进核心算一次就丢掉，算术强度 $I = 1.00\text{ FLOP/B}$，H800 与昇腾剖面分别被带宽锁死在 3.35 TFLOPS（占算力峰值 0.3%）与 1.60 TFLOPS（占峰值 0.5%）。随着连续批处理扩大到 $M = 64$，同一份权重被 64 个 token 摊分复用，算术强度升至 62.86 FLOP/B，吞吐沿带宽斜坡等比攀升到 210.6 TFLOPS 与 100.6 TFLOPS。到 $M = 256$ 时，SwiGLU 算术强度达到 238.66 FLOP/B，刚好落于双平台拐点之间，昇腾剖面已跨越 $I^* = 200$ 率先封顶 320 TFLOPS，而算力带宽比更高的 H800（$I^* \approx 295.5$）仍在带宽斜坡上跑到 799.5 TFLOPS。直到进入长提示词 Prefill（$M = 4096$），算术强度跃至 1893.85 FLOP/B，双方全部落入水平算力平台期；此时若昇腾 AI Core 启用异步 Cube/Vector 双流水重叠，还可将 Vector 门控归约掩盖在下一块 Cube 矩阵乘背后，使重叠区压缩到 18 拍、相对串行获得 1.50 倍流水提速[^ascend-prefill]。
+图 4 的五个步进状态展示了并发规模如何推动瓶颈转移。单请求 Decode（$M = 1$）每吐出 1 个 token 都得把 258 MiB 权重从 HBM 搬进核心算一次就丢掉，算术强度仅 $I = 1.00\text{ FLOP/B}$。此时 H800 与昇腾剖面分别被带宽锁死在 3.35 TFLOPS（占峰值 0.3%）与 1.60 TFLOPS（占峰值 0.5%）。
 
-上式假设片上与显存之间的硬件总线一直保持满载大块传输。实际服务端若由 Python 主线程逐个小算子异步提交，CPU 发射间隙极易在设备端留下微秒级空泡，这也是生产引擎在解码路径上广泛依赖 `CUDA Graph`（NVIDIA 设备端执行图）与 `ACL Graph`（Ascend Computing Language，昇腾设备端执行图）整图下发的核心原因（详见[《执行图与昇腾 ACL Graph》](../../aclgraph/)）。
+随着连续批处理扩大到 $M = 64$，同一份权重被 64 个 token 摊分复用，算术强度升至 62.86 FLOP/B，双平台吞吐沿带宽斜坡攀升到 210.6 与 100.6 TFLOPS。到 $M = 256$ 时，算术强度达到 238.66 FLOP/B，刚好落在双平台拐点之间。昇腾剖面跨过 $I^* = 200$ 率先封顶 320 TFLOPS，而 H800 仍在带宽斜坡上跑到 799.5 TFLOPS。
+
+进入长提示词 Prefill（$M = 4096$）后，算术强度跃至 1893.85 FLOP/B，双方全部进入水平算力平台期。此时若昇腾 AI Core 启用异步 Cube/Vector 双流水重叠，还能把 Vector 门控归约掩盖在下一块 Cube 矩阵乘背后。整个重叠区因此压缩到 18 拍，相对串行执行获得 1.50 倍提速[^ascend-prefill]。
+
+上式假设硬件总线一直保持满载大块传输。实际服务端若由 Python 主线程逐个提交小算子，CPU 发射间隙会在设备端留下微秒级空泡。因此生产引擎在解码路径上广泛依赖静态图：GPU 侧用 `CUDA Graph`，昇腾侧用 `ACL Graph`（Ascend Computing Language，昇腾设备端执行图）。一次录制后整图下发即可消减发射空泡，详情见[《执行图与昇腾 ACL Graph》](../../aclgraph/)。
 
 ## 生产尺度 NumPy 定量校验
 
-下面这段自包含的 NumPy 脚本在生产解码器单层维度（$D = 4096$、4:1 **GQA，Grouped-Query Attention，分组查询注意力**即 $D_{kv} = 1024$、$D_{\text{ff}} = 11008$）下验证两件事：第一，GEMM 在单层浮点运算中的压倒性占比与 Vector 算子的恒定 $O(1)$ 算术强度；第二，图 4 中 SwiGLU FFN 跨 $M \in \{1, 64, 256, 4096\}$ 四档并发下的 Roofline 算力上界：
+下面这段自包含的 NumPy 脚本采用生产解码器单层维度（$D = 4096$、4:1 **GQA，Grouped-Query Attention，分组查询注意力**即 $D_{kv} = 1024$、$D_{\text{ff}} = 11008$）。代码依次核验两件事：GEMM 的绝对运算占比与 Vector 恒定 $O(1)$ 算术强度，以及 SwiGLU FFN 跨四档并发的 Roofline 算力上界：
 
 ```python
 import numpy as np
@@ -115,7 +124,7 @@ for M in (1, 64, 256, 4096):
     print(f"M={M:4d}: AI={ai:7.2f} FLOP/B | H800={h800_tf:6.2f} TF | NPU={npu_tf:6.2f} TF")
 ```
 
-运行结果精准验证了算子计算特征与 Roofline 轨迹：GEMM 贡献了 99.9729% 的单层计算量，而 Vector 的算术强度从 $M=1$ 到 $M=4096$ 始终锁死在 0.65 FLOP/B：
+运行结果验证了算子计算特征与 Roofline 轨迹：GEMM 贡献了 99.9729% 的单层计算量，而 Vector 的算术强度从 $M=1$ 到 $M=4096$ 始终锁死在 0.65 FLOP/B：
 
 ```text
 M=   1 | GEMM: share=99.9729%, AI=   1.00 FLOP/B | Vector: AI=0.65 FLOP/B
@@ -126,7 +135,7 @@ M= 256: AI= 238.66 FLOP/B | H800=799.50 TF | NPU=320.00 TF
 M=4096: AI=1893.85 FLOP/B | H800=990.00 TF | NPU=320.00 TF
 ```
 
-到这里，我们已经摸清了 Transformer 单层里三类计算负载的数量级和 Roofline 宏观瓶颈；但纸面算术强度与理论带宽不会自动转化为端到端性能。要想真正写满芯片算力与 HBM 带宽，还必须钻进硅片内部，看清调度器、片上缓冲层级与矩阵引擎是如何接手这些算子的——这正是下一章[02 GPU SM 与昇腾 AI Core 微架构：执行模型、存储金字塔与矩阵引擎](../02-gpu-and-ascend-architecture/)的主题。
+到这里，我们已经摸清了单层前向的三类负载量级与 Roofline 宏观瓶颈。但纸面算术强度不会自动转化为实测吞吐。下一章[02 GPU SM 与昇腾 AI Core 微架构](../02-gpu-and-ascend-architecture/)将进入硅片内部，看清调度器、片上缓冲与矩阵引擎如何接手这些算子。
 
 [^roofline-paper]: Samuel Williams, Andrew Waterman, David Patterson，“Roofline: An Insightful Visual Performance Model for Multicore Architectures”，Communications of the ACM, 2009。定义算术强度 $I$、斜坡区带宽墙与算力平台拐点 $I^*$。
 

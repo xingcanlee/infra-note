@@ -1,21 +1,23 @@
 ---
-title: 'vLLM 与昇腾推理引擎：从连续批处理到编译图与设备图'
-description: '面向零基础开发者的推理运行时导览：从 PagedAttention 连续批处理、CPU 发射墙、torch.compile 分段编译到 CUDA Graph、昇腾 ACLGraph 与性能排错手册。'
+title: 'vLLM 与昇腾推理引擎：调度架构与图执行导览'
+description: '在线推理常受限于显存碎片、主机发射墙与图形状冲突。本系列结合数值推演、PyTorch 脚本与 vLLM/vllm-ascend 双仓源码，拆解分页调度、分段编译、静态图与排障。'
 series: { id: vllm, order: 1 }
 pubDate: 2026-10-25
 draft: false
 tags: [vLLM, Ascend, PagedAttention, torch.compile, CUDA Graph, ACLGraph]
 ---
 
-单卡计算与跨卡通信决定了一套模型的理论算力上限，但把模型真正拉上在线推理服务后，决定端到端吞吐与尾延迟的往往是引擎运行时。线上压测常见一种典型失衡：单卡理论算力与显存仍有明显余量，小批量解码吞吐却迟迟上不去，或者启用静态图后出现静默回退、跨卡挂死与输出异常。
+单卡计算与跨卡通信决定了一套模型的理论算力上限，但把模型真正拉上在线推理服务后，决定端到端吞吐与尾延迟的往往是引擎运行时。线上压测常见一种失衡：单卡理论算力与显存仍有余量，小批量解码吞吐却迟迟上不去，或者启用静态图后出现静默回退、跨卡挂死与输出异常。
 
-在线推理运行时的吞吐与尾延迟由三项系统级资源调度决策共同支配。在显存侧，并发请求的提示词与生成长度持续变动，运行时需要在物理块粒度上按需映射 KV Cache、复用共享前缀，并在显存打满时有序抢占。在执行侧，小批量解码时大量算子在计算单元上只跑几微秒，短于 Python 解析与驱动下发耗时，一旦发生主机等待或队列断流就会露出计算空闲气泡。在编译与图执行侧，算子融合与硬件静态图要求张量地址与输入形状保持冻结，而线上流量每一步进入模型的请求数与上下文长度都在实时变动。
+在线推理运行时的吞吐与尾延迟由三项系统级资源决策共同支配。在显存侧，并发请求的提示词与生成长度持续变动，运行时需要在物理块粒度上按需映射 **KV Cache（Key-Value Cache，键值缓存）**、复用共享前缀，并在显存打满时有序抢占。
 
-本系列围绕 **`vLLM` V1 调度架构（含 Model Runner V2，简称 MRV2，基于源码提交 `bb23c0a8`）** 与华为昇腾插件 **`vllm-ascend`（基于源码提交 `3649b8ff`）** 展开。后者运行在昇腾 **CANN（Compute Architecture for Neural Networks）** 计算架构之上，在请求调度与分页结构上复用上游设计，而在算子融合、图捕获与异步事件同步上适配了 NPU 硬件约束。
+在执行侧，小批量解码时许多算子在计算单元上只跑几微秒，短于 Python 解析与驱动下发耗时，一旦发生主机等待或队列断流就会露出空闲气泡。在编译与图执行侧，算子融合与硬件静态图要求张量地址与输入形状保持冻结，而线上流量每一步进入模型的请求数与长度都在实时变动。
+
+本系列对照两个锁定提交的代码仓：上游 `vLLM` V1 调度架构（含 Model Runner V2 执行器，提交 `bb23c0a8`）与华为昇腾插件 `vllm-ascend`（提交 `3649b8ff`）。后者运行在昇腾 **CANN（Compute Architecture for Neural Networks，异构计算架构）**之上。它在请求调度与分页结构上复用上游设计，并在算子融合、图捕获与异步事件同步上适配了 NPU 硬件约束。
 
 ## 运行时双阶段架构：启动构图与单步执行
 
-为了避免在线服务期间触发耗时数秒的即时重编译或图录制，现代推理引擎把静态优化全部前移到启动阶段，把动态请求匹配留在每一步的微秒级路径里，整体划分如图 1 所示。
+为了避免在线服务期间触发耗时数秒的即时重编译或图录制，现代推理引擎把静态优化全部前移到启动阶段，把动态请求匹配留在每一步的微秒级路径里。整体划分如图 1 所示。
 
 ```mermaid caption="图 1：推理引擎启动期构图与运行期单步执行链路"
 flowchart TB
@@ -36,19 +38,21 @@ flowchart TB
 
 在启动期，引擎先通过无 Guard 追踪一次捕获完整计算图，再沿注意力节点把模型拆成可静态编译的纯张量段与直调手写算子的隔离段，最后按预设批量桶捕获内外两层静态图并保留产物。
 
-进入运行期后，每一步前向先由调度器按统一 token 预算分配物理 KV 块，接着在 **DP（Data Parallelism，数据并行）**各卡之间就图模式与填充尺寸达成一致，直接命中对应图桶重放，并借助独立拷贝流把采样结果异步传回主机，使 CPU 有余力提前编排下一轮输入。
+进入运行期后，每一步前向先由调度器按统一 token 预算分配物理 KV 块，接着在 **DP（Data Parallelism，数据并行）**各卡之间就图模式与填充尺寸达成一致。随后各卡直接命中对应图桶重放，并借助独立拷贝流把采样结果异步传回主机，让 CPU 有余力提前编排下一轮输入。
 
 ## 六章目录与学习路径
 
-全系列按“显存分页与调度 → 主机发射与异步流 → 分段编译切图 → 静态图硬边界 → 运行时分发与 DP 共识 → Profiler 轨迹排障”六章递进展开：
+全系列按“显存分页与调度 → 主机发射与异步流 → 分段编译切图 → 静态图硬边界 → 运行时分发与 DP 共识 → 轨迹排障”六章递进展开：
 
-| 章节                                                          | 核心机制                         | 解决痛点                 | 双平台对照                           |
-| ------------------------------------------------------------- | -------------------------------- | ------------------------ | ------------------------------------ |
-| [01 分页注意力与批调度](./01-paged-attention-and-scheduler/)  | `BlockPool`、统一 `token_budget` | KV 碎片、阶段隔离        | `reshape_and_cache` vs `npu_scatter` |
-| [02 异步执行与发射墙](./02-async-execution-and-launch-wall/)  | 异步 FIFO 入队、`AsyncOutput`    | 小批空转、步间阻塞       | CUDA `copy_stream` vs `TaskQueue`    |
-| [03 torch.compile 分段](./03-torch-compile-and-piecewise/)    | 无 Guard 追踪、`split_graph`     | 算子访存与动态注意力断图 | `TorchInductor` vs `AscendCompiler`  |
-| [04 CUDA Graph 硬边界](./04-cuda-graph-and-boundaries/)       | 指针锁定、`-1` 填充、共享图池    | 地址漂移、脏写与通信冲突 | `CUDAGraphWrapper` 与对称池隔离      |
-| [05 运行时分发与 DP 共识](./05-runtime-dispatch-and-nesting/) | 三层包装壳、DP 主机模式共识      | 混合批切换与集合死锁     | `CudaGraphManager` 与 DP 对齐        |
-| [06 性能观测与线上定位](./06-profiling-and-debugging/)        | 五类 Trace 指纹、二分隔离树      | 静默回退与尾槽越界       | `nsys` vs `torch_npu.profiler`       |
+| 章节                                                                       | 核心机制                         | 解决痛点                 | 双平台对照                           |
+| -------------------------------------------------------------------------- | -------------------------------- | ------------------------ | ------------------------------------ |
+| [01 PagedAttention 与连续批处理调度](./01-paged-attention-and-scheduler/)  | `BlockPool`、统一 `token_budget` | KV 碎片、阶段隔离        | `reshape_and_cache` vs `npu_scatter` |
+| [02 异步执行模型与发射墙](./02-async-execution-and-launch-wall/)           | 异步 FIFO 入队、`AsyncOutput`    | 小批空转、步间阻塞       | CUDA `copy_stream` vs `TaskQueue`    |
+| [03 torch.compile 分段编译与按算子切图](./03-torch-compile-and-piecewise/) | 无 Guard 追踪、`split_graph`     | 算子访存与动态注意力断图 | `TorchInductor` vs `AscendCompiler`  |
+| [04 CUDA Graph 四道硬边界与共享图池](./04-cuda-graph-and-boundaries/)      | 指针锁定、`-1` 填充、共享图池    | 地址漂移、脏写与通信冲突 | `CUDAGraphWrapper` 与对称池隔离      |
+| [05 运行时分发、三层包装与 DP 共识](./05-runtime-dispatch-and-nesting/)    | 三层包装壳、DP 主机模式共识      | 混合批切换与集合死锁     | `CudaGraphManager` 与 DP 对齐        |
+| [06 性能观测与线上故障定位](./06-profiling-and-debugging/)                 | 五类 Trace 指纹、二分隔离树      | 静默回退与尾槽越界       | `nsys` vs `torch_npu.profiler`       |
 
-建议从[第 1 章：PagedAttention 与连续批调度](./01-paged-attention-and-scheduler/)开始顺序阅读；若希望专门深入昇腾底层算力流与 `Event`/`Notify` 原语、`torch.compile` 分层结构、ACL Graph 影子模型流与 `TaskGrp`/条件子图以及 `vllm-ascend` 四层全栈调优，可直接查阅姊妹系列[《执行图与昇腾 ACL Graph》](../aclgraph/)；需要补充硬件带宽模型、多卡集合通信语义或 DeepSeek 模型算子结构时，可随时对照[《推理与异构硬件基础》](../foundations/)、[《分布式并行与跨卡通信》](../distributed/)与[《DeepSeek 架构演进》](../deepseek/)。
+建议从[第 1 章：PagedAttention 与连续批处理调度](./01-paged-attention-and-scheduler/)开始顺序阅读。如果想深入昇腾算力流、`Event`/`Notify` 原语、ACL Graph 影子流与 `vllm-ascend` 四层调优，可查阅姊妹系列[《执行图与昇腾 ACL Graph》](../aclgraph/)。
+
+需要补充硬件带宽模型、多卡集合通信语义或 DeepSeek 模型算子结构时，可随时对照[《推理与异构硬件基础》](../foundations/)、[《分布式并行与跨卡通信》](../distributed/)与[《DeepSeek 架构演进》](../deepseek/)。

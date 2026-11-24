@@ -82,7 +82,7 @@
         <mxCell id="pf__b1_2" value="L14 Engram 异步预取&lt;br&gt;与主机查表预热" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#fbf2df;strokeColor=#7b5518;strokeWidth=1.25;dashed=1;dashPattern=4 4;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
           <mxGeometry x="480" y="96" width="208" height="64" as="geometry"/>
         </mxCell>
-        <mxCell id="hw_note" value="双硬件 Host DDR 驻留与零拷贝预取机理" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#f4f4f2;strokeColor=#5c6067;strokeWidth=1.25;dashed=1;verticalAlign=top;align=left;spacingLeft=12;spacingTop=6;fontFamily=Inter;fontSize=12;fontStyle=1;fontColor=#5c6067;container=0;" vertex="1" parent="1">
+        <mxCell id="hw_note" value="双硬件 Host DDR 驻留与零拷贝预取原理" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#f4f4f2;strokeColor=#5c6067;strokeWidth=1.25;dashed=1;verticalAlign=top;align=left;spacingLeft=12;spacingTop=6;fontFamily=Inter;fontSize=12;fontStyle=1;fontColor=#5c6067;container=0;" vertex="1" parent="1">
           <mxGeometry x="0" y="208" width="688" height="128" as="geometry"/>
         </mxCell>
         <mxCell id="gpu_pf" value="NVIDIA GPU (vLLM)&lt;br&gt;_start_prefetch 用副流向主机 Pinned 内存发搬运&lt;br&gt;超阈值大 batch 自动回退主流行内 lookup" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f2fb;strokeColor=#2f5783;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">

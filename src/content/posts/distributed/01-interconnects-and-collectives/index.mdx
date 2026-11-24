@@ -1,6 +1,6 @@
 ---
 title: '01 多卡互连、集合通信与 NVIDIA / 昇腾通信栈'
-description: '从延迟带宽模型与 Ring/Tree 集合通信出发，厘清机内超节点 Scale-Up 与跨机 Scale-Out 物理层级，对比 vLLM CudaCommunicator 与昇腾 NPUCommunicator 的分发策略。'
+description: '多卡推理跨卡通信同时受固定延迟与带宽制约，Decode 小消息与 Prefill 大载荷瓶颈截然相反。本文推导 Ring 与 Tree 归约拐点及超节点拓扑，并对照 vLLM 与昇腾的运行时分发路径。'
 series: { id: distributed, order: 2 }
 pubDate: 2026-11-14
 tags: [Collectives, NVLink, HCCS, NCCL, HCCL, SymmMem, NVIDIA, Ascend]
@@ -12,7 +12,7 @@ import RingCollectivesExplainer from '../../../../explainers/distributed/RingCol
 
 当模型权重、中间激活或长序列 KV Cache 超出单张加速卡的显存上限，多卡拆分后的推理端到端耗时由单卡计算访存与跨卡、跨机链路上的 **Collectives（集合通信）**开销共同决定。估算一次跨卡传输耗时，需要将其拆解为固定延迟与链路带宽两项物理代价，再看软件栈如何依消息大小与互连拓扑选择最短路径。
 
-## 延迟带宽模型与环形及树形集合通信
+## 延迟带宽模型与环形及树形通信
 
 估算多卡通信耗时的时候，单次点对点发送 $S$ 字节消息的端到端耗时通常写为如下两项之和：
 
@@ -20,11 +20,13 @@ $$
 T(S) = \alpha + \beta \cdot S
 $$
 
-其中 $\alpha$ 表示单跳控制面建链、Kernel 发射与协议握手的固定时延（通常为几微秒到数十微秒），而 $\beta = 1 / \text{BW}$ 是链路有效带宽 $\text{BW}$ 的倒数，即每传输 1 字节载荷所需的物理耗时（通常折算为 $\mu\text{s}/\text{B}$ 或 $\text{ns}/\text{B}$）。
+其中 $\alpha$ 表示单跳建链、Kernel 发射与协议握手的固定时延，通常在几微秒到数十微秒之间。而 $\beta = 1 / \text{BW}$ 是链路有效带宽 $\text{BW}$ 的倒数，代表每传输 1 字节载荷的物理耗时，常折算为 $\mu\text{s}/\text{B}$ 或 $\text{ns}/\text{B}$。
 
-由这条公式可以直接区分推理阶段的两类典型压力区：Decode（解码）阶段每步通信通常只有几十 KB 的小消息，总耗时几乎由跳数相关的固定延迟 $\alpha$ 主导；Prefill（预填充）阶段一次需要归约数十 MB 激活张量，耗时则主要由载荷体积与带宽倒数 $\beta$ 决定。
+这条公式直接划出了推理阶段的两类典型压力区。Decode（解码）阶段每步只传几十 KB 的小消息，总耗时几乎由跳数相关的固定延迟 $\alpha$ 主导。Prefill（预填充）阶段一次需要归约数十 MB 激活张量，耗时则主要由载荷大小与带宽倒数 $\beta$ 决定。
 
-在多卡并行最频繁使用的全局求和归约（`AllReduce`）中，工程上常将 $P$ 张卡的协同拆分为 `ReduceScatter` 与 `AllGather` 两个连续阶段：第一阶段经过 $P - 1$ 步，每张卡先把长为 $S$ 字节的向量切为 $P$ 份，每步沿环向下一跳发送 $S / P$ 字节并原地累加，结束时第 $r$ 张卡刚好持有其中一个分片的完整全局和；第二阶段再经过 $P - 1$ 步，每张卡把刚算得的完整分片顺时针传递并直接覆写下游槽位，最终全组都集齐完整的归约向量。
+在多卡并行最常用的全局求和归约（`AllReduce`）中，工程上常把 $P$ 张卡的协同拆为 `ReduceScatter` 与 `AllGather` 两个连续阶段。在 `ReduceScatter` 阶段，每张卡把长为 $S$ 字节的向量均分为 $P$ 份，经过 $P - 1$ 步顺时针传递并累加，每步仅发送 $S / P$ 字节。这一阶段结束时，每张卡各自持有其中一个分片的完整全局和。
+
+紧接着进入 `AllGather` 阶段，各卡同样走过 $P - 1$ 步，把刚算得的完整分片继续顺时针传递并直接覆写下游槽位。走完这轮接力后，全组每张卡都集齐了完整的归约向量。
 
 设 4 张卡的初始向量分别为 $[1, 2, 0, 4]$、$[3, 1, 2, 0]$、$[0, 4, 1, 2]$ 与 $[2, 1, 3, 2]$，目标全局求和结果为 $[6, 8, 6, 8]$。可以通过图 1 的步进按钮依次查看各卡在两阶段 6 跳传输中的分片变化与累计耗时。
 
@@ -45,7 +47,7 @@ $$
 T_{\text{Tree}}(P, S) = 2(\log_2 P)\alpha + 2(\log_2 P) S \beta
 $$
 
-两者的权衡随消息大小反转：当消息极小（$S \to 0$）且卡数较多时，Tree 算法的跳数 $2\log_2 P$ 明显低于 Ring 的 $2(P - 1)$，能够显著压低 $\alpha$ 累积延迟；而一旦进入大消息带宽受限区，Ring 算法每卡累计收发量仅为 $2\frac{P - 1}{P}S$（带宽利用率达到 $(P - 1)/P$），而 Tree 算法需要在上层节点反复转发全量数据 $2(\log_2 P)S$，因此大消息下 Ring 的带宽利用率优势显著。
+两者的优劣随消息规模发生反转。当消息极小且卡数较多时，Tree 算法的跳数 $2\log_2 P$ 明显低于 Ring 的 $2(P - 1)$，能大幅压低 $\alpha$ 累积延迟。一旦进入大消息带宽受限区，Ring 每卡累计只收发 $2\frac{P - 1}{P}S$ 字节，带宽利用率接近 $(P - 1)/P$。相比之下，Tree 需要在上层节点反复转发全量数据 $2(\log_2 P)S$，因此大消息下 Ring 的有效带宽更高。
 
 ## 物理互连层级与超节点拓扑
 
@@ -53,15 +55,17 @@ $$
 
 ![NVIDIA 与华为昇腾 Scale-Up vs Scale-Out 分层互联对比](./diagrams/01-nvlink-vs-hccs-arch.drawio '图 2：NVIDIA GPU 与昇腾 NPU 分层物理互联栈（Scale-Up vs Scale-Out）')
 
-自上而下看图 2 的第一层，数据搬运从单卡内部的存储引擎就已分道扬镳。NVIDIA GPU 围绕 Tensor Core 与 HBM3e（High Bandwidth Memory 3e，高带宽显存）配备 TMA（Tensor Memory Accelerator，异步张量内存加速器），由硬件直接完成全局显存与片上共享内存之间的多维张量块搬运；华为昇腾 NPU 则在 DaVinci AI Core 内部将负责矩阵乘的 Cube 核与负责向量算子的 Vector 核解耦，中间以片上 `UB（Unified Buffer）` 作为暂存，并由专职 SDMA（System Direct Memory Access，系统直接内存访问）引擎异步承担片内外与卡间数据搬移。
+从图 2 最顶层往下看，两家的数据搬运通路在单卡内部就已分道扬镳。NVIDIA GPU 围绕 Tensor Core 与 HBM3e（High Bandwidth Memory 3e，高带宽显存）设计存储通路。片上配备 TMA（Tensor Memory Accelerator，异步张量内存加速器），直接完成全局显存与共享内存之间的多维张量块搬运。
 
-走出一张卡的封装边界，便进入决定高频算子切分上限的 Scale-Up 高速域。NVIDIA 在单机 8 卡内以 NVLink 4/5 接入 NVSwitch 全交叉交换网络（支持网内硬件归约 NVLS SHARP），并在机柜级进一步演进为 GB200 NVL72 多节点 NVLink（MNNVL）超节点，把 72 颗 GPU 拉进统一 NVLink 内存域。
+华为昇腾 NPU 则在 DaVinci AI Core 内部把矩阵乘 Cube 核与向量 Vector 核拆开，中间以片上 `UB（Unified Buffer）` 暂存数据。卡内外与卡间的数据搬移，交由专职的 SDMA（System Direct Memory Access，系统直接内存访问）引擎异步完成。
 
-华为昇腾则在 Ascend 910B（A2）上通过全连接 HCCS（Huawei Cache Coherence System，华为缓存一致性系统）环与 SDMA 零拷贝直写实现机内对等互联，并在 Ascend 910C（A3）与 CloudMatrix 384 超节点中借助 `Unified Bus（灵衢统一总线）` 把百卡级 NPU 纳入统一内存编址对等池，将高带宽内存语义从单机扩展到整机柜。
+走出一张卡的封装边界，便进入决定高频算子切分上限的 Scale-Up 高速域。NVIDIA 在单机 8 卡内以 NVLink 4/5 接入 NVSwitch 全交叉交换网络，支持 NVLS SHARP 网内硬件归约。到了机柜级 GB200 NVL72，系统通过 MNNVL（Multi-Node NVLink，多节点 NVLink）把 72 颗 GPU 拉进统一内存域。
 
-当集群规模继续超出单一超节点的边界，跨节点流量才下沉到 Scale-Out 参数面网络。NVIDIA 集群通常经由 ConnectX-7/8 网卡接入 InfiniBand 或 RoCEv2 多轨交换网络，并借助 GPUDirect RDMA 与 IBGDA（InfiniBand GPUDirect Async，GPU 侧直接发射队列）让设备 Kernel 绕过 CPU 直接驱动网卡；昇腾集群则依靠片上集成的多轨 RoCE 端口走 `DEVICE_RDMA` 或 `DEVICE_URMA` 协议栈实现跨机点对点传输。
+华为昇腾在 Ascend 910B（A2）上利用全连接 HCCS（Huawei Cache Coherence System，华为缓存一致性系统）环与 SDMA 零拷贝直写实现机内对等互联。到了 Ascend 910C（A3）与 CloudMatrix 384 超节点，系统通过 `Unified Bus（灵衢统一总线）` 把百卡级 NPU 纳入统一内存编址池，将高带宽内存语义扩到整机柜。
 
-由于跨机 Scale-Out 网络的单卡带宽通常比 Scale-Up 总线低一个数量级，且额外引入交换机转发跳数 $\alpha$，工程上几乎总是将每层同步两次的 TP（Tensor Parallelism，张量并行）严格限制在 Scale-Up 域内，只将低频的 DP（Data Parallelism，数据并行）、点对点 KV Cache 迁移或 EP（Expert Parallelism，专家并行）推向 Scale-Out 网络。
+当集群超出单超节点边界，跨机流量下沉至 Scale-Out 网络。NVIDIA 经 ConnectX-7/8 网卡接入 InfiniBand 或 RoCEv2，利用 GPUDirect RDMA 跨机传输。启用 IBGDA（InfiniBand GPUDirect Async，GPU 侧直接发射队列）后，设备 Kernel 可绕过 CPU 直驱网卡。昇腾依托片上多轨 RoCE 端口走 `DEVICE_RDMA` 或 `DEVICE_URMA` 协议栈。
+
+跨机 Scale-Out 网络的单卡带宽通常比 Scale-Up 总线低一个数量级，还会额外引入交换机转发跳数 $\alpha$。因此每层同步两次的 TP（Tensor Parallelism，张量并行）通常限定在 Scale-Up 域内。跨机 Scale-Out 网络则主要承载低频的 DP（Data Parallelism，数据并行）、KV Cache 点对点迁移或 EP（Expert Parallelism，专家并行）。
 
 ## 运行时通信分发策略
 
@@ -75,7 +79,7 @@ flowchart TD
     G1 --> G2["对称显存与快速归约"]
     G2 --> G3["CustomAllreduce 直写"]
     G3 --> G4["PyNccl 或分布式兜底"]
-    A1 --> A2["量化归约 (仅 A2 大消息)"]
+    A1 --> A2["量化归约（仅 A2 大消息）"]
     A2 --> A3["PyHccl 与 AIV 核展开"]
 ```
 
@@ -102,15 +106,15 @@ if symm_mem_comm is not None and symm_mem_comm.should_use_symm_mem(input_):
 return pynccl_comm.all_reduce(input_)
 ```
 
-在 Decode 阶段的小消息场景中，常规 NCCL Kernel 启动与多卡控制面协调会带来数十微秒的固定开销。为此，框架优先探测并走入 NCCL 对称显存（`SymmMem`）或 `CustomAllreduce` 通路，利用 NVLink 点对点内存映射直接在设备 Kernel 中读写对端缓冲区，绕开标准通信调度；只有当消息增大到带宽主导区间或超出对等共享域时，才按顺序回落到 `PyNcclCommunicator`。
+在 Decode 小消息下，常规 NCCL（NVIDIA Collective Communications Library，NVIDIA 集合通信库）通信延迟较高。它的 Kernel 启动与多卡控制面协调本身就要消耗数十微秒。框架因此优先探测对称显存 `SymmMem` 或 `CustomAllreduce` 通路，通过 NVLink 在设备 Kernel 中直写对端缓冲区，绕开标准调度。当消息增大到带宽主导区或超出对等共享域时，再回落到 `PyNcclCommunicator`。
 
 ### 华为昇腾 NPU：分代量化归约与向量核展开
 
 与 CUDA 生态不同，`vllm-ascend` 的 `NPUCommunicator` 不使用 `CustomAllreduce` 或 PCIe IPC 通道，在初始化阶段便显式将其置空[^vllm-npu-ar]。针对昇腾硬件的带宽特征与图执行机制，它的通信优化主要落在两处工程策略上。
 
-在大消息归约场景下，`vllm-ascend` 为 Ascend A2（910B）提供了可选的 INT8 量化归约模块 `QuantizedAllReduce`[^vllm-ascend-qar]：先计算各通道全局绝对最大值（`amax`），把 BF16 张量量化为 INT8 完成 `AllReduce` 后再反量化还原，使链路传输字节数减半。为保证各卡整型累加后不溢出 INT8 正向范围 127，每卡量化上限按并行卡数严格取整，即 `max_q = 127 // world_size`（例如 8 卡时 `max_q = 15`，$8 \times 15 = 120 \le 127$）。
+针对大消息归约，`vllm-ascend` 为 Ascend A2（910B）提供了可选的 INT8 量化归约模块 `QuantizedAllReduce`[^vllm-ascend-qar]。它先统计各通道全局绝对最大值 `amax`，把 BF16 张量量化为 INT8 完成 `AllReduce` 后再反量化还原，使链路传输字节数减半。为避免各卡整型累加溢出 INT8 上限 127，每卡量化上限按卡数向下取整，即 `max_q = 127 // world_size`（例如 8 卡时 `max_q = 15`，$8 \times 15 = 120 \le 127$）。
 
-然而这一流程每次都会引入 `amax` 全局归约与量化、反量化算子约 0.5 ms 的固定开销：在 910B 上只有单个载荷超过约 20–24 MiB 盈亏平衡点（默认阈值设为 32 MiB）时才净赚时间；到了 Ascend A3（910C），上游测得其 HCCS BF16 带宽提升至 A2 的约 2.6 倍，数据传输省下的时间在所有测试载荷下都不足以抵消固定的量化开销，源码因此直接将允许设备限定为 A2 并拒绝在 910C 上启用该路径：
+不过量化流程每次会引入 `amax` 全局归约与量化、反量化共约 0.5 ms 的固定开销，在 910B 上只有单个载荷超过 20–24 MiB 盈亏平衡点（默认阈值 32 MiB）时才净赚时间。到了 Ascend A3（910C），HCCS 的 BF16 带宽提升至 A2 的约 2.6 倍，省下的传输时间不再足以抵消量化开销，源码因此将允许设备限定为 A2 并关闭 910C 的该路径：
 
 ```python
 # 源码节选：vllm_ascend/distributed/device_communicators/quantized_all_reduce.py (L75-103)
@@ -122,11 +126,11 @@ self.supported = self.world_size <= _MAX_VALID_WORLD_SIZE
 self.max_q = 127 // self.world_size if self.supported else 0
 ```
 
-另一方面，当推理服务启用 ACLGraph 等静态图模式捕获时，常规依赖 AICPU 协管的集合通信调度容易受制于流资源与动态图边界。因此，图模式配置校验与启动脚本会在开启图捕获时自动或推荐设置环境变量 `HCCL_OP_EXPANSION_MODE="AIV"`[^vllm-ascend-aiv]，将 HCCL 集合通信算子直接展开到 AI Vector（AIV）核上以纯设备算子序列执行，从而扩大静态图捕获覆盖范围并降低主机侧调度抖动。
+另一方面，推理服务启用 ACLGraph 等静态图模式时，依赖 AICPU 协管的集合通信调度容易受制于流资源与动态图边界。开启图捕获后，配置校验与启动脚本会设置环境变量 `HCCL_OP_EXPANSION_MODE="AIV"`[^vllm-ascend-aiv]。该模式让 HCCL（Huawei Collective Communication Library，华为集合通信库）将集合通信展开为 AI Vector（AIV）核上的纯设备算子。这既扩大了静态图捕获范围，也压低了主机侧调度抖动。
 
 ## 环形分片流转与时延拐点验证
 
-下面的自包含 NumPy 脚本首先复现图 1 中的 4 卡分片接力过程并验证全局求和等价性，随后按 $\alpha\text{-}\beta$ 模型对比 8 卡单机在 Decode（16 KB）与 Prefill（64 MB）两种载荷下的 Ring 与 Tree 时延拐点：
+下面的 NumPy 脚本先复现图 1 的 4 卡分片接力，验证环形归约的全局求和等价性。随后按 $\alpha\text{-}\beta$ 模型，对比 8 卡单机在 Decode（16 KB）与 Prefill（64 MB）两种载荷下的 Ring 与 Tree 时延拐点：
 
 ```python
 import numpy as np
@@ -173,9 +177,9 @@ Decode_16KB: ring=70.07us, tree=30.25us
 Prefill_64MB: ring=363.60us, tree=1036.63us
 ```
 
-从这组计算结果可以看到，在 8 卡 400 GB/s 互连与 5 μs 单跳延迟条件下，16 KB 小消息走 Tree（30.25 μs）比走 Ring（70.07 μs）快一倍以上；而当载荷达到 64 MB 时，Ring（363.60 μs）反超 Tree（1036.63 μs）近 3 倍。
+在 8 卡 400 GB/s 互连与 5 μs 单跳延迟下，16 KB 小消息走 Tree 只需 30.25 μs，比 Ring 的 70.07 μs 快一倍以上。而当载荷来到 64 MB 时，Ring 用时 363.60 μs，反超 Tree 的 1036.63 μs 近 3 倍。
 
-不过底层通信原语只能压低单次传输的固定延迟与带宽系数；如果并行切分方式本身把高频归约放到了跨机网络上，总耗时依然会迅速恶化。下一章我们转向计算图内部，拆解张量、序列与专家并行如何分配通信频次，以及预填充-解码分离架构如何解耦异步 KV 传输：[02 张量、序列、专家并行与 PD 分离架构](../02-parallelism-and-disaggregation/)。
+底层通信原语只能压低单次传输的固定延迟与带宽系数，若并行切分把高频归约放到了跨机网络上，总耗时依然会迅速恶化。下一章我们转向计算图内部，分析张量、序列与专家并行如何决定通信频次，以及阶段分离架构如何异步搬运 KV 缓存：[02 张量、序列、专家并行与 PD 分离架构](../02-parallelism-and-disaggregation/)。
 
 [^vllm-cuda-ar]: 见 `vllm@bb23c0a8`：`vllm/distributed/device_communicators/cuda_communicator.py` L389–473（`CudaCommunicator.all_reduce` 依次探测 NCCL SymmMem、QuickAR、FlashInfer IPC、CustomAllreduce 与 PyNccl）。
 

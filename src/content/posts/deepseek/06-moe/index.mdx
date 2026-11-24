@@ -1,6 +1,6 @@
 ---
-title: '06 DeepSeekMoE 细粒度混合专家：计算稀疏、无损均衡与 EP 通信'
-description: '拆解细粒度专家切分与共享专家隔离、DeepSeek-V3 Sigmoid 无辅助损失偏置路由、Grouped GEMM 块对齐，以及 DeepEP 与昇腾 AscendMoERunner 的 EP 通信调度。'
+title: '06 DeepSeekMoE：细粒度专家与无损均衡'
+description: '稠密 FFN 扩到 671B 会让单 token 权重访存同步放大十倍。本文讲解 DeepSeekMoE 的细粒度切分与共享隔离、无辅助损失偏置路由、块对齐计算，并对照 DeepEP 与昇腾执行栈。'
 series: { id: deepseek, order: 7 }
 pubDate: 2026-11-09
 tags: [DeepSeek, MoE, Roofline, Quantization, vLLM, Ascend]
@@ -10,21 +10,29 @@ toc: true
 
 import MoeRoutingAlignExplainer from '../../../../explainers/deepseek/MoeRoutingAlignExplainer';
 
-把稠密 Transformer 的 FFN（Feed-Forward Network，前馈网络）从 70B 放大到 671B，推理每个 token 所需的浮点计算量和权重访存带宽会同步放大近十倍，因为稠密层里所有权重都必须针对每个 token 完整读入芯片 SRAM 计算一遍。
+把稠密 Transformer 的 FFN（Feed-Forward Network，前馈网络）从 70B 放大到 671B，推理每个 token 的算力和权重访存会同步放大近十倍。因为稠密层里所有权重都必须针对每个 token 完整读入片上 SRAM 计算一遍。
 
-**MoE（Mixture-of-Experts，混合专家架构）**用稀疏激活打破这笔线性账：在保持 671B 总参数量的前提下，每次前向推理只由轻量路由器挑出极少数专家参与计算。以 DeepSeek-V3 为例[^v3-paper]，全模型共 61 层，除前 3 层保持稠密 FFN 外，其余 58 层均采用 MoE，每个 token 仅触发 1 个常驻共享专家加 256 个路由专家中的 8 个——单 MoE 层激活专家约占该层专家数的 3.5%（$9/257$），叠加共享底座后全模型激活参数约 37B，约占总参数的 5.5%（$37/671$）。
+**MoE（Mixture-of-Experts，混合专家架构）**用稀疏激活打破这笔线性开销：在保持 671B 总参数量的前提下，每次前向只由轻量路由器挑出少数专家参与计算。
+
+以 DeepSeek-V3 为例[^v3-paper]，全模型共 61 层，除前 3 层保持稠密 FFN 外，其余 58 层均采用 MoE，每个 token 仅触发 1 个常驻共享专家和 256 个路由专家中的 8 个。单 MoE 层激活专家约占 3.5%（$9/257$），叠加共享底座后全模型激活参数约 37B，占总参数的 5.5%（$37/671$）。
 
 ## 细粒度切分与无辅助损失偏置路由
 
-早期 Mixtral 8x7B 式的粗粒度 Top-2 路由（共 8 个大专家、每次选 2 个）只有 $\binom{8}{2} = 28$ 种组合。不同上下文都要用到的「语法主谓搭配」等共性知识，只能分散塞进多个大专家里各自学一遍，带来严重的参数冗余。
+早期 Mixtral 8x7B 式的粗粒度 Top-2 路由（共 8 个大专家、每次选 2 个）只有 $\binom{8}{2} = 28$ 种组合。不同上下文都要用到的“语法主谓搭配”等共性知识，只能分散塞进多个大专家里各自学一遍，带来严重的参数冗余。
 
-DeepSeekMoE[^deepseekmoe] 沿两条维度重构了专家布局：一方面把每个大专家的中间隐藏维切细至原来的 $1/4$ 或 $1/8$，把原本 $N$ 个专家拆成 $mN$ 个细粒度路由专家并等比例选出 $mK$ 个；另一方面单独划出 $N_s = 1$ 个常驻 **Shared Expert（共享专家）**，无需路由即可承接跨领域共性知识，让路由专家专心拟合细分语义。在 DeepSeek-V3 中，每层共设 256 个细粒度路由专家并均分为 8 个节点组（每组 32 个），单 token 先保留组内最高 2 项分数之和最大的 Top-4 组，将跨节点分发通信限定在最多 4 个节点内，再从保留组中挑出 Top-8 路由专家。
+DeepSeekMoE[^deepseekmoe] 从两个方向重构了专家布局。一方面把大专家的中间隐藏维切细至原来的 $1/4$ 或 $1/8$，将 $N$ 个专家拆成 $mN$ 个细粒度路由专家并等比例选出 $mK$ 个。另一方面单独划出 $N_s = 1$ 个常驻 **Shared Expert（共享专家）**，无需路由即可承接跨领域共性知识，让路由专家专心拟合细分语义。
 
-路由打分与均衡机制也从 Softmax 加辅助损失改为「组限 Sigmoid Top-K + 无辅助损失偏置」。用独立 Sigmoid 计算原始亲和度 $s_{i,t} = \sigma(\mathbf{u}_t^\top \mathbf{e}_i)$，可以避免 Softmax 在 256 个离散专家之间互相挤压梯度；随后仅在挑选 Top-$K$ 专家下标时叠加动态偏置 $s_{i,t} + b_i$ 以抑制冷热倾斜，而一旦确定选中专家集合，回表乘入输出的权重仍取**未加偏置**的原始分数 $s_{i,t}$ 再做归一化。每批结束后统计各专家实际命中数 $c_i$ 与批均值 $\bar{c}$，按免梯度符号规则 $\Delta b_i = \gamma \operatorname{sign}(\bar{c} - c_i)$ 更新偏置（过载专家下调、冷门专家上调，训练预热期取 $\gamma = 0.001$），使负载均衡与交叉熵主任务梯度完全隔离[^v3-paper]。
+在 DeepSeek-V3 中，每层共设 256 个细粒度路由专家并均分为 8 个节点组，每组 32 个。单 token 先保留组内最高 2 项分数之和最大的 Top-4 组，将跨节点分发通信限定在最多 4 个节点内，再从保留组中挑出 Top-8 路由专家。
 
-跨卡收集好路由 token 后，执行计算前还必须解决矩阵乘 Kernel 的硬件对齐限制。无论是 NVIDIA DeepGEMM、Triton 还是昇腾 CANN `npu_grouped_matmul`，都要求每个专家分得的连续输入行数对齐到固定的硬件 `Tile`（分块）尺寸（例如 `block_size` 为 16 或 64）。因此，推理引擎会调用 `moe_align_block_size` 按专家编号重排 token 行索引，并在每个活跃专家的尾部用哨兵下标 $-1$ 补齐残块，计算 Kernel 遇到 $-1$ 槽位时直接跳过。
+路由打分与均衡也从 Softmax 加辅助损失改为“组限 Sigmoid Top-K + 无辅助损失偏置”。用独立 Sigmoid 计算原始亲和度 $s_{i,t} = \sigma(\mathbf{u}_t^\top \mathbf{e}_i)$，可以避免 Softmax 在 256 个离散专家之间互相挤压梯度。
 
-为了把这一整套路由更新和块填充串在一起，我们用图 1 对一个包含 4 个 token、6 个专家和块大小 4 的微型批次做六步交互推演，点击步进即可观察从组限拥堵、偏置选路分离、两轮符号反馈收敛到 $-1$ 对齐填充的全过程。
+随后仅在挑选 Top-$K$ 下标时叠加动态偏置 $s_{i,t} + b_i$ 以抑制冷热倾斜；一旦确定选中集合，回表乘入输出的权重仍取**未加偏置**的原始分数 $s_{i,t}$ 再归一化。每批结束后统计各专家命中数 $c_i$ 与批均值 $\bar{c}$，按免梯度符号规则 $\Delta b_i = \gamma \operatorname{sign}(\bar{c} - c_i)$ 更新偏置：过载专家下调、冷门专家上调（预热期 $\gamma = 0.001$），使负载均衡与主任务梯度彼此隔离[^v3-paper]。
+
+跨卡收集好路由 token 后，执行计算前还必须解决矩阵乘 Kernel 的硬件对齐限制。NVIDIA DeepGEMM、Triton 与昇腾 `npu_grouped_matmul` 都要求每个专家的输入行数对齐到硬件 `Tile`（分块）尺寸。常见 `block_size` 为 16 或 64。
+
+因此，推理引擎会调用 `moe_align_block_size` 按专家编号重排 token 行索引，并在每个活跃专家尾部用哨兵下标 $-1$ 补齐残块，计算 Kernel 遇到 $-1$ 槽位时直接跳过。
+
+为了把这一套路由更新和块填充串起来，图 1 对一个包含 4 个 token、6 个专家和块大小 4 的微型批次做了六步交互推演。点击步进即可观察组限拥堵、偏置分离、两轮符号反馈收敛到 $-1$ 对齐填充的全过程。
 
 <MoeRoutingAlignExplainer
   client:visible
@@ -33,7 +41,7 @@ DeepSeekMoE[^deepseekmoe] 沿两条维度重构了专家布局：一方面把每
 
 ## 细粒度组合、共享隔离与 EP 跨卡流水
 
-在总参数与激活 FLOPs 严格不变的约束下，把 $N$ 个专家切分为 $mN$ 个细粒度专家并选出 $mK$ 个，有效组合空间从 $\binom{N}{K}$ 跃升至 $\binom{mN}{mK}$。DeepSeek-V3 采用 256 选 8 方案，共有 $\binom{256}{8} \approx 4.10 \times 10^{14}$ 种组合[^deepseekmoe][^v3-paper]。令常驻共享专家数为 $N_s$，输入隐藏状态 $\mathbf{u}_t$ 经过 MoE 层的输出写为：
+在总参数与激活 FLOPs 不变的约束下，把 $N$ 个专家切分为 $mN$ 个细粒度专家并选出 $mK$ 个，有效组合空间从 $\binom{N}{K}$ 跃升至 $\binom{mN}{mK}$。DeepSeek-V3 采用 256 选 8 方案，共有 $\binom{256}{8} \approx 4.10 \times 10^{14}$ 种组合[^deepseekmoe][^v3-paper]。令常驻共享专家数为 $N_s$，输入隐藏状态 $\mathbf{u}_t$ 经过 MoE 层的输出写为：
 
 $$
 \begin{aligned}
@@ -42,17 +50,19 @@ $$
 \end{aligned}
 $$
 
-其中 $\mathcal{T}_t = \operatorname{TopK}(\{ s_{j,t} + b_j \})$ 受节点组掩码约束，仅用偏置挑选下标；每个选中专家的门控缩放权重 $g_{j,t}$ 则严格使用无偏原始亲和度 $s_{j,t} = \sigma(\mathbf{u}_t^\top \mathbf{e}_j)$ 归一化并乘上缩放系数 $\eta$（即配置项 `routed_scaling_factor`）：
+其中 $\mathcal{T}_t = \operatorname{TopK}(\{ s_{j,t} + b_j \})$ 受节点组掩码约束，仅用偏置挑选下标；每个选中专家的门控缩放权重 $g_{j,t}$ 则使用无偏原始亲和度 $s_{j,t} = \sigma(\mathbf{u}_t^\top \mathbf{e}_j)$ 归一化并乘上缩放系数 $\eta$（即配置项 `routed_scaling_factor`）：
 
 $$
 g_{j,t} = \eta \cdot \frac{s_{j,t}}{\sum_{k \in \mathcal{T}_t} s_{k,t}}
 $$
 
-工程实现上，常驻共享专家不参与动态路由和跨卡分发。如图 2 所示，无论是在 NVIDIA GPU 还是华为昇腾 NPU 上，推理引擎都会趁路由专家发起跨卡 `All-to-All` Dispatch 的通信窗口，在辅助流上并发计算共享专家的 Gate-Up 投影，把一部分通信等待掩盖在本地矩阵乘之下。
+工程实现上，常驻共享专家不参与动态路由和跨卡分发。如图 2 所示，无论在 GPU 还是昇腾 NPU 上，引擎都会趁路由专家发起 `All-to-All` Dispatch 时并发算完共享专家的 Gate-Up 投影，将部分通信延迟藏进本地计算。
 
 ![1 Shared + 256 Fine-Grained Experts 路由架构与双硬件执行栈](./diagrams/06-deepseekmoe-arch.drawio '图 2：1 Shared + 256 Fine-Grained Experts 路由架构与 GPU DeepEP / 昇腾 AscendMoERunner 执行栈')
 
-在 EP（Expert Parallelism，专家并行）集群里，单个 token 的隐状态最初分散在各自的 DP（Data Parallelism，数据并行）或 SP（Sequence Parallelism，序列并行）卡上。如图 3 所示，系统先经 `Dispatch` 集合通信把 token 隐状态发往目标专家所在卡，完成 `moe_align_block_size` 填充对齐与 Grouped GEMM（分组矩阵乘）后，再经对称的 `Combine` 集合通信加权归位，与本地算完的共享专家分支相加输出。
+在 **EP（Expert Parallelism，专家并行）**集群里，上游注意力常按 DP 或 SP 切分批内序列，token 隐状态因此分散在不同计算卡上。
+
+如图 3 所示，系统先经 `Dispatch` 集合通信把隐状态发往目标专家所在卡，完成 `moe_align_block_size` 填充对齐与 Grouped GEMM（分组矩阵乘）。计算后再经对称的 `Combine` 集合通信加权归位，与本地算完的共享分支相加输出。
 
 ```mermaid caption="图 3：EP 跨卡通信 Dispatch、块对齐计算与 Combine 重排流水线"
 flowchart TD
@@ -66,9 +76,9 @@ flowchart TD
   COMB --> SUM
 ```
 
-## PyTorch 参考实现与 GPU / 昇腾源码对照
+## PyTorch 实现与双硬件源码对照
 
-下面的独立 PyTorch 参考实现不依赖外部权重，`AuxLossFreeGroupedRouter` 复现了组限 Sigmoid 选路、无偏原始权重归一化和免梯度符号更新，`moe_align_block_size` 复现了按专家排序并用哨兵 $-1$ 补齐残块的过程，末尾断言用于核对权重归一性与块对齐不变量。
+下面的独立 PyTorch 实现复现了 `AuxLossFreeGroupedRouter` 的组限 Sigmoid 选路、无偏权重归一化与免梯度符号更新。代码还包含 `moe_align_block_size` 的排序与 $-1$ 哨兵补齐逻辑，末尾断言用于核对权重归一性与块对齐不变量。
 
 ```python
 import torch
@@ -76,59 +86,34 @@ import torch.nn as nn
 
 
 class AuxLossFreeGroupedRouter(nn.Module):
-    """DeepSeek-V3 组限无辅损负载均衡路由器（对应 vLLM grouped_topk）。
+    """DeepSeek-V3 组限无辅损负载均衡路由器（对应 vLLM grouped_topk）。"""
 
-    输入：
-        logits: [T, E]（各 token 对 E 个路由专家的原始打分）
-    输出：
-        (topk_ids [T, K], topk_weights [T, K])
-    """
-
-    def __init__(
-        self,
-        num_experts: int = 256,
-        num_groups: int = 8,
-        topk_group: int = 4,
-        topk: int = 8,
-    ):
+    def __init__(self, num_experts: int = 256, num_groups: int = 8, topk_group: int = 4, topk: int = 8):
         super().__init__()
         self.num_experts, self.num_groups = num_experts, num_groups
         self.topk_group, self.topk = topk_group, topk
-        # 动态均衡偏置不参与反向传播梯度更新，注册为持久化 buffer
         self.register_buffer("e_score_correction_bias", torch.zeros(num_experts))
 
     def forward(self, logits: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
         T, E = logits.shape
-        # 1. Sigmoid 独立亲和度打分（避免 Softmax 在 256 个专家上互相挤压梯度）
         original_scores = torch.sigmoid(logits)
-        # 2. 仅在选路阶段叠加修正偏置抑制过载热点，保留 original_scores 用于最终加权
+        # 仅在选路阶段叠加偏置抑制过载热点，保留 original_scores 用于最终加权
         scores = original_scores + self.e_score_correction_bias.unsqueeze(0)
-
-        # 3. Node-Limited 组筛选：取每组 Top-2 得分之和选 Top-M 组，限定跨节点范围
         grouped = scores.view(T, self.num_groups, E // self.num_groups)
-        group_scores = grouped.topk(2, dim=-1).values.sum(dim=-1)
-        top_groups = group_scores.topk(self.topk_group, dim=-1).indices
-        group_mask = torch.zeros_like(group_scores, dtype=torch.bool)
-        group_mask.scatter_(1, top_groups, True)
-        score_mask = group_mask.unsqueeze(-1).expand_as(grouped).reshape(T, E)
-        tmp_scores = scores.masked_fill(~score_mask, float("-inf"))
-
-        # 4. 选出 Top-K 专家下标，再回表 gather 未加偏置的原始亲和度做权重归一化
+        top_groups = grouped.topk(2, dim=-1).values.sum(dim=-1).topk(self.topk_group, dim=-1).indices
+        group_mask = torch.zeros(T, self.num_groups, dtype=torch.bool, device=logits.device).scatter_(1, top_groups, True)
+        tmp_scores = scores.masked_fill(~group_mask.unsqueeze(-1).expand_as(grouped).reshape(T, E), float("-inf"))
         topk_ids = torch.topk(tmp_scores, k=self.topk, dim=-1, sorted=False).indices
         raw_w = original_scores.gather(1, topk_ids)
-        topk_weights = raw_w / raw_w.sum(dim=-1, keepdim=True)
-        return topk_ids, topk_weights
+        return topk_ids, raw_w / raw_w.sum(dim=-1, keepdim=True)
 
     @torch.no_grad()
     def step_bias(self, topk_ids: torch.Tensor, gamma: float = 0.04) -> None:
-        """免梯度符号更新：Δb_i = γ * sign(c̄ - c_i)，过载专家降偏置、冷门专家升偏置。"""
         counts = torch.bincount(topk_ids.reshape(-1), minlength=self.num_experts).float()
         self.e_score_correction_bias.add_(gamma * torch.sign(counts.mean() - counts))
 
 
-def moe_align_block_size(
-    topk_ids: torch.Tensor, num_experts: int, block_size: int = 16
-) -> torch.Tensor:
+def moe_align_block_size(topk_ids: torch.Tensor, num_experts: int, block_size: int = 16) -> torch.Tensor:
     """按专家编号重排行索引并用 -1 补齐至 block_size 整数倍，对齐 Grouped GEMM。"""
     flat_e = topk_ids.reshape(-1)
     sorted_idx = torch.argsort(flat_e, stable=True)
@@ -138,10 +123,8 @@ def moe_align_block_size(
         pos = torch.nonzero(sorted_e == e_id, as_tuple=True)[0]
         if pos.numel() == 0:
             continue
-        # 仅对有命中的活跃专家尾部补 -1 哨兵槽位，后续计算 Kernel 遇 -1 自动跳过
         rem = (-pos.numel()) % block_size
-        pad = torch.full((rem,), -1, dtype=torch.long)
-        padded_tokens.append(torch.cat([sorted_idx[pos], pad]))
+        padded_tokens.append(torch.cat([sorted_idx[pos], torch.full((rem,), -1, dtype=torch.long)]))
     return torch.cat(padded_tokens)
 
 
@@ -156,13 +139,12 @@ if __name__ == "__main__":
         router.step_bias(topk_ids)
         assert not torch.all(router.e_score_correction_bias == 0)
         aligned_tokens = moe_align_block_size(topk_ids, E, block_size=block_size)
-        aligned_slots = aligned_tokens.numel()
-        assert aligned_slots % block_size == 0
+        assert aligned_tokens.numel() % block_size == 0
 ```
 
 ### NVIDIA GPU 路由与通信实现
 
-在 `vLLM` 上游实现中，组限无辅助损失路由器通过 `grouped_topk` 入口分发[^vllm-router]：在 CUDA 平台启用融合算子时直接调用 `fused_grouped_topk`，而在通用 PyTorch 回退路径上，代码明确保留了「加 `e_score_correction_bias` 选下标、用 `original_scores` 采集权重」的双轨逻辑：
+在 `vLLM` 上游实现中，组限无辅助损失路由器通过 `grouped_topk` 入口分发[^vllm-router]。CUDA 平台启用融合算子时直接调用 `fused_grouped_topk`。通用 PyTorch 回退路径则保留了“加 `e_score_correction_bias` 选下标、用 `original_scores` 采集权重”的双轨逻辑：
 
 ```python
 # vllm/model_executor/layers/fused_moe/router/grouped_topk_router.py:134-172
@@ -180,11 +162,13 @@ if e_score_correction_bias is not None:
     topk_weights = original_scores.gather(1, topk_ids)
 ```
 
-选路结束后，`moe_align_block_size` 按块尺寸整理每个专家的槽位[^vllm-align]，并借助 `expert_map` 将非本卡负责的专家块号置为 $-1$ 跳过，避免跨卡冗余计算。EP 通信侧由 `DeepEPLLPrepareAndFinalize` 对接 `DeepEP` 低时延异步缓冲区[^vllm-deepep]，把 Dispatch 返回的上下文句柄缓存在 `handles` 中，供最后的 Combine 阶段将算完的专家输出按原顺序归位；新版 `DeepEP` 则进一步把高吞吐与低时延接口统一进 `EPBuffer`[^deepep-ep]。
+选路结束后，`moe_align_block_size` 按块尺寸整理每个专家的槽位[^vllm-align]，并借助 `expert_map` 将非本卡负责的专家块号置为 $-1$ 跳过，避免跨卡冗余计算。
+
+EP 通信侧由 `DeepEPLLPrepareAndFinalize` 对接 `DeepEP` 低时延异步缓冲区[^vllm-deepep]。它把 Dispatch 返回的上下文句柄缓存在 `handles` 中，供 Combine 阶段将专家输出按原顺序归位。新版 `DeepEP` 则把高吞吐与低时延接口统一进 `EPBuffer`[^deepep-ep]。
 
 ### 华为昇腾 NPU 执行与调度实现
 
-在 `vllm-ascend` 中，昇腾已将早期的 `AscendFusedMoE` 重构为统一的 `AscendMoERunner`[^ascend-moe]。为了掩盖路由器筛选和跨卡分发通信造成的气泡，`AscendMoERunner` 在路由专家尚未下发 Top-K 与分发通信之前，先经辅助流异步提交共享专家的 Gate-Up 计算，借助硬件事件同步把共享分支算进通信延迟窗口：
+在 `vllm-ascend` 中，昇腾已将早期的 `AscendFusedMoE` 重构为统一的 `AscendMoERunner`[^ascend-moe]。为了掩盖路由器和分发通信的气泡，`AscendMoERunner` 在路由专家尚未下发 Top-K 与分发前，先经辅助流异步提交共享专家的 Gate-Up 计算，借助硬件事件把共享分支藏进通信窗口：
 
 ```python
 # vllm_ascend/ops/fused_moe/fused_moe.py:526-539 (vllm-ascend@3649b8ff)
@@ -202,13 +186,13 @@ submitted_gate_up = (
 )
 ```
 
-在 EP 通信与本地分组矩阵乘阶段，昇腾通过 `TokenDispatcherWithMC2` 调用融合通信与量化的 `npu_moe_distribute_dispatch_v2` 完成跨卡派发[^ascend-mc2]（大批量场景改走 `AllGather` 配合 `npu_moe_init_routing_v2` 重排输入），随后在 `AscendUnquantizedFusedMoEMethod` 中调 `npu_grouped_matmul` 执行本地分组矩阵乘[^ascend-gmm]。
+在 EP 通信阶段，昇腾通过 `TokenDispatcherWithMC2` 调用 `npu_moe_distribute_dispatch_v2` 完成量化融合派发[^ascend-mc2]。遇到大批量场景时，则改走 `AllGather` 配合 `npu_moe_init_routing_v2` 重排输入。随后在 `AscendUnquantizedFusedMoEMethod` 中调用 `npu_grouped_matmul` 执行本地分组矩阵乘[^ascend-gmm]。
 
-把 256 个细粒度专家接入静态图模式时，系统还要直面两类现实约束。其一，Decode 小批量场景下单卡可能只收到寥寥几个 token 却要分散给数十个活跃专家，`moe_align_block_size` 按硬件块尺寸 16 或 64 向上取整后，填充的 $-1$ 空槽位占比往往过半，直接拉低矩阵乘的算术强度。
+把 256 个细粒度专家接入静态图模式时，系统还要面对两类现实约束。其一，Decode 小批量下单卡可能只收到寥寥几个 token，却要分散给数十个活跃专家；按块尺寸 16 或 64 向上取整后，填充的 $-1$ 空槽位占比往往过半，直接拉低矩阵乘算术强度。
 
-其二，无辅助损失偏置只管长期批间均值，遇到单批密集的代码或数学请求仍然会出现局部热点，必须借助 EPLB（Expert Parallelism Load Balancer，专家并行负载均衡）动态复制热专家来削峰；同时无论是 `DeepEP` 还是 `TokenDispatcherWithMC2`，都必须按单步最大 token 容量提前固定对称通信缓冲区才能捕获进 CUDA Graph 或 ACLGraph。
+其二，无辅助损失偏置只管长期批间均值，遇到单批密集的代码或数学请求仍会出现局部热点。这需要借助 EPLB（Expert Parallelism Load Balancer，专家并行负载均衡）动态复制热专家削峰。同时 `DeepEP` 与 `TokenDispatcherWithMC2` 都必须按单步最大 token 容量预分配对称通信缓冲区，才能捕获进 CUDA Graph 或 ACLGraph。
 
-细粒度 MoE 解决了 FFN 的计算稀疏，但那些只查固定搭配、无需上下文推理的静态词组仍然在消耗神经网络矩阵算力。下一篇 [07 Engram 条件记忆](../07-engram/) 将介绍另一条正交的存储稀疏轴，把静态局部知识外包给主机内存 $O(1)$ 查表。
+细粒度 MoE 解决了 FFN 的计算稀疏，但无需上下文推理的固定词组仍在消耗矩阵算力。下一篇 [07 Engram 条件记忆：用静态查表替 MoE 减负](../07-engram/) 将介绍另一条互补路线，把静态局部知识外包给主机内存 $O(1)$ 查表。
 
 [^v3-paper]: DeepSeek-AI, _DeepSeek-V3 Technical Report_, [arXiv:2412.19437](https://arxiv.org/abs/2412.19437)（2024），§2.1 阐述 61 层架构（前 3 层稠密、58 层 MoE）、256 细粒度专家、37B/671B 激活比与无辅助损失偏置负载均衡，§4.2 说明 $\gamma = 0.001$ 更新率。
 

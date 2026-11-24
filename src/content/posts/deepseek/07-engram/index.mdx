@@ -1,6 +1,6 @@
 ---
-title: '07 Engram 条件记忆：在 MoE 之外再开一条 O(1) 存储稀疏的轴'
-description: 'MoE 稀疏的是计算，Engram 稀疏的是存储——确定性多头质数哈希 O(1) 查表、上下文门控融合、U 型稀疏预算分配律，以及 vLLM 与 vllm-ascend 的生产落地对照。'
+title: '07 Engram 条件记忆：用静态查表替 MoE 减负'
+description: 'Transformer 前几层常把矩阵算力耗在拼装固定词组上。本文拆解 Engram 的静态 N-gram 哈希查表、上下文门控消歧与稀疏分配律，并对照 vLLM 和昇腾的预取实现。'
 series: { id: deepseek, order: 8 }
 pubDate: 2026-11-10
 featured: true
@@ -15,25 +15,24 @@ import paperFig4 from './images/paper-fig4-logitlens-cka.png';
 import paperFig5 from './images/paper-fig5-arch-ablation.svg';
 import paperFig7 from './images/paper-fig7-gating-viz.svg';
 
-[06 DeepSeekMoE 细粒度混合专家](../06-moe/)把单 MoE 层的激活专家压缩到约 3.5%（全模型激活参数约 5.5%）。但它的稀疏有一个隐含前提：未激活的专家仍然是神经网络矩阵，仍需驻留显存，并要等上一层算出隐藏状态才能动态路由。
+[06 DeepSeekMoE：细粒度专家与无损均衡](../06-moe/)把单 MoE 层的激活专家压缩到约 3.5%（全模型激活参数约 5.5%）。但它的稀疏有一个隐含前提：未激活的专家仍然是神经网络矩阵，仍需驻留显存，并要等上一层算出隐藏状态才能动态路由。
 
-Engram[^engram-paper]沿着正交方向提出了另一个问题：语言里大量局部固定搭配并不需要动态推理，能否直接改用一张独立静态表，以 $O(1)$ 复杂度查表取出？
+Engram[^engram-paper]换了一个思路：语言里大量局部固定搭配并不需要动态推理，直接改用独立静态表以 $O(1)$ 复杂度查出特征，就能省下浅层矩阵计算。
 
-## 两句同尾输入的端到端查表与门控消歧
+## 同一个“首”字，查表如何不串味
 
-读到「北京是中国的首」，下一个词大概率是「都」；读到 `"Diana, Princess of Wales"`，这是一个固定历史人物实体。这类局部组合不需要多层注意力去推理，本质上是一次字典查询。
+读到“北京是中国的首”，下一个词大概率是“都”；读到 `"Diana, Princess of Wales"`，这也是一个固定历史人物实体。这类局部组合不需要多层注意力去推理，本质上是一次字典查询。
 
-标准 Transformer 除了输入层对单个 token 查一次词表，中间层没有任何查表原语，只能靠层数和矩阵乘把局部词组一步步拼出来。论文表 3 用 LogitLens 追踪了模型识别 `"Diana, Princess of Wales"` 的过程：第 1–2 层只识别出「英国下属地区（Wales）」，第 4–5 层才拼出泛指头衔「威尔士王妃」，直到第 6 层才定位到黛安娜本人[^engram-paper]。前 6 层的前向算力就这样消耗在重建静态实体名上。
+标准 Transformer 除了输入层对单个 token 查一次词表，中间层没有查表原语，只能靠层数和矩阵乘把局部词组一步步拼出来。论文表 3 用 LogitLens 追踪了 `"Diana, Princess of Wales"` 的识别过程[^engram-paper]。第 1–2 层只识别出地名 Wales（威尔士），第 4–5 层才拼出“威尔士王妃”，第 6 层才定位到黛安娜本人。前 6 层的前向算力就这样消耗在重建静态实体名上。
 
-Engram 的做法是在少数特定层（例如 30 层模型的第 2、15 层）挂一条旁路查表通道。在进入公式之前，我们直接拿两句末尾完全相同、但语境截然不同的输入，在位置 $t = 5$（当前词「首」）从头到尾走一遍完整流程：语境 A 为「北京 是 中国 的 **首**」（下文应接「都」），语境 B 为「公司 新任 的 **首**」（下文应接「席执行官」）。具体数据流依次经过以下五个环节（质数分桶寻址细节见图 2）：
+Engram 的做法是在少数特定层（例如 30 层模型的第 2、15 层）挂一条旁路查表通道。在进入公式前，我们拿两句末尾完全相同、但语境截然不同的输入，在位置 $t = 5$ 的当前词“首”处走一遍完整流程：语境 A 是“北京 是 中国 的 **首**”，语境 B 是“公司 新任 的 **首**”。具体数据流依次经过以下四步（质数分桶寻址细节见图 2）：
 
-首先做**词表归一映射规范 ID**，把同一词根的大小写、前导空格或全半角变体压到同一个规范 ID——假设映射后语境 A 为 `[北京(101), 是(205), 中国(308), 的(12), 首(88)]`，语境 B 为 `[公司(614), 新任(729), 的(12), 首(88)]`，两句话末尾两个规范 ID 都是 `(12, 88)`。接着在当前词「首」处往回看，提取**局部后缀 N-gram**，两句话的 2-gram 后缀完全相同（都是 `(12, 88)` 即「的首」），3-gram 后缀则分别是 `(308, 12, 88)`（「中国的首」）与 `(729, 12, 88)`（「新任的首」）。
+1. 词表归一与提取后缀：先把大小写、空格和全半角变体压成同一套规范 ID。语境 A 末尾的 3-gram 规范 ID 为 $(308, 12, 88)$（“中国的首”），语境 B 为 $(729, 12, 88)$（“新任的首”），两句末尾的 2-gram 同为 $(12, 88)$。
+2. 多头质数哈希查表：确定性整数哈希把 2-gram 与 3-gram 各映射到 8 个桶内行号，直接从静态表取出 16 行（每行 80 维）拼成 1280 维向量 $\mathbf{e}_A$ 和 $\mathbf{e}_B$，全程无需矩阵乘。
+3. 投影静态先验：把静态向量投影成 $\mathbf{k}, \mathbf{v}$；由于预训练语料中“的首 → 都”极高频，两路共用的 8 个 2-gram 头都会把“首都”先验带进特征里。
+4. 上下文门控消歧：用第 1 层输出 $\mathbf{h}_t$ 与 $\mathbf{k}$ 做点积。语境 A 含“北京、中国”，算得 $\alpha_A = 0.90$ 放行并直接写回“首都”特征；语境 B 含“公司、新任”与地理冲突，算得 $\alpha_B = 0.09$ 截断，交回后续注意力与 MoE 推出“席执行官”。
 
-随后进入**多头哈希 $O(1)$ 查表与投影**：确定性整数哈希把 2-gram 与 3-gram 各映射成 8 个桶内行号（共 16 行，每行 80 维），直接从静态大表里取出并拼成 1280 维向量 $\mathbf{e}_A$ 和 $\mathbf{e}_B$——全程零次矩阵乘，表扩百倍也只读这 16 行。由于预训练语料里「…的首 → 都」出现频率极高，两路共用的 8 个 2-gram 头都会把「首都」先验带进投影出的 $\mathbf{k}, \mathbf{v}$ 中。
-
-此时 Engram 所在的第 2 层已经拿到第 1 层自注意力输出的隐藏状态 $\mathbf{h}_t$，进入**主干上下文门控消歧**。语境 A 的 $\mathbf{h}_A$ 聚合了「北京、中国」，与地理实体 $\mathbf{k}_A$ 同向，算得 $\alpha_A = 0.90$ 予以放行；语境 B 的 $\mathbf{h}_B$ 聚合了「公司、新任」，与地理实体方向冲突，算得 $\alpha_B = 0.09$ 截断，$\mathbf{u}_B \approx \mathbf{0}$。最后经过因果短卷积拼装并残差写回 $\mathbf{h}_t \leftarrow \mathbf{h}_t + \mathbf{y}_t$ 后，语境 A 在第 2 层就直接拿到了「首都」特征，省下后续多层算力；语境 B 的残差流保持原有轨迹，交由后续注意力与 MoE 正常推理出「席执行官」。
-
-## 两条稀疏的轴：计算稀疏与存储稀疏
+## 计算稀疏与存储稀疏的分工
 
 把 MoE 与 Engram 放在一起，就能看清两种条件稀疏的分工：
 
@@ -45,7 +44,9 @@ Engram 的做法是在少数特定层（例如 30 层模型的第 2、15 层）�
 | 访问分布 | 强均衡，各专家访问均匀           | 服从 Zipf's Law（齐夫定律），头部极度集中     |
 | 存储层级 | 延迟敏感，常驻 HBM（高带宽显存） | 可卸载至 Host DRAM（主机内存）/ NVMe 跨层预取 |
 
-这两组架构属性直接决定了系统的调度与存储边界。由于 MoE 必须等第 $\ell - 1$ 层算完 $\mathbf{h}_t$ 才知道激活哪些专家，计算与权重读取被限定在单层时序之内；而 Engram 的行号只依赖输入 token IDs，请求刚进模型就能算出第 $\ell$ 层需要读取的全部行，在前 $\ell - 1$ 层执行密集矩阵乘时走 PCIe 或 HCCS 从主机内存异步搬运即可。同时，自然语言 N-gram 访问高度服从齐夫分布，极少数高频搭配贡献了绝大部分命中，天然适合用小块高速缓存承接热行、用大容量主机内存承载百亿级长尾词条[^engram-paper]。
+这两组架构属性决定了系统的调度与存储边界。由于 MoE 必须等第 $\ell - 1$ 层算完 $\mathbf{h}_t$ 才能动态路由，权重读取被锁在单层时序内；Engram 的行号只依赖输入 token IDs，请求进模型就能提前算出第 $\ell$ 层需要读取的全部行。
+
+因此，引擎可以在前 $\ell - 1$ 层执行密集计算的同时，通过 PCIe 或 HCCS 从主机内存异步搬运表行。同时，自然语言 N-gram 访问高度符合齐夫分布，极少数高频搭配贡献了绝大部分命中，适合用小块高速缓存承接热行，把百亿级长尾词条留给大容量主机内存[^engram-paper]。
 
 ## 模块原理：查表、门控与因果短卷积
 
@@ -57,7 +58,7 @@ Engram 的做法是在少数特定层（例如 30 层模型的第 2、15 层）�
 
 现代 **Tokenizer（分词器）**为了无损还原原文，会把 `"Apple"`、`"␣apple"`、`"APPLE"` 编成三个不同的 token ID。生成输出时这很有必要，但拿来查 N-gram 表只会把同义词组拆散、直接稀释有效表容量。
 
-Engram 预先基于分词器文本构造一个满射压缩表 $\mathcal{P}: V \to V'$，依次做 NFKC Unicode 归一化、转小写、重音符剥离与空白折叠，把表面形式不同的等价片段映射到同一个规范 ID $x'_t = \mathcal{P}(x_t)$。在 128k 词表上，这一步压掉了 23.43% 的冗余 ID[^engram-paper]。随后在每个位置 $t$ 截取后缀 $n$-gram：
+Engram 在查表前先做一次词表归一，把同一个词的大小写、全半角、重音符和前导空格压成同一套规范 ID。形式上，它基于分词器文本预建满射压缩表 $\mathcal{P}: V \to V'$，把表面不同的等价 token 映射到同一个规范索引 $x'_t = \mathcal{P}(x_t)$。在 128k 词表上，这一步压掉了 23.43% 的冗余 ID[^engram-paper]。随后在每个位置 $t$ 截取后缀 $n$-gram：
 
 $$
 g_{t,n} = \big(x'_{t-n+1},\dots,x'_t\big), \qquad n \in \{2, 3\}
@@ -72,26 +73,28 @@ z_{t,n,k} = \varphi_{n,k}(g_{t,n}) \in \{0,\dots,M_{n,k}-1\}, \qquad
 \mathbf{e}_t = \Big\Vert_{n=2}^{3}\Big\Vert_{k=1}^{8} \mathbf{E}_{n,k}[z_{t,n,k}] \in \mathbb{R}^{d_{\text{mem}}}
 $$
 
-以 2 个阶（2-gram、3-gram）、每阶 $K = 8$ 头、每头维度 $d_{\text{head}} = 80$ 为例，每个 token 固定查 $2 \times 8 = 16$ 行，拼出 $d_{\text{mem}} = 1280$ 维向量。具体寻址过程如图 2 所示。
+以 2 个阶（2-gram、3-gram）、每阶 $K = 8$ 头、每头维度 $d_{\text{head}} = 80$ 为例，每个 token 固定查 $2 \times 8 = 16$ 行，拼出 $d_{\text{mem}} = 1280$ 维向量。接着我们换一个经典人名，顺着图 2 看清多头质数哈希的落桶细节。
 
-![以「…名医张仲景」在 t=「景」处为例：规范 ID 序列分别截取 2-gram (7721, 5509) 与 3-gram (3104, 7721, 5509)，用层专属奇乘数做异或混合（3-gram 增量复用 2-gram 结果），再对 16 个互异质数取模并加上桶前缀偏移，映射到同一张扁平表并取出 16 行拼接](./diagrams/11-engram-hash.drawio '图 2：多头质数哈希与扁平分桶寻址（以「张仲景」末字「景」处为例）')
+![以“……名医张仲景”在 t=“景”处为例：规范 ID 序列分别截取 2-gram (7721, 5509) 与 3-gram (3104, 7721, 5509)，用层专属奇乘数做异或混合（3-gram 增量复用 2-gram 结果），再对 16 个互异质数取模并加上桶前缀偏移，映射到同一张扁平表并取出 16 行拼接](./diagrams/11-engram-hash.drawio '图 2：多头质数哈希与扁平分桶寻址（以“张仲景”末字“景”处为例）')
 
-工程实现上（参考官方演示代码 `engram_demo_v1.py`[^engram-demo] 与 `vLLM`），每一层使用独立随机种子生成 64 位无符号奇乘数 $m_0, m_1, m_2$（奇数与 $2^{64}$ 互质，乘法不会丢失低位信息），先计算 $h_2 = (x'_t m_0) \oplus (x'_{t-1} m_1)$，再增量异或一项就得到 $h_3 = h_2 \oplus (x'_{t-2} m_2)$。同一阶的 8 个头并不重复做 8 次乘法异或，而是对同一个 64 位混合整数 $h_n$ 分别模 8 个互异质数 $p_{n,0},\dots,p_{n,7}$，再加上前缀偏移落入同一张扁平表 $\mathbf{E} \in \mathbb{R}^{(\sum M_i) \times d_{\text{head}}}$。质数桶长消除了哈希低位的周期性公因子共振；表容量扩大 100 倍时，变的只是这 16 个质数常量，算术指令数保持不变。
+参考官方演示代码 `engram_demo_v1.py`[^engram-demo] 与 `vLLM`，每层会用独立种子生成 64 位无符号奇乘数 $m_0, m_1, m_2$。由于奇数与 $2^{64}$ 互质，乘法不会丢失低位信息；先算 $h_2 = (x'_t m_0) \oplus (x'_{t-1} m_1)$，再增量异或一项即可得到 $h_3 = h_2 \oplus (x'_{t-2} m_2)$。
+
+同一阶的 8 个头不用重复做乘法异或，而是拿同一个 64 位整数 $h_n$ 分别模 8 个互异质数 $p_{n,0},\dots,p_{n,7}$，加上前缀偏移落入扁平表 $\mathbf{E} \in \mathbb{R}^{(\sum M_i) \times d_{\text{head}}}$。质数桶长能避免哈希低位出现周期性公因子共振；表容量扩大 100 倍时，变的也只是这 16 个质数常量，算术指令数保持不变。
 
 ### 上下文门控与范数稳定
 
-取出的 $\mathbf{e}_t$ 只看局部两三个 token，天然带有哈希碰撞噪声和一词多义问题。第 $\ell$ 层的主干隐藏状态 $\mathbf{h}_t \in \mathbb{R}^d$ 已经过前序自注意力聚合了全局语境。Engram 让 $\mathbf{h}_t$ 充当 Query，从静态记忆 $\mathbf{e}_t$ 投影出 Key 和 Value，用一个标量门控 $\alpha_t \in (0, 1)$ 决定放行还是屏蔽[^engram-paper]：
+取出的 $\mathbf{e}_t$ 只看局部两三个 token，难免带有哈希碰撞噪声和一词多义问题。第 $\ell$ 层的主干隐藏状态 $\mathbf{h}_t \in \mathbb{R}^d$ 已经过前序自注意力聚合了全局语境。Engram 让 $\mathbf{h}_t$ 充当 Query，从静态记忆 $\mathbf{e}_t$ 投影出 Key 和 Value，用一个标量门控 $\alpha_t \in (0, 1)$ 决定放行还是屏蔽[^engram-paper]：
 
 $$
 \mathbf{k}_t = \mathbf{W}_K \mathbf{e}_t,\quad \mathbf{v}_t = \mathbf{W}_V \mathbf{e}_t, \qquad
 \alpha_t = \sigma\!\left(\frac{\operatorname{RMSNorm}(\mathbf{h}_t)^\top \operatorname{RMSNorm}(\mathbf{k}_t)}{\sqrt{d}}\right)
 $$
 
-点积前对 $\mathbf{h}_t$ 和 $\mathbf{k}_t$ 各自做 `RMSNorm`，是为了防止深层残差流的范数膨胀把 Sigmoid 推入饱和区，避免门控梯度消失并滞留在常开或常闭区间。当静态记忆与上下文语义冲突时，$\alpha_t$ 趋近于 0，噪声行随之被屏蔽。图 3 通过「Apple pie」与「Apple Inc.」两句多义输入对比了门控消歧与四流残差调制强度。
+点积前对 $\mathbf{h}_t$ 和 $\mathbf{k}_t$ 各自做 `RMSNorm`，是为了防止深层残差流的范数膨胀把 Sigmoid 推入饱和区，避免门控梯度消失。当静态记忆与语境冲突时，$\alpha_t$ 趋近于 0，噪声行随之被屏蔽。如果遇到“Apple”这种跨领域多义词，门控会如何区分甜点与科技公司？图 3 对比了“Apple pie”与“Apple Inc.”两句输入下的门控消歧与四流调制强度。
 
-![Engram 上下文门控消歧与 4 流调制对照：共享 4:1 Key/Value 投影在「Apple pie」抑制至 0.12–0.21，在「Apple Inc.」放行至 0.84–0.91](./diagrams/11-engram-gate-disambig.drawio '图 3：Engram 上下文门控消歧与多流调制机制')
+![Engram 上下文门控消歧与 4 流调制对照：共享 4:1 Key/Value 投影在“Apple pie”抑制至 0.12–0.21，在“Apple Inc.”放行至 0.84–0.91](./diagrams/11-engram-gate-disambig.drawio '图 3：Engram 上下文门控消歧与多流调制机制')
 
-如图 4 所示，论文图 7 可视化了训练后 Engram-27B 在中英文段落上的门控激活强度：高激活落在多词实体与成语的收尾补全位置（如 `"Alexander the [Great]"`、`"Milky [Way]"`、「张仲**景**」、「四大发**明**」），而普通虚词和自由组合处几乎保持静默。
+论文图 7 展示了训练后 Engram-27B 在中英文段落上的门控激活强度（如图 4 所示）。高激活集中在多词实体与成语的收尾位置，例如 `"Alexander the [Great]"`、`"Milky [Way]"`、“张仲**景**”和“四大发**明**”；普通虚词和自由组合处则几乎静默。
 
 <Figure
   src={paperFig7}
@@ -110,17 +113,21 @@ $$
 \end{aligned}
 $$
 
-这一层用来补上逐位置查表的两处短板：每个 $\mathbf{u}_t$ 仅编码结尾的 2/3-gram，遇到超过 3 个 token 的长专有名词或固定表达时，相邻位置之间缺少横向特征拼接，而直接扩高阶哈希又会急剧放大组合碰撞；同时，从 $\mathbf{e}_t$ 到 $\alpha_t \mathbf{W}_V \mathbf{e}_t$ 在给定门控时仍是线性映射，需要一层低成本非线性组合。
+这一层用来补上逐位置查表的两处短板。一方面，每个 $\mathbf{u}_t$ 仅编码结尾的 2/3-gram，遇到超过 3 个 token 的长专有名词时，相邻位置缺少横向拼接；若直接扩高阶哈希又会急剧放大碰撞。另一方面，从 $\mathbf{e}_t$ 到 $\alpha_t \mathbf{W}_V \mathbf{e}_t$ 在给定门控时仍是线性映射，需要一层低成本非线性组合。
 
-如图 5 所示，`ShortConv` 将核宽 $w = 4$ 与膨胀率 $\delta = N_{\max} = 3$ 搭配起来：由于每个抽头位置已覆盖 3 个词，每隔 3 步抽取 $t, t-3, t-6, t-9$ 四个抽头恰好把四段 3-gram 无重叠地拼成 12 个连续 token 的感受野，同时只在序列左侧补 $(w-1)\delta = 9$ 个零以维持自回归单向因果。卷积采用逐通道深度可分离（`groups = d`），将每 token 参数与乘加从 $w d^2$ 压到仅 $4d$；权重初始化为全零，配合 $\operatorname{SiLU}(0) = 0$ 使训练第 0 步严格满足 $\mathbf{Y} \equiv \mathbf{U}$，不会在起点扰动主干分布。
+如图 5 所示，`ShortConv` 将核宽 $w = 4$ 与膨胀率 $\delta = N_{\max} = 3$ 搭配起来。每个抽头位置已覆盖 3 个词，因此每隔 3 步抽取 $t, t-3, t-6, t-9$ 四个位置，就能把四段 3-gram 无重叠地拼成 12 个连续 token 的感受野，并只在左侧补 $(w-1)\delta = 9$ 个零维持单向因果。
+
+卷积采用逐通道深度可分离（`groups = d`），把每 token 参数和乘加从 $w d^2$ 压到仅 $4d$；权重初始化为全零，配合 $\operatorname{SiLU}(0) = 0$ 使训练第 0 步满足 $\mathbf{Y} \equiv \mathbf{U}$，不会在起点扰动主干分布。
 
 ![对比膨胀率 δ=1 的重叠滑窗与 δ=3 跨 N-gram 边界的零重叠采样：δ=3 每隔 3 步抽取 t-9、t-6、t-3、t 四个抽头，以 4d 逐通道深度可分离卷积零冗余拼出 12 个连续 token 的局部感受野](./diagrams/11-shortconv-dilation.excalidraw '图 5：膨胀因果短卷积 ShortConv——δ=1 重叠滑窗与 δ=3 跨 N-gram 边界零重叠采样对比')
 
-后文图 8 右侧的消融实验显示，去掉 `ShortConv` 会让验证损失略升 0.002，其增益远小于词表压缩与上下文门控；而在在线推理中，序列卷积要求每个请求额外缓存最近 9 步浮点历史并处理分块前缀传递。因此，DeepSeek-V4.1 在生产部署中移除了 `ShortConv`，以换取无状态执行的查表流程，并在训练侧改用 Nesterov 动量配合 11 步 Sinkhorn 平衡的专用优化器更新嵌入表[^v41-flash]。
+后文图 8 右侧的消融实验显示，去掉 `ShortConv` 仅让验证损失微升 0.002，收益远小于词表压缩与上下文门控。但在在线推理中，序列卷积要求每个请求额外缓存最近 9 步浮点历史，并处理分块前缀传递。
+
+因此，DeepSeek-V4.1 在生产端移除了 `ShortConv`，换取无状态查表流程。训练侧则改用 Nesterov 动量配合 11 步 Sinkhorn 平衡的专用优化器更新嵌入表[^v41-flash]。
 
 ### 多分支残差的共享 Value 门控适配
 
-当主干升级为下一篇 [08 mHC 流形受限超连接](../08-mhc/) 的多分支残差流（默认 $M = 4$ 条支路）时，隐藏状态从单条展成 $\mathbf{h}_t^{(1)},\dots,\mathbf{h}_t^{(M)}$。若给每条支路各配一套 $(\mathbf{W}_K, \mathbf{W}_V)$ 参数将翻 $M$ 倍。Engram 改用共享 Value、分支独立 Key 的设计[^engram-paper]：
+当主干升级为下一篇 [08 mHC 流形受限超连接：双随机投影与单遍融合](../08-mhc/) 的多分支残差流（默认 $M = 4$ 条支路）时，隐藏状态从单条展成 $\mathbf{h}_t^{(1)},\dots,\mathbf{h}_t^{(M)}$。若给每条支路各配一套 $(\mathbf{W}_K, \mathbf{W}_V)$ 参数将翻 $M$ 倍。Engram 改用共享 Value、分支独立 Key 的设计[^engram-paper]：
 
 $$
 \begin{aligned}
@@ -129,11 +136,11 @@ $$
 \end{aligned}
 $$
 
-全模块只保留一份共享 $\mathbf{W}_V$，搭配 $M$ 份独立的 $\mathbf{W}_K^{(m)}$ 让各分支按自身子空间语义独立开关门控；实现上把 $M$ 个 $\mathbf{W}_K^{(m)}$ 和 1 个 $\mathbf{W}_V$ 竖着拼成一个 `[d_mem -> (M + 1) * d]` 矩阵，单次 FP8 GEMM 即可算完。
+全模块只保留一份共享 $\mathbf{W}_V$，搭配 $M$ 份独立的 $\mathbf{W}_K^{(m)}$，让各分支按自身子空间语义独立开关门控。实现上把 $M$ 个 $\mathbf{W}_K^{(m)}$ 和 1 个 $\mathbf{W}_V$ 竖着拼成一个 `[d_mem -> (M + 1) * d]` 矩阵，单次 FP8 GEMM 即可算完。
 
-### PyTorch 参考实现：多头质数哈希查表与有符号开方门控
+### PyTorch 查表与有符号开方门控
 
-下面的自包含 PyTorch `MiniEngram` 实现把奇数乘数异或混合、2/3-gram 共 16 个质数分桶查表、4:1 融合投影切分以及 DeepSeek-V4.1 的有符号开方 `RMSNorm` 门控串成一条完整前向链，并在末尾断言张量形状与门控范围。
+下面的自包含 PyTorch `MiniEngram` 实现串联了奇数乘数异或混合、16 个质数分桶查表与 4:1 融合投影。它还落地了 DeepSeek-V4.1 的有符号开方 `RMSNorm` 门控，并在末尾断言张量形状与门控范围。
 
 ```python
 import math
@@ -143,27 +150,14 @@ import torch.nn.functional as F
 
 
 def rms_norm(x: torch.Tensor, eps: float = 1e-6) -> torch.Tensor:
-    """无权重逐流 RMSNorm：在门控点积前压平主干隐藏态范数差异。"""
     return x * torch.rsqrt(x.square().mean(dim=-1, keepdim=True) + eps)
 
 
 class MiniEngram(nn.Module):
-    """DeepSeek-V4.1 Engram 条件记忆模块（对接 n=4 mHC 多流残差）。
-
-    输入：
-        hidden_states: [B, T, hc_mult, d]（mhc_post 刚写回的多流残差状态）
-        tokens:        [B, T]（规范化压缩后的 token ID，第 0 层前即完全确定）
-    输出：
-        (out [B, T, hc_mult, d], hash_ids [B, T, 16], K, V, alpha)
-    """
+    """DeepSeek-V4.1 Engram 条件记忆模块（对接 n=4 mHC 多流残差）。"""
 
     def __init__(
-        self,
-        primes: list[int],
-        multipliers: torch.Tensor,
-        d: int = 64,
-        hc_mult: int = 4,
-        d_head: int = 8,
+        self, primes: list[int], multipliers: torch.Tensor, d: int = 64, hc_mult: int = 4, d_head: int = 8
     ):
         super().__init__()
         self.primes, self.hc_mult, self.d = primes, hc_mult, d
@@ -178,14 +172,12 @@ class MiniEngram(nn.Module):
         self.table = nn.Embedding(sum(bucket_sizes), d_head)
         # 单次融合投影同时产出 hc_mult 份分支独立 Key (4d) 与 1 份共享 Value (1d)
         self.w_kv = nn.Linear(len(bucket_sizes) * d_head, (hc_mult + 1) * d, bias=False)
-        # V4.1 逐通道可学习门控缩放权重
         self.q_weight = nn.Parameter(torch.ones(hc_mult, d))
         self.k_weight = nn.Parameter(torch.ones(hc_mult, d))
 
     def compute_hash_ids(self, tokens: torch.Tensor) -> torch.Tensor:
-        """滚动奇数乘数 XOR 混合 + 互异质数取模，计算确定性 16 头行索引。"""
         T = tokens.shape[1]
-        # 左侧因果补 pad_id=2，保证后缀 N-gram 绝对不泄露未来位置
+        # 左侧因果补 pad_id=2，保证后缀 N-gram 不泄露未来位置
         shifted = [
             tokens if k == 0 else F.pad(tokens, (k, 0), value=2)[:, :T]
             for k in range(self.multipliers.numel())
@@ -201,11 +193,9 @@ class MiniEngram(nn.Module):
 
     def forward(self, hidden_states: torch.Tensor, tokens: torch.Tensor):
         hash_ids = self.compute_hash_ids(tokens)
-        # O(1) 扁平查表后拼接 16 头向量 -> e_t [B, T, 16 * d_head]
         e_t = self.table(hash_ids + self.offsets).flatten(-2)
         K_flat, V = self.w_kv(e_t).split([self.hc_mult * self.d, self.d], dim=-1)
         K = K_flat.unflatten(-1, (self.hc_mult, self.d))  # [B, T, 4, d]
-
         # V4.1 上下文门控：双侧 RMSNorm 点积后施加以零为对称点的有符号开方
         qn = rms_norm(hidden_states) * self.q_weight
         kn = rms_norm(K) * self.k_weight
@@ -220,10 +210,8 @@ if __name__ == "__main__":
     B, T, hc_mult, d = 2, 16, 4, 64
     vocab_comp, max_ngram, d_head = 99124, 3, 8
     primes = [4099, 4111, 4127, 4129, 4133, 4139, 4153, 4157]
-    mult_raw = torch.randint(1, 100000, (max_ngram,), dtype=torch.int64)
-    multipliers = mult_raw * 2 + 1
+    multipliers = torch.randint(1, 100000, (max_ngram,), dtype=torch.int64) * 2 + 1
     engram = MiniEngram(primes, multipliers, d=d, hc_mult=hc_mult, d_head=d_head)
-
     with torch.no_grad():
         tokens = torch.randint(0, vocab_comp, (B, T), dtype=torch.int64)
         H = torch.randn(B, T, hc_mult, d)
@@ -234,17 +222,19 @@ if __name__ == "__main__":
         assert ((alpha > 0.0) & (alpha < 1.0)).all()
 ```
 
-无论静态表质数取到千级还是百亿级，哈希寻址指令数与 `w_kv` 的 4:1 投影张量形状都恒定不变；前置 `RMSNorm` 配合有符号开方压缩则把门控打分稳定在 Sigmoid 非饱和区，避免深层残差范数膨胀导致门控饱和失效。
+无论静态表质数取到千级还是百亿级，哈希寻址指令数与 `w_kv` 的 4:1 投影形状都保持不变。前置 `RMSNorm` 配合有符号开方则把门控打分稳在 Sigmoid 非饱和区，避免深层残差范数膨胀导致门控饱和。
 
-## 稀疏预算分配与机理验证
+## 稀疏预算分配与实验验证
 
-有了 MoE（条件计算）和 Engram（条件记忆）两条正交轴，工程上面临一个定量问题：总参数量 $P_{\text{tot}}$（存储预算）和每 token 激活参数 $P_{\text{act}}$（FLOPs 预算）都固定时，未激活的稀疏参数该如何在 MoE 专家与 Engram 槽位之间切分？
+MoE 负责条件计算，Engram 负责条件记忆。当总参数量 $P_{\text{tot}}$ 与每 token 激活参数 $P_{\text{act}}$ 都固定时，未激活的稀疏参数该如何在 MoE 专家与 Engram 槽位之间切分？
 
 ### U 型分配律与无限记忆幂律
 
-论文定义稀疏分配比 $\rho \in [0, 1]$ 为分给 MoE 路由专家的稀疏容量占比，$1 - \rho$ 则分给 Engram 静态槽位（保持 $P_{\text{tot}}$ 与每 token FLOPs 严格恒定，稀疏度 $P_{\text{tot}} / P_{\text{act}} \approx 10$）[^engram-paper]。当 $\rho = 100\%$（纯 MoE）时，所有稀疏预算都在专家矩阵里，浅层被迫消耗深度与计算去拼局部词组；当 $\rho = 0\%$（纯 Engram）时，路由专家被清空，模型失去依赖上下文的动态组合与推理能力。
+论文定义稀疏分配比 $\rho \in [0, 1]$ 为分给 MoE 路由专家的稀疏容量占比，$1 - \rho$ 则分给 Engram 静态槽位（保持 $P_{\text{tot}}$ 与每 token FLOPs 恒定，稀疏度 $P_{\text{tot}} / P_{\text{act}} \approx 10$）[^engram-paper]。当 $\rho = 100\%$（纯 MoE）时，所有稀疏预算都在专家矩阵里，浅层被迫消耗深度与计算去拼局部词组；当 $\rho = 0\%$（纯 Engram）时，路由专家被清空，模型失去依赖上下文的动态组合与推理能力。
 
-在 $2 \times 10^{20}$ 与 $6 \times 10^{20}$ FLOPs 两档算力下扫描 $\rho$，验证损失画出清晰的 U 型曲线（图 6 左），最优点落在 $\rho \approx 75\%\text{–}80\%$——即拿出 20%–25% 的专家参数改建 Engram 表。以 10B 规模为例，路由专家从 106 个减至 81 个、改建约 2.58B 静态表后，验证损失从 1.7248 降至 1.7109（$\Delta = 0.0139$）。若放开总参数上限、固定主干计算量只把 Engram 槽位数从 $5.8\times 10^5$ 扩到 $1.0\times 10^7$（约 13B 额外记忆参数，图 6 右），验证损失关于槽位数呈干净的对数线性幂律下降，表明静态查表是一条无需额外算力即可换取性能的独立扩展轴[^engram-paper]。
+在 $2 \times 10^{20}$ 与 $6 \times 10^{20}$ FLOPs 两档算力下扫描 $\rho$，验证损失画出明显的 U 型曲线（图 6 左），最优点落在 $\rho \approx 75\%\text{–}80\%$，即拿出 20%–25% 的专家参数改建 Engram 表。以 10B 规模为例，路由专家从 106 个减至 81 个、改建约 2.58B 静态表后，验证损失从 1.7248 降至 1.7109（$\Delta = 0.0139$）。
+
+若放开总参数上限、固定主干计算量，仅把 Engram 槽位数从 $5.8\times 10^5$ 扩到 $1.0\times 10^7$（约 13B 额外记忆参数，图 6 右），验证损失呈对数线性幂律下降。这说明静态查表是一条无需额外算力就能换取性能的独立扩容维度[^engram-paper]。
 
 <Figure
   src={paperFig3}
@@ -254,7 +244,7 @@ if __name__ == "__main__":
 
 ### 同算力对照下的推理与长程增益
 
-按 $\rho \approx 80\%$ 指导，论文在 262B tokens 上从头训练了严格同参数、同激活 FLOPs 的 30 层模型对照（全部采用 MLA 与 $M = 4$ mHC）[^engram-paper]：
+按 $\rho \approx 80\%$ 指导，论文在 262B tokens 上从头训练了同参数、同激活 FLOPs 的 30 层模型对照（全部采用 MLA 与 $M = 4$ mHC）[^engram-paper]：
 
 | 模型（3.8B） | 总参数 | 稀疏配置                         |   MMLU   |  CMMLU   |   BBH    |  ARC-C   | HumanEval |   MATH   | 32k NIAH |
 | ------------ | ------ | -------------------------------- | :------: | :------: | :------: | :------: | :-------: | :------: | :------: |
@@ -262,11 +252,11 @@ if __name__ == "__main__":
 | Engram-27B   | 26.7B  | 55 路由 + 2 共享 + 5.7B (L2, 15) | **60.4** | **61.9** | **55.9** | **73.8** | **40.8**  | **30.7** | **97.0** |
 | Engram-40B   | 39.5B  | 55 路由 + 2 共享 + 18.5B（扩表） |   60.6   | **63.4** | **57.5** |   73.3   |   39.0    |   30.6   | **99.0** |
 
-表中各行显示的不只是知识题提升 3–4 分（论文表 1 报告 MMLU 从 57.4 升至 60.4，摘要中的 3.4 分对应同表 MMLU-Redux 从 60.6 升至 64.0；32k 结果取自表 2 的 50k 步 RULER 评测[^engram-paper]），更显著的是一个只查局部 2/3-gram 的静态表，同时带动了复杂推理（BBH +5.0、ARC-C +3.7）、代码数学（HumanEval +3.0、MATH +2.4）以及 32k 多查询大海捞针（84.2 升至 97.0）的提升。
+上表显示的不只是知识题提升 3–4 分：MMLU 从 57.4 升至 60.4，摘要中的 3.4 分则对应 MMLU-Redux 从 60.6 升至 64.0。表中 32k 结果取自论文表 2 的 50k 步 RULER 评测[^engram-paper]。更关键的是，一个只查局部 2/3-gram 的静态表，同时拉高了多类任务表现。其中复杂推理（BBH +5.0、ARC-C +3.7）、代码数学（HumanEval +3.0、MATH +2.4）和 32k 大海捞针（84.2 升至 97.0）全线增长。
 
 ### 浅层卸载与等效网络加深
 
-论文用三组可解释性实验拆开了上述增益背后的机理[^engram-paper]。图 7(a) 用 LogitLens 测量各层中间表征与最终预测分布的 KL 散度，Engram 在前几层迅速下探；图 7(b)(c) 用 **CKA（Centered Kernel Alignment，中心核对齐）**比较层间表征，对角高亮带整体向上偏移——Engram-27B 第 5 层的语义成熟度已经对齐到纯 MoE-27B 的第 12 层。把静态局部组合外包给查表后，省出的六七层网络深度得以投入高阶组合推理。
+论文用三组可解释性实验拆解了增益来源[^engram-paper]。图 7a 用 LogitLens 测量各层中间表征与最终分布的 KL 散度，Engram 在浅层迅速下探。图 7b、c 则用 **CKA（Centered Kernel Alignment，中心核对齐）**比较层间相似度。热力图对角高亮带整体上移，Engram-27B 第 5 层的语义成熟度已对齐纯 MoE-27B 的第 12 层，相当于为高阶推理省出了六七层深度。
 
 <Figure
   src={paperFig4}
@@ -274,7 +264,9 @@ if __name__ == "__main__":
   caption="图 7：LogitLens 逐层收敛速度（a）与 CKA 跨模型表征对齐热力图（b, c）（论文图 4）"
 />
 
-浅层局部依赖由 Engram 接管后，MLA 注意力头也无需再盯住相邻几个 token 拼词组，可以把注意力容量留给远距离关键上下文，这正是 32k 多查询大海捞针从 84.2 升至 97.0 的原因。若不重训直接在推理期把 Engram 输出置零，事实知识题得分明显下滑（TriviaQA 仅剩原分数的 29%、PopQA 剩 44%），而依赖给定段落推断的阅读理解几乎不受影响（C3 保留 93%、RACE-High 保留 81%），表明静态事实与上下文推理在模块间形成了明确分工。
+浅层局部依赖由 Engram 接管后，MLA 注意力头无需再盯住相邻 token 拼词组，可以把容量留给远距离上下文。这也是 32k 多查询大海捞针从 84.2 升至 97.0 的直接原因。
+
+若不重训、直接在推理期把 Engram 输出置零，事实知识题得分大幅下滑，TriviaQA 仅剩原分数的 29%、PopQA 剩 44%。相反，依赖给定段落推断的阅读理解几乎不受影响（C3 保留 93%、RACE-High 保留 81%），说明静态事实与动态推理在模块间形成了分工。
 
 ### 插入层位选择与组件消融
 
@@ -286,35 +278,49 @@ Engram 不能每层都挂，否则既消耗内存又没有预取缓冲。如图 
   caption="图 8：插入层位置扫描（左）与子模块消融分析（右）（论文图 5）"
 />
 
-插入位置存在早卸载与准门控之间的权衡：插在第 1 层虽然最早减负，但隐藏状态尚未走过一轮自注意力，缺乏上下文去支撑门控 $\alpha_t$；插在第 12 层虽然门控准确，前 11 层却已把局部词组重算完了。实验显示第 2 层刚好取得单层最优，而把同一笔预算拆成「浅层 + 中层」两段（12 层模型的 2 + 6，对应 30 层 27B 模型的 2 + 15），既兼顾早期拼装与中层语义整合，也为系统侧留出了充裕的预取掩蔽窗口。图 8 右侧消融则证实，多分支独立门控、词表压缩与上下文门控是贡献最大的三项组件。
+插入位置存在早卸载与准门控之间的权衡：插在第 1 层虽然最早减负，但隐藏状态尚未走过自注意力，缺乏上下文支撑门控 $\alpha_t$；插在第 12 层虽然门控准确，前 11 层却已把局部词组重算完了。
 
-## 推理引擎落地：预取重叠、vLLM 与 vllm-ascend
+实验显示第 2 层刚好取得单层最优。把同一笔预算拆成“浅层 + 中层”两段（12 层模型的 2 + 6，对应 30 层 27B 的 2 + 15），既兼顾早期拼装与中层整合，也为系统预留了充裕的预取掩蔽窗口。图 8 右侧消融则证实，多分支独立门控、词表压缩与上下文门控是贡献最大的三项组件。
+
+## 推理引擎落地与双硬件预取对照
 
 ### 确定性寻址与跨层异步预取
 
-在训练阶段，百亿参数的 Engram 表按分片切到多卡 HBM 上，前向用 `All-to-All` 拉取激活行、反向再用 `All-to-All` 归集梯度。到了推理阶段，如果让几十 GB 的低频静态表占用 HBM，会直接挤压 KV Cache 空间。得益于行号在第 0 层启动前就完全已知，推理引擎可以把整张 Engram 表卸载到 Host DRAM（主机内存），用一条独立的异步流在后台做哈希、分布式交换与跨总线聚行，让第 $0 \dots \ell - 1$ 层的主干密集计算自然掩盖访存延迟，如图 9 所示。
+在训练阶段，百亿参数的 Engram 表按分片切到多卡 HBM 上，前向用 `All-to-All` 拉取激活行、反向再用 `All-to-All` 归集梯度。到了推理阶段，如果让几十 GB 的低频静态表占用 HBM，会直接挤压 KV Cache 空间。
+
+得益于行号在第 0 层启动前就已确定，推理引擎可以把整张 Engram 表卸载到 Host DRAM（主机内存）。它用一条独立异步流在后台做哈希、分布式交换与跨总线聚行，让第 $0 \dots \ell - 1$ 层的主干计算自然掩盖访存延迟，如图 9 所示。
 
 ![双流并行时间线：顶部输入 token IDs 在第 0 层启动前同时喂给主计算流与预取流；主计算流依次执行第 0 层及第 1…ℓ−1 层前向，预取流并发完成整批哈希、DP 索引交换、主机内存表异步聚行并记录事件；第 ℓ 层前主流等待事件就绪即可直接消费查表缓冲](./diagrams/11-engram-runtime.drawio '图 9：确定性寻址支撑跨层异步预取——前序层的密集计算掩盖主机内存访存')
 
-论文在单卡 H800（PCIe Gen4）上基于 nano-vLLM 做了极限测试：把一张 100B 参数（约 200 GB）的 Engram 表完全放在主机内存，仅靠前序层计算重叠 PCIe 搬运，4B 主干吞吐从 8,858 tok/s 微降至 8,690 tok/s（开销 1.9%），8B 主干从 5,089 tok/s 降至 4,946 tok/s（开销 2.8%）[^engram-paper]。这证明静态查表在系统层面能够把大容量记忆与 HBM/算力解耦。
+论文在单卡 H800（PCIe Gen4）上基于 nano-vLLM 做了极限测试：把 100B 参数、约 200 GB 的 Engram 表全放进主机内存，仅靠前序层计算重叠 PCIe 搬运。实测 4B 主干吞吐从 8,858 tok/s 微降至 8,690 tok/s（开销 1.9%），8B 主干从 5,089 tok/s 降至 4,946 tok/s（开销 2.8%）[^engram-paper]。这说明静态查表能在系统层把大容量记忆与 HBM 解耦。
 
 ### vLLM 与 DeepEP 生产实现
 
-在 `vLLM` 的 DeepSeek-V4.1 实现中[^engram-vllm-code]，0-indexed 的 `layers.1` 与 `layers.14` 部署了 Engram（对应第 2、15 层），采用 2/3-gram、每阶 8 头各 80 维拼接成 1280 维向量。而在 DeepSeek-V4.1-Flash 技术报告中[^v41-flash]，Engram 进一步扩至 $\{2, 3, 4\}$ 阶、每阶 8 头共 2048 维，总计 196B 参数均分在 `layers.1` 与 `layers.14`，以 FP8 权重配合 RDMA 异步预取。
+在 `vLLM` 的 DeepSeek-V4.1 实现中[^engram-vllm-code]，Engram 部署在 0-indexed 的 `layers.1` 与 `layers.14`（对应第 2、15 层）。该配置采用 2/3-gram、每阶 8 头各 80 维，拼接成 1280 维向量。
+
+而在 DeepSeek-V4.1-Flash 技术报告中[^v41-flash]，Engram 进一步扩至 $\{2, 3, 4\}$ 阶、每阶 8 头共 2048 维。模型总计 196B 参数均分在这两层中，配合 FP8 权重与 RDMA 异步预取运行。
 
 #### 层内注入边界与四分支共享
 
-如图 10 左侧所示，第 1、14 层的 Engram 模块精准卡在上一层收尾的 `mhc_post` 之后、本层开头的 `mhc_pre` 之前[^engram-vllm-code]。这样安排有两层工程考虑：此时四条残差分支刚合入上一层的最新输出，门控点积可以看见完整的四分支状态；同时 `mhc_post` 的天然输出正是 `[T, 4, d]` 张量，Engram 原位更新后再交给 `mhc_pre` 压成单流 `[T, d]`，避免了在融合核内部额外物化一份 `[T, 4, d]` 副本。
+如图 10 左侧所示，第 1、14 层的 Engram 模块正好卡在上一层的 `mhc_post` 之后、本层开头的 `mhc_pre` 之前[^engram-vllm-code]。此时四条残差分支刚合入上一层输出，门控点积能看见完整的四分支状态。
 
-![左列为 V4.1 第 1、14 层主干顺序：mhc_post 写回四分支状态 H [T, 4, d] 后先经 Engram 原位更新，再由 mhc_pre 聚合成单流；右列按严格 4:1 比例对比 4 份分支 Key（4d=5120）与 1 份共享 Value（1d=1280）](./diagrams/11-engram-layer.drawio '图 10：DeepSeek-V4.1 层内注入位置（左）与四分支 K (4d=5120) / V (1d=1280) 严格 4:1 投影门控（右）')
+此外，上一层收尾直接输出 `[T, 4, d]` 四流张量，Engram 原位更新后再交给下层聚合为单流 `[T, d]`，省去了在融合 Kernel 内部额外写出中间副本的显存开销。
+
+![左列为 V4.1 第 1、14 层主干顺序：mhc_post 写回四分支状态 H [T, 4, d] 后先经 Engram 原位更新，再由 mhc_pre 聚合成单流；右列按 4:1 比例对比 4 份分支 Key（4d=5120）与 1 份共享 Value（1d=1280）](./diagrams/11-engram-layer.drawio '图 10：DeepSeek-V4.1 层内注入位置（左）与四分支 K (4d=5120) / V (1d=1280) 4:1 投影门控（右）')
 
 #### 单步解码查表与跨节点交换
 
-将单步分布式查表展开如图 11 所示。Decode 或分块 Prefill 时，每个 chunk 开头的 token 都需要借助 `lookback_token_ids` 补齐前 2 个历史 token 才能拼出 3-gram；上游 `vLLM` 已将哈希算子精简为当前 chunk 直读与历史回溯两级无状态路径，而图像 token 会被标为 `DEAD_ID` 并强制置零门控掩码[^engram-vllm-code]。
+单步分布式查表流程展开如图 11 所示。Decode 或分块 Prefill 时，每个 chunk 开头的 token 必须借助 `lookback_token_ids` 补齐前 2 个历史 token 才能拼出 3-gram。
+
+上游 `vLLM` 已将哈希算子简化为“当前 chunk 直读 + 历史回溯”两级无状态路径；遇到图像 token 时则标为 `DEAD_ID`，并强制置零门控掩码[^engram-vllm-code]。
 
 ![单步分布式查表与交换流水线：先经历史回溯计算两层 16 头哈希索引，再按批量大小经对称共享内存直读或 all_to_all_single 完成跨 DP 槽位收集与 Embedding 归还](./diagrams/11-engram-dist-lookup.drawio '图 11：vLLM 与 vllm-ascend 分布式表分片查表与对称内存 / RDMA 交换流水线')
 
-在存储与跨卡交换侧，`EngramLayout` 把静态表存成 `FP8` 或 `MXFP8`（E4M3 配每 32 列 E8M0 缩放），沿 `[TP × DP]` 按哈希头切分并默认开启 `cpu_offload` 驻留主机大页内存。同机共享 `DPSharedEngramStorage` 时，GPU 通过 UVA 直接把行聚进 `staged_rows`（在 GB200 上当单步查表行数达到或超过 36,864 时先排序以提升 TLB 命中率）。跨卡同步则按批大小自适应切换：当槽位数小于 128（`ENGRAM_A2A_MIN_SLOT`）时走对称共享内存 Peer 直读免除集合通信，大批量或跨节点则走 `all_to_all_single` 或借助 `DeepEP` 的 `EngramBuffer` 经 NCCL GIN / GDAKI 执行 RDMA 主机内存预取[^engram-deepep-code]。到了最终门控融合 Kernel（`_fused_engram_post_wkv_kernel`），生产实现除了乘上逐通道 `q_weight` 与 `k_weight`（`[4, d]`）外，还在点积后先做有符号开方 $\operatorname{sign}(x)\sqrt{\max(|x|, \epsilon)}$ 再送入 Sigmoid[^engram-demo][^engram-vllm-code]，去掉 `ShortConv` 后直接执行原位累加。
+在存储排布上，`EngramLayout` 将静态表存为 `FP8` 或 `MXFP8`（E4M3 配每 32 列 E8M0 缩放），沿 `[TP × DP]` 按哈希头切分并默认开启主机大页卸载。同机共享 `DPSharedEngramStorage` 时，GPU 通过 UVA 直接把表行聚进 `staged_rows`。在 GB200 上，若单步查表超过 36,864 行还会先排序以提高 TLB 命中率。
+
+跨卡同步则按批大小自适应切换路径[^engram-deepep-code]。当槽位数少于 128 时走对称共享内存 Peer 直读，免去集合通信。大批量或跨节点场景则改走 `all_to_all_single`，或借助 `DeepEP` 的 `EngramBuffer` 经 NCCL GIN / GDAKI 完成 RDMA 预取。
+
+到了末尾的门控融合 Kernel，生产实现会先乘上逐通道 `q_weight` 与 `k_weight`（形状 `[4, d]`）[^engram-vllm-code]。点积结果先经过有符号开方 $\operatorname{sign}(x)\sqrt{\max(|x|, \epsilon)}$ 再送入 Sigmoid[^engram-demo]，去掉 `ShortConv` 后直接执行原位残差累加。
 
 ### 昇腾 NPU 执行层改造
 
@@ -329,11 +335,11 @@ Engram 不能每层都挂，否则既消耗内存又没有预取缓冲。如图 
 | 多流与图捕获   | `_prefetch_stream` + `cuda.Event` | `_engram_prepare_stream` 等 `ExternalEvent`    |
 | 量化旋转兼容   | 直接在当前激活基下算门控点积      | `load_engram_rotation_block` 调 QuaRot         |
 
-此外，在昇腾 NPU 上部署还需注意两处图模式排障约束：`aclrtMallocHost` 分配的主机页在 Profiling Run（内存剖析前向）时尚未加载真实权重，可能残存历史脏数据，因此分配后必须立即清零，否则脏数据会在剖析步污染后续 MoE 路由并引发推理异常；同时 DP 空跑卡需依赖 `query_start_loc.numel() > 1` 边界检查同步并按 `valid_token_count` 截断掩码[^engram-ascend-code]。
+在昇腾 NPU 上部署还需注意两处图模式约束[^engram-ascend-code]。首先，`aclrtMallocHost` 分配的主机页在 Profiling Run（内存剖析前向）阶段尚未加载真实权重，可能残存历史脏数据；分配后必须立即清零，否则会污染后续 MoE 路由。其次，DP 空跑卡需要依赖 `query_start_loc.numel() > 1` 边界检查同步，并按 `valid_token_count` 截断掩码。
 
-在系统资源账本上，Engram 用大容量主机内存（单分片表仍占用数十 GB DRAM）与 PCIe/HCCS 跨层异步预取换取矩阵乘算力的节省，静态表承接语料中的局部统计组合，动态组合推理则交由 MoE 路由专家承担——这也解释了 U 型曲线的最优点为何落在 $\rho \approx 75\%\text{–}80\%$。
+从系统资源开销看，Engram 用大容量主机内存（单分片仍占数十 GB DRAM）和跨层异步预取，换取了矩阵乘算力的节省。静态表承接局部统计组合，动态组合推理交给 MoE 路由专家，这也解释了 U 型曲线的最优点为何落在 $\rho \approx 75\%\text{–}80\%$。
 
-观察图 10 左列，Engram 模块前后紧挨着两个专门维护四分支残差张量的算子：`mhc_post` 与 `mhc_pre`。把单条残差流扩宽为 4 条流形受限通道的机制，正是下一篇 [08 mHC 流形受限超连接](../08-mhc/) 的核心主题。
+观察图 10 左列，Engram 模块前后紧挨着专门维护四分支残差张量的 `mhc_post` 与 `mhc_pre`。把单条残差流扩宽为 4 条流形受限通道，正是下一篇 [08 mHC 流形受限超连接：双随机投影与单遍融合](../08-mhc/) 的核心内容。
 
 [^engram-paper]: Cheng et al., _Conditional Memory via Scalable Lookup: A New Axis of Sparsity for Large Language Models_, [arXiv:2601.07372](https://arxiv.org/abs/2601.07372)（DeepSeek-AI & Peking University，2026-01），§1 表 3、§2.1–2.5 式 (1)–(6)、§3.1–3.2 图 3、§4 表 1、§5 表 2、§6.1–6.6 图 4–7 及附录 C。图 4、6、7、8 取自原论文（CC BY 4.0 许可）。
 

@@ -1,6 +1,6 @@
 ---
-title: '09 多 token 预测与动态推测解码：从 DeepSeek-V3 MTP 到 DSpark'
-description: '从 Roofline 带宽墙出发，拆解无损拒绝采样的数学等价证明、DeepSeek-V3 因果 MTP 链、V4.1 DSpark 单步 SWA 与 r=256 低秩马尔可夫草稿头，以及 vLLM 与 vllm-ascend 运行时对照。'
+title: '09 多 token 预测与 DSpark 动态推测解码'
+description: 'Decode 阶段单步访存受限于权重带宽，一次只吐一个 token 算力利用率极低。本文推导无损拒绝采样等价性，拆解 V3 因果 MTP 与 V4.1 DSpark 并行草稿架构，并对照双硬件运行时。'
 series: { id: deepseek, order: 10 }
 pubDate: 2026-11-12
 featured: true
@@ -13,7 +13,7 @@ import SpecDecVerifyExplainer from '../../../../explainers/deepseek/SpecDecVerif
 
 自回归解码每输出 1 个 token，都要把整张大权重从 HBM 搬进计算单元一次。当批量较小或 KV 缓存访问占主导时，算术强度远低于 GPU 与 NPU 的 Roofline 算力拐点，绝大多数矩阵计算核心都在等待数据搬运。
 
-**Speculative Decoding（推测解码）**通过「廉价草稿先连猜 $\gamma$ 步、目标模型一次并行验证 $1 + \gamma$ 个位置」来摊薄单步权重读取开销[^spec-dec]。由于验证 1 个 token 和同时验证数个 token 搬运的权重总量相同，多算几个查询位置几乎不增加额外访存延迟；一旦验证通过前缀够长，平均每 token 分摊的权重访存就会成倍下降。
+**Speculative Decoding（推测解码）**通过“廉价草稿先连猜 $\gamma$ 步、目标模型一次并行验证 $1 + \gamma$ 个位置”来摊薄单步权重读取开销[^spec-dec]。由于验证 1 个 token 和同时验证数个 token 搬运的权重总量相同，多算几个查询位置几乎不增加额外访存延迟；一旦验证通过前缀够长，平均每 token 分摊的权重访存就会成倍下降。
 
 ## 无损拒绝采样与分布等价证明
 
@@ -26,11 +26,13 @@ import SpecDecVerifyExplainer from '../../../../explainers/deepseek/SpecDecVerif
   title="图 1：Speculative Decoding 无损拒绝采样与数学等价证明"
 />
 
-结合图 1 的 4 个候选槽位，验证阶段从左到右在每个位置独立抽取均匀随机数 $u \sim U(0, 1)$：若满足 $u \le \min\!\big(1, p(x)/q(x)\big)$，则保留该草稿 token 并继续检查下一位；一旦在第一个位置出现拒绝，立即丢弃之后所有草稿后缀，在该位置构造截断归一化残差分布 $p'(x) = \operatorname{norm}\!\big(\max(0,\, p(x) - q(x))\big)$ 并从 $p'(x)$ 补抽 1 个合法 token 替代；如果全部 $\gamma$ 个候选位置均通过检验，主模型在末端位置 $\gamma + 1$ 已经算出的 logits 还可以额外采样 1 个奖励 token，使单步最多推进 $\gamma + 1$ 个 token[^spec-dec]。
+结合图 1 的 4 个候选槽位，验证阶段从左到右在每个位置独立抽取均匀随机数 $u \sim U(0, 1)$。若满足 $u \le \min\!\big(1, p(x)/q(x)\big)$，则保留该草稿 token 并继续检查下一位。
+
+一旦某位置出现拒绝，立即丢弃之后所有草稿后缀，在该位置构造归一化残差分布 $p'(x) = \operatorname{norm}\!\big(\max(0,\, p(x) - q(x))\big)$ 并从 $p'(x)$ 重采样 1 个合法 token 替代。若全部 $\gamma$ 个候选位置均通过检验，主模型在末端位置 $\gamma + 1$ 已算出的 logits 还可以额外采样 1 个奖励 token，单步最多推进 $\gamma + 1$ 个 token[^spec-dec]。
 
 ### 边缘分布等价性推导
 
-对词表中任意 token $x$，最终在这一位置输出 $x$ 的事件由「草稿选出 $x$ 且被接收」与「某个提案被拒后落入残差重采样并抽中 $x$」两个互斥事件组成。先求单步触发拒绝的总概率 $P(\text{reject})$：
+对词表中任意 token $x$，最终在这一位置输出 $x$ 的事件由“草稿选出 $x$ 且被接收”与“某个提案被拒后落入残差重采样并抽中 $x$”两个互斥事件组成。先求单步触发拒绝的总概率 $P(\text{reject})$：
 
 $$
 \begin{aligned}
@@ -48,23 +50,27 @@ P_{\text{final}}(x) &= q(x)\min\!\left(1, \frac{p(x)}{q(x)}\right) + P(\text{rej
 \end{aligned}
 $$
 
-无论草稿模型多么粗糙，只要经过上述拒绝采样与残差重采样校正，单步乃至整条序列的联合分布都严格等于主干大模型独立自回归采样的结果，草稿质量只会影响期望接受长度而不会损伤输出分布。
+无论草稿模型多么粗糙，只要经过上述拒绝采样与残差重采样校正，单步乃至整条序列的联合分布都等于主干大模型独立自回归采样的结果，草稿质量只会影响期望接受长度而不会损伤输出分布。
 
-## 从 DeepSeek-V3 因果 MTP 到 V4.1 DSpark
+## 从因果 MTP 到并行 DSpark
 
 解决无损验证后，系统瓶颈转移到草稿侧本身的延迟：如果草稿模型每猜一步都要串行重跑一层 Decoder 与全词表投影，推测收益会被草稿耗时抵消。图 2 对比了两代架构在草稿生成与检验阶段的时序演进。
 
 ![DeepSeek-V3 串行 MTP（11.8 ms）与 V4.1 DSpark 并行 SWA + r=256 低秩马尔可夫链（6.0 ms，时延减半）对比](./diagrams/09-dspark-vs-mtp.drawio '图 2：DeepSeek-V3 串行 MTP 与 V4.1 DSpark 轻量并行草稿链对比')
 
-### DeepSeek-V3 因果 MTP 与串行层开销
+### V3 因果 MTP 与串行草稿开销
 
-DeepSeek-V3 在预训练期间联合训练了 **MTP（Multi-Token Prediction，多 token 预测）**模块[^v3-mtp]。在 `vLLM` 实现的 `DeepSeekMultiTokenPredictorLayer` 中[^vllm-spec]，第 $k$ 步预测先把上一步主干隐藏状态与第 $k$ 步输入嵌入各自经 `hnorm`、`enorm` 归一化，沿特征维拼接后通过 `eh_proj` 从 $2H$ 压回 $H$；合并特征再穿过 1 个轻量级 `mtp_block` 写入草稿层自己的 KV 缓存，最后送入复用的共享输出头 `SharedHead` 采样第 $k$ 步草稿。这套设计复用了目标模型的嵌入层与输出投影，但受制于严格的自回归因果依赖：当预测深度 $K = 3$ 时，引擎仍须串行发起 3 次 `mtp_block` 前向与 3 次全词表采样，小批量下的 Kernel 启动与卡间 `AllReduce` 延迟会随步数线性累积（图 2 上泳道）。
+DeepSeek-V3 在预训练期间联合训练了 **MTP（Multi-Token Prediction，多 token 预测）**模块[^v3-mtp]。在 `vLLM` 的 `DeepSeekMultiTokenPredictorLayer` 中[^vllm-spec]，第 $k$ 步预测先把上一步隐状态与第 $k$ 步嵌入各自归一化。两者沿特征维拼接后，再经 `eh_proj` 从 $2H$ 压回 $H$。
 
-### V4.1 DSpark 并行 SWA、低秩马尔可夫头与置信度调度
+合并特征再穿过 1 个轻量级 `mtp_block` 写入草稿层自身的 KV 缓存，最后送入共享输出头 `SharedHead` 采样第 $k$ 步草稿。这套设计复用了目标模型的嵌入与输出投影，但自回归因果依赖限制了并发。预测深度 $K = 3$ 时仍须串行发起 3 次前向与全词表采样，小批量下 Kernel 启动和 `AllReduce` 延迟随步数线性累积（图 2 上泳道）。
 
-为了突破串行草稿延迟，DSpark[^dspark-paper] 与 DeepSeek-V4.1-Flash[^v41-flash] 将多步串行起草改为「一次并行 Draft 模型特征提取 + 微秒级低秩马尔可夫链」的半自回归架构。对照 `DeepseekV41DSparkModel` 的实现[^ascend-spec]，Draft 模型从主模型挑选若干代表层的隐状态拼接起来，经 `main_proj`、`main_norm` 与 `context_wkv_proj` 一次性投影进 3 层 SWA（Sliding Window Attention，滑动窗口注意力，窗宽 128）KV 槽位。随后 Draft 模型把上一轮的锚点 token 与 $\gamma - 1$ 个占位掩码拼成连续块，单次并行前向即可同时产出未来 $\gamma$ 个位置的基础 logits $\mathbf{z}_k^{\text{base}}$，消除了 Draft 前向耗时随 $\gamma$ 线性增长的限制。
+### DSpark 并行 SWA 与低秩修正
 
-然而纯并行前向会丢失块内 token 之间的强条件依赖——当语境允许多个合法续写时（如 `"of course"` 与 `"no problem"`），各位置独立边缘分布采样容易混搭出 `"of problem"` 之类的碰撞错误[^dspark-paper]。为此，DSpark 在并行输出的基础 logits 上串接了一个低秩 $r = 256$ 的马尔可夫条件修正头 `DSparkMarkovHead`[^vllm-spec]，左到右依次补回相邻前驱 token $x_{k-1}$ 的转移偏置：
+为了突破串行草稿延迟，DSpark[^dspark-paper] 与 DeepSeek-V4.1-Flash[^v41-flash] 将多步串行起草改为“一次并行 Draft 特征提取 + 微秒级低秩马尔可夫链”的半自回归架构。
+
+对照 `DeepseekV41DSparkModel` 的实现[^ascend-spec]，Draft 模型挑选主模型代表层隐状态拼接。特征经 `main_proj`、`main_norm` 与 `context_wkv_proj` 一次投影进 3 层 SWA 槽位。这里的 **SWA（Sliding Window Attention，滑动窗口注意力）**窗宽为 128。随后把锚点 token 与 $\gamma - 1$ 个占位掩码拼成连续块，单次并行前向即可同时产出未来 $\gamma$ 个位置的基础 logits $\mathbf{z}_k^{\text{base}}$。
+
+但纯并行前向会丢失块内 token 之间的条件依赖。当语境允许多个合法续写时（如 `"of course"` 与 `"no problem"`），各位置独立采样容易混搭出 `"of problem"` 之类的碰撞错误[^dspark-paper]。为此，DSpark 在基础 logits 后串接了一个低秩 $r = 256$ 的马尔可夫条件修正头 `DSparkMarkovHead`[^vllm-spec]，左到右依次补回相邻前驱 token $x_{k-1}$ 的转移偏置：
 
 $$
 \begin{aligned}
@@ -75,11 +81,13 @@ $$
 
 其中 $\mathbf{W}_1$ 相当于词表嵌入查找表，$\mathbf{W}_2$ 是窄瓶颈投影矩阵。每一步只需从 $\mathbf{W}_1$ 查出第 $x_{k-1}$ 行再做一次 $[B, 256] \times [256, V]$ 的极窄矩阵乘，就能在微秒级时间内串联起连续草稿的上下文连贯性（图 2 下泳道）。
 
-针对高并发场景下盲目验证过长草稿反而占用批容量的系统问题，DSpark 还配备了置信度头 `DSparkConfidenceHead`[^dspark-paper][^v41-flash]。它在每个草稿位点预测单步条件接收概率 $c_k \in (0, 1)$（离线通过 Sequential Temperature Scaling 校准），运行时按链式法则累乘出前缀存活概率 $a_j = \prod_{i=1}^j c_i$。在高并发下，GPU 侧 `AdaptiveVerificationManager` 通过将浮点存活概率按位转为整型后执行二分检索（`_assign_draft_token_budget_kernel`）[^vllm-adaptive]，结合引擎吞吐曲线动态裁掉低期望回报的长尾草稿，避免无效验证把批量推过计算拐点。
+高并发场景下，盲目验证过长草稿反而会占用批容量。为此 DSpark 配备了置信度头 `DSparkConfidenceHead`[^dspark-paper][^v41-flash]。它在各草稿位预测单步条件接收概率 $c_k \in (0, 1)$（离线经 Sequential Temperature Scaling 校准），运行时按链式法则累乘出前缀存活概率 $a_j = \prod_{i=1}^j c_i$。
 
-## PyTorch 参考实现：无损拒绝采样与低秩马尔可夫头
+在 GPU 侧，`AdaptiveVerificationManager` 将浮点存活概率按位转为整型后执行二分检索[^vllm-adaptive]。系统再结合引擎吞吐曲线动态裁掉低期望回报的长尾草稿，避免无效验证把批量推过计算拐点。
 
-下面这段自包含 PyTorch 代码覆盖两条核心验证：一方面通过 `lossless_rejection_sample` 对人为放大两倍失真的草稿分布做 50,000 次拒绝与残差重采样，检验边缘分布的总变差收敛性；另一方面通过 `DSparkMarkovHead` 演示并行 SWA 基础 logits 如何借助秩 256 双线性查找表完成左到右条件修正。
+## PyTorch 无损采样与低秩草稿链
+
+下面这段自包含 PyTorch 代码覆盖两项验证。首先，`lossless_rejection_sample` 对失真放大两倍的草稿分布做 50,000 次拒绝与重采样，检验总变差收敛性。其次，`DSparkMarkovHead` 演示并行基础 logits 如何借助秩 256 双线性表完成条件修正。
 
 ```python
 import torch
@@ -99,7 +107,7 @@ def lossless_rejection_sample(
     res = torch.clamp(p - q, min=0.0)
     res_p = res / res.sum()
 
-    # 3. 仅对被拒绝槽位从残差分布 p' 重采样替换，保证最终边缘分布严格等于目标 p
+    # 3. 仅对被拒绝槽位从残差分布 p' 重采样替换，保证最终边缘分布等于目标 p
     n_reject = int((~accept_mask).sum().item())
     final_tokens = drafts.clone()
     final_tokens[~accept_mask] = torch.multinomial(res_p, n_reject, replacement=True)
@@ -107,14 +115,7 @@ def lossless_rejection_sample(
 
 
 class DSparkMarkovHead(nn.Module):
-    """V4.1 DSpark 低秩马尔可夫条件修正头（对应 qwen3_dspark.py）。
-
-    输入：
-        base_logits: [B, n_spec, V]（由 3 层 SWA Draft 模型一次并行产出）
-        prev:        [B]（第 0 步起始 token ID）
-    输出：
-        drafted:     [B, n_spec]（依次修正采样出的草稿 token 序列）
-    """
+    """V4.1 DSpark 低秩马尔可夫条件修正头（对应 qwen3_dspark.py）。"""
 
     def __init__(self, vocab_size: int = 1024, markov_rank: int = 256):
         super().__init__()
@@ -123,13 +124,11 @@ class DSparkMarkovHead(nn.Module):
         self.markov_w2 = nn.Linear(markov_rank, vocab_size, bias=False)
 
     def forward(self, prev_tokens: torch.Tensor) -> torch.Tensor:
-        # O(1) 取出 prev_tokens 对应行后乘 W_2，等价 [B, r] @ [r, V] -> [B, V] 条件偏置
         return self.markov_w2(self.markov_w1(prev_tokens))
 
     def draft_chain(self, base_logits: torch.Tensor, prev: torch.Tensor) -> torch.Tensor:
         drafted = []
         for i in range(base_logits.shape[1]):
-            # 第 k 步并行基础 logits 加上刚采出的第 k-1 步马尔可夫偏置，形成微秒级条件链
             logits_i = base_logits[:, i] + self(prev)
             prev = logits_i.argmax(dim=-1)
             drafted.append(prev)
@@ -166,11 +165,11 @@ if __name__ == "__main__":
 [09-mtp-dspark] lossless_TV=0.00270, accept_rate=0.7503, dspark_draft_shape=(2, 5)
 ```
 
-尽管人为把第 2 个 token 的草稿概率放大到目标的两倍（0.50 对 0.25），50,000 次采样后的总变差仅为 0.00270（低于 0.01 阈值），单步接收率 0.7503 也严格吻合理论期望 $\sum_x \min(p, q) = 0.20 + 0.25 + 0.20 + 0.10 = 0.75$。
+尽管人为把第 2 个 token 的草稿概率放大到目标的两倍（0.50 对 0.25），50,000 次采样后的总变差仅为 0.00270，低于 0.01 阈值。单步接收率 0.7503 也吻合理论期望 $\sum_x \min(p, q) = 0.20 + 0.25 + 0.20 + 0.10 = 0.75$。
 
-## 双硬件生产运行时：vLLM GPU 与 vllm-ascend
+## vLLM 与昇腾的运行时对比
 
-把草稿起草与置信度裁剪真正接进多卡 TP（Tensor Parallelism，张量并行）与 CUDA Graph / ACLGraph 静态图捕获时，`vLLM` GPU 与 `vllm-ascend` NPU 在词表并行、图模式路由与拒绝采样 Kernel 上走出了清晰差异，整体执行栈如图 3 所示。
+把草稿起草与置信度裁剪接进多卡 TP（Tensor Parallelism，张量并行）与静态图捕获时，两套引擎走出了不同路线。`vLLM` GPU 与 `vllm-ascend` NPU 在词表并行、图模式路由与拒绝采样 Kernel 上的执行栈如图 3 所示。
 
 ![vLLM GPU 与 Ascend NPU Speculator 运行时栈对照](./diagrams/09-mtp-vllm-runtime.drawio '图 3：vLLM V1 GPU Speculator 与 vllm-ascend V2 混合扩展运行时栈对照')
 
@@ -184,13 +183,19 @@ if __name__ == "__main__":
 | 静态图适配   | 按自适应开关切换图捕获模式 | 关闭 FIA 尾填充并动态重分配槽位   |
 | 拒绝采样核   | 支持 FP64 校验与批量分片   | 禁 FP64/水印，改用概率拒绝 Triton |
 
-围绕多卡采样与静态图对齐，两套运行时的工程分岔主要落在两处。第一处在词表并行与拒绝采样 Kernel 边界：在 `DSparkSpeculator` 中，GPU 侧通过 `all_to_all_vocab_shards` 将按词表切分的基础 logits 转置为「每张卡持有部分请求的完整词表」，从而让后续 $\gamma$ 步 `DSparkMarkovHead` 采样循环留在单卡本地完成，无需每步做卡间 `AllReduce`[^vllm-spec]；而 `AscendDSparkSpeculator` 将 `supports_batch_sharded_draft_logits` 设为 `False`，改由 `LmheadTPDraftSamplingMixin` 在调用 `compute_draft_logits` 前将输入行对齐填充至 TP 组约定的 `max_num_reqs * num_speculative_steps` 上限、计算后再裁回真实行数，同时在 NPU 拒绝采样 Kernel 内禁用 `use_fp64`、`fly_window_size > 0` 与水印路径[^ascend-spec]。
+围绕多卡采样与静态图对齐，两套运行时分岔在两处。第一处在词表并行边界：`vLLM` GPU 侧通过 `DSparkSpeculator` 里的 `all_to_all_vocab_shards` 重排词表分片[^vllm-spec]。转置后，每张卡持有部分请求的完整词表。
 
-第二处在动态验证步数与静态图捕获的兼容：只要开启 `AdaptiveVerificationManager`，各请求的验证步数就会随置信度实时波动，破坏固定输入长度 `FULL` 图假设。GPU 侧在调度初始化阶段由 `resolve_adaptive_cudagraph_mode` 切换至兼容可变长批的图路由[^vllm-adaptive]；NPU 侧则在 `NPUModelRunner` 中判断启用自适应验证时跳过面向固定图形状的 FIA 序列尾填充，并通过 `compact_batch` 与 `reallocate_drafts` 重新紧缩有效草稿位后再送入目标模型验证[^ascend-spec]。
+随后 $\gamma$ 步 `DSparkMarkovHead` 采样循环就能留在单卡本地完成，无需每步做卡间 `AllReduce`。
 
-工程部署开启推测解码时，需要同步守住两道边界。一方面，当高温度采样或极生僻代码上下文导致平均接受率跌破盈亏线时，草稿前向与多槽位验证的额外计算会直接拖慢单步延迟，此时必须依赖动态预算截断主动缩回验证长度；另一方面，只要发生前缀拒绝并丢弃尾部草稿，引擎不仅要回退分页 KV 的写入指针，还必须同步重置或回滚 DSpark 的 `context_wkv_proj` 状态、SWA 滑窗边界以及前置预取的 Engram 槽位，避免脏状态污染下一轮前缀。
+昇腾 `AscendDSparkSpeculator` 则关闭了 `supports_batch_sharded_draft_logits`[^ascend-spec]。它改由 `LmheadTPDraftSamplingMixin` 在 `compute_draft_logits` 前把输入行填充到 TP 约定上限，算完再裁回真实行数。同时 NPU 拒绝采样核禁用 FP64 校验、`fly_window_size` 飞行窗口与水印路径。
 
-至此，DeepSeek 系列从注意力压缩、MoE、Engram、mHC 到 MTP 与 DSpark 的单模块机理已经各自明确。最后一篇 [10 串珠成链：从 DeepSeek-V2 到 V4.1 的单步全链路与双硬件全景](../10-architecture-synthesis/) 将把这些模块合入同一条 decode 时间线与双微批集群流水线中。
+第二处在动态验证步数与静态图捕获的兼容：只要开启 `AdaptiveVerificationManager`，各请求的验证步数就会随置信度实时波动，破坏固定输入长度 `FULL` 图假设。
+
+GPU 侧在调度初始化阶段由 `resolve_adaptive_cudagraph_mode` 切至兼容可变长批的图路由[^vllm-adaptive]。NPU 侧则在 `NPUModelRunner` 中跳过固定图形状的 FIA 序列尾填充，改用 `compact_batch` 与 `reallocate_drafts` 紧缩有效草稿位后再验证[^ascend-spec]。
+
+部署开启推测解码时需守住两道边界。一方面，高温度采样或生僻代码场景会让平均接受率跌破盈亏线，此时草稿与多槽位验证反而拖慢延迟，必须依赖动态预算截断主动缩回验证长度。另一方面，前缀拒绝丢弃尾部草稿时，引擎既要回退分页 KV 指针，也必须重置 DSpark 的 `context_wkv_proj` 状态。同时 SWA 边界与预取的 Engram 槽位也要一并回滚，避免脏状态污染后续前缀。
+
+至此，DeepSeek 系列从注意力压缩、MoE、Engram、mHC 到 MTP 与 DSpark 的单模块设计已经各自明确。最后一篇 [10 串珠成链：V4.1 单步全链路与双硬件协同](../10-architecture-synthesis/) 将把这些模块合入同一条 decode 时间线与双微批集群流水线中。
 
 [^spec-dec]: Leviathan et al., _Fast Inference from Transformers via Speculative Decoding_, [arXiv:2211.17192](https://arxiv.org/abs/2211.17192)（ICML 2023），§2.3 与 Appendix A.1 给出无损拒绝采样算法与边缘分布等价性证明。
 

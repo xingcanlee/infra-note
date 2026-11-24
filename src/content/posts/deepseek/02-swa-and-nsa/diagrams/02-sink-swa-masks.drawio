@@ -4,7 +4,7 @@
       <root>
         <mxCell id="0"/>
         <mxCell id="1" parent="0"/>
-        <mxCell id="hdr" value="8×8 因果注意力掩码四种状态对照：Pure SWA 概率暴涨 vs Attention Sink（\(t_0\)）稳态锚点" style="text;html=1;whiteSpace=wrap;align=center;verticalAlign=middle;fontFamily=Inter;fontSize=12;fontColor=#5c6067;" vertex="1" parent="1">
+        <mxCell id="hdr" value="8×8 因果注意力掩码四种状态对照：Pure SWA 概率激增 vs Attention Sink（\(t_0\)）稳态锚点" style="text;html=1;whiteSpace=wrap;align=center;verticalAlign=middle;fontFamily=Inter;fontSize=12;fontColor=#5c6067;" vertex="1" parent="1">
           <mxGeometry x="0" y="0" width="688" height="24" as="geometry"/>
         </mxCell>
         <mxCell id="c1" value="1. Full Causal 全量掩码基线（\(t=0..7\)）" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f2fb;strokeColor=#2f5783;strokeWidth=1.25;verticalAlign=top;align=left;spacingLeft=12;spacingTop=6;fontFamily=Inter;fontSize=12;fontStyle=1;fontColor=#2f5783;container=0;" vertex="1" parent="1">
@@ -16,7 +16,7 @@
         <mxCell id="c2" value="2. Pure SWA 无 Sink（\(W=3\) 丢弃 \(t_0\) → 分布崩塌）" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#fcedec;strokeColor=#984646;strokeWidth=1.25;verticalAlign=top;align=left;spacingLeft=12;spacingTop=6;fontFamily=Inter;fontSize=12;fontStyle=1;fontColor=#984646;container=0;" vertex="1" parent="1">
           <mxGeometry x="352" y="32" width="328" height="176" as="geometry"/>
         </mxCell>
-        <mxCell id="c2_b" value="• 失去 \(e^{6.0}\) 吸收项，分母骤缩至 \(e^{1.2}+e^{1.5}+e^{2.0}\approx 15.2\)&lt;br&gt;• 滑窗 \(t_5..t_7\) 权重重归一暴涨至 &lt;b&gt;100.0%（放大 27.9×）&lt;/b&gt;&lt;br&gt;• OutShift = &lt;b&gt;1.454&lt;/b&gt;，KL = &lt;b&gt;26.47&lt;/b&gt;（PG-19 困惑度 5158.07）" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#f4f4f2;strokeColor=#e2e2dd;strokeWidth=1;align=left;verticalAlign=middle;spacingLeft=10;spacingRight=10;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+        <mxCell id="c2_b" value="• 失去 \(e^{6.0}\) 吸收项，分母骤缩至 \(e^{1.2}+e^{1.5}+e^{2.0}\approx 15.2\)&lt;br&gt;• 滑窗 \(t_5..t_7\) 权重重归一激增至 &lt;b&gt;100.0%（放大 27.9×）&lt;/b&gt;&lt;br&gt;• OutShift = &lt;b&gt;1.454&lt;/b&gt;，KL = &lt;b&gt;26.47&lt;/b&gt;（PG-19 困惑度 5158.07）" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#f4f4f2;strokeColor=#e2e2dd;strokeWidth=1;align=left;verticalAlign=middle;spacingLeft=10;spacingRight=10;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
           <mxGeometry x="368" y="64" width="296" height="128" as="geometry"/>
         </mxCell>
         <mxCell id="c3" value="3. Sink + SWA L 型掩码（保留第 0 列 + \(W=3\) 滑窗）" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#fbf2df;strokeColor=#7b5518;strokeWidth=2;verticalAlign=top;align=left;spacingLeft=12;spacingTop=6;fontFamily=Inter;fontSize=12;fontStyle=1;fontColor=#7b5518;container=0;" vertex="1" parent="1">

@@ -1,6 +1,6 @@
 ---
-title: '04 KV Cache 与头共享妥协：从显存带宽账本到 MQA 与 GQA'
-description: '理解自回归解码为何必须缓存历史 Key 与 Value，算清 64 层 MHA 的显存与带宽账本；对比 MQA 与 GQA 如何把算术强度拉升 g 倍，以及头共享背后的表达力妥协。'
+title: '04 KV Cache 与 MQA / GQA'
+description: '自回归每步只生成 1 个 token，重算前缀会浪费算力，全量缓存又很快撑爆显存与带宽。本文量化分析 64 层多头模型的缓存开销与带宽墙，对比 MQA 和 GQA 的收益妥协，并对照双端分页 KV 排布。'
 series: { id: foundations, order: 5 }
 pubDate: 2026-11-15
 tags: [DeepSeek, Attention, KV Cache, GQA, Roofline, vLLM, Ascend]
@@ -10,20 +10,22 @@ toc: true
 
 import KvCacheStepExplainer from '../../../../explainers/foundations/KvCacheStepExplainer';
 
-自回归语言模型生成第 1001 个 token 时，注意力层需要与前面 1000 个历史 token 的 **Key（键）**和 **Value（值）**做交互；而这批历史键值对在前几步已经算出并保持不变。若未将其缓存，每生成 1 个新 token 都必须把整段前缀重新投影一遍，累计投影计算复杂度随序列长度 $N$ 按 $O(N^2)$ 平方增长；把历史键值对全量留存在片外显存后，64 层多头注意力在长上下文和大并发下又会迅速占满 **HBM（High Bandwidth Memory，高带宽显存）**容量与访存带宽。
+自回归语言模型生成第 1001 个 token 时，注意力层需要与前面 1000 个历史 token 的 **Key（键）**和 **Value（值）**交互，而这批历史键值对前几步已经算出且不再改变。若不缓存，每步都得重算整段前缀，累计投影计算量按 $O(N^2)$ 增长。把历史键值留在片外显存后，64 层多头注意力在长上下文与大并发下又会迅速占满 **HBM（High Bandwidth Memory，高带宽显存）**容量与带宽。
 
 ## 增量解码与全前缀重算的工作量对比
 
-把生成过程中的历史键和值留在显存里逐槽追加，称作 **KV Cache（Key-Value Cache，键值缓存）**。由于第 $t$ 步的查询向量 $Q_t$ 只需要计算当前最后一行注意力分数，而前面 $1 \dots t-1$ 行的因果掩码只依赖各自左侧的历史键、互不影响，增量写入缓存与每步重算完整前缀在数学上完全等价。图 1 按解码步 $t = 1 \dots 4$ 对比了增量追加与无缓存全量重算的投影次数差异：有缓存路径每步只计算 1 组 $Q_t$ 与 $(k_t, v_t)$ 并填入空槽，前 4 步累计执行 4 次 token 级 KV 投影；而在对照视图中，如果不做缓存，仅在第 4 步就要重算全部 4 个 token 的键值并丢弃前 3 行，4 步累计投影达 10 次，相差 2.50 倍。
+把生成过程中的历史键和值留在显存里逐槽追加，称作 **KV Cache（Key-Value Cache，键值缓存）**。由于第 $t$ 步的查询向量 $Q_t$ 只算当前最后一行注意力分数，而前面 $1 \dots t-1$ 行的因果掩码只依赖各自左侧的历史键，增量写缓存与重算前缀在数学上等价。
+
+图 1 按解码步 $t = 1 \dots 4$ 对比了增量追加与全量重算的投影次数。有缓存时每步只算 1 组 $Q_t$ 与 $(k_t, v_t)$ 并填入空槽，4 步累计只需 4 次投影；若不做缓存，仅第 4 步就要重算 4 个 token 再丢弃前 3 行，累计达 10 次，相差 2.50 倍。
 
 <KvCacheStepExplainer
   client:visible
   title="图 1：Decode 阶段 KV Cache 增量追加与免重算收益（$t=1\dots 4$）"
 />
 
-放在包含提示词前缀的一般推理场景里，这种差距会拉得更大。设提示词长度为 $T_{\text{prompt}}$、自回归生成 $T_{\text{gen}}$ 步，无缓存路径每步重算的前缀长度呈等差数列递增。当取 $T_{\text{prompt}} = 4$、$T_{\text{gen}} = 4$ 时，重算路径累计执行 $5 + 6 + 7 + 8 = 26$ 次全 token KV 投影，开启 KV Cache 则只需计算 4 个新生成 token 的键值，投影运算量差距立刻拉大到 6.50 倍，并随着上下文总长线性扩大到 $O(T)$ 倍。
+放在带提示词前缀的推理场景里，差距会拉得更大。设提示词长 $T_{\text{prompt}}$、自回归生成 $T_{\text{gen}}$ 步，无缓存重算的前缀长度呈等差数列递增。当取 $T_{\text{prompt}} = 4$、$T_{\text{gen}} = 4$ 时，重算路径累计执行 $5 + 6 + 7 + 8 = 26$ 次投影，开启缓存则只需计算 4 个新 token 的键值，运算量差距拉大到 6.50 倍，并随总长扩至 $O(T)$ 倍。
 
-## 64 层 MHA 的显存与带宽账本
+## 64 层 MHA 的显存与带宽开销
 
 省下了重复计算，代价是必须在显存里常驻不断增长的 KV 张量。设模型共有 $L$ 个 Transformer 层，每层缓存 $n_{kv}$ 个键值头，单头向量长度为 $d_{\text{head}}$，每个元素占 $b_{\text{dtype}}$ 字节（BF16 精度取 2 字节）。由于每层都需要同时保存 Key 与 Value 两个形状等价于 `[T, n_kv, d_head]` 的张量，单个 token 在全模型中占用的 KV 缓存字节数为：
 
@@ -31,7 +33,7 @@ $$
 M_{\text{tok}} = 2 \cdot L \cdot n_{kv} \cdot d_{\text{head}} \cdot b_{\text{dtype}}
 $$
 
-代入主流 64 层标准 **MHA（Multi-Head Attention，多头注意力）**模型（$L = 64$、$n_q = n_{kv} = 64$、$d_{\text{head}} = 128$、$b_{\text{dtype}} = 2$），每个 token 占用 $2 \times 64 \times 64 \times 128 \times 2 = 2{,}097{,}152\text{ B} = 2048.0\text{ KiB/token} = 2.0\text{ MiB/token}$。一旦服务 16 路并发请求且序列长度达到 32768（32K），全模型 KV Cache 总量立即膨胀到 $16 \times 32768 \times 2.0\text{ MiB} = 1024.0\text{ GiB}$（即 1.0 TiB），远远超出单张 80 GB 显存卡的物理容量。
+代入主流 64 层标准 **MHA（Multi-Head Attention，多头注意力）**模型（$L = 64$、$n_q = n_{kv} = 64$、$d_{\text{head}} = 128$、$b_{\text{dtype}} = 2$），每个 token 占用 $2 \times 64 \times 64 \times 128 \times 2 = 2{,}097{,}152\text{ B} = 2048.0\text{ KiB/token} = 2.0\text{ MiB/token}$。一旦服务 16 路并发且序列长达到 32K（32768），全模型缓存立即膨胀到 $16 \times 32768 \times 2.0\text{ MiB} = 1024.0\text{ GiB}$，即 1.0 TiB，远超单张 80 GB 显存卡的容量。
 
 比显存容量更隐蔽的是单步解码的带宽墙。以批大小 $B = 1$、上下文长度 $T$ 为例，每层注意力只为当前 1 个新 token 计算输出：查询 $q_t$ 的形状是 `[n_q, d_head]`，历史键和值各为 `[T, n_kv, d_head]`。统计 $Q K^\top$ 与 $P V$ 两次核心乘加运算，除以读取历史 $K/V$、读写当前 $Q/O$ 及追加新 $(k_t, v_t)$ 的总字节数，得到解码注意力的算术强度：
 
@@ -49,13 +51,19 @@ $$
 
 ## MQA 与 GQA 的头共享妥协
 
-既然标准 MHA 的瓶颈在于每个查询头都要从显存里拉取一份专属的 Key 和 Value，最直接的压缩办法就是减少键值头数 $n_{kv}$，让多个查询头共用同一组 KV。把 $n_q$ 个查询头均匀划分为 $n_{kv}$ 组，每组包含 $g = n_q / n_{kv}$ 个查询头。图 2 用严格等比例宽度的张量条对比了标准 **MHA（多头注意力）**、**GQA（分组查询注意力）**与 **MQA（多查询注意力）**之间的头映射关系和缓存字节体积。
+既然标准 MHA 的瓶颈在于每个查询头都要从显存里拉取一份专属的 Key 和 Value，最直接的压缩办法就是减少键值头数 $n_{kv}$，让多个查询头共用同一组 KV。把 $n_q$ 个查询头均匀划分为 $n_{kv}$ 组，每组包含 $g = n_q / n_{kv}$ 个查询头。图 2 用等比例宽度的张量条对比了标准 MHA、**GQA（分组查询注意力）**与 **MQA（多查询注意力）**的头映射和缓存体积。
 
-![MHA（8:8=100%）、GQA（8:2=25%）与 MQA（8:1=12.5%）严格等比 KV 容量对比](./diagrams/04-mqa-gqa-arch.drawio '图 2：MHA（8:8=100%）、GQA（8:2=25%）与 MQA（8:1=12.5%）头映射与缓存字节占比等比对照')
+![MHA（8:8=100%）、GQA（8:2=25%）与 MQA（8:1=12.5%）等比例 KV 容量对比](./diagrams/04-mqa-gqa-arch.drawio '图 2：MHA（8:8=100%）、GQA（8:2=25%）与 MQA（8:1=12.5%）头映射与缓存字节占比等比对照')
 
-沿着图 2 从上往下压缩键值头数，硬件收益和模型质量之间呈现出一条清晰的折中曲线。在 **MHA（$g = 1$，$n_{kv} = n_q$）** 模式下每个查询头独占一套 KV，容量与访存需求最大；2019 年 Shazeer 提出的 **MQA（Multi-Query Attention，多查询注意力，$g = n_q$，$n_{kv} = 1$）**[^mqa-paper] 让层内所有查询头共享唯一一对 $(K_0, V_0)$，在 **TPUv2（Google Tensor Processing Unit v2）**上将贪心解码单步耗时从 46 us/token 压低到 3.8 us/token（Beam-4 搜索从 203 us 降至 32 us），对应到前面的 64 层模型账本，每 token 缓存缩小 64 倍至 32.0 KiB/token，16 路并发 32K 上下文总显存从 1024.0 GiB 降为 16.0 GiB，且 $T=2048$ 时的解码算术强度跃升至 62.031 FLOP/B。
+沿着图 2 向下压缩键值头数，硬件收益和模型质量呈现一条折中曲线。在 MHA（$g = 1$，$n_{kv} = n_q$）模式下，每个查询头独占一套 KV，容量与访存需求最大。
 
-为了避免只留 1 个 KV 头带来的训练收敛风险，Ainslie 等人在 2023 年提出折中的 **GQA（Grouped-Query Attention，分组查询注意力，$1 < g < n_q$）**[^gqa-paper]，通过对已训练 MHA 检查点按组均值池化并补充 5% 计算量的持续微调，在保留接近 MQA 解码速度的同时把综合评测质量拉回 MHA 水平。压缩 $n_{kv}$ 能提高矩阵计算单元利用率，关键在于同组内的 $g$ 个查询向量在计算时组成一个 `[g, d_head]` 小矩阵：片上从 HBM 读出 1 份共享的 $K$ 或 $V$ 块后，可以同时乘以组内全部 $g$ 个查询头，将算术强度同步放大接近 $g$ 倍——例如在 64 层模型中采用 GQA-8（$g=8$）时，单 token 缓存降至 256.0 KiB/token，16 路并发 32K 上下文总量降至 128.0 GiB，而 $T=2048$ 解码算术强度抬升到 7.965 FLOP/B。
+2019 年 Shazeer 提出的 **MQA（Multi-Query Attention，多查询注意力）**[^mqa-paper]让层内所有查询头共享唯一一对 $(K_0, V_0)$。在 **TPUv2（Google Tensor Processing Unit v2）**上，它将贪心解码耗时从 46 us/token 压到 3.8 us/token。Beam-4 搜索耗时也同步从 203 us 降至 32 us。
+
+对应到前面的 64 层模型，MQA 把单 token 缓存缩小 64 倍至 32.0 KiB/token。16 路并发 32K 上下文总显存从 1024.0 GiB 降为 16.0 GiB，而 $T=2048$ 时的解码算术强度跃升至 62.031 FLOP/B。
+
+为了避免只留 1 个 KV 头带来的训练收敛风险，Ainslie 等人在 2023 年提出折中的 **GQA（Grouped-Query Attention，分组查询注意力，$1 < g < n_q$）**[^gqa-paper]。它对已训练的 MHA 检查点按组均值池化，并补充 5% 计算量持续微调，在接近 MQA 解码速度的同时把评测质量拉回 MHA 水平。
+
+压缩 $n_{kv}$ 能提高矩阵单元利用率，因为同组 $g$ 个查询向量会拼成 `[g, d_head]` 小矩阵。片上读出 1 份共享 $K$ 或 $V$ 块后可同时乘以全部 $g$ 个查询头，把算术强度放大接近 $g$ 倍。以 64 层模型配 GQA-8（$g=8$）为例，单 token 缓存降至 256.0 KiB/token，16 路 32K 总量降至 128.0 GiB。同时，$T=2048$ 解码算术强度抬升到 7.965 FLOP/B。
 
 不过，头共享本质上是在用独立键值的表达自由度换取显存与带宽空间。在几项经典对照实验中，这种表达力折中都有明确体现：
 
@@ -65,11 +73,13 @@ $$
 | T5-XXL 微调（Ainslie 2023[^gqa-paper]） | MHA / GQA-8 / MQA | 均分 47.2 / 47.1 / 46.6；解码 1.51 s / 0.28 s / 0.24 s        |
 | 7B Dense（DeepSeek-V2[^dsv2-paper]）    | MHA / GQA-8 / MQA | MMLU 45.2/41.2/37.9；BBH 37.0/35.6/33.2；CEval 42.9/37.7/30.0 |
 
-尤其当直接从零开始用 GQA 或 MQA 训练万亿级 token 时，模型在知识与复杂推理基准上的得分会比同源 MHA 基线低几个百分点。此外，即使压到 GQA-8，128.0 GiB 的并发缓存依然偏大，7.965 FLOP/B 也仍远低于主流芯片拐点；一旦开启 8 卡张量并行切分模型，像 MQA（$n_{kv}=1$）或 GQA-4 这种头数少于卡数的配置，每张卡都得各自复制一份完整 KV，省下来的容量又会被跨卡冗余占掉一半。如何在不砍掉独立注意力头数的前提下把 KV 体积再压低一个数量级，将是[《DeepSeek 架构演进》第 01 篇](../../deepseek/01-mla/)拆解 **MLA（Multi-Head Latent Attention，多头潜在注意力）**时的核心命题。
+尤其当直接从零用 GQA 或 MQA 训练万亿级 token 时，模型在知识与推理基准上的得分会比 MHA 基线低几个百分点。即使压到 GQA-8，128.0 GiB 的并发缓存依然偏大，7.965 FLOP/B 也远低于芯片拐点。一旦开启 8 卡张量并行，像 MQA 或 GQA-4 这种头数少于卡数的配置还必须跨卡复制 KV，省下的容量又会被冗余占掉一半。
 
-## NumPy 验证：缓存等价性与 64 层带宽账本
+如何在保留独立注意力头的前提下把 KV 体积再压低一个数量级？这正是[《DeepSeek 架构演进》第 01 篇](../../deepseek/01-mla/)拆解 **MLA（Multi-Head Latent Attention，多头潜在注意力）**的切入点。
 
-下面用一段独立可运行的 NumPy 脚本，在 MHA（$n_{kv}=8$）、GQA（$n_{kv}=2$）与 MQA（$n_{kv}=1$）三种拓扑下验证逐 token 增量缓存与全前缀重算的数值等价性，并核对 64 层模型在 $T = 2048$ 下的容量与算术强度账本：
+## 缓存等价性与 64 层带宽核验
+
+下面用一段自包含 NumPy 脚本，在 MHA（$n_{kv}=8$）、GQA（$n_{kv}=2$）与 MQA（$n_{kv}=1$）下验证增量缓存与全前缀重算的等价性，并核对 64 层模型在 $T = 2048$ 下的容量与算术强度：
 
 ```python
 import math
@@ -131,13 +141,19 @@ MQA  :   32.0 KiB/tok | B=16,32K:   16.0 GiB | AI=62.031 FLOP/B
 
 ## 生产分页 KV 排布与双端调度
 
-生产级推理引擎写入 KV Cache 时，需要绕开连续数组逐步拼接带来的重分配开销。若为每条请求按最大上下文长度提前申请一整块连续显存，大量未写满的尾部空间会造成严重的内部碎片；若每生成 1 个 token 就重新分配并拷贝整段缓存，又会浪费大量显存带宽。因此，以 PagedAttention 为代表的生产框架借鉴操作系统的虚拟内存分页机制[^paged-attn]，将逻辑连续的请求序列切分成固定大小的物理块（`block_size`）按需从全局缓存池申领；每步前向时，调度器为当前批中每个新 token 算出对应的全局一维槽位编号 `slot_mapping`（物理块编号乘以块大小加块内偏移），由底层融合算子按槽位执行原地 Scatter 写入。
+生产级推理引擎写入 KV Cache 时，需要绕开连续数组拼接的重分配开销。如果按最大上下文为每条请求预留连续显存，大量尾部空间会造成严重碎片；若每步重新分配并拷贝整段缓存，又会浪费大量显存带宽。
+
+因此以 PagedAttention 为代表的框架借鉴了操作系统的虚拟内存分页[^paged-attn]，将逻辑连续的请求切分为固定大小的物理块（`block_size`）按需申领。每步前向时，调度器为新 token 算出全局一维槽位 `slot_mapping`（块号乘以块大小加块内偏移），再由底层融合算子按槽位原地执行 Scatter 写入。
 
 图 3 并排对照了 `vLLM` GPU 与 `vllm-ascend` NPU 在这套分页缓存模型下的物理内存排布与读写通路。
 
 ![vLLM GPU 行主序分页池与 vllm-ascend 16x16 分形 KV 布局对比](./diagrams/04-gpu-vs-npu-kv-layout.drawio '图 3：vLLM GPU 行主序分页 KV 池与 vllm-ascend 16×16 分形布局对照')
 
-在写入和读取这两个环节上，两条硬件栈围绕[第 02 章](../02-gpu-and-ascend-architecture/)揭示的内存访问偏好做出了清晰区分。`vLLM` GPU 路径的 `FlashAttentionImpl` 维护合并的物理池张量，更新缓存时直接按最后一维切出 Key 和 Value 视图，交给 `reshape_and_cache_flash` 按 `slot_mapping` 原地执行 Scatter 写入，且块内沿着 `head_size` 保持行主序连续排布，以匹配 32 字节 Sector 访存合并与 **TMA（Tensor Memory Accelerator，异步张量搬运引擎）**的 16 字节对齐读取；读取时 CUDA 注意力 Kernel 直接按 `num_q_heads / num_kv_heads` 的组比例偏移复用同一份物理 KV 头，先命中片上 L2 Cache 复用、避免在 HBM 里复制 $g$ 份副本[^vllm-fa]。而在 `vllm-ascend` 路径中，标准注意力默认采用 `block_size = 128` 并将池形状组织为 `(2, num_blocks, block_size, num_kv_heads, head_size)`（部分融合场景会进一步折叠为对齐 Cube 16×16 突发读取的 `FRACTAL_NZ` 分形布局），通过 `DeviceOperator.reshape_and_cache` 按设备代际分发至 `npu_scatter_pa_kv_cache` 等 Scatter 写入算子，随后由融合推理注意力算子 `npu_fused_infer_attention_score_v2` 直接按头分组比例广播消费物理缓存[^vllm-ascend-attn][^vllm-ascend-dev]。
+在写入和读取两个环节上，两条硬件栈围绕[第 02 章](../02-gpu-and-ascend-architecture/)揭示的访存偏好做出了明确区分。`vLLM` GPU 路径的 `FlashAttentionImpl` 维护合并物理池。写缓存时它沿最后一维切出 Key 和 Value 视图，交给 `reshape_and_cache_flash` 按 `slot_mapping` 执行原地 Scatter 写入[^vllm-fa]。
+
+GPU 池块内沿着 `head_size` 保持行主序连续排布。这既能匹配 32 字节 Sector 访存合并，也满足 **TMA（Tensor Memory Accelerator，异步张量搬运引擎）**的 16 字节对齐。读取时 CUDA Kernel 直接按组比例偏移复用同一份物理 KV 头，在 L2 Cache 中命中复用，避免在 HBM 里复制 $g$ 份副本。
+
+在 `vllm-ascend` 路径中，标准注意力默认取 `block_size = 128`。它的缓存池形状定义为 `(2, num_blocks, block_size, num_kv_heads, head_size)`，部分融合场景可折叠为 16×16 分形。写入通过 `DeviceOperator.reshape_and_cache` 分发至 `npu_scatter_pa_kv_cache` 等算子。读取则由 `npu_fused_infer_attention_score_v2` 按组广播消费[^vllm-ascend-attn][^vllm-ascend-dev]。
 
 ```python
 # vllm/v1/attention/backends/flash_attn.py:1422-1440 (vllm@bb23c0a8)
@@ -161,7 +177,7 @@ torch_npu.npu_scatter_pa_kv_cache(
 | 槽位 Scatter 算子 | `reshape_and_cache_flash`  | `npu_scatter_pa_kv_cache`       |
 | 分组读取机制      | Kernel 按组偏移片上复用 KV | 融合注意力算子原生分组读取      |
 
-分页排布仅解决了历史 KV 的物理存储和读取效率；在长序列 Prefill 或 Decode 过程中，注意力分数矩阵 $Q K^\top$ 的尺寸依然按序列长度平方 $O(N^2)$ 增长。下一章 [05 FlashAttention 与硬件对齐 Kernel：从在线 Softmax 到 FA-4、FlashMLA 与昇腾融合注意力](../05-flash-attention/) 将介绍如何利用片上在线归并把中间分数矩阵留在核心内部，从而绕开 $O(N^2)$ 的显存读写墙。
+分页排布解决了历史 KV 的物理存储与读取效率，但在长序列 Prefill 或 Decode 过程中，注意力分数矩阵 $Q K^\top$ 依然按序列长度平方 $O(N^2)$ 增长。下一章[05 FlashAttention 与硬件对齐 Kernel](../05-flash-attention/)将介绍如何用片上在线归并把中间分数留在核心内，绕开 $O(N^2)$ 的显存读写墙。
 
 [^mqa-paper]: Noam Shazeer，“Fast Transformer Decoding: One Write-Head is All You Need”，2019。[arXiv:1911.02150](https://arxiv.org/abs/1911.02150)，§2 与 Tables 1–3。
 
