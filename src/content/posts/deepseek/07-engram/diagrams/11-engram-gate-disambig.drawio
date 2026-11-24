@@ -1,31 +1,52 @@
 <mxfile host="wisp-diagram">
-  <diagram id="deepseek-07-engram-gate-disambig" name="Engram Context Gate Disambiguation">
+  <diagram id="ds-07-engram-gate-disambig" name="engram-gate-disambig">
     <mxGraphModel dx="800" dy="600" grid="1" gridSize="8" guides="1" page="0" math="1" shadow="0">
       <root>
         <mxCell id="0"/>
         <mxCell id="1" parent="0"/>
-        <mxCell id="hdr" value="Engram 上下文门控消歧与 mHC 多流调制：以“Apple pie”vs“Apple Inc.”同形静态查表为例" style="text;html=1;whiteSpace=wrap;align=center;verticalAlign=middle;fontFamily=Inter;fontSize=12;fontColor=#5c6067;" vertex="1" parent="1">
-          <mxGeometry x="0" y="0" width="688" height="24" as="geometry"/>
+        <mxCell id="ga" value="语境 A：中国的首 (308, 12, 88)" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f2fb;strokeColor=#2f5783;strokeWidth=1.25;verticalAlign=top;align=left;spacingLeft=12;spacingTop=6;fontFamily=Inter;fontSize=12;fontStyle=1;fontColor=#2f5783;container=0;" vertex="1" parent="1">
+          <mxGeometry x="0" y="8" width="336" height="120" as="geometry"/>
         </mxCell>
-        <mxCell id="top_proj" value="&lt;b&gt;共享静态向量 \(\mathbf{e}_t\;[1280]\) → 4:1 融合投影 w_kv&lt;/b&gt;：拆分为 &lt;b&gt;4 条流独立 Key \(\mathbf{W}_K^{(0..3)}\mathbf{e}_t\;[4d = 5120]\)&lt;/b&gt; 与 &lt;b&gt;1 份共享 Value \(\mathbf{W}_V\mathbf{e}_t\;[d = 1280]\)&lt;/b&gt;" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f2fb;strokeColor=#2f5783;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
-          <mxGeometry x="8" y="32" width="672" height="48" as="geometry"/>
+        <mxCell id="ca_h" value="隐状态 \(h_t^A\)&lt;br&gt;含“中国”语境" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#f4f4f2;strokeColor=#1d1d1f;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="16" y="40" width="128" height="72" as="geometry"/>
         </mxCell>
-        <mxCell id="eq_box" value="&lt;b&gt;防饱和鉴权公式（_fused_engram_post_wkv_kernel）&lt;/b&gt;&lt;br&gt;&lt;br&gt;\(z^{(m)} = \frac{\operatorname{RMSNorm}(\mathbf{h}_t^{(m)})^\top \operatorname{RMSNorm}(\mathbf{k}_t^{(m)})}{\sqrt{d}}\)&lt;br&gt;&lt;br&gt;\(\alpha_t^{(m)} = \sigma\!\big(\operatorname{sign}(z^{(m)})\sqrt{|z^{(m)}|}\big) \in (0, 1)\)&lt;br&gt;&lt;br&gt;原位写入 4 路残差流：\(\mathbf{u}_t^{(m)} = \alpha_t^{(m)} \cdot (\mathbf{W}_V \mathbf{e}_t)\)" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#f4f4f2;strokeColor=#5c6067;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=6;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
-          <mxGeometry x="8" y="96" width="296" height="208" as="geometry"/>
+        <mxCell id="ca_hash" value="3-gram \(h_3 = 2952\)&lt;br&gt;槽位 \(H_2=16,\; H_3=24\)" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f2fb;strokeColor=#2f5783;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="160" y="40" width="160" height="72" as="geometry"/>
         </mxCell>
-        <mxCell id="ctx_a" value="&lt;b&gt;语境 A：“Apple pie”（语义冲突 → 门控抑制噪声）&lt;/b&gt;&lt;br&gt;主干隐状态指向食材语境，与静态商业实体键负相关&lt;br&gt;4 流点积 \(z_A = [-1.82,\; -1.54,\; -1.21,\; -2.06]\)&lt;br&gt;门控输出 \(\alpha_A = [0.14,\; 0.17,\; 0.21,\; 0.12]\) → 压低屏蔽" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#fbf2df;strokeColor=#7b5518;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
-          <mxGeometry x="320" y="96" width="360" height="96" as="geometry"/>
+        <mxCell id="gb" value="语境 B：新任的首 (729, 12, 88)" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#fbf2df;strokeColor=#7b5518;strokeWidth=1.25;verticalAlign=top;align=left;spacingLeft=12;spacingTop=6;fontFamily=Inter;fontSize=12;fontStyle=1;fontColor=#7b5518;container=0;" vertex="1" parent="1">
+          <mxGeometry x="352" y="8" width="336" height="120" as="geometry"/>
         </mxCell>
-        <mxCell id="ctx_b" value="&lt;b&gt;语境 B：“Apple Inc.”（语义对齐 → 门控高倍放行）&lt;/b&gt;&lt;br&gt;主干隐状态指向科技公司，与静态记忆键同向对齐（&lt;b&gt;强出 5.8×&lt;/b&gt;）&lt;br&gt;4 流点积 \(z_B = [+2.15,\; +1.92,\; +1.74,\; +2.31]\)&lt;br&gt;门控输出 \(\alpha_B = [0.89,\; 0.86,\; 0.84,\; 0.91]\) → 强注入共享 Value" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f5e9;strokeColor=#2c522d;strokeWidth=2;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
-          <mxGeometry x="320" y="208" width="360" height="96" as="geometry"/>
+        <mxCell id="cb_hash" value="3-gram \(h&#x27;_3 = 6397\)&lt;br&gt;槽位 \(H_2=18,\; H_3=24\)" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#fbf2df;strokeColor=#7b5518;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="368" y="40" width="160" height="72" as="geometry"/>
         </mxCell>
-        <mxCell id="ftr" value="&lt;b&gt;V4.1 工程化取舍&lt;/b&gt;：论文接膨胀率 \(\delta=3\) ShortConv 拼 12 词；V4.1 部署去掉卷积使 Decode 保持零状态可 CUDA Graph 重放，并用 DEAD_ID 置零图像门控" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f5e9;strokeColor=#2c522d;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
-          <mxGeometry x="8" y="320" width="672" height="56" as="geometry"/>
+        <mxCell id="cb_h" value="隐状态 \(h_t^B\)&lt;br&gt;含“新任”语境" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#f4f4f2;strokeColor=#1d1d1f;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="544" y="40" width="128" height="72" as="geometry"/>
         </mxCell>
-        <mxCell id="e_a" value="" style="endArrow=classic;startArrow=none;html=1;strokeColor=#7b5518;strokeWidth=1.25;exitX=1;exitY=0.2308;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="eq_box" target="ctx_a">
+        <mxCell id="mem_box" value="多头桶共享内存：局部碰撞与互补&lt;br&gt;头 3（\(\bmod 13\)）：均命中槽 \(24\)，读出特征混杂&lt;br&gt;头 2（\(\bmod 11\)）：A 落 \(16\)、B 落 \(18\) 各自隔离" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#f4f4f2;strokeColor=#5c6067;strokeWidth=1;dashed=1;dashPattern=4 4;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="160" y="152" width="368" height="96" as="geometry"/>
+        </mxCell>
+        <mxCell id="e_am" value="" style="endArrow=classic;startArrow=none;html=1;strokeColor=#1d1d1f;strokeWidth=1.25;exitX=0.5;exitY=1.0;exitDx=0;exitDy=0;entryX=0.21739130434782608;entryY=0.0;entryDx=0;entryDy=0;" edge="1" parent="1" source="ca_hash" target="mem_box">
           <mxGeometry relative="1" as="geometry"/>
         </mxCell>
-        <mxCell id="e_b" value="" style="endArrow=classic;startArrow=none;html=1;strokeColor=#2c522d;strokeWidth=1.5;exitX=1;exitY=0.7692;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="eq_box" target="ctx_b">
+        <mxCell id="e_bm" value="" style="endArrow=classic;startArrow=none;html=1;strokeColor=#1d1d1f;strokeWidth=1.25;exitX=0.5;exitY=1.0;exitDx=0;exitDy=0;entryX=0.782608695652174;entryY=0.0;entryDx=0;entryDy=0;" edge="1" parent="1" source="cb_hash" target="mem_box">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="gate_a" value="语境 A 门控放行&lt;br&gt;\(K_t^A = W_K e_t^A\) 与 \(h_t^A\) 点积呈正对齐&lt;br&gt;\(\alpha_t^A = \sigma(\dots) \to 1\)：高权重放行 \(V_t\)" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f5e9;strokeColor=#2c522d;strokeWidth=2;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="0" y="272" width="336" height="104" as="geometry"/>
+        </mxCell>
+        <mxCell id="gate_b" value="语境 B 门控抑噪&lt;br&gt;若头 3 碰撞污染使 \(K_t^B\) 偏离 \(h_t^B\)&lt;br&gt;\(\alpha_t^B = \sigma(\dots) \to 0\)：调低权重屏蔽噪声" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#fbf2df;strokeColor=#7b5518;strokeWidth=1.25;dashed=1;dashPattern=4 4;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="352" y="272" width="336" height="104" as="geometry"/>
+        </mxCell>
+        <mxCell id="e_ha_g" value="" style="endArrow=classic;startArrow=none;html=1;strokeColor=#1d1d1f;strokeWidth=1.25;exitX=0.5;exitY=1.0;exitDx=0;exitDy=0;entryX=0.23809523809523808;entryY=0.0;entryDx=0;entryDy=0;" edge="1" parent="1" source="ca_h" target="gate_a">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e_ma_g" value="" style="endArrow=classic;startArrow=none;html=1;strokeColor=#1d1d1f;strokeWidth=1.25;exitX=0.21739130434782608;exitY=1.0;exitDx=0;exitDy=0;entryX=0.7142857142857143;entryY=0.0;entryDx=0;entryDy=0;" edge="1" parent="1" source="mem_box" target="gate_a">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e_mb_g" value="" style="endArrow=classic;startArrow=none;html=1;strokeColor=#1d1d1f;strokeWidth=1.25;exitX=0.782608695652174;exitY=1.0;exitDx=0;exitDy=0;entryX=0.2857142857142857;entryY=0.0;entryDx=0;entryDy=0;" edge="1" parent="1" source="mem_box" target="gate_b">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e_hb_g" value="" style="endArrow=classic;startArrow=none;html=1;strokeColor=#1d1d1f;strokeWidth=1.25;exitX=0.5;exitY=1.0;exitDx=0;exitDy=0;entryX=0.7619047619047619;entryY=0.0;entryDx=0;entryDy=0;" edge="1" parent="1" source="cb_h" target="gate_b">
           <mxGeometry relative="1" as="geometry"/>
         </mxCell>
       </root>

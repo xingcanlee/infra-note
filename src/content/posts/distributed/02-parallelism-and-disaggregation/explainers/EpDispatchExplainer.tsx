@@ -1,5 +1,6 @@
 import { useMemo } from 'react';
-import { Explainer, Stage, type Step } from 'astro-wisp/explainers';
+import { Stage, type Step } from 'astro-wisp/explainers';
+import { BeatExplainer, SvgBeatGroup, defaultBeats, type BeatSpec } from '@/explainers/kit';
 import { MetricRow, SectionBox, type MetricItem } from '@/explainers/kit/MetricRow';
 import {
   PointerArcs,
@@ -9,7 +10,13 @@ import {
 } from '@/explainers/kit/PointerBoard';
 import SvgRichLabel from '@/explainers/kit/SvgRichLabel';
 import TensorBlock from '@/explainers/kit/TensorBlock';
-import { STAGE_W, assertMaxHues, type AnyTone } from '@/explainers/kit/motion';
+import {
+  RADIUS,
+  STAGE_W,
+  assertMaxHues,
+  resolveToneStroke,
+  type AnyTone,
+} from '@/explainers/kit/motion';
 
 export interface EpTensorCard {
   name: string;
@@ -22,7 +29,10 @@ export interface EpTensorCard {
 }
 
 export interface EpDispatchState {
+  stepIndex: number;
   phaseLabel: string;
+  formulaTex: string;
+  beats: BeatSpec[];
   dpSlots: SlotItem[];
   epSlots: SlotItem[];
   epTensors: EpTensorCard[];
@@ -42,8 +52,19 @@ export function buildEpDispatchSteps(): Step<EpDispatchState>[] {
 
   return [
     {
+      label: 'DP 计算',
+      duration: 4600,
       state: {
+        stepIndex: 0,
         phaseLabel: '1. Attention DP 本地计算',
+        formulaTex:
+          '$\\text{DP Rank}_r:\\; X_r \\in \\mathbb{R}^{1 \\times D}\\; (\\text{本地 KV 零通信})$',
+        beats: defaultBeats([
+          '检视 4 卡本地请求 t_r',
+          '确认 Attention 零 KV 副本',
+          '保留 EP 空槽待 Dispatch',
+          '对齐各卡 [1,D] 输出',
+        ]),
         dpSlots: [
           {
             id: 'dp0',
@@ -156,8 +177,19 @@ export function buildEpDispatchSteps(): Step<EpDispatchState>[] {
         'Step 1（Attention DP 本地并行）：4 张卡各自持有独立请求 $t_0..t_3$ 与局部 Paged KV，在 Attention 阶段零 KV 副本冗余、零跨卡通信，输出激活形状均为 $[1, D]$。',
     },
     {
+      label: 'Splits 路由',
+      duration: 4600,
       state: {
+        stepIndex: 1,
         phaseLabel: '2. Top-2 门控路由与 Splits 同步',
+        formulaTex:
+          '$\\text{Top-2} \\;\\Longrightarrow\\; \\text{Splits} = [2, 4, 2, 0]\\; (E_1\\text{ 热点})$',
+        beats: defaultBeats([
+          '读取各卡 Top-2 权重与目标',
+          '虚线预绘 8 条偏斜路由边',
+          '汇总各卡 Splits 接收计数',
+          '识别 E1 拥堵与 E3 空闲',
+        ]),
         dpSlots: [
           {
             id: 'dp0',
@@ -195,7 +227,7 @@ export function buildEpDispatchSteps(): Step<EpDispatchState>[] {
         epSlots: [
           {
             id: 'ep0',
-            label: 'Rank 0 · E0',
+            label: 'Rank 0 · $E_0$',
             sub: '预计收 2 tok',
             topTag: '25%',
             tone: 'active',
@@ -203,7 +235,7 @@ export function buildEpDispatchSteps(): Step<EpDispatchState>[] {
           },
           {
             id: 'ep1',
-            label: 'Rank 1 · E1',
+            label: 'Rank 1 · $E_1$',
             sub: '热点收 4 tok',
             topTag: '50%',
             tone: 'highlight',
@@ -211,7 +243,7 @@ export function buildEpDispatchSteps(): Step<EpDispatchState>[] {
           },
           {
             id: 'ep2',
-            label: 'Rank 2 · E2',
+            label: 'Rank 2 · $E_2$',
             sub: '预计收 2 tok',
             topTag: '25%',
             tone: 'active',
@@ -219,7 +251,7 @@ export function buildEpDispatchSteps(): Step<EpDispatchState>[] {
           },
           {
             id: 'ep3',
-            label: 'Rank 3 · E3',
+            label: 'Rank 3 · $E_3$',
             sub: '冷门 0 tok',
             topTag: 'IDLE',
             tone: 'mask',
@@ -248,73 +280,89 @@ export function buildEpDispatchSteps(): Step<EpDispatchState>[] {
         ],
         arcs: [
           {
+            id: 's1-0',
             fromX: RANK_CENTERS_X[0],
             fromY: 110,
             toX: RANK_CENTERS_X[0],
             toY: 194,
             tone: 'active',
             dashed: true,
+            preserveTone: true,
           },
           {
+            id: 's1-1',
             fromX: RANK_CENTERS_X[0],
             fromY: 110,
             toX: RANK_CENTERS_X[1],
             toY: 194,
             tone: 'highlight',
             dashed: true,
+            preserveTone: true,
             arcOffset: -12,
           },
           {
+            id: 's1-2',
             fromX: RANK_CENTERS_X[1],
             fromY: 110,
             toX: RANK_CENTERS_X[1],
             toY: 194,
             tone: 'highlight',
             dashed: true,
+            preserveTone: true,
           },
           {
+            id: 's1-3',
             fromX: RANK_CENTERS_X[1],
             fromY: 110,
             toX: RANK_CENTERS_X[2],
             toY: 194,
             tone: 'active',
             dashed: true,
+            preserveTone: true,
             arcOffset: -12,
           },
           {
+            id: 's1-4',
             fromX: RANK_CENTERS_X[2],
             fromY: 110,
             toX: RANK_CENTERS_X[0],
             toY: 194,
-            tone: 'highlight',
+            tone: 'active',
             dashed: true,
+            preserveTone: true,
             arcOffset: 24,
           },
           {
+            id: 's1-5',
             fromX: RANK_CENTERS_X[2],
             fromY: 110,
             toX: RANK_CENTERS_X[1],
             toY: 194,
             tone: 'highlight',
             dashed: true,
+            preserveTone: true,
             arcOffset: 10,
           },
           {
+            id: 's1-6',
             fromX: RANK_CENTERS_X[3],
             fromY: 110,
             toX: RANK_CENTERS_X[1],
             toY: 194,
             tone: 'highlight',
             dashed: true,
+            preserveTone: true,
             arcOffset: 24,
           },
           {
+            id: 's1-7',
             fromX: RANK_CENTERS_X[3],
             fromY: 110,
             toX: RANK_CENTERS_X[2],
             toY: 194,
             tone: 'active',
             dashed: true,
+            preserveTone: true,
             arcOffset: 10,
           },
         ],
@@ -325,40 +373,51 @@ export function buildEpDispatchSteps(): Step<EpDispatchState>[] {
         stragglerStatus: 'E1 成为拥堵热点',
       },
       caption:
-        'Step 2（Top-2 路由与 Splits 握手）：Router 输出偏斜分布，4 个 token 的 Top-2 路由均集中到 E1，各卡接收计数为 $[2, 4, 2, 0]$；框架必须先交换 token 计数再为异步 All-to-All 预留缓冲。',
+        'Step 2（Top-2 路由与 Splits 握手）：Router 输出偏斜分布，4 个 token 的 Top-2 路由均集中到 $E_1$，各卡接收计数为 $[2, 4, 2, 0]$；框架必须先交换 token 计数再为异步 All-to-All 预留缓冲。',
     },
     {
+      label: '重排派发',
+      duration: 4600,
       state: {
+        stepIndex: 2,
         phaseLabel: '3. 非对称 All-to-All Dispatch',
+        formulaTex:
+          '$[1, D]_{\\text{DP}} \\xrightarrow{\\text{All-to-All}} [2,D],\\,[4,D],\\,[2,D],\\,[0,D]$',
+        beats: defaultBeats([
+          '切分发送侧 8 份激活',
+          '沿 All-to-All 汇聚到 EP',
+          'Rank 1 堆叠 [4, D] 缓冲',
+          '定位 Incast 拥塞与重构',
+        ]),
         dpSlots: [
           {
             id: 'dp0',
-            label: 't0 已切分',
-            sub: '发往 E0, E1',
+            label: '$t_0$ 已切分',
+            sub: '发往 $E_0, E_1$',
             topTag: 'SEND x2',
             tone: 'active',
             status: 'normal',
           },
           {
             id: 'dp1',
-            label: 't1 已切分',
-            sub: '发往 E1, E2',
+            label: '$t_1$ 已切分',
+            sub: '发往 $E_1, E_2$',
             topTag: 'SEND x2',
             tone: 'active',
             status: 'normal',
           },
           {
             id: 'dp2',
-            label: 't2 已切分',
-            sub: '发往 E0, E1',
+            label: '$t_2$ 已切分',
+            sub: '发往 $E_0, E_1$',
             topTag: 'SEND x2',
             tone: 'active',
             status: 'normal',
           },
           {
             id: 'dp3',
-            label: 't3 已切分',
-            sub: '发往 E1, E2',
+            label: '$t_3$ 已切分',
+            sub: '发往 $E_1, E_2$',
             topTag: 'SEND x2',
             tone: 'active',
             status: 'normal',
@@ -367,7 +426,7 @@ export function buildEpDispatchSteps(): Step<EpDispatchState>[] {
         epSlots: [
           {
             id: 'ep0',
-            label: 'E0: t0,t2',
+            label: '$E_0$: $t_0,t_2$',
             sub: 'Rank 0 接收',
             topTag: '2 tok',
             tone: 'active',
@@ -375,7 +434,7 @@ export function buildEpDispatchSteps(): Step<EpDispatchState>[] {
           },
           {
             id: 'ep1',
-            label: 'E1: t0..t3',
+            label: '$E_1$: $t_0..t_3$',
             sub: 'Rank 1 过载',
             topTag: '4 tok',
             tone: 'highlight',
@@ -383,7 +442,7 @@ export function buildEpDispatchSteps(): Step<EpDispatchState>[] {
           },
           {
             id: 'ep2',
-            label: 'E2: t1,t3',
+            label: '$E_2$: $t_1,t_3$',
             sub: 'Rank 2 接收',
             topTag: '2 tok',
             tone: 'active',
@@ -391,7 +450,7 @@ export function buildEpDispatchSteps(): Step<EpDispatchState>[] {
           },
           {
             id: 'ep3',
-            label: 'E3: (空)',
+            label: '$E_3$: 空',
             sub: 'Rank 3 零接收',
             topTag: '0 tok',
             tone: 'mask',
@@ -413,6 +472,7 @@ export function buildEpDispatchSteps(): Step<EpDispatchState>[] {
         ],
         arcs: [
           {
+            id: 's2-0',
             fromX: RANK_CENTERS_X[0],
             fromY: 110,
             toX: RANK_CENTERS_X[0],
@@ -422,6 +482,7 @@ export function buildEpDispatchSteps(): Step<EpDispatchState>[] {
             active: true,
           },
           {
+            id: 's2-1',
             fromX: RANK_CENTERS_X[0],
             fromY: 110,
             toX: RANK_CENTERS_X[1],
@@ -432,6 +493,7 @@ export function buildEpDispatchSteps(): Step<EpDispatchState>[] {
             arcOffset: -12,
           },
           {
+            id: 's2-2',
             fromX: RANK_CENTERS_X[1],
             fromY: 110,
             toX: RANK_CENTERS_X[1],
@@ -441,6 +503,7 @@ export function buildEpDispatchSteps(): Step<EpDispatchState>[] {
             active: true,
           },
           {
+            id: 's2-3',
             fromX: RANK_CENTERS_X[1],
             fromY: 110,
             toX: RANK_CENTERS_X[2],
@@ -451,6 +514,7 @@ export function buildEpDispatchSteps(): Step<EpDispatchState>[] {
             arcOffset: -12,
           },
           {
+            id: 's2-4',
             fromX: RANK_CENTERS_X[2],
             fromY: 110,
             toX: RANK_CENTERS_X[0],
@@ -461,6 +525,7 @@ export function buildEpDispatchSteps(): Step<EpDispatchState>[] {
             arcOffset: 24,
           },
           {
+            id: 's2-5',
             fromX: RANK_CENTERS_X[2],
             fromY: 110,
             toX: RANK_CENTERS_X[1],
@@ -471,6 +536,7 @@ export function buildEpDispatchSteps(): Step<EpDispatchState>[] {
             arcOffset: 10,
           },
           {
+            id: 's2-6',
             fromX: RANK_CENTERS_X[3],
             fromY: 110,
             toX: RANK_CENTERS_X[1],
@@ -481,6 +547,7 @@ export function buildEpDispatchSteps(): Step<EpDispatchState>[] {
             arcOffset: 24,
           },
           {
+            id: 's2-7',
             fromX: RANK_CENTERS_X[3],
             fromY: 110,
             toX: RANK_CENTERS_X[2],
@@ -501,13 +568,23 @@ export function buildEpDispatchSteps(): Step<EpDispatchState>[] {
         'Step 3（非对称 All-to-All Dispatch）：不同于 TP 的均等切分，EP Dispatch 按路由表将各卡 $[1, D]$ 激活重塑为不等长张量；Rank 1 同时承受来自 4 个源头的 Incast 写入并分配 $[4, D]$ 计算缓冲。',
     },
     {
+      label: '木桶长尾',
+      duration: 4600,
       state: {
+        stepIndex: 3,
         phaseLabel: '4. 专家 Grouped GEMM (木桶效应)',
+        formulaTex: '$T_{\\text{FFN}} = \\max_r T(N_r) = T(E_1) = 2.0\\times t$',
+        beats: defaultBeats([
+          'DP 侧进入同步挂起',
+          'E0/E2 早完工并对齐状态',
+          'E1 承担 4 tok 拖长耗时',
+          '量化木桶长尾与空转浪费',
+        ]),
         dpSlots: [
           {
             id: 'dp0',
             label: 'DP0 挂起',
-            sub: '等待 E0, E1',
+            sub: '等待 $E_0, E_1$',
             topTag: 'WAIT',
             tone: 'neutral',
             status: 'normal',
@@ -515,7 +592,7 @@ export function buildEpDispatchSteps(): Step<EpDispatchState>[] {
           {
             id: 'dp1',
             label: 'DP1 挂起',
-            sub: '等待 E1, E2',
+            sub: '等待 $E_1, E_2$',
             topTag: 'WAIT',
             tone: 'neutral',
             status: 'normal',
@@ -523,7 +600,7 @@ export function buildEpDispatchSteps(): Step<EpDispatchState>[] {
           {
             id: 'dp2',
             label: 'DP2 挂起',
-            sub: '等待 E0, E1',
+            sub: '等待 $E_0, E_1$',
             topTag: 'WAIT',
             tone: 'neutral',
             status: 'normal',
@@ -531,7 +608,7 @@ export function buildEpDispatchSteps(): Step<EpDispatchState>[] {
           {
             id: 'dp3',
             label: 'DP3 挂起',
-            sub: '等待 E1, E2',
+            sub: '等待 $E_1, E_2$',
             topTag: 'WAIT',
             tone: 'neutral',
             status: 'normal',
@@ -540,7 +617,7 @@ export function buildEpDispatchSteps(): Step<EpDispatchState>[] {
         epSlots: [
           {
             id: 'ep0',
-            label: 'E0 FFN',
+            label: '$E_0$ FFN',
             sub: '2 tok 早完成',
             topTag: '1.0x t',
             tone: 'done',
@@ -548,7 +625,7 @@ export function buildEpDispatchSteps(): Step<EpDispatchState>[] {
           },
           {
             id: 'ep1',
-            label: 'E1 FFN',
+            label: '$E_1$ FFN',
             sub: '4 tok 关键路径',
             topTag: '2.0x t',
             tone: 'highlight',
@@ -556,7 +633,7 @@ export function buildEpDispatchSteps(): Step<EpDispatchState>[] {
           },
           {
             id: 'ep2',
-            label: 'E2 FFN',
+            label: '$E_2$ FFN',
             sub: '2 tok 早完成',
             topTag: '1.0x t',
             tone: 'done',
@@ -564,7 +641,7 @@ export function buildEpDispatchSteps(): Step<EpDispatchState>[] {
           },
           {
             id: 'ep3',
-            label: 'E3 FFN',
+            label: '$E_3$ FFN',
             sub: '无计算跳过',
             topTag: 'IDLE',
             tone: 'mask',
@@ -597,11 +674,21 @@ export function buildEpDispatchSteps(): Step<EpDispatchState>[] {
         stragglerStatus: '木桶长尾: Rank1 拖慢',
       },
       caption:
-        'Step 4（本地 Grouped GEMM）：各卡仅读本地显存中的专家权重执行前馈计算；由于 E1 负载达 4 个 token（均值的 2 倍），全组必须等待 Rank 1 完成，Rank 3 完全空转形成算力浪费。',
+        'Step 4（本地 Grouped GEMM）：各卡仅读本地显存中的专家权重执行前馈计算；由于 $E_1$ 负载达 4 个 token（均值的 2 倍），全组必须等待 Rank 1 完成，Rank 3 完全空转形成算力浪费。',
     },
     {
+      label: '回传归约',
+      duration: 4600,
       state: {
+        stepIndex: 4,
         phaseLabel: '5. All-to-All Combine + 加权还原',
+        formulaTex: '$y_t = w_1 Y_{E_{r1}} + w_2 Y_{E_{r2}} \\in \\mathbb{R}^{1 \\times D}$',
+        beats: defaultBeats([
+          '锁定 EP 侧就绪专家输出',
+          '逆向 All-to-All 回传原卡',
+          '按门控权重还原 [1,D] 激活',
+          '确认双向 All-to-All 全周期',
+        ]),
         dpSlots: [
           {
             id: 'dp0',
@@ -639,31 +726,31 @@ export function buildEpDispatchSteps(): Step<EpDispatchState>[] {
         epSlots: [
           {
             id: 'ep0',
-            label: 'E0 回传',
-            sub: '归还 t0, t2',
+            label: '$E_0$ 回传',
+            sub: '归还 $t_0, t_2$',
             topTag: 'COMBINE',
             tone: 'done',
             status: 'normal',
           },
           {
             id: 'ep1',
-            label: 'E1 回传',
-            sub: '归还 t0..t3',
+            label: '$E_1$ 回传',
+            sub: '归还 $t_0..t_3$',
             topTag: 'COMBINE',
             tone: 'done',
             status: 'normal',
           },
           {
             id: 'ep2',
-            label: 'E2 回传',
-            sub: '归还 t1, t3',
+            label: '$E_2$ 回传',
+            sub: '归还 $t_1, t_3$',
             topTag: 'COMBINE',
             tone: 'done',
             status: 'normal',
           },
           {
             id: 'ep3',
-            label: 'E3 (无)',
+            label: '$E_3$ (无)',
             sub: '无数据回传',
             topTag: '0 tok',
             tone: 'mask',
@@ -703,6 +790,7 @@ export function buildEpDispatchSteps(): Step<EpDispatchState>[] {
         ],
         arcs: [
           {
+            id: 's4-0',
             fromX: RANK_CENTERS_X[0],
             fromY: 194,
             toX: RANK_CENTERS_X[0],
@@ -712,6 +800,7 @@ export function buildEpDispatchSteps(): Step<EpDispatchState>[] {
             active: true,
           },
           {
+            id: 's4-1',
             fromX: RANK_CENTERS_X[1],
             fromY: 194,
             toX: RANK_CENTERS_X[0],
@@ -722,6 +811,7 @@ export function buildEpDispatchSteps(): Step<EpDispatchState>[] {
             arcOffset: 12,
           },
           {
+            id: 's4-2',
             fromX: RANK_CENTERS_X[1],
             fromY: 194,
             toX: RANK_CENTERS_X[1],
@@ -731,6 +821,7 @@ export function buildEpDispatchSteps(): Step<EpDispatchState>[] {
             active: true,
           },
           {
+            id: 's4-3',
             fromX: RANK_CENTERS_X[2],
             fromY: 194,
             toX: RANK_CENTERS_X[1],
@@ -741,6 +832,7 @@ export function buildEpDispatchSteps(): Step<EpDispatchState>[] {
             arcOffset: 12,
           },
           {
+            id: 's4-4',
             fromX: RANK_CENTERS_X[0],
             fromY: 194,
             toX: RANK_CENTERS_X[2],
@@ -751,6 +843,7 @@ export function buildEpDispatchSteps(): Step<EpDispatchState>[] {
             arcOffset: -24,
           },
           {
+            id: 's4-5',
             fromX: RANK_CENTERS_X[1],
             fromY: 194,
             toX: RANK_CENTERS_X[2],
@@ -761,6 +854,7 @@ export function buildEpDispatchSteps(): Step<EpDispatchState>[] {
             arcOffset: -10,
           },
           {
+            id: 's4-6',
             fromX: RANK_CENTERS_X[1],
             fromY: 194,
             toX: RANK_CENTERS_X[3],
@@ -771,6 +865,7 @@ export function buildEpDispatchSteps(): Step<EpDispatchState>[] {
             arcOffset: -24,
           },
           {
+            id: 's4-7',
             fromX: RANK_CENTERS_X[2],
             fromY: 194,
             toX: RANK_CENTERS_X[3],
@@ -801,13 +896,26 @@ export default function EpDispatchExplainer({
   const steps = useMemo(() => buildEpDispatchSteps(), []);
 
   return (
-    <Explainer steps={steps} title={title} label="MoE EP 非对称路由与 All-to-All 推演" wide>
-      {(step) => {
+    <BeatExplainer
+      steps={steps}
+      title={title}
+      label="MoE EP 非对称路由与 All-to-All 推演"
+      wide
+      stageMinHeight={524}
+      getBeats={(step) => step.state.beats}
+      getFormula={(step) => step.state.formulaTex}
+    >
+      {(step, { beat, dotToken }) => {
         const s = step.state;
+        const isCombine = s.stepIndex === 4;
+        const showArcs = beat >= 1;
+        const dpDimmed = isCombine ? beat < 2 : false;
+        const epDimmed = isCombine ? false : s.stepIndex === 3 ? beat < 1 : beat < 2;
+
         const metrics: MetricItem[] = [
           {
-            label: '阶段状态',
-            value: s.phaseLabel,
+            label: '跨卡通信阶段',
+            value: s.commVolume,
             tone: 'active',
             active: true,
           },
@@ -831,6 +939,13 @@ export default function EpDispatchExplainer({
           },
         ];
 
+        const badgeStroke = s.arcBadge ? resolveToneStroke(s.arcBadge.tone) : 'var(--wisp-border)';
+        const beatArcs: PointerArc[] = s.arcs.map((a) => ({
+          ...a,
+          visible: showArcs,
+          draw: showArcs,
+        }));
+
         return (
           <Stage width={STAGE_W} height={428} label="Attention DP 到 MoE EP 路由生命周期面板">
             <SectionBox
@@ -840,6 +955,7 @@ export default function EpDispatchExplainer({
               h={100}
               title={`Attention DP 侧 (KV 零副本冗余) · ${s.phaseLabel}`}
               tone="active"
+              dimmed={dpDimmed}
             />
             <SlotStrip
               x={24}
@@ -848,20 +964,21 @@ export default function EpDispatchExplainer({
               slotW={144}
               slotH={44}
               gap={18}
+              dimmed={dpDimmed}
               fontSize={12}
             />
 
-            <PointerArcs arcs={s.arcs} />
+            <PointerArcs arcs={beatArcs} dotToken={showArcs ? dotToken : 0} />
             {s.arcBadge && (
-              <g>
+              <SvgBeatGroup visible={showArcs}>
                 <rect
                   x={STAGE_W / 2 - 78}
                   y={141}
                   width={156}
                   height={22}
-                  rx={4}
+                  rx={RADIUS}
                   fill="var(--wisp-bg)"
-                  stroke={`var(--wisp-sem-${s.arcBadge.tone})`}
+                  stroke={badgeStroke}
                   strokeWidth={1}
                 />
                 <SvgRichLabel
@@ -872,10 +989,10 @@ export default function EpDispatchExplainer({
                   text={s.arcBadge.text}
                   fontSize={11}
                   fontWeight={600}
-                  color={`var(--wisp-sem-${s.arcBadge.tone})`}
+                  color={badgeStroke}
                   family="mono"
                 />
-              </g>
+              </SvgBeatGroup>
             )}
 
             <SectionBox
@@ -885,6 +1002,7 @@ export default function EpDispatchExplainer({
               h={156}
               title="MoE EP 专家侧 (按 Top-2 路由动态重塑各卡批尺寸)"
               tone="highlight"
+              dimmed={epDimmed}
             />
             <SlotStrip
               x={24}
@@ -893,12 +1011,13 @@ export default function EpDispatchExplainer({
               slotW={144}
               slotH={40}
               gap={18}
+              dimmed={epDimmed}
               fontSize={12}
             />
 
             {s.epTensors.map((card, idx) => (
               <TensorBlock
-                key={card.name + idx}
+                key={`ep-tensor-${idx}`}
                 x={24 + idx * (144 + 18)}
                 y={290}
                 w={144}
@@ -911,13 +1030,22 @@ export default function EpDispatchExplainer({
                 active={card.active}
                 muted={card.muted}
                 dashed={card.dashed}
+                visible={isCombine || s.stepIndex === 0 || s.stepIndex === 3 ? true : beat >= 2}
+                dimmed={s.stepIndex === 3 && beat < 2}
               />
             ))}
 
-            <MetricRow x={12} y={366} w={STAGE_W - 24} h={50} metrics={metrics} />
+            <MetricRow
+              x={12}
+              y={366}
+              w={STAGE_W - 24}
+              h={50}
+              revealed={beat >= 3}
+              metrics={metrics}
+            />
           </Stage>
         );
       }}
-    </Explainer>
+    </BeatExplainer>
   );
 }

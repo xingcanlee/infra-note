@@ -8,7 +8,7 @@ category: AI Infra
 toc: true
 ---
 
-import MoeRoutingAlignExplainer from '../../../../explainers/deepseek/MoeRoutingAlignExplainer';
+import MoeRoutingAlignExplainer from './explainers/MoeRoutingAlignExplainer';
 
 把稠密 Transformer 的 FFN（Feed-Forward Network，前馈网络）从 70B 放大到 671B，推理每个 token 的算力和权重访存会同步放大近十倍。因为稠密层里所有权重都必须针对每个 token 完整读入片上 SRAM 计算一遍。
 
@@ -32,7 +32,7 @@ DeepSeekMoE[^deepseekmoe] 从两个方向重构了专家布局。一方面把大
 
 因此，推理引擎会调用 `moe_align_block_size` 按专家编号重排 token 行索引，并在每个活跃专家尾部用哨兵下标 $-1$ 补齐残块，计算 Kernel 遇到 $-1$ 槽位时直接跳过。
 
-为了把这一套路由更新和块填充串起来，图 1 对一个包含 4 个 token、6 个专家和块大小 4 的微型批次做了六步交互推演。点击步进即可观察组限拥堵、偏置分离、两轮符号反馈收敛到 $-1$ 对齐填充的全过程。
+为了把这一套路由更新和块填充串起来，图 1 对一个包含 4 个 token、6 个专家和块大小 4 的微型批次做了六步演示，依次呈现组限拥堵、偏置分离、符号规则反馈收敛到 $-1$ 对齐填充的全过程。
 
 <MoeRoutingAlignExplainer
   client:visible

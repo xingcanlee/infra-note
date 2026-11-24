@@ -28,11 +28,12 @@ export interface ByteLedgerBarProps {
   segments: readonly ByteSegment[];
   title?: string;
   totalLabel?: string;
+  revealedCount?: number;
 }
 
 /**
- * 严格按字节/占比等比例切分的对比长条：
- * 极窄分段（< 54px，如 16B scale 或 4B UE8M0）自动交替引出上方/下方引导标注，避免文字溢出互压。
+ * 按字节/占比等比例切分的对比长条：
+ * 极窄分段（< 54px，如 16B scale 或 4B UE8M0）自动交替引出引导标注，避免文字溢出互压。
  */
 export default function ByteLedgerBar({
   x,
@@ -42,6 +43,7 @@ export default function ByteLedgerBar({
   segments,
   title,
   totalLabel,
+  revealedCount,
 }: ByteLedgerBarProps) {
   const { stepTransition } = useDiagramMotion();
   const total = segments.reduce((acc, s) => acc + Math.max(0, s.value), 0) || 1;
@@ -199,12 +201,18 @@ export default function ByteLedgerBar({
         {layoutItems.map(({ seg, sx, sw, insideText, insideFit, calloutCx, level }, i) => {
           if (sw <= 0.5) return null;
 
+          const segVisible = revealedCount === undefined || i < revealedCount;
           const fill = resolveToneFill(seg.tone);
           const stroke = resolveToneStroke(seg.tone);
           const calloutY = y + h + 14 + level * 15;
 
           return (
-            <g key={`seg-${seg.label}-${i}`}>
+            <motion.g
+              key={`seg-${seg.label}-${i}`}
+              initial={false}
+              animate={{ opacity: segVisible ? 1 : 0.14 }}
+              transition={stepTransition}
+            >
               <motion.rect
                 initial={false}
                 animate={{ x: sx, width: sw }}
@@ -224,7 +232,7 @@ export default function ByteLedgerBar({
                   strokeWidth={1}
                 />
               )}
-            </g>
+            </motion.g>
           );
         })}
       </g>
@@ -235,6 +243,7 @@ export default function ByteLedgerBar({
           ({ seg, sx, sw, insideText, insideFit, calloutCx, calloutW, level }, i) => {
             if (sw <= 0.5) return null;
 
+            const segVisible = revealedCount === undefined || i < revealedCount;
             const calloutY = y + h + 14 + level * 15;
 
             if (insideText && insideFit) {
@@ -253,6 +262,7 @@ export default function ByteLedgerBar({
                     fontSize: insideFit.fontSize,
                     fontWeight: seg.active ? 600 : 500,
                     fontVariantNumeric: 'tabular-nums',
+                    opacity: segVisible ? 1 : 0,
                   }}
                 >
                   {insideText}
@@ -261,7 +271,7 @@ export default function ByteLedgerBar({
             }
 
             return (
-              <g key={`lbl-${seg.label}-${i}`}>
+              <g key={`lbl-${seg.label}-${i}`} style={{ opacity: segVisible ? 1 : 0 }}>
                 <rect
                   x={calloutCx - calloutW / 2}
                   y={calloutY - 7}

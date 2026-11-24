@@ -313,12 +313,16 @@ describe('infra-note writing style gate', () => {
       POSTS,
       (f) => f.endsWith('.drawio') || f.endsWith('.excalidraw'),
     );
-    const explainerFiles = listFiles(
+    const sharedExplainerFiles = listFiles(
       EXPLAINERS,
-      (f) => f.endsWith('.tsx') && !f.includes('__tests__'),
+      (f) => /\.(ts|tsx)$/.test(f) && !f.includes('__tests__'),
+    );
+    const postExplainerFiles = listFiles(
+      POSTS,
+      (f) => /[\\/]explainers[\\/]/.test(f) && /\.(ts|tsx)$/.test(f) && !f.endsWith('.test.ts'),
     );
 
-    for (const file of [...diagramFiles, ...explainerFiles]) {
+    for (const file of [...diagramFiles, ...sharedExplainerFiles, ...postExplainerFiles]) {
       const raw = readFileSync(file, 'utf8');
       const rel = relative(ROOT, file).replace(/\\/g, '/');
       if (/[「」『』]/.test(raw)) {

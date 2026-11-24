@@ -47,11 +47,13 @@ export interface TensorBlockProps {
   active?: boolean;
   muted?: boolean;
   dashed?: boolean;
+  visible?: boolean;
+  dimmed?: boolean;
   fillOpacity?: number;
 }
 
 /**
- * 张量实体化基础构件：
+ * 张量结构基础构件：
  * - 长宽比例真实映射张量尺寸
  * - 切分处自动绘制虚线，多维张量支持 3D 堆叠背页
  * - 维度使用 JetBrains Mono + tabular-nums，与连线零重叠
@@ -74,6 +76,8 @@ export default function TensorBlock({
   active = false,
   muted = false,
   dashed = false,
+  visible = true,
+  dimmed = false,
   fillOpacity,
 }: TensorBlockProps) {
   const { stepTransition } = useDiagramMotion();
@@ -81,11 +85,12 @@ export default function TensorBlock({
   const stroke = muted ? 'var(--wisp-muted)' : resolveToneStroke(tone);
   const strokeWidth = active ? 2 : tone === 'neutral' ? 1 : 1.25;
   const effectiveAlpha = fillOpacity ?? (muted ? 0.55 : 1);
+  const groupOpacity = !visible ? 0.14 : dimmed ? 0.34 : muted ? 0.62 : 1;
 
   const stackLayers = stack > 1 ? Array.from({ length: stack - 1 }, (_, i) => stack - 1 - i) : [];
 
   return (
-    <motion.g initial={false} animate={{ opacity: muted ? 0.62 : 1 }} transition={stepTransition}>
+    <motion.g initial={false} animate={{ opacity: groupOpacity }} transition={stepTransition}>
       {stackLayers.map((layerIdx) => (
         <rect
           key={layerIdx}

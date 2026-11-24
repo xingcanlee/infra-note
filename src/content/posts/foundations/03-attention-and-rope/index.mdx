@@ -8,8 +8,8 @@ category: AI Infra
 toc: true
 ---
 
-import CausalAttentionExplainer from '../../../../explainers/foundations/CausalAttentionExplainer';
-import RopeRotationExplainer from '../../../../explainers/foundations/RopeRotationExplainer';
+import CausalAttentionExplainer from './explainers/CausalAttentionExplainer';
+import RopeRotationExplainer from './explainers/RopeRotationExplainer';
 
 前两章划清了单卡前向的计算类型与双硬件微架构约束，其中 RMSNorm 与 SwiGLU 都在单个 token 内部独立完成。把“猫 坐在 垫 上”打乱成“上 垫 坐在 猫”，第 3 号向量独自穿过前馈网络后产出依然不变。只靠逐位置运算，语言模型就无法在前后词之间交换语义。
 

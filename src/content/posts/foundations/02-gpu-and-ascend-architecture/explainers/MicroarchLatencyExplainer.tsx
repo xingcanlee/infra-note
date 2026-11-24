@@ -1,7 +1,7 @@
 import { useMemo } from 'react';
-import { Explainer, Stage, type Step } from 'astro-wisp/explainers';
+import { Stage, type Step } from 'astro-wisp/explainers';
+import { BeatExplainer, SvgBeatGroup, defaultBeats, type BeatSpec } from '@/explainers/kit';
 import { MetricRow, SectionBox } from '@/explainers/kit/MetricRow';
-import SvgRichLabel from '@/explainers/kit/SvgRichLabel';
 import SwimlaneTimeline, {
   type TimelineLane,
   type TimelineSyncEvent,
@@ -27,6 +27,8 @@ export interface MicroarchLatencyState {
   stepIndex: number;
   mode: 'gpu' | 'ascend';
   phaseTitle: string;
+  formulaTex: string;
+  beats: BeatSpec[];
   warpCount?: number;
   warpRows?: { label: string; cells: CycleRowCell[] }[];
   schedulerRow?: (number | null)[];
@@ -103,6 +105,7 @@ export function buildMicroarchLatencySteps(): Step<MicroarchLatencyState>[] {
 
   const serialAscendLanes: TimelineLane[] = [
     {
+      id: 'mte2',
       title: 'MTE2 搬入',
       subtitle: 'HBM -> L1 / UB',
       blocks: [
@@ -113,6 +116,7 @@ export function buildMicroarchLatencySteps(): Step<MicroarchLatencyState>[] {
       ],
     },
     {
+      id: 'cube',
       title: 'Cube 矩阵乘',
       subtitle: '16x16x16 MMAD',
       blocks: [
@@ -124,6 +128,7 @@ export function buildMicroarchLatencySteps(): Step<MicroarchLatencyState>[] {
       ],
     },
     {
+      id: 'fixpipe',
       title: 'FixPipe 迁出',
       subtitle: 'L0C -> UB',
       blocks: [
@@ -134,6 +139,7 @@ export function buildMicroarchLatencySteps(): Step<MicroarchLatencyState>[] {
       ],
     },
     {
+      id: 'vector',
       title: 'Vector 归约',
       subtitle: '192 KB UB (1C2V)',
       blocks: [
@@ -153,6 +159,7 @@ export function buildMicroarchLatencySteps(): Step<MicroarchLatencyState>[] {
 
   const overlapAscendLanes: TimelineLane[] = [
     {
+      id: 'mte2',
       title: 'MTE2 搬入',
       subtitle: 'Ping-Pong 双缓冲',
       blocks: [
@@ -163,6 +170,7 @@ export function buildMicroarchLatencySteps(): Step<MicroarchLatencyState>[] {
       ],
     },
     {
+      id: 'cube',
       title: 'Cube 矩阵乘',
       subtitle: '稳态零空泡连跑',
       blocks: [
@@ -174,6 +182,7 @@ export function buildMicroarchLatencySteps(): Step<MicroarchLatencyState>[] {
       ],
     },
     {
+      id: 'fixpipe',
       title: 'FixPipe 迁出',
       subtitle: '与下一块计算并行',
       blocks: [
@@ -184,6 +193,7 @@ export function buildMicroarchLatencySteps(): Step<MicroarchLatencyState>[] {
       ],
     },
     {
+      id: 'vector',
       title: 'Vector 归约',
       subtitle: '双 AIV 掩盖于 Cube 后',
       blocks: [
@@ -220,10 +230,19 @@ export function buildMicroarchLatencySteps(): Step<MicroarchLatencyState>[] {
 
   return [
     {
+      label: '2 Warp 饥饿',
+      duration: 4600,
       state: {
         stepIndex: 0,
         mode: 'gpu',
         phaseTitle: 'NVIDIA SM · 2 个驻留 Warp（就绪池过浅，空转率 67%）',
+        formulaTex: '$W = 2 < 1 + 5 \\;\\Longrightarrow\\; \\text{Util} = 4/12 = 33\\%$',
+        beats: defaultBeats([
+          'C1..C4 双 Warp 轮流发射',
+          'C5..C8 均在等待 HBM 返回',
+          'C9..C12 补齐重演并暴露空闲',
+          '汇总 67% 算力空转结论',
+        ]),
         warpCount: 2,
         warpRows: sim2.warpRows,
         schedulerRow: sim2.schedulerRow,
@@ -236,10 +255,20 @@ export function buildMicroarchLatencySteps(): Step<MicroarchLatencyState>[] {
         '仅驻留 $2$ 个 Warp 时，调度器在 C1–C2 依次发射后便面对双双等待访存的空档，其余 $8$ 拍只能空转；此时急需增加驻留线程块来扩充就绪 Warp 池。',
     },
     {
+      label: '6 Warp 满载',
+      duration: 4600,
       state: {
         stepIndex: 1,
         mode: 'gpu',
         phaseTitle: 'NVIDIA SM · 6 个驻留 Warp（延迟完全隐藏，调度器 100% 满载）',
+        formulaTex:
+          '$W = 1_{\\text{issue}} + 5_{\\text{stall}} = 6 \\;\\Longrightarrow\\; \\text{Util} = 100\\%$',
+        beats: defaultBeats([
+          'C1..C4 W0..W3 逐拍填满',
+          'C5..C8 W0 回暖无缝接棒',
+          'C9..C12 全 12 拍满载收拢',
+          '核对 0 切换代价 100% 利用',
+        ]),
         warpCount: 6,
         warpRows: sim6.warpRows,
         schedulerRow: sim6.schedulerRow,
@@ -252,10 +281,20 @@ export function buildMicroarchLatencySteps(): Step<MicroarchLatencyState>[] {
         '驻留增至 $6$ 个 Warp（恰等于 $1$ 拍发射配 $5$ 拍访存延迟）：W1–W5 依次填充等待空档时，W0 恰好完成访存回到就绪态，SM 以零上下文切换代价实现 $100\\%$ 满拍发射。',
     },
     {
+      label: '9 Warp 边际',
+      duration: 4600,
       state: {
         stepIndex: 2,
         mode: 'gpu',
         phaseTitle: 'NVIDIA SM · 9 个驻留 Warp（吞吐不再增加，多余 Warp 进入就绪排队）',
+        formulaTex:
+          '$W = 9 > 6 \\;\\Longrightarrow\\; \\text{吞吐封顶 } 100\\%,\\; \\text{Reg/SMEM 被摊薄}$',
+        beats: defaultBeats([
+          'C1..C4 高并发依次起跑',
+          'C5..C8 橙色 Ready 队列显现',
+          'C9..C12 调度器依然单发 12/12',
+          '揭示 Occupancy 与分块权衡',
+        ]),
         warpCount: 9,
         warpRows: sim9.warpRows,
         schedulerRow: sim9.schedulerRow,
@@ -268,10 +307,20 @@ export function buildMicroarchLatencySteps(): Step<MicroarchLatencyState>[] {
         '超过掩盖延迟所需阈值继续堆高 Warp 数，调度器依旧受限于单拍发射上界；多余 Warp 只能在就绪态排队却平白切薄每线程寄存器与 SMEM 分块预算，这正是 FlashAttention 宁可压低 Occupancy 也要换大分块的根因。',
     },
     {
+      label: '昇腾串行',
+      duration: 4600,
       state: {
         stepIndex: 3,
         mode: 'ascend',
         phaseTitle: '昇腾 AI Core · 单缓冲串行基线（无 SIMT 池，MTE2/Cube/Vector 依次空等）',
+        formulaTex:
+          '$\\text{Single Buffer}:\\; T = T_{\\text{MTE2}} + T_{\\text{Cube}} + T_{\\text{FixPipe}} + T_{\\text{Vec}}$',
+        beats: defaultBeats([
+          'MTE2 独力搬入 Tile0/T1',
+          'Cube 与 FixPipe 依次等数开工',
+          'Vector 末尾归约形成 57% 空隙',
+          '汇总单缓冲算力闲置代价',
+        ]),
         ascendLanes: serialAscendLanes,
         ascendSync: serialSync,
         metricMode: '显式多队列 (单缓冲)',
@@ -283,10 +332,20 @@ export function buildMicroarchLatencySteps(): Step<MicroarchLatencyState>[] {
         '昇腾 DaVinci 核没有几十个常驻 Warp 互相顶班；若不做软件双缓冲，MTE2 搬数、Cube 矩阵乘与 Vector 归约沿单块依次串行，Cube 计算单元有超过一半时间在等数据。',
     },
     {
+      label: '昇腾乒乓',
+      duration: 4600,
       state: {
         stepIndex: 4,
         mode: 'ascend',
         phaseTitle: '昇腾 AI Core · Ping-Pong 双缓冲 + 1C2V CV 流水线重叠',
+        formulaTex:
+          '$\\text{Ping-Pong }(A/B) + 1\\text{C}2\\text{V} \\;\\Longrightarrow\\; \\text{Cube 稳态 } 100\\%$',
+        beats: defaultBeats([
+          'MTE2 交替填满 Buf A 与 Buf B',
+          'Cube + FixPipe 无缝吞吐 T0..T3',
+          '双 Vector 核掩盖在前序 Cube 后',
+          '确认显式队列等效满载',
+        ]),
         ascendLanes: overlapAscendLanes,
         ascendSync: overlapSync,
         metricMode: '显式双缓冲 + CV 重叠',
@@ -308,45 +367,52 @@ export default function MicroarchLatencyExplainer({
   const steps = useMemo(() => buildMicroarchLatencySteps(), []);
 
   return (
-    <Explainer steps={steps} title={title} label="GPU Warp 调度与昇腾显式流水延迟隐藏交互">
-      {(step) => {
+    <BeatExplainer
+      steps={steps}
+      title={title}
+      label="GPU Warp 调度与昇腾显式流水延迟隐藏交互"
+      stageMinHeight={548}
+      getBeats={(step) => step.state.beats}
+      getFormula={(step) => step.state.formulaTex}
+    >
+      {(step, { beat }) => {
         const s = step.state;
-        const gridX = 100;
-        const colW = 45;
-        const colGap = 2;
+        const gridX = 93;
+        const colW = 44;
+        const colGap = 3;
         const rowH = 22;
         const rowGap = 3;
-        const rowStartY = 84;
+        const rowStartY = 60;
         const warpRows = s.warpRows ?? [];
         const schedulerRow = s.schedulerRow ?? [];
         const schedY = rowStartY + 9 * (rowH + rowGap) + 12;
 
-        return (
-          <Stage width={STAGE_W} height={476} label="GPU Warp 调度与昇腾双缓冲流水对比">
-            <SvgRichLabel
-              x={16}
-              y={22}
-              width={STAGE_W - 32}
-              height={22}
-              text={s.phaseTitle}
-              fontSize={12.5}
-              fontWeight={600}
-              color="var(--wisp-fg)"
-              anchor="start"
-            />
+        const visibleCycles = beat === 0 ? 4 : beat === 1 ? 8 : TOTAL_CYCLES;
+        const ascendLanesBeat = (s.ascendLanes ?? []).map((lane, lIdx) => ({
+          ...lane,
+          blocks: lane.blocks.map((blk) => ({
+            ...blk,
+            visible: lIdx === 0 ? true : lIdx <= 2 ? beat >= 1 : beat >= 2,
+          })),
+        }));
+        const ascendSyncBeat = (s.ascendSync ?? []).map((ev) => ({
+          ...ev,
+          visible: ev.toLane <= 2 ? beat >= 1 : beat >= 2,
+        }));
 
+        return (
+          <Stage width={STAGE_W} height={452} label="GPU Warp 调度与昇腾双缓冲流水对比">
             {s.mode === 'gpu' ? (
               <g>
                 <SectionBox
                   x={16}
-                  y={40}
+                  y={14}
                   w={648}
-                  h={362}
+                  h={364}
                   title="SM 12 拍 Warp 调度状态矩阵"
                   tone="active"
                 />
 
-                {/* Legend pills on top-right row cleanly clear of title */}
                 {[
                   { label: '发射 Issue', tone: 'active' as AnyTone, x: 378, dashed: false },
                   { label: '访存等 Stall', tone: 'neutral' as AnyTone, x: 472, dashed: true },
@@ -355,7 +421,7 @@ export default function MicroarchLatencyExplainer({
                   <g key={item.label}>
                     <rect
                       x={item.x}
-                      y={46}
+                      y={22}
                       width={12}
                       height={12}
                       rx={RADIUS_SM}
@@ -366,7 +432,7 @@ export default function MicroarchLatencyExplainer({
                     />
                     <text
                       x={item.x + 17}
-                      y={52}
+                      y={28}
                       dominantBaseline="central"
                       style={{
                         fill: 'var(--wisp-muted)',
@@ -382,15 +448,16 @@ export default function MicroarchLatencyExplainer({
                 {/* Cycle column headers C1..C12 */}
                 {Array.from({ length: TOTAL_CYCLES }, (_, ci) => {
                   const cx = gridX + ci * (colW + colGap) + colW / 2;
+                  const activeCol = ci < visibleCycles;
                   return (
                     <text
                       key={ci}
                       x={cx}
-                      y={71}
+                      y={47}
                       textAnchor="middle"
                       dominantBaseline="central"
                       style={{
-                        fill: 'var(--wisp-muted)',
+                        fill: activeCol ? 'var(--wisp-muted)' : 'var(--wisp-border)',
                         fontFamily: 'var(--wisp-font-mono)',
                         fontSize: 10.5,
                         fontVariantNumeric: 'tabular-nums',
@@ -421,6 +488,7 @@ export default function MicroarchLatencyExplainer({
                         {row.label}
                       </text>
                       {row.cells.map((cell) => {
+                        if (cell.cycle >= visibleCycles) return null;
                         const cx = gridX + cell.cycle * (colW + colGap);
                         const tone: AnyTone =
                           cell.state === 'issue'
@@ -457,7 +525,7 @@ export default function MicroarchLatencyExplainer({
                                 fill:
                                   cell.state === 'stall' ? 'var(--wisp-muted)' : 'var(--wisp-fg)',
                                 fontFamily: 'var(--wisp-font-mono)',
-                                fontSize: 9.5,
+                                fontSize: 10,
                                 fontWeight: cell.state === 'issue' ? 700 : 500,
                               }}
                             >
@@ -472,66 +540,68 @@ export default function MicroarchLatencyExplainer({
 
                 {/* Divider & Bottom Scheduler summary row */}
                 <line
-                  x1={28}
+                  x1={26}
                   y1={schedY - 8}
-                  x2={658}
+                  x2={654}
                   y2={schedY - 8}
                   stroke="var(--wisp-border)"
                   strokeWidth={1}
                 />
-                <text
-                  x={gridX - 10}
-                  y={schedY + 15}
-                  textAnchor="end"
-                  dominantBaseline="central"
-                  style={{
-                    fill: 'var(--wisp-sem-active)',
-                    fontFamily: 'var(--wisp-font-sans)',
-                    fontSize: 11.5,
-                    fontWeight: 700,
-                  }}
-                >
-                  Warp 调度器
-                </text>
-                {schedulerRow.map((picked, ci) => {
-                  const cx = gridX + ci * (colW + colGap);
-                  const isBusy = picked !== null;
-                  const tone: AnyTone = isBusy ? 'active' : 'neutral';
-                  return (
-                    <g key={ci}>
-                      <rect
-                        x={cx}
-                        y={schedY}
-                        width={colW}
-                        height={30}
-                        rx={RADIUS}
-                        fill={resolveToneFill(tone)}
-                        stroke={resolveToneStroke(tone)}
-                        strokeWidth={isBusy ? 1.8 : 1}
-                        strokeDasharray={isBusy ? undefined : '4 3'}
-                        fillOpacity={isBusy ? 1 : 0.35}
-                      />
-                      <text
-                        x={cx + colW / 2}
-                        y={schedY + 15}
-                        textAnchor="middle"
-                        dominantBaseline="central"
-                        style={{
-                          fill: isBusy ? 'var(--wisp-fg)' : 'var(--wisp-muted)',
-                          fontFamily: isBusy ? 'var(--wisp-font-mono)' : 'var(--wisp-font-sans)',
-                          fontSize: 10.5,
-                          fontWeight: isBusy ? 700 : 500,
-                        }}
-                      >
-                        {isBusy ? `W${picked}` : '空闲'}
-                      </text>
-                    </g>
-                  );
-                })}
+                <SvgBeatGroup visible={beat >= 2}>
+                  <text
+                    x={gridX - 10}
+                    y={schedY + 15}
+                    textAnchor="end"
+                    dominantBaseline="central"
+                    style={{
+                      fill: 'var(--wisp-sem-active)',
+                      fontFamily: 'var(--wisp-font-sans)',
+                      fontSize: 11.5,
+                      fontWeight: 700,
+                    }}
+                  >
+                    Warp 调度器
+                  </text>
+                  {schedulerRow.map((picked, ci) => {
+                    const cx = gridX + ci * (colW + colGap);
+                    const isBusy = picked !== null;
+                    const tone: AnyTone = isBusy ? 'active' : 'neutral';
+                    return (
+                      <g key={ci}>
+                        <rect
+                          x={cx}
+                          y={schedY}
+                          width={colW}
+                          height={30}
+                          rx={RADIUS}
+                          fill={resolveToneFill(tone)}
+                          stroke={resolveToneStroke(tone)}
+                          strokeWidth={isBusy ? 1.8 : 1}
+                          strokeDasharray={isBusy ? undefined : '4 3'}
+                          fillOpacity={isBusy ? 1 : 0.35}
+                        />
+                        <text
+                          x={cx + colW / 2}
+                          y={schedY + 15}
+                          textAnchor="middle"
+                          dominantBaseline="central"
+                          style={{
+                            fill: isBusy ? 'var(--wisp-fg)' : 'var(--wisp-muted)',
+                            fontFamily: isBusy ? 'var(--wisp-font-mono)' : 'var(--wisp-font-sans)',
+                            fontSize: 10.5,
+                            fontWeight: isBusy ? 700 : 500,
+                          }}
+                        >
+                          {isBusy ? `W${picked}` : '空闲'}
+                        </text>
+                      </g>
+                    );
+                  })}
+                </SvgBeatGroup>
 
                 <text
                   x={32}
-                  y={380}
+                  y={356}
                   dominantBaseline="central"
                   style={{
                     fill: 'var(--wisp-muted)',
@@ -547,15 +617,15 @@ export default function MicroarchLatencyExplainer({
               <g>
                 <SectionBox
                   x={16}
-                  y={40}
+                  y={14}
                   w={648}
-                  h={362}
+                  h={364}
                   title="昇腾 DaVinci AI Core · 显式硬件异步队列时序（无硬件 SIMT 线程束池）"
                   tone="activation"
                 />
                 <SwimlaneTimeline
                   x={28}
-                  y={74}
+                  y={48}
                   w={608}
                   totalTime={28}
                   unit="拍"
@@ -568,12 +638,12 @@ export default function MicroarchLatencyExplainer({
                       ? '单缓冲基线：MTE2 / Cube / FixPipe / Vector 依次串行停等'
                       : '双缓冲乒乓：Buf A/B 预取与 CV 并行接力，稳态连续喂饱 Cube'
                   }
-                  lanes={s.ascendLanes ?? []}
-                  syncEvents={s.ascendSync}
+                  lanes={ascendLanesBeat}
+                  syncEvents={ascendSyncBeat}
                 />
                 <text
                   x={32}
-                  y={368}
+                  y={354}
                   dominantBaseline="central"
                   style={{
                     fill: 'var(--wisp-muted)',
@@ -589,9 +659,10 @@ export default function MicroarchLatencyExplainer({
 
             <MetricRow
               x={16}
-              y={416}
+              y={392}
               w={648}
               h={46}
+              revealed={beat >= 3}
               metrics={[
                 { label: '延迟隐藏机制', value: s.metricMode, tone: 'highlight', active: true },
                 { label: '驻留 / 缓冲拓扑', value: s.metricConcurrency, tone: 'neutral' },
@@ -607,6 +678,6 @@ export default function MicroarchLatencyExplainer({
           </Stage>
         );
       }}
-    </Explainer>
+    </BeatExplainer>
   );
 }

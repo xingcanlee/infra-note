@@ -1,96 +1,50 @@
 <mxfile host="wisp-diagram">
-  <diagram id="engram-arch" name="Engram 模块原理：静态查表与上下文门控融合">
-    <mxGraphModel dx="640" dy="840" grid="1" gridSize="8" guides="1" page="0" math="1" shadow="0">
+  <diagram id="ds-07-engram-arch" name="engram-arch">
+    <mxGraphModel dx="800" dy="600" grid="1" gridSize="8" guides="1" page="0" math="1" shadow="0">
       <root>
-        <mxCell id="0" />
-        <mxCell id="1" parent="0" />
-        <mxCell id="hdr_left" value="静态检索路径（无矩阵乘，\(O(1)\) 寻址）" style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;fontFamily=Inter;fontSize=14;fontColor=#7b5518;fontStyle=1;" vertex="1" parent="1">
-          <mxGeometry x="0" y="0" width="328" height="24" as="geometry" />
+        <mxCell id="0"/>
+        <mxCell id="1" parent="0"/>
+        <mxCell id="inp" value="输入词元序列与残差隐状态 \(h_t\)" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#f4f4f2;strokeColor=#1d1d1f;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="168" y="8" width="352" height="40" as="geometry"/>
         </mxCell>
-        <mxCell id="hdr_right" value="动态主干路径" style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;fontFamily=Inter;fontSize=14;fontColor=#2f5783;fontStyle=1;" vertex="1" parent="1">
-          <mxGeometry x="360" y="0" width="248" height="24" as="geometry" />
+        <mxCell id="g_comp" value="条件计算：MoE + Attention（动态算力）" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#fbf2df;strokeColor=#7b5518;strokeWidth=1.25;verticalAlign=top;align=left;spacingLeft=12;spacingTop=6;fontFamily=Inter;fontSize=12;fontStyle=1;fontColor=#7b5518;container=0;" vertex="1" parent="1">
+          <mxGeometry x="0" y="72" width="336" height="200" as="geometry"/>
         </mxCell>
-        <mxCell id="tok_in" value="原始 token 序列&lt;br&gt;… 中 国 的 首" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#eaedf2;strokeColor=#464e57;strokeWidth=1.25;fontFamily=Inter;fontSize=14;fontColor=#1d1d1f;" vertex="1" parent="1">
-          <mxGeometry x="0" y="32" width="328" height="48" as="geometry" />
+        <mxCell id="comp_route" value="Router 动态选路计算：\(O(T \cdot E)\)" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#fbf2df;strokeColor=#7b5518;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="16" y="104" width="304" height="48" as="geometry"/>
         </mxCell>
-        <mxCell id="compress" value="词表归一压缩 \(\mathcal{P}(x)\)&lt;br&gt;NFKC / 小写 / 空白合并（词表 \(-23\%\)）" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#f4f4f2;strokeColor=#5c6067;strokeWidth=1;fontFamily=Inter;fontSize=14;fontColor=#1d1d1f;" vertex="1" parent="1">
-          <mxGeometry x="0" y="104" width="328" height="48" as="geometry" />
+        <mxCell id="comp_mlp" value="多步深层组合与逻辑推理&lt;br&gt;若无静态记忆，高频实体只能靠消耗 FFN 重建" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#fbf2df;strokeColor=#7b5518;strokeWidth=2;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="16" y="176" width="304" height="80" as="geometry"/>
         </mxCell>
-        <mxCell id="ngram" value="后缀 N-gram 提取&lt;br&gt;\(g_{t,2},\,g_{t,3}\)（局部词组后缀）" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#fbf2df;strokeColor=#7b5518;strokeWidth=1.25;fontFamily=Inter;fontSize=14;fontColor=#1d1d1f;" vertex="1" parent="1">
-          <mxGeometry x="0" y="176" width="328" height="48" as="geometry" />
+        <mxCell id="e_c1" value="" style="endArrow=classic;startArrow=none;html=1;strokeColor=#1d1d1f;strokeWidth=1.25;edgeStyle=orthogonalEdgeStyle;rounded=1;" edge="1" parent="1" source="comp_route" target="comp_mlp">
+          <mxGeometry relative="1" as="geometry"/>
         </mxCell>
-        <mxCell id="mhash" value="多头确定性哈希 \(\varphi_{n,k}(g_{t,n})\)&lt;br&gt;2 阶 \(\times\) 8 头 \(= 16\) 个桶内行号" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#fbf2df;strokeColor=#7b5518;strokeWidth=1.25;fontFamily=Inter;fontSize=14;fontColor=#1d1d1f;" vertex="1" parent="1">
-          <mxGeometry x="0" y="248" width="328" height="48" as="geometry" />
+        <mxCell id="g_mem" value="条件记忆：Engram（静态查表）" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f2fb;strokeColor=#2f5783;strokeWidth=1.25;verticalAlign=top;align=left;spacingLeft=12;spacingTop=6;fontFamily=Inter;fontSize=12;fontStyle=1;fontColor=#2f5783;container=0;" vertex="1" parent="1">
+          <mxGeometry x="352" y="72" width="336" height="200" as="geometry"/>
         </mxCell>
-        <mxCell id="lookup" value="查静态嵌入表并拼接 \(\mathbf{e}_t \in \mathbb{R}^{1280}\)&lt;br&gt;表扩容 100 倍，计算量不变" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f5e9;strokeColor=#2c522d;strokeWidth=1.25;fontFamily=Inter;fontSize=14;fontColor=#1d1d1f;" vertex="1" parent="1">
-          <mxGeometry x="0" y="320" width="328" height="56" as="geometry" />
+        <mxCell id="mem_hash" value="N-gram 哈希索引：\(O(1)\) 确定性寻址" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f2fb;strokeColor=#2f5783;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="368" y="104" width="304" height="48" as="geometry"/>
         </mxCell>
-        <mxCell id="h_in" value="第 \(\ell\) 层隐藏状态 \(\mathbf{h}_t \in \mathbb{R}^d\)&lt;br&gt;已聚合全局上下文（充当 Query）" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f2fb;strokeColor=#2f5783;strokeWidth=1.25;fontFamily=Inter;fontSize=14;fontColor=#1d1d1f;" vertex="1" parent="1">
-          <mxGeometry x="360" y="32" width="248" height="56" as="geometry" />
+        <mxCell id="mem_lut" value="按词尾整数编号直读 Host 大表&lt;br&gt;固定实体与短语从 GPU HBM 算力路径剥离" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f2fb;strokeColor=#2f5783;strokeWidth=2;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="368" y="176" width="304" height="80" as="geometry"/>
         </mxCell>
-        <mxCell id="bypass_note" value="残差旁路直通" style="text;html=1;whiteSpace=wrap;align=right;verticalAlign=middle;fontFamily=Inter;fontSize=12;fontColor=#2f5783;" vertex="1" parent="1">
-          <mxGeometry x="464" y="200" width="112" height="24" as="geometry" />
+        <mxCell id="e_m1" value="" style="endArrow=classic;startArrow=none;html=1;strokeColor=#1d1d1f;strokeWidth=1.25;edgeStyle=orthogonalEdgeStyle;rounded=1;" edge="1" parent="1" source="mem_hash" target="mem_lut">
+          <mxGeometry relative="1" as="geometry"/>
         </mxCell>
-        <mxCell id="proj_v" value="Value 投影&lt;br&gt;\(\mathbf{v}_t = \mathbf{W}_V \mathbf{e}_t\)" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f5e9;strokeColor=#2c522d;strokeWidth=1.25;fontFamily=Inter;fontSize=14;fontColor=#1d1d1f;" vertex="1" parent="1">
-          <mxGeometry x="0" y="408" width="152" height="48" as="geometry" />
+        <mxCell id="e_top_c" value="" style="endArrow=classic;startArrow=none;html=1;strokeColor=#1d1d1f;strokeWidth=1.25;edgeStyle=orthogonalEdgeStyle;rounded=1;exitX=0.25;exitY=1.0;exitDx=0;exitDy=0;entryX=0.5;entryY=0.0;entryDx=0;entryDy=0;" edge="1" parent="1" source="inp" target="comp_route">
+          <mxGeometry relative="1" as="geometry"/>
         </mxCell>
-        <mxCell id="proj_k" value="Key 投影&lt;br&gt;\(\mathbf{k}_t = \mathbf{W}_K \mathbf{e}_t\)" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#fbf2df;strokeColor=#7b5518;strokeWidth=1.25;fontFamily=Inter;fontSize=14;fontColor=#1d1d1f;" vertex="1" parent="1">
-          <mxGeometry x="176" y="408" width="152" height="48" as="geometry" />
+        <mxCell id="e_top_m" value="" style="endArrow=classic;startArrow=none;html=1;strokeColor=#1d1d1f;strokeWidth=1.25;edgeStyle=orthogonalEdgeStyle;rounded=1;exitX=0.75;exitY=1.0;exitDx=0;exitDy=0;entryX=0.5;entryY=0.0;entryDx=0;entryDy=0;" edge="1" parent="1" source="inp" target="mem_hash">
+          <mxGeometry relative="1" as="geometry"/>
         </mxCell>
-        <mxCell id="gate_alpha" value="上下文门控 \(\alpha_t = \sigma(\hat{\mathbf{h}}_t^\top \hat{\mathbf{k}}_t / \sqrt{d}) \in (0, 1)\)&lt;br&gt;\(\hat{\mathbf{h}}_t,\,\hat{\mathbf{k}}_t\) 经 RMSNorm；语境吻合放行，冲突置零" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f2fb;strokeColor=#2f5783;strokeWidth=1.25;fontFamily=Inter;fontSize=14;fontColor=#1d1d1f;" vertex="1" parent="1">
-          <mxGeometry x="176" y="488" width="384" height="64" as="geometry" />
+        <mxCell id="merge" value="门控融合写回：\(H&#x27;_t = H_t + \alpha_t \odot V_t\)&lt;br&gt;分配比例 \(\rho\) 控制算力与记忆配比，把浅层算力留给深层推理" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f5e9;strokeColor=#2c522d;strokeWidth=2;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="72" y="296" width="544" height="64" as="geometry"/>
         </mxCell>
-        <mxCell id="modulate" value="门控加权 \(\mathbf{u}_t = \alpha_t \cdot \mathbf{v}_t\)" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f5e9;strokeColor=#2c522d;strokeWidth=1.25;fontFamily=Inter;fontSize=14;fontColor=#1d1d1f;" vertex="1" parent="1">
-          <mxGeometry x="0" y="584" width="368" height="48" as="geometry" />
+        <mxCell id="e_bot_c" value="" style="endArrow=classic;startArrow=none;html=1;strokeColor=#1d1d1f;strokeWidth=1.25;edgeStyle=orthogonalEdgeStyle;rounded=1;exitX=0.5;exitY=1.0;exitDx=0;exitDy=0;entryX=0.25;entryY=0.0;entryDx=0;entryDy=0;" edge="1" parent="1" source="comp_mlp" target="merge">
+          <mxGeometry relative="1" as="geometry"/>
         </mxCell>
-        <mxCell id="shortconv" value="膨胀因果短卷积 \(\mathbf{y}_t = \mathrm{SiLU}(\mathrm{Conv1D}(\mathrm{RMSNorm}(\mathbf{u}))) + \mathbf{u}_t\)&lt;br&gt;核宽 \(w = 4\)，膨胀率 \(\delta = 3\)，权重零初始化" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#f4f4f2;strokeColor=#5c6067;strokeWidth=1;fontFamily=Inter;fontSize=14;fontColor=#1d1d1f;" vertex="1" parent="1">
-          <mxGeometry x="0" y="656" width="448" height="56" as="geometry" />
-        </mxCell>
-        <mxCell id="res_out" value="残差合流 \(\mathbf{h}_t \leftarrow \mathbf{h}_t + \mathbf{y}_t\)  →  进入本层 Attention + MoE" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f2fb;strokeColor=#2f5783;strokeWidth=2;fontFamily=Inter;fontSize=14;fontColor=#1d1d1f;fontStyle=1;" vertex="1" parent="1">
-          <mxGeometry x="96" y="744" width="464" height="48" as="geometry" />
-        </mxCell>
-        <mxCell id="e_tok_cmp" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;endArrow=classic;html=1;strokeColor=#464e57;strokeWidth=1.25;exitX=0.5;exitY=1.0;exitDx=0;exitDy=0;entryX=0.5;entryY=0.0;entryDx=0;entryDy=0;fontFamily=Inter;fontSize=12;fontColor=#5c6067;labelBackgroundColor=#fcfcfb;" edge="1" parent="1" source="tok_in" target="compress">
-          <mxGeometry relative="1" as="geometry" />
-        </mxCell>
-        <mxCell id="e_cmp_ng" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;endArrow=classic;html=1;strokeColor=#7b5518;strokeWidth=1.25;exitX=0.5;exitY=1.0;exitDx=0;exitDy=0;entryX=0.5;entryY=0.0;entryDx=0;entryDy=0;fontFamily=Inter;fontSize=12;fontColor=#5c6067;labelBackgroundColor=#fcfcfb;" edge="1" parent="1" source="compress" target="ngram">
-          <mxGeometry relative="1" as="geometry" />
-        </mxCell>
-        <mxCell id="e_ng_mh" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;endArrow=classic;html=1;strokeColor=#7b5518;strokeWidth=1.25;exitX=0.5;exitY=1.0;exitDx=0;exitDy=0;entryX=0.5;entryY=0.0;entryDx=0;entryDy=0;fontFamily=Inter;fontSize=12;fontColor=#5c6067;labelBackgroundColor=#fcfcfb;" edge="1" parent="1" source="ngram" target="mhash">
-          <mxGeometry relative="1" as="geometry" />
-        </mxCell>
-        <mxCell id="e_mh_lu" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;endArrow=classic;html=1;strokeColor=#2c522d;strokeWidth=1.25;exitX=0.5;exitY=1.0;exitDx=0;exitDy=0;entryX=0.5;entryY=0.0;entryDx=0;entryDy=0;fontFamily=Inter;fontSize=12;fontColor=#5c6067;labelBackgroundColor=#fcfcfb;" edge="1" parent="1" source="mhash" target="lookup">
-          <mxGeometry relative="1" as="geometry" />
-        </mxCell>
-        <mxCell id="e_lu_v" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;endArrow=classic;html=1;strokeColor=#2c522d;strokeWidth=1.25;exitX=0.23170731707317074;exitY=1.0;exitDx=0;exitDy=0;entryX=0.5;entryY=0.0;entryDx=0;entryDy=0;fontFamily=Inter;fontSize=12;fontColor=#5c6067;labelBackgroundColor=#fcfcfb;" edge="1" parent="1" source="lookup" target="proj_v">
-          <mxGeometry relative="1" as="geometry" />
-        </mxCell>
-        <mxCell id="e_lu_k" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;endArrow=classic;html=1;strokeColor=#7b5518;strokeWidth=1.25;exitX=0.7682926829268293;exitY=1.0;exitDx=0;exitDy=0;entryX=0.5;entryY=0.0;entryDx=0;entryDy=0;fontFamily=Inter;fontSize=12;fontColor=#5c6067;labelBackgroundColor=#fcfcfb;" edge="1" parent="1" source="lookup" target="proj_k">
-          <mxGeometry relative="1" as="geometry" />
-        </mxCell>
-        <mxCell id="e_k_gate" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;endArrow=classic;html=1;strokeColor=#7b5518;strokeWidth=1.25;exitX=0.5;exitY=1.0;exitDx=0;exitDy=0;entryX=0.19791666666666666;entryY=0.0;entryDx=0;entryDy=0;fontFamily=Inter;fontSize=12;fontColor=#5c6067;labelBackgroundColor=#fcfcfb;" edge="1" parent="1" source="proj_k" target="gate_alpha">
-          <mxGeometry relative="1" as="geometry" />
-        </mxCell>
-        <mxCell id="e_h_gate" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;endArrow=classic;html=1;strokeColor=#2f5783;strokeWidth=1.25;exitX=0.2903225806451613;exitY=1.0;exitDx=0;exitDy=0;entryX=0.6666666666666666;entryY=0.0;entryDx=0;entryDy=0;fontFamily=Inter;fontSize=12;fontColor=#5c6067;labelBackgroundColor=#fcfcfb;" edge="1" parent="1" source="h_in" target="gate_alpha">
-          <mxGeometry relative="1" as="geometry" />
-        </mxCell>
-        <mxCell id="e_h_res" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;endArrow=classic;html=1;strokeColor=#2f5783;strokeWidth=1.25;exitX=0.9032258064516129;exitY=1.0;exitDx=0;exitDy=0;entryX=1.0;entryY=0.5;entryDx=0;entryDy=0;fontFamily=Inter;fontSize=12;fontColor=#5c6067;labelBackgroundColor=#fcfcfb;dashed=1;" edge="1" parent="1" source="h_in" target="res_out">
-          <mxGeometry relative="1" as="geometry">
-            <Array as="points">
-              <mxPoint x="584" y="768" />
-            </Array>
-          </mxGeometry>
-        </mxCell>
-        <mxCell id="e_v_mod" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;endArrow=classic;html=1;strokeColor=#2c522d;strokeWidth=1.25;exitX=0.5;exitY=1.0;exitDx=0;exitDy=0;entryX=0.20652173913043478;entryY=0.0;entryDx=0;entryDy=0;fontFamily=Inter;fontSize=12;fontColor=#5c6067;labelBackgroundColor=#fcfcfb;" edge="1" parent="1" source="proj_v" target="modulate">
-          <mxGeometry relative="1" as="geometry" />
-        </mxCell>
-        <mxCell id="e_gate_mod" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;endArrow=classic;html=1;strokeColor=#2f5783;strokeWidth=1.25;exitX=0.2916666666666667;exitY=1.0;exitDx=0;exitDy=0;entryX=0.782608695652174;entryY=0.0;entryDx=0;entryDy=0;fontFamily=Inter;fontSize=12;fontColor=#5c6067;labelBackgroundColor=#fcfcfb;" edge="1" parent="1" source="gate_alpha" target="modulate">
-          <mxGeometry relative="1" as="geometry" />
-        </mxCell>
-        <mxCell id="e_mod_conv" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;endArrow=classic;html=1;strokeColor=#2c522d;strokeWidth=1.25;exitX=0.5;exitY=1.0;exitDx=0;exitDy=0;entryX=0.4107142857142857;entryY=0.0;entryDx=0;entryDy=0;fontFamily=Inter;fontSize=12;fontColor=#5c6067;labelBackgroundColor=#fcfcfb;" edge="1" parent="1" source="modulate" target="shortconv">
-          <mxGeometry relative="1" as="geometry" />
-        </mxCell>
-        <mxCell id="e_conv_res" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;endArrow=classic;html=1;strokeColor=#2f5783;strokeWidth=1.25;exitX=0.5;exitY=1.0;exitDx=0;exitDy=0;entryX=0.27586206896551724;entryY=0.0;entryDx=0;entryDy=0;fontFamily=Inter;fontSize=12;fontColor=#5c6067;labelBackgroundColor=#fcfcfb;" edge="1" parent="1" source="shortconv" target="res_out">
-          <mxGeometry relative="1" as="geometry" />
+        <mxCell id="e_bot_m" value="" style="endArrow=classic;startArrow=none;html=1;strokeColor=#1d1d1f;strokeWidth=1.25;edgeStyle=orthogonalEdgeStyle;rounded=1;exitX=0.5;exitY=1.0;exitDx=0;exitDy=0;entryX=0.75;entryY=0.0;entryDx=0;entryDy=0;" edge="1" parent="1" source="mem_lut" target="merge">
+          <mxGeometry relative="1" as="geometry"/>
         </mxCell>
       </root>
     </mxGraphModel>

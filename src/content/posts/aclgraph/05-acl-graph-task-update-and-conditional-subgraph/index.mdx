@@ -7,7 +7,7 @@ draft: false
 tags: [ACL Graph, TaskGrp, TaskUpdate, ExternalEvent, Conditional Subgraph, CondHandle, torch_npu]
 ---
 
-import AclGraphDynamicControlExplainer from '../../../../explainers/aclgraph/AclGraphDynamicControlExplainer';
+import AclGraphDynamicControlExplainer from './explainers/AclGraphDynamicControlExplainer';
 
 基础 ACL Graph 只能重放固定拓扑，但生产服务常在两处打破静态假设。在 **DeepSeek-V4.1-Flash** 长上下文解码与 **DSpark** 3 层 SWA 动态推测解码中[^dspark-sub]，系统必须应对以下两类运行期变化：
 

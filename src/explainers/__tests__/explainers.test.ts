@@ -19,48 +19,59 @@ vi.mock('virtual:wisp/locale', () => ({ lang: 'zh-CN' }));
 
 import CausalAttentionExplainer, {
   buildCausalAttentionSteps,
-} from '../foundations/CausalAttentionExplainer';
+} from '@/content/posts/foundations/03-attention-and-rope/explainers/CausalAttentionExplainer';
 import ChipArchitectureMapExplainer, {
   buildChipArchitectureMapSteps,
-} from '../foundations/ChipArchitectureMapExplainer';
-import KvCacheStepExplainer, { buildKvCacheStepSteps } from '../foundations/KvCacheStepExplainer';
+} from '@/content/posts/foundations/02-gpu-and-ascend-architecture/explainers/ChipArchitectureMapExplainer';
+import KvCacheStepExplainer, {
+  buildKvCacheStepSteps,
+} from '@/content/posts/foundations/04-kv-cache-and-gqa/explainers/KvCacheStepExplainer';
 import MemoryCoalescingExplainer, {
   buildMemoryCoalescingSteps,
-} from '../foundations/MemoryCoalescingExplainer';
+} from '@/content/posts/foundations/02-gpu-and-ascend-architecture/explainers/MemoryCoalescingExplainer';
 import MicroarchLatencyExplainer, {
   buildMicroarchLatencySteps,
-} from '../foundations/MicroarchLatencyExplainer';
+} from '@/content/posts/foundations/02-gpu-and-ascend-architecture/explainers/MicroarchLatencyExplainer';
 import OnlineSoftmaxExplainer, {
   buildOnlineSoftmaxSteps,
-} from '../foundations/OnlineSoftmaxExplainer';
-import RooflineExplainer, { buildRooflineSteps } from '../foundations/RooflineExplainer';
+} from '@/content/posts/foundations/05-flash-attention/explainers/OnlineSoftmaxExplainer';
+import RooflineExplainer, {
+  buildRooflineSteps,
+} from '@/content/posts/foundations/01-workload-and-roofline/explainers/RooflineExplainer';
 import RopeRotationExplainer, {
   buildRopeRotationSteps,
-} from '../foundations/RopeRotationExplainer';
+} from '@/content/posts/foundations/03-attention-and-rope/explainers/RopeRotationExplainer';
 
-import EpDispatchExplainer, { buildEpDispatchSteps } from '../distributed/EpDispatchExplainer';
+import EpDispatchExplainer, {
+  buildEpDispatchSteps,
+} from '@/content/posts/distributed/02-parallelism-and-disaggregation/explainers/EpDispatchExplainer';
 import RingCollectivesExplainer, {
   buildRingCollectivesSteps,
-} from '../distributed/RingCollectivesExplainer';
+} from '@/content/posts/distributed/01-interconnects-and-collectives/explainers/RingCollectivesExplainer';
 
 import MoeRoutingAlignExplainer, {
   buildMoeRoutingAlignSteps,
-} from '../deepseek/MoeRoutingAlignExplainer';
+} from '@/content/posts/deepseek/06-moe/explainers/MoeRoutingAlignExplainer';
+import EngramHashExplainer, {
+  buildEngramHashSteps,
+} from '@/content/posts/deepseek/07-engram/explainers/engram-hash';
 import SpecDecVerifyExplainer, {
   buildSpecDecVerifySteps,
-} from '../deepseek/SpecDecVerifyExplainer';
+} from '@/content/posts/deepseek/09-mtp-and-dspark/explainers/SpecDecVerifyExplainer';
 
-import PagedSchedulerExplainer, { buildPagedSchedulerSteps } from '../vllm/PagedSchedulerExplainer';
+import PagedSchedulerExplainer, {
+  buildPagedSchedulerSteps,
+} from '@/content/posts/vllm/01-paged-attention-and-scheduler/explainers/PagedSchedulerExplainer';
 
 import AclGraphDynamicControlExplainer, {
   buildAclGraphDynamicControlSteps,
-} from '../aclgraph/AclGraphDynamicControlExplainer';
+} from '@/content/posts/aclgraph/05-acl-graph-task-update-and-conditional-subgraph/explainers/AclGraphDynamicControlExplainer';
 import AclGraphShadowStreamExplainer, {
   buildAclGraphShadowStreamSteps,
-} from '../aclgraph/AclGraphShadowStreamExplainer';
+} from '@/content/posts/aclgraph/04-acl-graph-architecture-and-capture/explainers/AclGraphShadowStreamExplainer';
 import StreamEventPipelineExplainer, {
   buildStreamEventPipelineSteps,
-} from '../aclgraph/StreamEventPipelineExplainer';
+} from '@/content/posts/aclgraph/01-heterogeneous-streams-and-events/explainers/StreamEventPipelineExplainer';
 
 interface ExplainerEntry {
   name: string;
@@ -104,6 +115,7 @@ const ALL_EXPLAINERS: ExplainerEntry[] = [
     Component: MoeRoutingAlignExplainer,
     buildSteps: buildMoeRoutingAlignSteps,
   },
+  { name: 'EngramHash', Component: EngramHashExplainer, buildSteps: buildEngramHashSteps },
   { name: 'SpecDecVerify', Component: SpecDecVerifyExplainer, buildSteps: buildSpecDecVerifySteps },
   {
     name: 'PagedScheduler',
@@ -127,9 +139,9 @@ const ALL_EXPLAINERS: ExplainerEntry[] = [
   },
 ];
 
-describe('all 16 interactive SVG explainers', () => {
-  it('covers exact 16 explainers across all 5 series', () => {
-    expect(ALL_EXPLAINERS).toHaveLength(16);
+describe('all 17 interactive SVG explainers', () => {
+  it('covers exact 17 explainers across all 5 series', () => {
+    expect(ALL_EXPLAINERS).toHaveLength(17);
   });
 
   it.each(ALL_EXPLAINERS)(
@@ -140,8 +152,13 @@ describe('all 16 interactive SVG explainers', () => {
       expect(steps.length, `${name} step count`).toBeLessThanOrEqual(24);
 
       for (const [idx, step] of steps.entries()) {
+        expect(step.label?.trim().length, `${name} step ${idx} empty label`).toBeGreaterThan(0);
+        expect(step.duration, `${name} step ${idx} duration >= 3600`).toBeGreaterThanOrEqual(3600);
         expect(step.caption.trim().length, `${name} step ${idx} empty caption`).toBeGreaterThan(0);
         expect(step.caption, `${name} step ${idx} literal markdown`).not.toMatch(/`|\*\*/);
+        expect(step.caption, `${name} step ${idx} click prompt`).not.toMatch(
+          /点击上方任意|点击.*聚焦/,
+        );
         const unescaped = step.caption.replace(/\\\$/g, '');
         const dollars = (unescaped.match(/\$/g) ?? []).length;
         expect(dollars % 2, `${name} step ${idx} unbalanced $: ${step.caption}`).toBe(0);
@@ -152,10 +169,16 @@ describe('all 16 interactive SVG explainers', () => {
 
       const markup = renderToStaticMarkup(createElement(Component, { title: `图 1：${name}` }));
       expect(markup).toContain('<svg');
-      const svgStart = markup.indexOf('<svg');
-      const svgEnd = markup.lastIndexOf('</svg>');
-      const svgSlice = svgStart >= 0 && svgEnd > svgStart ? markup.slice(svgStart, svgEnd + 6) : '';
-      expect(svgSlice, `${name} SSR <svg> should render KaTeX/.wisp-tex math`).toMatch(
+      expect(markup, `${name} should use shared BeatExplainer kit banner`).toContain(
+        'wisp-kit-banner',
+      );
+      expect(markup, `${name} should include beat progress hairline`).toContain(
+        'wisp-kit-banner__progress',
+      );
+      expect(markup, `${name} should not ask user to click deterministic elements`).not.toMatch(
+        /点击上方任意|点击.*聚焦/,
+      );
+      expect(markup, `${name} SSR markup should render KaTeX/.wisp-tex math`).toMatch(
         /wisp-tex|katex/,
       );
       expect(markup).not.toMatch(/\bNaN\b/);

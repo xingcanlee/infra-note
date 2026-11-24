@@ -8,7 +8,7 @@ category: AI Infra
 toc: true
 ---
 
-import KvCacheStepExplainer from '../../../../explainers/foundations/KvCacheStepExplainer';
+import KvCacheStepExplainer from './explainers/KvCacheStepExplainer';
 
 自回归语言模型生成第 1001 个 token 时，注意力层需要与前面 1000 个历史 token 的 **Key（键）**和 **Value（值）**交互，而这批历史键值对前几步已经算出且不再改变。若不缓存，每步都得重算整段前缀，累计投影计算量按 $O(N^2)$ 增长。把历史键值留在片外显存后，64 层多头注意力在长上下文与大并发下又会迅速占满 **HBM（High Bandwidth Memory，高带宽显存）**容量与带宽。
 

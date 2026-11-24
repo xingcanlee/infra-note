@@ -1,5 +1,6 @@
 import { useMemo } from 'react';
-import { Explainer, Stage, type Step } from 'astro-wisp/explainers';
+import { Stage, type Step } from 'astro-wisp/explainers';
+import { BeatExplainer, SvgBeatGroup, defaultBeats, type BeatSpec } from '@/explainers/kit';
 import ActiveFocusFrame from '@/explainers/kit/ActiveFocusFrame';
 import DataFlowArrow from '@/explainers/kit/DataFlowArrow';
 import HeatmapMatrix from '@/explainers/kit/HeatmapMatrix';
@@ -9,6 +10,8 @@ import { STAGE_W, assertMaxHues, type AnyTone } from '@/explainers/kit/motion';
 
 export interface OnlineSoftmaxState {
   stepIndex: number;
+  formulaTex: string;
+  beats: BeatSpec[];
   k0Tone: AnyTone;
   k1Tone: AnyTone;
   outHbmTone: AnyTone;
@@ -105,8 +108,17 @@ export function buildOnlineSoftmaxSteps(): Step<OnlineSoftmaxState>[] {
 
   return [
     {
+      label: '载入 Tile 1',
+      duration: 4600,
       state: {
         stepIndex: 0,
+        formulaTex: '$S^{(1)} = Q_{0:2} K_{0:2}^\\top = [[1,3],[4,2]],\\quad (m=-\\infty, l=0)$',
+        beats: defaultBeats([
+          '锁定 HBM 中 Q 与 Tile 1 (K,V)',
+          '将分块流式装入片上 SRAM',
+          '框出局部得分矩阵 S^(1)',
+          '确认零 HBM 中间矩阵落回',
+        ]),
         k0Tone: 'k',
         k1Tone: 'mask',
         outHbmTone: 'mask',
@@ -122,7 +134,7 @@ export function buildOnlineSoftmaxSteps(): Step<OnlineSoftmaxState>[] {
         accTone: 'neutral',
         accValues: O_NULL,
         accSelected: new Set(),
-        focusFrame: { x: 26, y: 176, w: 158, h: 136, label: 'Tile 1 得分 $S^{(1)}$', tone: 'q' },
+        focusFrame: { x: 26, y: 176, w: 152, h: 136, label: 'Tile 1 得分 $S^{(1)}$', tone: 'q' },
         phaseText: '1/7 载入 Tile 1',
         peakSramText: '$2\\times 2$ 分块驻留',
         rescaleText: '$m=-\\infty,\\; l=0$',
@@ -132,8 +144,18 @@ export function buildOnlineSoftmaxSteps(): Step<OnlineSoftmaxState>[] {
         '设 $B_r=2, B_c=2, N=4$：仅将 $Q_{0:2}$ 与第 1 块 $K_{0:2}, V_{0:2}$ 搬入片上 SRAM，算出局部得分 $S^{(1)} = [[1,3],[4,2]]$。此时片上仅分配唯一一份在位状态 $(m, l, \\tilde{O})$，不向 HBM 写回完整 $[4,4]$ 矩阵。',
     },
     {
+      label: '首块统计',
+      duration: 4600,
       state: {
         stepIndex: 1,
+        formulaTex:
+          '$m^{(1)} = [3.0, 4.0],\\; \\tilde{P}^{(1)} = \\exp(S^{(1)}-m^{(1)}),\\; l^{(1)}=[1.135,1.135]$',
+        beats: defaultBeats([
+          '输入片上 Tile 1 得分矩阵',
+          '水平推进算出局部权重 P̃^(1)',
+          '聚焦更新在位最大值 m^(1) 与 l^(1)',
+          '锁定行最大统计归约',
+        ]),
         k0Tone: 'k',
         k1Tone: 'mask',
         outHbmTone: 'mask',
@@ -150,9 +172,9 @@ export function buildOnlineSoftmaxSteps(): Step<OnlineSoftmaxState>[] {
         accValues: O_NULL,
         accSelected: new Set(),
         focusFrame: {
-          x: 208,
+          x: 213,
           y: 176,
-          w: 212,
+          w: 208,
           h: 136,
           label: '更新 $m^{(1)}, l^{(1)}$',
           tone: 'k',
@@ -166,8 +188,18 @@ export function buildOnlineSoftmaxSteps(): Step<OnlineSoftmaxState>[] {
         '由 $S^{(1)}$ 求得首块行最大 $m^{(1)}=[3.0, 4.0]$，算出未归一化局部权重 $\\tilde{P}^{(1)}=\\exp(S^{(1)}-m^{(1)})=[[0.135, 1.0],[1.0, 0.135]]$，并把行和归约进分母 $l^{(1)}=[1.135, 1.135]$。',
     },
     {
+      label: '首块累加',
+      duration: 4600,
       state: {
         stepIndex: 2,
+        formulaTex:
+          '$\\tilde{O}^{(1)} = \\tilde{P}^{(1)} V_{0:2} = [[0.135, 2.000],\\,[1.000, 0.271]]$',
+        beats: defaultBeats([
+          '锚定局部权重与分母状态 l^(1)',
+          '沿片上通道推进累加计算',
+          '写入片上唯一累加器 Õ^(1)',
+          '核对单份 SRAM 累加状态',
+        ]),
         k0Tone: 'k',
         k1Tone: 'mask',
         outHbmTone: 'mask',
@@ -183,7 +215,7 @@ export function buildOnlineSoftmaxSteps(): Step<OnlineSoftmaxState>[] {
         accTone: 'v',
         accValues: O_T1,
         accSelected: ALL_2X2,
-        focusFrame: { x: 440, y: 176, w: 196, h: 136, label: '写入唯一 $\\tilde{O}$', tone: 'v' },
+        focusFrame: { x: 451, y: 176, w: 164, h: 136, label: '写入唯一 $\\tilde{O}$', tone: 'v' },
         phaseText: '3/7 首块累加',
         peakSramText: '1 份 $\\tilde{O}$ 缓冲',
         rescaleText: '$\\alpha = [1.0, 1.0]$',
@@ -193,8 +225,18 @@ export function buildOnlineSoftmaxSteps(): Step<OnlineSoftmaxState>[] {
         '将 $\\tilde{P}^{(1)} V_{0:2}$ 写入片上唯一的 $\\tilde{O}$ 累加器（未除以 $l^{(1)}$），得到 $\\tilde{O}^{(1)} = [[0.135, 2.000],[1.000, 0.271]]$，随即释放第 1 块 $K_{0:2}, V_{0:2}$ 的片上缓冲。',
     },
     {
+      label: '换入 Tile 2',
+      duration: 4600,
       state: {
         stepIndex: 3,
+        formulaTex:
+          '$S^{(2)} = Q_{0:2} K_{2:4}^\\top = [[5,2],[1,2]],\\quad r_0\\text{ 峰值 } 3.0 \\to 5.0$',
+        beats: defaultBeats([
+          '释放 Tile 1 并选中 Tile 2',
+          '原地覆盖写入片上 SRAM 分块',
+          '标亮 r0 新峰值 5.0 > 3.0',
+          '提醒旧累加基数待缩放',
+        ]),
         k0Tone: 'visited',
         k1Tone: 'k',
         outHbmTone: 'mask',
@@ -210,7 +252,7 @@ export function buildOnlineSoftmaxSteps(): Step<OnlineSoftmaxState>[] {
         accTone: 'neutral',
         accValues: O_T1,
         accSelected: new Set(),
-        focusFrame: { x: 26, y: 176, w: 158, h: 136, label: 'Tile 2 覆盖 $S^{(2)}$', tone: 'q' },
+        focusFrame: { x: 26, y: 176, w: 152, h: 136, label: 'Tile 2 覆盖 $S^{(2)}$', tone: 'q' },
         phaseText: '4/7 换入 Tile 2',
         peakSramText: '原地覆盖 Tile 缓冲',
         rescaleText: '$S^{(2)}_{0,0}=5.0 > 3.0$',
@@ -220,8 +262,17 @@ export function buildOnlineSoftmaxSteps(): Step<OnlineSoftmaxState>[] {
         '换入第 2 块 $K_{2:4}, V_{2:4}$ 原地覆盖旧分块空间，算出 $S^{(2)}=[[5,2],[1,2]]$。此时第 0 行出现更大的峰值 $5.0$（超过历史 $m_0^{(1)}=3.0$），意味着旧累加器 $\\tilde{O}_0$ 与 $l_0$ 的指数基数需要修正。',
     },
     {
+      label: '重缩放 α',
+      duration: 4600,
       state: {
         stepIndex: 4,
+        formulaTex: '$\\alpha = \\exp(m^{(1)} - m^{(2)}) = [e^{3-5}, e^{4-4}] = [0.135, 1.0]$',
+        beats: defaultBeats([
+          '固定 Tile 2 局部变量 P̃^(2)',
+          '推演 r0 新行最大值 m0: 3->5',
+          '计算指数矫正系数 α = [0.135, 1.0]',
+          '确认指数基数对齐完成',
+        ]),
         k0Tone: 'visited',
         k1Tone: 'k',
         outHbmTone: 'mask',
@@ -238,9 +289,9 @@ export function buildOnlineSoftmaxSteps(): Step<OnlineSoftmaxState>[] {
         accValues: O_T1,
         accSelected: new Set(),
         focusFrame: {
-          x: 208,
+          x: 213,
           y: 176,
-          w: 212,
+          w: 208,
           h: 136,
           label: '$\\alpha = e^{m^{(1)}-m^{(2)}}$ 重缩放',
           tone: 'k',
@@ -254,8 +305,18 @@ export function buildOnlineSoftmaxSteps(): Step<OnlineSoftmaxState>[] {
         '更新 $m^{(2)} = \\max(m^{(1)}, \\operatorname{rowmax}(S^{(2)})) = [5.0, 4.0]$：第 0 行最大值从 $3$ 跳升到 $5$，算得重缩放因子 $\\alpha_0 = e^{3-5} = 0.135$；第 1 行最大值未超 $4$，保持 $\\alpha_1 = 1.0$。',
     },
     {
+      label: '就地修正',
+      duration: 4600,
       state: {
         stepIndex: 5,
+        formulaTex:
+          '$\\tilde{O} \\leftarrow \\operatorname{diag}(\\alpha)\\tilde{O} + \\tilde{P}^{(2)}V_{2:4},\\quad l=[1.203,1.320]$',
+        beats: defaultBeats([
+          '锁定重缩放系数与新权重 P̃^(2)',
+          '同步缩放旧分母与累加器通道',
+          '原地覆盖唯一缓冲得出 Õ^(2)',
+          '核对零副本 SRAM 内存消耗',
+        ]),
         k0Tone: 'visited',
         k1Tone: 'k',
         outHbmTone: 'mask',
@@ -271,7 +332,7 @@ export function buildOnlineSoftmaxSteps(): Step<OnlineSoftmaxState>[] {
         accTone: 'v',
         accValues: O_T2,
         accSelected: ALL_2X2,
-        focusFrame: { x: 440, y: 176, w: 196, h: 136, label: '就地覆盖 $\\tilde{O}$', tone: 'v' },
+        focusFrame: { x: 451, y: 176, w: 164, h: 136, label: '就地覆盖 $\\tilde{O}$', tone: 'v' },
         phaseText: '6/7 在位重缩放',
         peakSramText: '无额外 $\\tilde{O}$ 副本',
         rescaleText: '$l=[1.203, 1.320]$',
@@ -281,8 +342,18 @@ export function buildOnlineSoftmaxSteps(): Step<OnlineSoftmaxState>[] {
         '片上唯一的 $\\tilde{O}$ 就地完成缩放累加：$\\tilde{O} \\leftarrow \\operatorname{diag}(\\alpha)\\tilde{O} + \\tilde{P}^{(2)}V_{2:4} = [[2.018, 1.470],[1.100, 0.862]]$，分母同步缩放并累加至 $l=[1.203, 1.320]$，全程复用同一块 SRAM。',
     },
     {
+      label: '尾声归一',
+      duration: 4600,
       state: {
         stepIndex: 6,
+        formulaTex:
+          '$O = \\operatorname{diag}(l)^{-1}\\tilde{O} \\;\\longrightarrow\\; \\text{仅 1 次写回 HBM}$',
+        beats: defaultBeats([
+          '用终局分母 l 一次性除尽 Õ',
+          '算出最终注意力输出矩阵 O',
+          '触发向上箭头单次写回 HBM',
+          '对齐数值精度误差 2.22e-16',
+        ]),
         k0Tone: 'visited',
         k1Tone: 'visited',
         outHbmTone: 'v',
@@ -318,15 +389,22 @@ export default function OnlineSoftmaxExplainer({
   const steps = useMemo(() => buildOnlineSoftmaxSteps(), []);
 
   return (
-    <Explainer title={title} steps={steps}>
-      {(step) => {
+    <BeatExplainer
+      title={title}
+      label="Online Softmax 片上就地重缩放交互推演"
+      steps={steps}
+      stageMinHeight={508}
+      getBeats={(step) => step.state.beats}
+      getFormula={(step) => step.state.formulaTex}
+    >
+      {(step, { beat, dotToken }) => {
         const s = step.state;
         const isTile1 = s.stepIndex <= 2;
         const isTile2 = s.stepIndex >= 3 && s.stepIndex <= 5;
         const isFinal = s.stepIndex === 6;
 
         return (
-          <Stage width={STAGE_W} height={412} label={title}>
+          <Stage width={STAGE_W} height={412} label="Online Softmax 片上单一累加器就地重缩放流程">
             <SectionBox
               x={16}
               y={10}
@@ -410,30 +488,37 @@ export default function OnlineSoftmaxExplainer({
               dashed={!isFinal}
             />
 
+            <SectionBox x={16} y={140} w={648} h={190} title="片上 SRAM / UB" tone="v" />
+
+            {/* Vertical HBM <-> SRAM DataFlowArrows rendered above SectionBox */}
             <DataFlowArrow
               points={[
-                [isTile1 ? 176 : 380, 112],
-                [isTile1 ? 176 : 380, 128],
-                [156, 128],
-                [156, 184],
+                [isTile1 ? 176 : 380, 96],
+                [isTile1 ? 176 : 380, 122],
+                [164, 122],
+                [164, 174],
               ]}
               tone="k"
               active={!isFinal}
-              flow={!isFinal}
+              flow={!isFinal && beat >= 1}
+              visible={!isFinal ? beat >= 1 : true}
+              draw={!isFinal && beat >= 1}
+              dotToken={!isFinal && beat >= 1 ? dotToken : 0}
             />
 
             <DataFlowArrow
               points={[
-                [605, 184],
-                [605, 98],
+                [605, 174],
+                [605, 104],
               ]}
               tone="v"
               active={isFinal}
               dashed={!isFinal}
-              flow={isFinal}
+              flow={isFinal && beat >= 2}
+              visible={isFinal ? beat >= 2 : true}
+              draw={isFinal && beat >= 2}
+              dotToken={isFinal && beat >= 2 ? dotToken : 0}
             />
-
-            <SectionBox x={16} y={140} w={648} h={190} title="片上 SRAM / UB" tone="v" />
 
             <HeatmapMatrix
               x={32}
@@ -448,6 +533,8 @@ export default function OnlineSoftmaxExplainer({
               max={5}
               format={fmtVal}
               selected={s.tileSelected}
+              showSelected={beat >= 1}
+              dimmed={beat < 1 && (s.stepIndex === 0 || s.stepIndex === 3)}
               rowLabels={ROW_LABELS}
               colLabels={s.tileColLabels}
               rowLabelW={28}
@@ -458,16 +545,19 @@ export default function OnlineSoftmaxExplainer({
 
             <DataFlowArrow
               points={[
-                [180, 262],
-                [212, 262],
+                [182, 262],
+                [210, 262],
               ]}
               tone="k"
               active={s.stepIndex >= 1 && s.stepIndex <= 5}
-              flow={s.stepIndex === 1 || s.stepIndex === 4}
+              flow={(s.stepIndex === 1 || s.stepIndex === 4) && beat >= 1}
+              visible={beat >= 1 || s.stepIndex === 0}
+              draw={s.stepIndex >= 1 && beat >= 1}
+              dotToken={(s.stepIndex === 1 || s.stepIndex === 4) && beat >= 1 ? dotToken : 0}
             />
 
             <HeatmapMatrix
-              x={216}
+              x={218}
               y={188}
               values={s.statsValues}
               tone={s.statsTone}
@@ -479,44 +569,52 @@ export default function OnlineSoftmaxExplainer({
               max={5}
               format={fmtVal}
               selected={s.statsSelected}
+              showSelected={beat >= 1}
+              dimmed={beat < 1 && (s.stepIndex === 1 || s.stepIndex === 4)}
               rowLabels={ROW_LABELS}
               colLabels={STAT_COLS}
               rowLabelW={28}
-              title="在位状态 $(m, \alpha, l)$"
+              title={'在位状态 $(m, \\alpha, l)$'}
               showLegend={false}
               fontSize={11}
             />
 
             <DataFlowArrow
               points={[
-                [414, 262],
-                [446, 262],
+                [425, 262],
+                [448, 262],
               ]}
               tone="v"
               active={s.stepIndex === 2 || s.stepIndex >= 5}
-              flow={s.stepIndex === 2 || s.stepIndex === 5}
+              flow={(s.stepIndex === 2 || s.stepIndex === 5) && beat >= 1}
+              visible={beat >= 1 || s.stepIndex <= 1}
+              draw={(s.stepIndex === 2 || s.stepIndex >= 5) && beat >= 1}
+              dotToken={(s.stepIndex === 2 || s.stepIndex === 5) && beat >= 1 ? dotToken : 0}
             />
 
-            <HeatmapMatrix
-              x={450}
-              y={188}
-              values={s.accValues}
-              tone={s.accTone}
-              selectedTone="v"
-              cellW={62}
-              cellH={34}
-              gap={4}
-              min={0}
-              max={2.2}
-              format={fmtVal}
-              selected={s.accSelected}
-              rowLabels={ROW_LABELS}
-              colLabels={OUT_COLS}
-              rowLabelW={28}
-              title={s.accTitle}
-              showLegend={false}
-              fontSize={11}
-            />
+            <SvgBeatGroup dimmed={beat < 2 && (s.stepIndex === 2 || s.stepIndex >= 5)}>
+              <HeatmapMatrix
+                x={456}
+                y={188}
+                values={s.accValues}
+                tone={s.accTone}
+                selectedTone="v"
+                cellW={60}
+                cellH={34}
+                gap={4}
+                min={0}
+                max={2.2}
+                format={fmtVal}
+                selected={s.accSelected}
+                showSelected={beat >= 2}
+                rowLabels={ROW_LABELS}
+                colLabels={OUT_COLS}
+                rowLabelW={28}
+                title={s.accTitle}
+                showLegend={false}
+                fontSize={11}
+              />
+            </SvgBeatGroup>
 
             <ActiveFocusFrame
               x={s.focusFrame.x}
@@ -525,7 +623,7 @@ export default function OnlineSoftmaxExplainer({
               h={s.focusFrame.h}
               tone={s.focusFrame.tone}
               label={s.focusFrame.label}
-              visible
+              visible={beat >= 2}
             />
 
             <MetricRow
@@ -533,6 +631,7 @@ export default function OnlineSoftmaxExplainer({
               y={342}
               w={648}
               h={54}
+              revealed={beat >= 3}
               metrics={[
                 { label: '执行阶段', value: s.phaseText, tone: 'q' },
                 { label: '片上内存模型', value: s.peakSramText, tone: 'v', active: true },
@@ -543,6 +642,6 @@ export default function OnlineSoftmaxExplainer({
           </Stage>
         );
       }}
-    </Explainer>
+    </BeatExplainer>
   );
 }

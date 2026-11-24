@@ -36,7 +36,12 @@ export interface ProbabilityBarsProps {
   valueFormat?: (v: number) => string;
   refLine?: { value: number; label: string; tone?: AnyTone };
   legend?: readonly { label: string; tone: AnyTone }[];
+  revealedSeries?: number;
+  showRefLine?: boolean;
+  dimmed?: boolean;
 }
+
+const LEGEND_STEP = 92;
 
 /**
  * 带步间柱高动画的概率分布 / 权重对比 / SQNR 柱状图：
@@ -53,6 +58,9 @@ export default function ProbabilityBars({
   valueFormat = (v) => `${formatNumber(v * 100, 1)}%`,
   refLine,
   legend,
+  revealedSeries,
+  showRefLine = true,
+  dimmed = false,
 }: ProbabilityBarsProps) {
   const { stepTransition } = useDiagramMotion();
   const topPad = title || legend ? 22 : 8;
@@ -66,13 +74,13 @@ export default function ProbabilityBars({
   const slotW = w / n;
 
   return (
-    <g>
+    <motion.g initial={false} animate={{ opacity: dimmed ? 0.32 : 1 }} transition={stepTransition}>
       {title &&
         (hasInlineMath(title) ? (
           <SvgRichLabel
             x={x}
             y={y + 8}
-            width={Math.max(120, w - (legend ? legend.length * 84 : 0))}
+            width={Math.max(120, w - (legend ? legend.length * LEGEND_STEP : 0))}
             height={22}
             text={title}
             fontSize={12.5}
@@ -99,7 +107,7 @@ export default function ProbabilityBars({
       {legend && (
         <g>
           {legend.map((lg, idx) => {
-            const lx = x + w - (legend.length - idx) * 84;
+            const lx = x + w - (legend.length - idx) * LEGEND_STEP;
             return (
               <g key={lg.label}>
                 <rect
@@ -116,7 +124,7 @@ export default function ProbabilityBars({
                   <SvgRichLabel
                     x={lx + 14}
                     y={y + 8}
-                    width={68}
+                    width={LEGEND_STEP - 14}
                     height={18}
                     text={lg.label}
                     fontSize={11}
@@ -154,7 +162,11 @@ export default function ProbabilityBars({
       />
 
       {refLine && (
-        <g>
+        <motion.g
+          initial={false}
+          animate={{ opacity: showRefLine ? 1 : 0 }}
+          transition={stepTransition}
+        >
           {(() => {
             const ry = baseLineY - Math.min(1, Math.max(0, refLine.value / safeMax)) * plotH;
             const rs = refLine.tone ? resolveToneStroke(refLine.tone) : 'var(--wisp-muted)';
@@ -202,7 +214,7 @@ export default function ProbabilityBars({
               </>
             );
           })()}
-        </g>
+        </motion.g>
       )}
 
       {items.map((item, idx) => {
@@ -215,16 +227,22 @@ export default function ProbabilityBars({
         return (
           <g key={`${item.label}-${idx}`}>
             {item.bars.map((b, bi) => {
+              const seriesVisible = revealedSeries === undefined || bi < revealedSeries;
               const bx = startX + bi * (bw + 4);
               const clamped = Math.max(0, Math.min(1, b.value / safeMax));
-              const bh = item.masked ? 0 : clamped * plotH;
+              const bh = item.masked || !seriesVisible ? 0 : clamped * plotH;
               const by = baseLineY - bh;
               const fill = item.masked ? resolveToneFill('mask') : resolveToneFill(b.tone);
               const stroke = item.masked ? resolveToneStroke('mask') : resolveToneStroke(b.tone);
               const topText = item.masked ? 'Mask' : (b.tag ?? valueFormat(b.value));
 
               return (
-                <g key={bi}>
+                <motion.g
+                  key={bi}
+                  initial={false}
+                  animate={{ opacity: seriesVisible ? 1 : 0 }}
+                  transition={stepTransition}
+                >
                   {item.masked ? (
                     <rect
                       x={bx}
@@ -240,7 +258,7 @@ export default function ProbabilityBars({
                   ) : (
                     <motion.rect
                       initial={false}
-                      animate={{ y: by, height: Math.max(2, bh) }}
+                      animate={{ y: by, height: seriesVisible ? Math.max(2, bh) : 0 }}
                       transition={stepTransition}
                       x={bx}
                       width={bw}
@@ -267,7 +285,7 @@ export default function ProbabilityBars({
                   >
                     {topText}
                   </text>
-                </g>
+                </motion.g>
               );
             })}
 
@@ -331,6 +349,6 @@ export default function ProbabilityBars({
           </g>
         );
       })}
-    </g>
+    </motion.g>
   );
 }

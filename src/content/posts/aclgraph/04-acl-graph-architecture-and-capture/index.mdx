@@ -7,7 +7,7 @@ draft: false
 tags: [ACL Graph, Shadow Stream, CANN Runtime, Capture, Replay, Fork-Join, Notify]
 ---
 
-import AclGraphShadowStreamExplainer from '../../../../explainers/aclgraph/AclGraphShadowStreamExplainer';
+import AclGraphShadowStreamExplainer from './explainers/AclGraphShadowStreamExplainer';
 
 在华为昇腾 NPU 上，静态执行图的核心实现是以 `aclmdlRI`（Model Running Instance，模型运行实例）接口为代表的 **ACL Graph**[^cann-acl-api]。上层 `torch_npu.npu.NPUGraph` 提供了与 CUDA Graph 一致的 Python API，降低框架接入成本。
 

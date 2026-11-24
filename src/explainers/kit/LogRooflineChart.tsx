@@ -43,6 +43,9 @@ export interface LogRooflineChartProps {
   yAxisLabel?: string;
   /** ridgeAI marker vertical line */
   ridgeMarkers?: readonly { ai: number; label: string; tone: AnyTone; side?: 'left' | 'right' }[];
+  showRidges?: boolean;
+  showActivePoints?: boolean;
+  drawCeilings?: boolean;
 }
 
 /** 对数坐标 Roofline 性能曲线画布：严格按 log10 比例映射到 viewBox。 */
@@ -60,6 +63,9 @@ export default function LogRooflineChart({
   xAxisLabel = '算术强度 AI (FLOP / Byte)',
   yAxisLabel = '性能 (TFLOPS)',
   ridgeMarkers,
+  showRidges = true,
+  showActivePoints = true,
+  drawCeilings = false,
 }: LogRooflineChartProps) {
   const { stepTransition } = useDiagramMotion();
   const left = x + 46;
@@ -122,6 +128,7 @@ export default function LogRooflineChart({
     return {
       c,
       pointsStr: `${p0x},${p0y} ${p1x},${p1y} ${p2x},${p1y}`,
+      pathD: `M ${p0x.toFixed(1)} ${p0y.toFixed(1)} L ${p1x.toFixed(1)} ${p1y.toFixed(1)} L ${p2x.toFixed(1)} ${p1y.toFixed(1)}`,
       lx,
       ly,
       lw,
@@ -246,7 +253,12 @@ export default function LogRooflineChart({
       {placedRidges.map(({ rm, rx, pillX, ly, lw, anchor }) => {
         const rs = resolveToneStroke(rm.tone);
         return (
-          <g key={rm.label}>
+          <motion.g
+            key={rm.label}
+            initial={false}
+            animate={{ opacity: showRidges ? 1 : 0 }}
+            transition={stepTransition}
+          >
             <line
               x1={rx}
               y1={top}
@@ -277,19 +289,32 @@ export default function LogRooflineChart({
               anchor={anchor}
               family="mono"
             />
-          </g>
+          </motion.g>
         );
       })}
 
-      {placedCeilings.map(({ c, pointsStr, lx, ly, lw, stroke }) => (
+      {placedCeilings.map(({ c, pointsStr, pathD, lx, ly, lw, stroke }) => (
         <g key={c.label}>
-          <polyline
-            points={pointsStr}
-            fill="none"
-            stroke={stroke}
-            strokeWidth={2}
-            strokeDasharray={c.dashed ? '5 3' : undefined}
-          />
+          {drawCeilings ? (
+            <motion.path
+              d={pathD}
+              fill="none"
+              stroke={stroke}
+              strokeWidth={2}
+              strokeDasharray={c.dashed ? '5 3' : undefined}
+              initial={false}
+              animate={{ pathLength: 1, opacity: 1 }}
+              transition={{ duration: 0.4, ease: [0.42, 0, 0.2, 1] }}
+            />
+          ) : (
+            <polyline
+              points={pointsStr}
+              fill="none"
+              stroke={stroke}
+              strokeWidth={2}
+              strokeDasharray={c.dashed ? '5 3' : undefined}
+            />
+          )}
           <rect
             x={lx - 4}
             y={ly - 7.5}
@@ -327,11 +352,12 @@ export default function LogRooflineChart({
 
       {placedPoints.map(({ pt, px, py, lx, ly, lw, anchor, stroke, fill }) => {
         const pillX = anchor === 'start' ? lx - 4 : lx - lw + 4;
+        const pointOpacity = pt.active ? (showActivePoints ? 1 : 0) : 0.45;
         return (
           <motion.g
             key={pt.label}
             initial={false}
-            animate={{ opacity: pt.active ? 1 : 0.45 }}
+            animate={{ opacity: pointOpacity }}
             transition={stepTransition}
           >
             <circle

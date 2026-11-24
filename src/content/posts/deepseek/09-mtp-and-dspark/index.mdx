@@ -9,7 +9,7 @@ category: AI Infra
 toc: true
 ---
 
-import SpecDecVerifyExplainer from '../../../../explainers/deepseek/SpecDecVerifyExplainer';
+import SpecDecVerifyExplainer from './explainers/SpecDecVerifyExplainer';
 
 自回归解码每输出 1 个 token，都要把整张大权重从 HBM 搬进计算单元一次。当批量较小或 KV 缓存访问占主导时，算术强度远低于 GPU 与 NPU 的 Roofline 算力拐点，绝大多数矩阵计算核心都在等待数据搬运。
 

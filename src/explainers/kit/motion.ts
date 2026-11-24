@@ -6,6 +6,19 @@ export const RADIUS = 4;
 export const RADIUS_SM = 3;
 export const MAX_HUES = 3;
 
+export const MANIM_EASE = [0.42, 0, 0.2, 1] as const;
+export const MORPH_SPRING = { type: 'spring' as const, visualDuration: 0.48, bounce: 0.08 };
+
+export interface BeatSpec {
+  at: number;
+  label: string;
+}
+
+/** 按均匀间隔生成页内因果节拍时间轴。 */
+export function defaultBeats(labels: readonly string[], intervalMs = 650): BeatSpec[] {
+  return labels.map((label, i) => ({ at: i * intervalMs, label }));
+}
+
 const CJK_RE = /[\u4e00-\u9fff]/;
 
 /** 判断文本是否包含汉字，以便在等宽场景中切换为支持中文的 sans 字体栈。 */

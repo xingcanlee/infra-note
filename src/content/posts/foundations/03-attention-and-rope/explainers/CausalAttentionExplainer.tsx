@@ -1,5 +1,6 @@
 import { useMemo } from 'react';
-import { Explainer, Stage, type Step, type Tone } from 'astro-wisp/explainers';
+import { Stage, type Step, type Tone } from 'astro-wisp/explainers';
+import { BeatExplainer, SvgBeatGroup, defaultBeats, type BeatSpec } from '@/explainers/kit';
 import DataFlowArrow from '@/explainers/kit/DataFlowArrow';
 import HeatmapMatrix from '@/explainers/kit/HeatmapMatrix';
 import { MetricRow } from '@/explainers/kit/MetricRow';
@@ -8,6 +9,8 @@ import { STAGE_W, assertMaxHues } from '@/explainers/kit/motion';
 
 export interface CausalAttentionState {
   stepIndex: number;
+  formulaTex: string;
+  beats: BeatSpec[];
   centerTitle: string;
   centerTone: Tone;
   centerValues: (number | null)[][];
@@ -93,8 +96,18 @@ export function buildCausalAttentionSteps(): Step<CausalAttentionState>[] {
 
   return [
     {
+      label: '点积打分',
+      duration: 4600,
       state: {
         stepIndex: 0,
+        formulaTex:
+          '$A = QK^\\top \\in \\mathbb{R}^{4 \\times 4},\\; \\operatorname{Var}(q\\cdot k) = d_k$',
+        beats: defaultBeats([
+          '输入 Q/K/V 投影张量',
+          '经内积连线生成 QKᵀ 热力矩阵',
+          '检查方差随 d_k 膨胀',
+          '总结未缩放点积状态',
+        ]),
         centerTitle: '原始点积矩阵 $QK^\\top\\;[4, 4]$',
         centerTone: 'active',
         centerValues: RAW_QK,
@@ -111,8 +124,17 @@ export function buildCausalAttentionSteps(): Step<CausalAttentionState>[] {
         '4 个 token 经投影得到 $Q, K, V \\in \\mathbb{R}^{4 \\times 4}$。先算原始相似度矩阵 $Q K^\\top$：若不做缩放，独立向量内积的方差会随 $d_k$ 线性膨胀到 $d_k$ 倍，把 Softmax 推向饱和区。',
     },
     {
+      label: '尺度缩放',
+      duration: 4600,
       state: {
         stepIndex: 1,
+        formulaTex: '$S = QK^\\top / \\sqrt{4} = 0.5\\,QK^\\top,\\; \\operatorname{Var}(S) = 1.0$',
+        beats: defaultBeats([
+          '锁定原始 Q/K 输入向量',
+          '全体元素除以 √d_k = 2',
+          '高亮未遮蔽的未来格 S[2,3]',
+          '确认单元方差收敛至 1.0',
+        ]),
         centerTitle: '缩放分数 $S = QK^\\top / \\sqrt{4}\\;[4, 4]$',
         centerTone: 'active',
         centerValues: SCALED_S,
@@ -129,8 +151,17 @@ export function buildCausalAttentionSteps(): Step<CausalAttentionState>[] {
         '整体除以 $\\sqrt{d_k} = 2$ 后方差回归稳定的 $1.0$（对应 vLLM 中 self.scaling $= d_k^{-0.5}$）。第 2 行“垫”上 $S[2, 3] = 1.00$，表明此时仍能读取未来 token“上”。',
     },
     {
+      label: '因果掩码',
+      duration: 4600,
       state: {
         stepIndex: 2,
+        formulaTex: '$S_{i,j} \\leftarrow -\\infty\\; (j > i),\\quad 6/16\\text{ 未来单元屏蔽}$',
+        beats: defaultBeats([
+          '读取缩放后矩阵 S[4,4]',
+          '对 j > i 上三角叠加 -∞ 掩码',
+          '聚焦 t=2 行仅保留左侧历史',
+          '锁定因果防泄露约束',
+        ]),
         centerTitle: '因果掩码 $S + M_{\\text{triu}}\\;[4, 4]$',
         centerTone: 'highlight',
         centerValues: SCALED_S,
@@ -144,11 +175,21 @@ export function buildCausalAttentionSteps(): Step<CausalAttentionState>[] {
         focusRowText: '$S[2] \\to [0.5, 1.0, 0.5, -\\infty]$',
       },
       caption:
-        '加上严格上三角因果掩码 $M_{\\text{triu}}$，把所有 $j > i$ 的 6 个未来单元设为 $-\\infty$（虚线格）。第 $t=2$ 行只保留 $[0.5, 1.0, 0.5, -\\infty]$，阻断未来信息泄露。',
+        '加上上三角因果掩码 $M_{\\text{triu}}$，把所有 $j > i$ 的 6 个未来单元设为 $-\\infty$（虚线格）。第 $t=2$ 行只保留 $[0.5, 1.0, 0.5, -\\infty]$，阻断未来信息泄露。',
     },
     {
+      label: 'Softmax 归一',
+      duration: 4600,
       state: {
         stepIndex: 3,
+        formulaTex:
+          '$P = \\operatorname{softmax}(S + M_{\\text{triu}}),\\; \\sum_j P_{i,j} = 1.00$',
+        beats: defaultBeats([
+          '输入因果掩码得分行',
+          '指数化并清零 -∞ 未来项',
+          '对齐右侧行和为 1.00',
+          '聚焦“垫”对“坐在”的注意力',
+        ]),
         centerTitle: '逐行 Softmax 概率 $P\\;[4, 4]$',
         centerTone: 'active',
         centerValues: PROBS_P,
@@ -158,16 +199,25 @@ export function buildCausalAttentionSteps(): Step<CausalAttentionState>[] {
         outputValues: EMPTY_OUT,
         outputSelected: new Set(),
         scaleFormula: '$\\exp(-\\infty) = 0.000$',
-        varianceText: '每行严格归一化至 1.00',
-        maskCountText: '6 / 16 权重严格清零',
+        varianceText: '每行归一至 1.00',
+        maskCountText: '6 / 16 权重归零',
         focusRowText: '$t=2$ 聚焦“坐在”(0.452)',
       },
       caption:
         '逐行执行 Softmax：$\\exp(-\\infty) = 0$ 使未来权重清零，$t=2$ 行得到 $[0.274, 0.452, 0.274, 0]$，最聚焦于动词“坐在”；$t=3$ 行则均衡关注句首“猫”（$0.311$）与自身“上”（$0.311$）。',
     },
     {
+      label: '聚合输出',
+      duration: 4600,
       state: {
         stepIndex: 4,
+        formulaTex: '$O = P \\cdot V \\in \\mathbb{R}^{4 \\times 4},\\quad \\text{复杂度 } O(T^2)$',
+        beats: defaultBeats([
+          '激活左下 V 矩阵与概率 P',
+          '沿 P*V 与 V->O 双路径聚合',
+          '填满右侧输出矩阵 O[4,4]',
+          '点出 O(T^2) 开销引发下一章优化',
+        ]),
         centerTitle: '注意力权重矩阵 $P\\;[4, 4]$',
         centerTone: 'active',
         centerValues: PROBS_P,
@@ -195,8 +245,15 @@ export default function CausalAttentionExplainer({
   const steps = useMemo(() => buildCausalAttentionSteps(), []);
 
   return (
-    <Explainer steps={steps} title={title} label="因果自注意力逐步交互推导">
-      {(step) => {
+    <BeatExplainer
+      steps={steps}
+      title={title}
+      label="因果自注意力逐步交互推导"
+      stageMinHeight={474}
+      getBeats={(step) => step.state.beats}
+      getFormula={(step) => step.state.formulaTex}
+    >
+      {(step, { beat, dotToken }) => {
         const s = step.state;
         const isStep4 = s.stepIndex === 4;
         const fmt = s.stepIndex >= 3 ? fmtProb : fmtScore;
@@ -205,59 +262,68 @@ export default function CausalAttentionExplainer({
           <Stage width={STAGE_W} height={378} label="4 个 token 因果自注意力逐步推演">
             {/* Left inputs Q, K, V */}
             <TensorBlock
-              x={14}
+              x={12}
               y={36}
-              w={58}
+              w={56}
               h={44}
               tone="active"
               texName="Q"
-              texWidth={48}
+              texWidth={46}
               shape="[4, 4]"
               active={s.stepIndex <= 1}
+              dimmed={isStep4 && beat < 1}
             />
             <TensorBlock
-              x={14}
+              x={12}
               y={122}
-              w={58}
+              w={56}
               h={44}
               tone="highlight"
-              texName="K^\top"
-              texWidth={48}
+              texName={'K^\\top'}
+              texWidth={46}
               shape="[4, 4]"
               active={s.stepIndex <= 1}
+              dimmed={isStep4 && beat < 1}
             />
             <TensorBlock
-              x={14}
+              x={12}
               y={208}
-              w={58}
+              w={56}
               h={44}
               tone="done"
               texName="V"
-              texWidth={48}
+              texWidth={46}
               shape="[4, 4]"
               active={isStep4}
+              dimmed={!isStep4 && beat < 2}
             />
 
             <DataFlowArrow
               points={[
-                [76, 58],
-                [98, 108],
+                [68, 58],
+                [104, 88],
               ]}
               tone="active"
               active={s.stepIndex <= 1}
+              visible={beat >= 1 || !isStep4}
+              draw={beat >= 1 && s.stepIndex <= 1}
+              dotToken={beat >= 1 && s.stepIndex <= 1 ? dotToken : 0}
             />
             <DataFlowArrow
               points={[
-                [76, 144],
-                [98, 138],
+                [68, 144],
+                [104, 144],
               ]}
               tone="highlight"
               active={s.stepIndex <= 1}
+              visible={beat >= 1 || !isStep4}
+              draw={beat >= 1 && s.stepIndex <= 1}
+              dotToken={beat >= 1 && s.stepIndex <= 1 ? dotToken : 0}
             />
 
             {/* Center [4, 4] S / P Heatmap */}
             <HeatmapMatrix
-              x={98}
+              x={104}
               y={24}
               title={s.centerTitle}
               tone={s.centerTone}
@@ -267,7 +333,7 @@ export default function CausalAttentionExplainer({
               rowLabels={TOKENS}
               colLabels={COL_IDX}
               rowSums={s.centerRowSums?.map((v) => v.toFixed(2))}
-              rowLabelW={34}
+              rowLabelW={32}
               cellW={42}
               cellH={38}
               gap={4}
@@ -276,43 +342,73 @@ export default function CausalAttentionExplainer({
               format={fmt}
               selected={s.selectedCenter}
               selectedTone="highlight"
+              showSelected={beat >= 1}
+              showMasks={s.stepIndex === 2 ? beat >= 1 : true}
+              showSums={beat >= 1}
               showLegend={false}
               fontSize={11}
             />
 
             <DataFlowArrow
               points={[
-                [356, 146],
-                [412, 146],
+                [364, 152],
+                [420, 152],
               ]}
               tone="done"
               active={isStep4}
-              flow={isStep4}
-              label="$P \cdot V$"
-              labelPos={[384, 130]}
+              flow={isStep4 && beat >= 1}
+              visible={!isStep4 || beat >= 1}
+              draw={isStep4 && beat >= 1}
+              dotToken={isStep4 && beat >= 1 ? dotToken : 0}
+              label={'$P \\cdot V$'}
+              labelPos={[396, 137]}
             />
 
+            {isStep4 && (
+              <DataFlowArrow
+                points={[
+                  [68, 240],
+                  [84, 240],
+                  [84, 282],
+                  [392, 282],
+                  [392, 174],
+                  [420, 174],
+                ]}
+                tone="done"
+                active
+                flow={beat >= 1}
+                visible={beat >= 1}
+                draw={beat >= 1}
+                dotToken={beat >= 1 ? dotToken : 0}
+                label="加权值 $V$"
+                labelPos={[238, 270]}
+              />
+            )}
+
             {/* Right [4, 4] Output O Heatmap */}
-            <HeatmapMatrix
-              x={418}
-              y={24}
-              title="输出向量 $O = P \cdot V\;[4, 4]$"
-              tone="done"
-              values={s.outputValues}
-              rowLabels={TOKENS}
-              colLabels={DIM_COLS}
-              rowLabelW={34}
-              cellW={48}
-              cellH={38}
-              gap={4}
-              min={0}
-              max={1.0}
-              format={fmtProb}
-              selected={s.outputSelected}
-              selectedTone="done"
-              showLegend={false}
-              fontSize={11}
-            />
+            <SvgBeatGroup dimmed={!isStep4 || beat < 2}>
+              <HeatmapMatrix
+                x={422}
+                y={24}
+                title={'输出向量 $O = P \\cdot V\\;[4, 4]$'}
+                tone="done"
+                values={s.outputValues}
+                rowLabels={TOKENS}
+                colLabels={DIM_COLS}
+                rowLabelW={32}
+                cellW={46}
+                cellH={38}
+                gap={4}
+                min={0}
+                max={1.0}
+                format={fmtProb}
+                selected={s.outputSelected}
+                selectedTone="done"
+                showSelected={beat >= 2}
+                showLegend={false}
+                fontSize={11}
+              />
+            </SvgBeatGroup>
 
             {/* Bottom Metric Row */}
             <MetricRow
@@ -320,6 +416,7 @@ export default function CausalAttentionExplainer({
               y={312}
               w={648}
               h={42}
+              revealed={beat >= 3}
               metrics={[
                 { label: '核心算子', value: s.scaleFormula, tone: 'active', active: true },
                 { label: '方差/分布', value: s.varianceText, tone: 'highlight' },
@@ -330,6 +427,6 @@ export default function CausalAttentionExplainer({
           </Stage>
         );
       }}
-    </Explainer>
+    </BeatExplainer>
   );
 }

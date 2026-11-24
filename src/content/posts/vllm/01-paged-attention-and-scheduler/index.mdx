@@ -7,7 +7,7 @@ tags: [vLLM, Ascend, PagedAttention, Scheduler, KV Cache]
 description: '变长请求并发涌入时，连续预分配会制造显存碎片，阶段隔离也会拖长解码尾延迟。本文详解 V1 分页块表、链式前缀缓存与统一预算抢占，并对照 GPU 与昇腾写保护实现。'
 ---
 
-import PagedSchedulerExplainer from '../../../../explainers/vllm/PagedSchedulerExplainer';
+import PagedSchedulerExplainer from './explainers/PagedSchedulerExplainer';
 
 当几十条提示词长短不一、生成步数各异的请求同时涌入推理服务时，运行时在每个前向步都要面对两个耦合难题。一方面要为动态增长的 **KV Cache（Key-Value Cache，键值缓存）**分配显存而不留碎片；另一方面要在不拖慢已有解码延迟的前提下，把新到达的提示词塞进同一批计算。
 
@@ -36,7 +36,7 @@ $$
 
 若请求 A 写入 $12$ 个提示词 token 并映射到物理块 `[1, 2, 3]`，逻辑位置 $t = 9$ 落在第 $k = \lfloor 9 / 4 \rfloor = 2$ 个逻辑块（物理块 $b = 3$）、块内偏移 $o = 9 \bmod 4 = 1$，对应全局槽位 $3 \times 4 + 1 = 13$。随后请求 B 若与 A 共享前 $4$ 个系统提示词 token，就会直接复用物理块 $B_1$，只将新块分配在 $B_4$。
 
-下面的交互推演展示了这一 16 块物理池在预留空块、前缀命中、混排预算、块满抢占与负槽位防护六种典型状态下的页表变化，可点击步进查看块表指针与空闲块计数。
+下面的推演展示了这一 16 块物理池在预留空块、前缀命中、混排预算、块满抢占与负槽位防护六种典型状态下的页表变化，随六个阶段依次推进呈现块表指针、前缀共享标记与空闲块计数变化。
 
 <PagedSchedulerExplainer client:visible title="图 1：V1 调度器、Prefix Caching 与抢占交互推演" />
 

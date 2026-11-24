@@ -8,7 +8,7 @@ category: AI Infra
 toc: true
 ---
 
-import OnlineSoftmaxExplainer from '../../../../explainers/foundations/OnlineSoftmaxExplainer';
+import OnlineSoftmaxExplainer from './explainers/OnlineSoftmaxExplainer';
 
 在长序列场景下，标准注意力把中间矩阵反复写回 **HBM（High Bandwidth Memory，高带宽显存）**再重新读出，这一片外访存开销直接主导了算子耗时。以序列长度 $N = 32{,}768$、128 个查询头、BF16 精度（每元素 2 字节）为例，将注意力打分矩阵 $S = QK^\top / \sqrt{d}$ 完整写回 HBM 就需要 $128 \times 32{,}768^2 \times 2\text{ B} = 256\text{ GiB}$，随后算完概率矩阵 $P = \operatorname{softmax}(S)$ 再写读一遍，吞吐就被显存带宽墙直接限制住[^fa1-paper]。
 

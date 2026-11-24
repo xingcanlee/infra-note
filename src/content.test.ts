@@ -151,13 +151,19 @@ describe('infra-note content integrity', () => {
     ]);
   });
 
-  it('uses shared explainers kit without hardcoded hex, gradients, or shadows', () => {
+  it('keeps explainers and shared kit free of hardcoded hex, gradients, or shadows', () => {
     const explainersDir = join(SRC, 'explainers');
     expect(existsSync(join(explainersDir, 'kit', 'index.ts'))).toBe(true);
     expect(existsSync(join(ROOT, 'scripts', 'verify_toys.py'))).toBe(false);
 
-    for (const file of listAllFiles(explainersDir)) {
-      if (file.includes('__tests__') || !/\.(ts|tsx)$/.test(file)) continue;
+    const postExplainerFiles = listAllFiles(POSTS).filter(
+      (f) => /[\\/]explainers[\\/]/.test(f) && !f.endsWith('.test.ts') && /\.(ts|tsx|css)$/.test(f),
+    );
+    const sharedExplainerFiles = listAllFiles(explainersDir).filter(
+      (f) => !f.includes('__tests__') && /\.(ts|tsx|css)$/.test(f),
+    );
+
+    for (const file of [...sharedExplainerFiles, ...postExplainerFiles]) {
       const text = readFileSync(file, 'utf8');
       expect(text, `Hardcoded hex color found in ${file}`).not.toMatch(/#[0-9a-fA-F]{3,8}\b/);
       expect(text, `SVG gradient found in ${file}`).not.toMatch(/<linearGradient|<radialGradient/);

@@ -38,6 +38,10 @@ export interface HeatmapMatrixProps {
   /** 是否显示 5 档离散色阶图例（零 CSS 渐变） */
   showLegend?: boolean;
   fontSize?: number;
+  showSelected?: boolean;
+  showSums?: boolean;
+  showMasks?: boolean;
+  dimmed?: boolean;
 }
 
 const STRONG_STROKE = 2;
@@ -75,6 +79,10 @@ export default function HeatmapMatrix({
   title,
   showLegend = false,
   fontSize = 12,
+  showSelected = true,
+  showSums = true,
+  showMasks = true,
+  dimmed = false,
 }: HeatmapMatrixProps) {
   const { highlightTransition } = useDiagramMotion();
   const ch = cellH ?? cellW;
@@ -111,7 +119,11 @@ export default function HeatmapMatrix({
   const hiStroke = resolveToneStroke(selectedTone);
 
   return (
-    <g>
+    <motion.g
+      initial={false}
+      animate={{ opacity: dimmed ? 0.32 : 1 }}
+      transition={highlightTransition}
+    >
       {title &&
         (hasInlineMath(title) ? (
           <SvgRichLabel
@@ -258,10 +270,10 @@ export default function HeatmapMatrix({
           const cx = gridX + c * (cellW + gap);
           const cy = gridY + r * (ch + gap);
           const key = `${r},${c}`;
-          const isMasked = Boolean(masks?.[r]?.[c]);
+          const isMasked = showMasks && Boolean(masks?.[r]?.[c]);
           const isNull = val === null || val === undefined;
-          const isSel = selected?.has(key) ?? false;
-          const isSoft = softSelected?.has(key) ?? false;
+          const isSel = showSelected && (selected?.has(key) ?? false);
+          const isSoft = showSelected && (softSelected?.has(key) ?? false);
 
           const heat = !isMasked && !isNull ? Math.max(0, Math.min(1, (val - lo) / (hi - lo))) : 0;
 
@@ -354,6 +366,7 @@ export default function HeatmapMatrix({
               fontSize: 11,
               fontWeight: 600,
               fontVariantNumeric: 'tabular-nums',
+              opacity: showSums ? 1 : 0.14,
             }}
           >
             {sumStr}
@@ -374,11 +387,12 @@ export default function HeatmapMatrix({
               fontSize: 11,
               fontWeight: 600,
               fontVariantNumeric: 'tabular-nums',
+              opacity: showSums ? 1 : 0.14,
             }}
           >
             {sumStr}
           </text>
         ))}
-    </g>
+    </motion.g>
   );
 }

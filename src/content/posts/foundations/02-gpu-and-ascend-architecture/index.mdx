@@ -8,9 +8,9 @@ category: AI Infra
 toc: true
 ---
 
-import ChipArchitectureMapExplainer from '@/explainers/foundations/ChipArchitectureMapExplainer';
-import MemoryCoalescingExplainer from '@/explainers/foundations/MemoryCoalescingExplainer';
-import MicroarchLatencyExplainer from '@/explainers/foundations/MicroarchLatencyExplainer';
+import ChipArchitectureMapExplainer from './explainers/ChipArchitectureMapExplainer';
+import MemoryCoalescingExplainer from './explainers/MemoryCoalescingExplainer';
+import MicroarchLatencyExplainer from './explainers/MicroarchLatencyExplainer';
 
 如果不先弄清芯片内部的调度机制与存储层级，“调高 Occupancy（占用率）”“消除 Bank Conflict（存储体冲突）”或“防止片上缓冲溢出”就只是一堆孤立的口诀。离开微架构语境，我们很难判断某条规则何时加速、何时反过来拖慢吞吐[^modular-gpu]。
 

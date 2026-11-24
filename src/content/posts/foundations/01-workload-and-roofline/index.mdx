@@ -8,7 +8,7 @@ category: AI Infra
 toc: true
 ---
 
-import RooflineExplainer from '@/explainers/foundations/RooflineExplainer';
+import RooflineExplainer from './explainers/RooflineExplainer';
 
 理解大模型推理系统的性能边界，首先要回答一个核心问题：一个 Transformer 解码器层在加速卡上究竟触发了哪几类计算负载。按“计算密度与访存特征”归类后，就能看清为什么逐元素算子必须融合。同时也能理解为何 **Prefill（预填充）**阶段很快撞上算力天花板，而自回归 **Decode（解码）**阶段却长期受困于 **HBM（High Bandwidth Memory，高带宽显存）**的搬运速率。
 

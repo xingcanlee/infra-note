@@ -1,4 +1,5 @@
 import { hasInlineMath, plainInlineMath } from 'astro-wisp/explainers';
+import { motion } from 'motion/react';
 import SvgRichLabel from './SvgRichLabel';
 import {
   RADIUS,
@@ -26,15 +27,20 @@ export interface MetricRowProps {
   h?: number;
   gap?: number;
   metrics: readonly MetricItem[];
+  revealed?: boolean;
 }
 
 /** 固定位置的数据仪表条（tabular-nums 等宽数值），避免翻步时版面高度抖动。 */
-export function MetricRow({ x, y, w, h = 40, gap = 8, metrics }: MetricRowProps) {
+export function MetricRow({ x, y, w, h = 40, gap = 8, metrics, revealed = true }: MetricRowProps) {
   const n = metrics.length || 1;
   const cw = (w - (n - 1) * gap) / n;
 
   return (
-    <g>
+    <motion.g
+      initial={false}
+      animate={{ opacity: revealed ? 1 : 0.24 }}
+      transition={{ duration: revealed ? 0.26 : 0 }}
+    >
       {metrics.map((m, i) => {
         const mx = x + i * (cw + gap);
         const tone = m.tone ?? 'neutral';
@@ -123,7 +129,7 @@ export function MetricRow({ x, y, w, h = 40, gap = 8, metrics }: MetricRowProps)
           </g>
         );
       })}
-    </g>
+    </motion.g>
   );
 }
 
@@ -135,6 +141,7 @@ export interface SectionBoxProps {
   title?: string;
   tone?: AnyTone;
   dashed?: boolean;
+  dimmed?: boolean;
 }
 
 /** 轻量虚线分组区框（与 Wisp 纸面底保持高对比与克制层次）。 */
@@ -146,10 +153,15 @@ export function SectionBox({
   title,
   tone = 'neutral',
   dashed = true,
+  dimmed = false,
 }: SectionBoxProps) {
   const stroke = tone === 'neutral' ? 'var(--wisp-border)' : resolveToneStroke(tone);
   return (
-    <g>
+    <motion.g
+      initial={false}
+      animate={{ opacity: dimmed ? 0.34 : 1 }}
+      transition={{ duration: 0.22 }}
+    >
       <rect
         x={x}
         y={y}
@@ -212,6 +224,6 @@ export function SectionBox({
             </g>
           );
         })()}
-    </g>
+    </motion.g>
   );
 }

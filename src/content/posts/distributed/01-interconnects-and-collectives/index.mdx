@@ -8,7 +8,7 @@ category: AI Infra
 toc: true
 ---
 
-import RingCollectivesExplainer from '../../../../explainers/distributed/RingCollectivesExplainer';
+import RingCollectivesExplainer from './explainers/RingCollectivesExplainer';
 
 当模型权重、中间激活或长序列 KV Cache 超出单张加速卡的显存上限，多卡拆分后的推理端到端耗时由单卡计算访存与跨卡、跨机链路上的 **Collectives（集合通信）**开销共同决定。估算一次跨卡传输耗时，需要将其拆解为固定延迟与链路带宽两项物理代价，再看软件栈如何依消息大小与互连拓扑选择最短路径。
 

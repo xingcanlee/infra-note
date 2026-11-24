@@ -18,6 +18,7 @@ export interface ActiveFocusFrameProps {
   h: number;
   tone?: AnyTone;
   label?: string;
+  labelAlign?: 'left' | 'right';
   visible?: boolean;
   dashed?: boolean;
 }
@@ -30,6 +31,7 @@ export default function ActiveFocusFrame({
   h,
   tone = 'highlight',
   label,
+  labelAlign = 'left',
   visible = true,
   dashed = false,
 }: ActiveFocusFrameProps) {
@@ -43,7 +45,8 @@ export default function ActiveFocusFrame({
         Math.ceil(estimateTextWidth(labelPlain, 10.5, 'sans')) + (labelHasMath ? 22 : 14),
       )
     : 0;
-  const badgeX = Math.max(4, Math.min(STAGE_W - labelW - 4, x + 6));
+  const rawBadgeX = labelAlign === 'right' ? x + w - labelW - 6 : x + 6;
+  const badgeX = Math.max(4, Math.min(STAGE_W - labelW - 4, rawBadgeX));
   const badgeY = Math.max(2, y - 9);
 
   return (

@@ -1,20 +1,24 @@
 import { useMemo } from 'react';
-import { Explainer, Stage, type Step } from 'astro-wisp/explainers';
+import { Stage, type Step } from 'astro-wisp/explainers';
 import { motion } from 'motion/react';
+import { BeatExplainer, SvgBeatGroup, defaultBeats, type BeatSpec } from '@/explainers/kit';
+import DataFlowArrow from '@/explainers/kit/DataFlowArrow';
 import SvgRichLabel from '@/explainers/kit/SvgRichLabel';
 import {
+  MANIM_EASE,
   RADIUS,
   RADIUS_SM,
   STAGE_W,
   assertMaxHues,
   resolveToneFill,
   resolveToneStroke,
-  useDiagramMotion,
   type AnyTone,
 } from '@/explainers/kit/motion';
 
 export interface ChipArchitectureMapState {
   stepIndex: number;
+  formulaTex: string;
+  beats: BeatSpec[];
   platform: 'gpu' | 'ascend';
   focus: 'gpu_warp' | 'gpu_block' | 'gpu_chip' | 'ascend_core' | 'ascend_bus';
   rightBadge: string;
@@ -28,8 +32,17 @@ export function buildChipArchitectureMapSteps(): Step<ChipArchitectureMapState>[
 
   return [
     {
+      label: 'Warp 锁步',
+      duration: 4600,
       state: {
         stepIndex: 0,
+        formulaTex: '$1\\text{ Warp} = 32\\text{ Threads}\\; (\\text{SIMT 单指令同拍锁步})$',
+        beats: defaultBeats([
+          '标定 Thread -> Warp 层级路径',
+          '点亮 Warp 0 内 32 线程锁步执行',
+          '对照 SM 硬件池与 HBM 约束',
+          '落定片外 HBM 延迟基线',
+        ]),
         platform: 'gpu',
         focus: 'gpu_warp',
         rightBadge: 'NVIDIA H100 SXM',
@@ -40,8 +53,18 @@ export function buildChipArchitectureMapSteps(): Step<ChipArchitectureMapState>[
         'NVIDIA GPU 的最小执行单位是单个 Thread（线程），相邻 $32$ 个线程（$T_0\\dots T_{31}$）组成一个硬件锁步调度的 Warp（线程束），同一个时钟周期执行相同指令、各自读取私有寄存器中的数据。',
     },
     {
+      label: 'Block 驻留',
+      duration: 4600,
       state: {
         stepIndex: 1,
+        formulaTex:
+          '$1\\text{ Block} \\le 32\\text{ Warps} \\;\\mapsto\\; \\text{共享 } 228\\;\\text{KB SMEM}$',
+        beats: defaultBeats([
+          '聚焦 Thread Block / CTA 聚合边界',
+          '点亮 Reg / SMEM / L1 / 4 调度器',
+          '展示 Block 1 与片上共享层级',
+          '归结 SMEM 降低全局访存',
+        ]),
         platform: 'gpu',
         focus: 'gpu_block',
         rightBadge: 'NVIDIA H100 SXM',
@@ -52,8 +75,18 @@ export function buildChipArchitectureMapSteps(): Step<ChipArchitectureMapState>[
         '多个 Warp 聚合成 Thread Block（CTA）后整体驻留到单一物理 SM 上直至结束：同块内线程可经 SMEM 共享内存交换数据，SM 再凭 $256\\;\\text{KB}$ 寄存器堆与 $4$ 组调度器分派执行。',
     },
     {
+      label: '全芯 132 SM',
+      duration: 4600,
       state: {
         stepIndex: 2,
+        formulaTex:
+          '$132\\;\\text{SMs} \\longleftrightarrow 50\\;\\text{MB L2} \\longleftrightarrow 80\\;\\text{GB HBM3}$',
+        beats: defaultBeats([
+          '展开 SM 0..SM 3 与 132 SM 并行池',
+          '高亮跨 SM 共享 50 MB L2 Cache',
+          '激活 32B Sector 总线与 HBM3',
+          '收拢片外带宽约束',
+        ]),
         platform: 'gpu',
         focus: 'gpu_chip',
         rightBadge: 'NVIDIA H100 SXM',
@@ -65,8 +98,18 @@ export function buildChipArchitectureMapSteps(): Step<ChipArchitectureMapState>[
         '上升到整芯视角，全卡共有 $132$ 个同类 SM 并行消耗 Grid 中独立的 Thread Block，跨 SM 的公共权重与 GQA 键值经 $50\\;\\text{MB}$ 硬件 L2 Cache 汇总复用，未命中的数据再穿过总线落回片外 HBM。',
     },
     {
+      label: '昇腾 1C2V',
+      duration: 4600,
       state: {
         stepIndex: 3,
+        formulaTex:
+          '$1\\text{ AI Core} = \\text{Scalar} + 1\\times\\text{Cube}(16^3) + 2\\times\\text{AIV}(192\\;\\text{KB UB})$',
+        beats: defaultBeats([
+          'Scalar 控制核异步译码派发',
+          '点亮 1x Cube 脉动阵列与 L0',
+          '激活 2x Vector 长向量与 192KB UB',
+          '标出显式容量编排边界',
+        ]),
         platform: 'ascend',
         focus: 'ascend_core',
         rightBadge: '华为昇腾 1C2V',
@@ -77,8 +120,18 @@ export function buildChipArchitectureMapSteps(): Step<ChipArchitectureMapState>[
         '切换至华为昇腾 DaVinci AI Core（$1\\text{C}2\\text{V}$ 簇）：芯片取消数十个锁步 Warp 池，改为由 Scalar 核向 $1$ 个 $16\\times 16\\times 16$ Cube 脉动阵列与 $2$ 个各自独占 $192\\;\\text{KB}$ UB 的长向量 Vector 核下发异步指令。',
     },
     {
+      label: 'MTE 数据环',
+      duration: 4600,
       state: {
         stepIndex: 4,
+        formulaTex:
+          '$\\text{HBM}\\xrightarrow{\\text{MTE2}}\\text{L1}\\xrightarrow{\\text{MTE1}}\\text{Cube}\\xrightarrow{\\text{Fix}}\\text{UB}\\xrightarrow{\\text{MTE3}}\\text{HBM}$',
+        beats: defaultBeats([
+          '点亮 MTE2/1/FixPipe/MTE3 四大引擎',
+          '沿 MTE2 -> L1 -> L0 馈送 Cube 计算',
+          '经 FixPipe -> UB -> MTE3 回写 HBM',
+          '汇总 BIU 双端连续合并约束',
+        ]),
         platform: 'ascend',
         focus: 'ascend_bus',
         rightBadge: '华为昇腾 1C2V',
@@ -98,11 +151,18 @@ export default function ChipArchitectureMapExplainer({
   title?: string;
 }) {
   const steps = useMemo(() => buildChipArchitectureMapSteps(), []);
-  const { highlightTransition } = useDiagramMotion();
+  const highlightTransition = { duration: 0.22, ease: MANIM_EASE };
 
   return (
-    <Explainer steps={steps} title={title} label="芯片级执行模型与物理硬件嵌套地图">
-      {(step) => {
+    <BeatExplainer
+      steps={steps}
+      title={title}
+      label="芯片级执行模型与物理硬件嵌套地图"
+      stageMinHeight={652}
+      getBeats={(step) => step.state.beats}
+      getFormula={(step) => step.state.formulaTex}
+    >
+      {(step, { beat, dotToken }) => {
         const s = step.state;
         const isGpu = s.platform === 'gpu';
         const dieTone: AnyTone = s.focus === 'ascend_bus' ? 'activation' : 'neutral';
@@ -300,7 +360,7 @@ export default function ChipArchitectureMapExplainer({
               style={{
                 fill: 'var(--wisp-muted)',
                 fontFamily: 'var(--wisp-font-mono)',
-                fontSize: 9.5,
+                fontSize: 10,
                 fontWeight: 700,
               }}
             >
@@ -438,7 +498,7 @@ export default function ChipArchitectureMapExplainer({
                                     style={{
                                       fill: warpActive ? 'var(--wisp-fg)' : 'var(--wisp-muted)',
                                       fontFamily: 'var(--wisp-font-mono)',
-                                      fontSize: 8.5,
+                                      fontSize: 10,
                                       fontWeight: warpActive ? 700 : 500,
                                     }}
                                   >
@@ -564,7 +624,7 @@ export default function ChipArchitectureMapExplainer({
                               style={{
                                 fill: resolveToneStroke('activation'),
                                 fontFamily: 'var(--wisp-font-mono)',
-                                fontSize: 9.5,
+                                fontSize: 10,
                                 fontWeight: 600,
                               }}
                             >
@@ -578,7 +638,7 @@ export default function ChipArchitectureMapExplainer({
                               style={{
                                 fill: 'var(--wisp-muted)',
                                 fontFamily: 'var(--wisp-font-sans)',
-                                fontSize: 9.5,
+                                fontSize: 10,
                               }}
                             >
                               {u.t3}
@@ -665,7 +725,7 @@ export default function ChipArchitectureMapExplainer({
                         style={{
                           fill: 'var(--wisp-muted)',
                           fontFamily: 'var(--wisp-font-sans)',
-                          fontSize: 9.5,
+                          fontSize: 10,
                         }}
                       >
                         Reg · SMEM · L1 · 调度器
@@ -833,11 +893,11 @@ export default function ChipArchitectureMapExplainer({
                   style={{
                     fill: 'var(--wisp-fg)',
                     fontFamily: 'var(--wisp-font-mono)',
-                    fontSize: 9.5,
+                    fontSize: 10,
                     fontWeight: 600,
                   }}
                 >
-                  L0B 64 KB（FRACTAL_NZ）
+                  L0B 64 KB (NZ)
                 </text>
 
                 <rect
@@ -858,7 +918,7 @@ export default function ChipArchitectureMapExplainer({
                   style={{
                     fill: 'var(--wisp-fg)',
                     fontFamily: 'var(--wisp-font-mono)',
-                    fontSize: 9.5,
+                    fontSize: 10,
                     fontWeight: 600,
                   }}
                 >
@@ -878,7 +938,7 @@ export default function ChipArchitectureMapExplainer({
                         y={my}
                         width={30}
                         height={13}
-                        rx={1}
+                        rx={0}
                         fill={resolveToneFill('active')}
                         stroke={resolveToneStroke('active')}
                         strokeWidth={1}
@@ -891,7 +951,7 @@ export default function ChipArchitectureMapExplainer({
                         style={{
                           fill: 'var(--wisp-fg)',
                           fontFamily: 'var(--wisp-font-mono)',
-                          fontSize: 7.5,
+                          fontSize: 10,
                           fontWeight: 600,
                         }}
                       >
@@ -904,9 +964,9 @@ export default function ChipArchitectureMapExplainer({
                 {/* L1 Buffer & L0C Accumulator */}
                 <rect
                   x={42}
-                  y={240}
+                  y={244}
                   width={68}
-                  height={28}
+                  height={24}
                   rx={RADIUS_SM}
                   fill={s.focus === 'ascend_bus' ? resolveToneFill('activation') : 'var(--wisp-bg)'}
                   stroke={resolveToneStroke('activation')}
@@ -914,24 +974,24 @@ export default function ChipArchitectureMapExplainer({
                 />
                 <text
                   x={76}
-                  y={254}
+                  y={256}
                   textAnchor="middle"
                   dominantBaseline="central"
                   style={{
                     fill: 'var(--wisp-fg)',
                     fontFamily: 'var(--wisp-font-mono)',
-                    fontSize: 9.5,
+                    fontSize: 10,
                     fontWeight: 600,
                   }}
                 >
-                  L1 Buffer
+                  L1 Buf
                 </text>
 
                 <rect
                   x={116}
-                  y={240}
+                  y={244}
                   width={84}
-                  height={28}
+                  height={24}
                   rx={RADIUS_SM}
                   fill={resolveToneFill('highlight')}
                   stroke={resolveToneStroke('highlight')}
@@ -939,13 +999,13 @@ export default function ChipArchitectureMapExplainer({
                 />
                 <text
                   x={158}
-                  y={254}
+                  y={256}
                   textAnchor="middle"
                   dominantBaseline="central"
                   style={{
                     fill: 'var(--wisp-fg)',
                     fontFamily: 'var(--wisp-font-mono)',
-                    fontSize: 9.5,
+                    fontSize: 10,
                     fontWeight: 600,
                   }}
                 >
@@ -960,7 +1020,7 @@ export default function ChipArchitectureMapExplainer({
                   style={{
                     fill: 'var(--wisp-muted)',
                     fontFamily: 'var(--wisp-font-sans)',
-                    fontSize: 9.5,
+                    fontSize: 10,
                   }}
                 >
                   FP32 累加 · 须经 FixPipe 迁出
@@ -1013,7 +1073,7 @@ export default function ChipArchitectureMapExplainer({
                         style={{
                           fill: 'var(--wisp-fg)',
                           fontFamily: 'var(--wisp-font-sans)',
-                          fontSize: 9.5,
+                          fontSize: 10,
                           fontWeight: 700,
                         }}
                       >
@@ -1029,7 +1089,7 @@ export default function ChipArchitectureMapExplainer({
                               y={ay + 20}
                               width={17}
                               height={18}
-                              rx={1}
+                              rx={0}
                               fill={resolveToneFill('activation')}
                               stroke={resolveToneStroke('activation')}
                               strokeWidth={0.9}
@@ -1042,7 +1102,7 @@ export default function ChipArchitectureMapExplainer({
                               style={{
                                 fill: 'var(--wisp-fg)',
                                 fontFamily: 'var(--wisp-font-mono)',
-                                fontSize: 7.5,
+                                fontSize: 10,
                               }}
                             >
                               {`V${lane}`}
@@ -1076,11 +1136,11 @@ export default function ChipArchitectureMapExplainer({
                         style={{
                           fill: 'var(--wisp-fg)',
                           fontFamily: 'var(--wisp-font-mono)',
-                          fontSize: 9.5,
+                          fontSize: 10,
                           fontWeight: 600,
                         }}
                       >
-                        UB 192 KB（显式指令管理）
+                        UB 192 KB (显式调度)
                       </text>
                     </g>
                   );
@@ -1129,7 +1189,7 @@ export default function ChipArchitectureMapExplainer({
                         style={{
                           fill: 'var(--wisp-muted)',
                           fontFamily: 'var(--wisp-font-mono)',
-                          fontSize: 9,
+                          fontSize: 10,
                         }}
                       >
                         {m.sub}
@@ -1137,6 +1197,120 @@ export default function ChipArchitectureMapExplainer({
                     </g>
                   );
                 })}
+
+                {/* Step 4 explicit DMA & compute pipeline arrows */}
+                {s.focus === 'ascend_bus' && (
+                  <g>
+                    <DataFlowArrow
+                      points={[
+                        [77, 458],
+                        [77, 416],
+                      ]}
+                      tone="highlight"
+                      active
+                      visible={beat >= 1}
+                      draw={beat >= 1}
+                      dotToken={beat >= 1 ? dotToken : 0}
+                      arrowEnd
+                    />
+                    <DataFlowArrow
+                      points={[
+                        [77, 376],
+                        [77, 356],
+                      ]}
+                      tone="highlight"
+                      active
+                      visible={beat >= 1}
+                      draw={beat >= 1}
+                      dotToken={beat >= 1 ? dotToken : 0}
+                      arrowEnd
+                    />
+                    <DataFlowArrow
+                      points={[
+                        [77, 316],
+                        [77, 268],
+                      ]}
+                      tone="highlight"
+                      active
+                      visible={beat >= 1}
+                      draw={beat >= 1}
+                      dotToken={beat >= 1 ? dotToken : 0}
+                      arrowEnd
+                    />
+                    <DataFlowArrow
+                      points={[
+                        [55, 244],
+                        [55, 232],
+                      ]}
+                      tone="active"
+                      active
+                      visible={beat >= 1}
+                      draw={beat >= 1}
+                      arrowEnd
+                    />
+                    <DataFlowArrow
+                      points={[
+                        [158, 232],
+                        [158, 244],
+                      ]}
+                      tone="active"
+                      active
+                      visible={beat >= 1}
+                      draw={beat >= 1}
+                      arrowEnd
+                    />
+                    <DataFlowArrow
+                      points={[
+                        [200, 256],
+                        [216, 256],
+                        [216, 283],
+                        [230, 283],
+                      ]}
+                      tone="activation"
+                      active
+                      visible={beat >= 2}
+                      draw={beat >= 2}
+                      dotToken={beat >= 2 ? dotToken : 0}
+                      arrowEnd
+                    />
+                    <DataFlowArrow
+                      points={[
+                        [350, 293],
+                        [350, 316],
+                      ]}
+                      tone="highlight"
+                      active
+                      visible={beat >= 2}
+                      draw={beat >= 2}
+                      dotToken={beat >= 2 ? dotToken : 0}
+                      arrowEnd
+                    />
+                    <DataFlowArrow
+                      points={[
+                        [350, 356],
+                        [350, 376],
+                      ]}
+                      tone="highlight"
+                      active
+                      visible={beat >= 2}
+                      draw={beat >= 2}
+                      dotToken={beat >= 2 ? dotToken : 0}
+                      arrowEnd
+                    />
+                    <DataFlowArrow
+                      points={[
+                        [350, 416],
+                        [350, 458],
+                      ]}
+                      tone="highlight"
+                      active
+                      visible={beat >= 2}
+                      draw={beat >= 2}
+                      dotToken={beat >= 2 ? dotToken : 0}
+                      arrowEnd
+                    />
+                  </g>
+                )}
 
                 {/* Collapsed Sibling AI Cores 1..3 */}
                 {[1, 2, 3].map((ci) => {
@@ -1209,7 +1383,7 @@ export default function ChipArchitectureMapExplainer({
                         style={{
                           fill: 'var(--wisp-muted)',
                           fontFamily: 'var(--wisp-font-mono)',
-                          fontSize: 9.5,
+                          fontSize: 10,
                         }}
                       >
                         L1 · L0 · 2×UB · MTE
@@ -1243,7 +1417,7 @@ export default function ChipArchitectureMapExplainer({
                   style={{
                     fill: 'var(--wisp-muted)',
                     fontFamily: 'var(--wisp-font-mono)',
-                    fontSize: 9.5,
+                    fontSize: 10,
                   }}
                 >
                   并行计算
@@ -1345,7 +1519,7 @@ export default function ChipArchitectureMapExplainer({
               style={{
                 fill: resolveToneStroke('highlight'),
                 fontFamily: 'var(--wisp-font-mono)',
-                fontSize: 9.5,
+                fontSize: 10,
                 fontWeight: 700,
               }}
             >
@@ -1413,20 +1587,22 @@ export default function ChipArchitectureMapExplainer({
               );
             })}
 
-            <SvgRichLabel
-              x={24}
-              y={531}
-              width={632}
-              height={20}
-              text={s.hbmFooter}
-              fontSize={10.5}
-              fontWeight={500}
-              color="var(--wisp-muted)"
-              anchor="start"
-            />
+            <SvgBeatGroup visible={beat >= 3}>
+              <SvgRichLabel
+                x={24}
+                y={531}
+                width={632}
+                height={20}
+                text={s.hbmFooter}
+                fontSize={10.5}
+                fontWeight={500}
+                color="var(--wisp-muted)"
+                anchor="start"
+              />
+            </SvgBeatGroup>
           </Stage>
         );
       }}
-    </Explainer>
+    </BeatExplainer>
   );
 }

@@ -240,85 +240,76 @@
       ]
     },
     "src/content/posts/deepseek/07-engram/diagrams/11-engram-arch.drawio": {
-      "source": "sha256-d0533544f2d0dcb535572a51c465954b4d9c194547f6b015cebb58a0e7a91132",
+      "source": "sha256-34f5137c6b7cd48374cbdc9da07b340c0ea5c344c192c671a2d4fd6c69b949d9",
       "style": "clean",
       "exporter": "drawio-cli",
       "embedFonts": false,
       "outputs": {
-        "src/content/posts/deepseek/07-engram/diagrams/11-engram-arch.wisp.svg": "sha256-181e2b650f498bcdc32e7f272769e1cef69c5f925c5b0e202a6850e8cf7a1298"
+        "src/content/posts/deepseek/07-engram/diagrams/11-engram-arch.wisp.svg": "sha256-0077b5baf601c5f854ef196149ae5be4fc5c80c54298cef27cb7a966840bbcaf"
       },
       "pages": [
-        "Engram 模块原理：静态查表与上下文门控融合"
-      ]
-    },
-    "src/content/posts/deepseek/07-engram/diagrams/11-engram-dist-lookup.drawio": {
-      "source": "sha256-75c52e606260c1cc9adab70c9f5585cdeeb668d852a51592911f8924d91a6944",
-      "style": "clean",
-      "exporter": "drawio-cli",
-      "embedFonts": false,
-      "outputs": {
-        "src/content/posts/deepseek/07-engram/diagrams/11-engram-dist-lookup.wisp.svg": "sha256-abd0c0111d0a536f93acfe56cbd36ca1662cebc4995c7108326dd3aef8c77d18"
-      },
-      "pages": [
-        "engram-dist-lookup"
+        "engram-arch"
       ]
     },
     "src/content/posts/deepseek/07-engram/diagrams/11-engram-gate-disambig.drawio": {
-      "source": "sha256-cdc7bdb287ddc815158d3c5715afe0b2e73515f332c798c22010d12cfca0e046",
+      "source": "sha256-c7dd99e10386da70e725a85a1ec457095628958181224c9bd84f2863d38e9dfb",
       "style": "clean",
       "exporter": "drawio-cli",
       "embedFonts": false,
       "outputs": {
-        "src/content/posts/deepseek/07-engram/diagrams/11-engram-gate-disambig.wisp.svg": "sha256-cca1b411976ae7c9ace2fd2e33838a339dbc2a5f929310e5b13235270d7c6b42"
+        "src/content/posts/deepseek/07-engram/diagrams/11-engram-gate-disambig.wisp.svg": "sha256-12ea9fd2305ef957c9b862596a5ac23b7cd7b017f4f4d7a41e1931af83c35390"
       },
       "pages": [
-        "Engram Context Gate Disambiguation"
+        "engram-gate-disambig"
       ]
     },
     "src/content/posts/deepseek/07-engram/diagrams/11-engram-hash.drawio": {
-      "source": "sha256-2183242db6add7e38598ae50d65e2ee1c43687c3dbb7fd82ab13e241faea3d93",
+      "source": "sha256-f0d45faff1df4aad01bb23e13e0242ca2e9777f2bd058e721b5e25b729e9e879",
       "style": "clean",
       "exporter": "drawio-cli",
       "embedFonts": false,
       "outputs": {
-        "src/content/posts/deepseek/07-engram/diagrams/11-engram-hash.wisp.svg": "sha256-9a262862f81c8fe59084808b57f28eb7349edba80016a3e0678289aaa6d49111"
+        "src/content/posts/deepseek/07-engram/diagrams/11-engram-hash.wisp.svg": "sha256-90f9d2dbabc6890276aad8c8c42985afa5f74a61701c8bb4ee0e94f5317065e2"
       },
       "pages": [
-        "多头质数哈希与扁平分桶寻址"
+        "engram-hash"
       ]
     },
     "src/content/posts/deepseek/07-engram/diagrams/11-engram-layer.drawio": {
-      "source": "sha256-106314e928bd303c1ceb04ba9359adcdc78f14fe8600e6c9a649360b2cb9fa80",
+      "source": "sha256-ea4afde268fe5fa08a84cf03074730b8bdf2f7014675a1bc71856ca1db0e3f4c",
       "style": "clean",
       "exporter": "drawio-cli",
       "embedFonts": false,
       "outputs": {
-        "src/content/posts/deepseek/07-engram/diagrams/11-engram-layer.wisp.svg": "sha256-68b3145844e68619da79119e4143df3fb2e89a86e50a8013d0ec20a4767b2ac2"
+        "src/content/posts/deepseek/07-engram/diagrams/11-engram-layer.wisp.svg": "sha256-cabe66a917efd18743c7a2e37b36e83398dc2c9a2eeb62512a4d57462ad5f5fc"
       },
       "pages": [
         "engram-layer"
       ]
     },
     "src/content/posts/deepseek/07-engram/diagrams/11-engram-runtime.drawio": {
-      "source": "sha256-93ee58d66750f659401c8deb20a5a50742c65a5f0d7cd8e59c72a61631bcace8",
+      "source": "sha256-5e619e87ddfef92824fa2f15b471d206b2b4628c1ab18e9c2167a392d3329456",
       "style": "clean",
       "exporter": "drawio-cli",
       "embedFonts": false,
       "outputs": {
-        "src/content/posts/deepseek/07-engram/diagrams/11-engram-runtime.wisp.svg": "sha256-8df7fd204753f47df045d3e84cae3043cc54e94bba8b8623470a51d5738aa012"
+        "src/content/posts/deepseek/07-engram/diagrams/11-engram-runtime.wisp.svg": "sha256-54f484cfff9de3bbd018a17a706e0883f0a9d9a6b1014326c5aebee2411f139d"
       },
       "pages": [
         "engram-runtime-prefetch"
       ]
     },
-    "src/content/posts/deepseek/07-engram/diagrams/11-shortconv-dilation.excalidraw": {
-      "source": "sha256-5c65d9a9a4099f28030d321311b2767f1d0179e1c55d9243e4234d0386293734",
-      "style": "hand",
-      "exporter": "excalidraw-playwright",
+    "src/content/posts/deepseek/07-engram/diagrams/11-shortconv-dilation.drawio": {
+      "source": "sha256-313db2da81e5826f2763dc973b8f5235a552bd0a8951931c0877976ce8391cd5",
+      "style": "clean",
+      "exporter": "drawio-cli",
       "embedFonts": false,
       "outputs": {
-        "src/content/posts/deepseek/07-engram/diagrams/11-shortconv-dilation.wisp.svg": "sha256-6654a90029149fd5449c052dc7be27997eda88267112f1ce4467f31dfd203f83"
-      }
+        "src/content/posts/deepseek/07-engram/diagrams/11-shortconv-dilation.wisp.svg": "sha256-1586b7abe31bc6573b30ea8e76f8086b4311ea8ad37f46a37fcd5564c6417433"
+      },
+      "pages": [
+        "shortconv-dilation"
+      ]
     },
     "src/content/posts/deepseek/08-mhc/diagrams/08-mhc-arch-comp.drawio": {
       "source": "sha256-706da1671ff077a9024825e0522b6a3fe253a505f119ae28ab05da2931f3ed13",

@@ -22,9 +22,11 @@ export interface TimelineBlock {
   dashed?: boolean;
   /** 'bubble' 表示等待/空闲气泡区间，用斜虚线/暗底渲染 */
   kind?: 'op' | 'bubble' | 'error';
+  visible?: boolean;
 }
 
 export interface TimelineLane {
+  id?: string;
   title: string;
   subtitle?: string;
   blocks: readonly TimelineBlock[];
@@ -39,6 +41,7 @@ export interface TimelineSyncEvent {
   tone?: AnyTone;
   active?: boolean;
   dashed?: boolean;
+  visible?: boolean;
 }
 
 export interface SwimlaneTimelineProps {
@@ -137,8 +140,18 @@ export default function SwimlaneTimeline({
 
       {lanes.map((lane, li) => {
         const ly = trackY + li * (laneH + laneGap);
+        const subFit = lane.subtitle
+          ? fitTextMetrics(
+              lane.subtitle,
+              Math.max(36, gutterW - 14),
+              10,
+              10,
+              fontKindFor(lane.subtitle, 'mono'),
+            )
+          : null;
+
         return (
-          <g key={lane.title}>
+          <g key={lane.id ?? lane.title}>
             <rect
               x={trackX}
               y={ly}
@@ -163,16 +176,18 @@ export default function SwimlaneTimeline({
             >
               {lane.title}
             </text>
-            {lane.subtitle && (
+            {lane.subtitle && subFit && (
               <text
                 x={x + gutterW - 8}
                 y={ly + laneH * 0.72}
                 textAnchor="end"
                 dominantBaseline="central"
+                textLength={subFit.textLength}
+                lengthAdjust={subFit.textLength ? 'spacingAndGlyphs' : undefined}
                 style={{
                   fill: 'var(--wisp-muted)',
                   fontFamily: fontVarFor(lane.subtitle, 'mono'),
-                  fontSize: 10,
+                  fontSize: subFit.fontSize,
                 }}
               >
                 {lane.subtitle}
@@ -188,12 +203,24 @@ export default function SwimlaneTimeline({
               const stroke = resolveToneStroke(tone);
               const blkKind = fontKindFor(blk.label, 'mono');
               const blkFit =
-                bw >= 26
-                  ? fitTextMetrics(blk.label, bw - 6, bw >= 64 ? 10.5 : 10, 10, blkKind)
+                bw >= 18
+                  ? fitTextMetrics(
+                      blk.label,
+                      Math.max(10, bw - 5),
+                      bw >= 64 ? 10.5 : 10,
+                      10,
+                      blkKind,
+                    )
                   : null;
+              const blockVisible = blk.visible ?? true;
 
               return (
-                <g key={`${blk.label}-${bi}`}>
+                <motion.g
+                  key={`${blk.label}-${bi}`}
+                  initial={false}
+                  animate={{ opacity: blockVisible ? 1 : 0.12 }}
+                  transition={stepTransition}
+                >
                   <motion.rect
                     initial={false}
                     animate={{ x: bx, width: bw }}
@@ -226,7 +253,7 @@ export default function SwimlaneTimeline({
                       {blk.label}
                     </text>
                   )}
-                </g>
+                </motion.g>
               );
             })}
           </g>
@@ -242,11 +269,25 @@ export default function SwimlaneTimeline({
         const y0 = up ? sy - laneH : sy;
         const y1 = up ? ey + laneH : ey;
         const stroke = resolveToneStroke(ev.tone ?? (ev.active ? 'activation' : 'mask'));
-        const dir = y1 >= y0 ? 1 : -1;
-        const tri = `${ex},${y1} ${ex - 3},${y1 - 5 * dir} ${ex + 3},${y1 - 5 * dir}`;
+        const dx = ex - sx;
+        const dy = y1 - y0;
+        const len = Math.hypot(dx, dy) || 1;
+        const ux = dx / len;
+        const uy = dy / len;
+        const px = -uy * 3;
+        const py = ux * 3;
+        const bx = ex - ux * 5.5;
+        const by = y1 - uy * 5.5;
+        const tri = `${ex},${y1} ${bx + px},${by + py} ${bx - px},${by - py}`;
+        const evVisible = ev.visible ?? true;
 
         return (
-          <g key={`ev-${ei}`}>
+          <motion.g
+            key={`ev-${ei}`}
+            initial={false}
+            animate={{ opacity: evVisible ? 1 : 0 }}
+            transition={stepTransition}
+          >
             <line
               x1={sx}
               y1={y0}
@@ -293,7 +334,7 @@ export default function SwimlaneTimeline({
                   </g>
                 );
               })()}
-          </g>
+          </motion.g>
         );
       })}
 

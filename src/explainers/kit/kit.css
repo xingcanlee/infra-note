@@ -1,0 +1,100 @@
+/* 交互图解通用节奏横幅与语义色调样式（@layer utilities，仅使用 --wisp-* 令牌） */
+@layer utilities {
+  .wisp-kit-shell {
+    flex: 1 1 auto;
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+    min-width: 0;
+  }
+
+  .wisp-kit-body {
+    flex: 1 1 auto;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    min-width: 0;
+  }
+
+  .wisp-kit-banner {
+    position: relative;
+    overflow: hidden;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.25rem 0.5rem;
+    min-height: 3.125rem;
+    padding: 0.4375rem 0.6875rem;
+    border: 1px solid var(--wisp-border);
+    border-radius: 4px;
+    background: var(--wisp-surface);
+  }
+
+  .wisp-kit-banner__tag {
+    flex: none;
+    color: var(--wisp-muted);
+    font-size: 0.75rem;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .wisp-kit-banner__beat {
+    margin-inline-start: 0.25rem;
+    font-weight: 500;
+    color: var(--wisp-accent);
+  }
+
+  .wisp-kit-banner__eq {
+    min-width: 0;
+    flex: 1 1 12rem;
+    color: var(--wisp-fg);
+    font-size: 0.8125rem;
+    line-height: 1.45;
+    text-align: end;
+    overflow-wrap: anywhere;
+  }
+
+  .wisp-kit-banner__progress {
+    position: absolute;
+    inset-inline-start: 0;
+    bottom: 0;
+    height: 2px;
+    background: var(--wisp-accent);
+    pointer-events: none;
+  }
+
+  .wisp-kit-tone {
+    transition:
+      background-color 180ms,
+      border-color 180ms;
+  }
+
+  .wisp-kit-tone[data-tone='active'] {
+    border-color: var(--wisp-sem-active);
+    background: var(--wisp-sem-active-fill);
+  }
+
+  .wisp-kit-tone[data-tone='done'] {
+    border-color: var(--wisp-sem-done);
+    background: var(--wisp-sem-done-fill);
+  }
+
+  .wisp-kit-tone[data-tone='highlight'] {
+    border-color: var(--wisp-sem-highlight);
+    background: var(--wisp-sem-highlight-fill);
+  }
+
+  .wisp-kit-tone[data-tone='slate'] {
+    border-color: var(--wisp-border);
+    background: var(--wisp-surface);
+    transition: none;
+  }
+
+  @media (max-width: 40rem) {
+    .wisp-kit-banner__eq {
+      text-align: start;
+      font-size: 0.8125rem;
+    }
+  }
+}

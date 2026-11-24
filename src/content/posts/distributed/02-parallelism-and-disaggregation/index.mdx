@@ -8,7 +8,7 @@ category: AI Infra
 toc: true
 ---
 
-import EpDispatchExplainer from '../../../../explainers/distributed/EpDispatchExplainer';
+import EpDispatchExplainer from './explainers/EpDispatchExplainer';
 
 分布式推理的显存压力来自两类开销：一类是静态常驻的模型权重，另一类是随序列长度与并发数线性增长的 KV Cache（Key-Value Cache，键值缓存）。第 01 章算清了单次跨卡传输的物理代价，而**并行维度的切分方式**决定了前向过程一共要支付多少次通信，又真正省下了哪一部分显存。
 

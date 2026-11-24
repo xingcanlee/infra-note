@@ -33,7 +33,12 @@ export interface SlotStripProps {
   gap?: number;
   title?: string;
   fontSize?: number;
+  dimmed?: boolean;
+  /** 控制逐槽显影数量；缺省显示全部槽位 */
+  revealedCount?: number;
 }
+
+const DRAW_EASE = [0.42, 0, 0.2, 1] as const;
 
 /** 连续物理页块 / 环形缓存 / 质数分桶 / Token 序列槽位条。 */
 export function SlotStrip({
@@ -45,13 +50,19 @@ export function SlotStrip({
   gap = 4,
   title,
   fontSize = 11.5,
+  dimmed = false,
+  revealedCount,
 }: SlotStripProps) {
   const { highlightTransition } = useDiagramMotion();
   const topOffset = title ? 18 : 0;
   const gridY = y + topOffset;
 
   return (
-    <g>
+    <motion.g
+      initial={false}
+      animate={{ opacity: dimmed ? 0.34 : 1 }}
+      transition={highlightTransition}
+    >
       {title &&
         (hasInlineMath(title) ? (
           <SvgRichLabel
@@ -111,9 +122,15 @@ export function SlotStrip({
         const tagFit = s.topTag
           ? fitTextMetrics(s.topTag, slotW + Math.max(0, gap - 2), 10, 10, tagKind)
           : null;
+        const slotVisible = revealedCount === undefined || idx < revealedCount;
 
         return (
-          <g key={s.id}>
+          <motion.g
+            key={s.id}
+            initial={false}
+            animate={{ opacity: slotVisible ? 1 : 0.16 }}
+            transition={highlightTransition}
+          >
             {s.topTag &&
               tagFit &&
               (tagHasMath ? (
@@ -221,14 +238,15 @@ export function SlotStrip({
                   {s.sub}
                 </text>
               ))}
-          </g>
+          </motion.g>
         );
       })}
-    </g>
+    </motion.g>
   );
 }
 
 export interface PointerArc {
+  id?: string;
   fromX: number;
   fromY: number;
   toX: number;
@@ -237,19 +255,33 @@ export interface PointerArc {
   active?: boolean;
   dashed?: boolean;
   flow?: boolean;
+  visible?: boolean;
+  draw?: boolean;
+  /** active 为 false 时依然保留指定 tone 色彩而非统一切成灰色 */
+  preserveTone?: boolean;
   /** 弯曲高度，正值向下凸，负值向上拱 */
   arcOffset?: number;
   label?: string;
 }
 
 /** 槽位间平滑指针连线 / 通道配对弧 / 虚拟页映射跳线。 */
-export function PointerArcs({ arcs }: { arcs: readonly PointerArc[] }) {
+export function PointerArcs({
+  arcs,
+  dotToken,
+}: {
+  arcs: readonly PointerArc[];
+  dotToken?: number;
+}) {
   const { canAnimateFlow, highlightTransition, packetTransition } = useDiagramMotion();
 
   return (
     <g>
       {arcs.map((a, idx) => {
-        const stroke = a.active ? resolveToneStroke(a.tone ?? 'active') : 'var(--wisp-subtle)';
+        const useTone = a.active || (a.preserveTone && a.tone);
+        const stroke = useTone ? resolveToneStroke(a.tone ?? 'active') : 'var(--wisp-subtle)';
+        const visible = a.visible ?? true;
+        const baseOpacity = a.active ? 1 : a.preserveTone ? 0.6 : 0.4;
+        const targetOpacity = visible ? baseOpacity : 0.08;
         const mx = (a.fromX + a.toX) / 2;
         const my = (a.fromY + a.toY) / 2 + (a.arcOffset ?? -26);
         const d = `M ${a.fromX.toFixed(1)} ${a.fromY.toFixed(1)} Q ${mx.toFixed(1)} ${my.toFixed(1)} ${a.toX.toFixed(1)} ${a.toY.toFixed(1)}`;
@@ -268,33 +300,78 @@ export function PointerArcs({ arcs }: { arcs: readonly PointerArc[] }) {
         const py = ux * 2.6;
         const tri = `${a.toX},${a.toY} ${bx + px},${by + py} ${bx - px},${by - py}`;
 
+        const showTimedDot =
+          dotToken !== undefined ? dotToken > 0 && visible && a.active && a.flow : false;
+        const showFallbackDot =
+          dotToken === undefined && visible && a.active && a.flow && canAnimateFlow;
+
         return (
           <motion.g
-            key={idx}
+            key={a.id ?? idx}
             initial={false}
-            animate={{ opacity: a.active ? 1 : 0.4 }}
+            animate={{ opacity: a.draw ? 1 : targetOpacity }}
             transition={highlightTransition}
           >
-            <path
-              d={d}
-              fill="none"
-              stroke={stroke}
-              strokeWidth={a.active ? 2 : 1.25}
-              strokeDasharray={a.dashed ? '4 3' : undefined}
-            />
-            <polygon points={tri} fill={stroke} />
-            {a.active && a.flow && canAnimateFlow && (
+            {a.draw ? (
+              <motion.path
+                d={d}
+                fill="none"
+                stroke={stroke}
+                strokeWidth={a.active ? 2 : 1.25}
+                strokeDasharray={a.dashed ? '4 3' : undefined}
+                initial={false}
+                animate={{ pathLength: visible ? 1 : 0, opacity: targetOpacity }}
+                transition={{ duration: visible ? 0.28 : 0, ease: DRAW_EASE }}
+              />
+            ) : (
+              <path
+                d={d}
+                fill="none"
+                stroke={stroke}
+                strokeWidth={a.active ? 2 : 1.25}
+                strokeDasharray={a.dashed ? '4 3' : undefined}
+              />
+            )}
+
+            {a.draw ? (
+              <motion.polygon
+                points={tri}
+                fill={stroke}
+                initial={false}
+                animate={{ opacity: visible ? targetOpacity : 0 }}
+                transition={{ duration: visible ? 0.14 : 0, delay: visible ? 0.18 : 0 }}
+              />
+            ) : (
+              <polygon points={tri} fill={stroke} />
+            )}
+
+            {showTimedDot && (
+              <motion.circle
+                key={`pa-${a.id ?? idx}-${dotToken}`}
+                r={2.8}
+                fill={stroke}
+                initial={{ cx: a.fromX, cy: a.fromY, opacity: 0 }}
+                animate={{
+                  cx: [a.fromX, (a.fromX + 2 * mx + a.toX) / 4, a.toX],
+                  cy: [a.fromY, ly, a.toY],
+                  opacity: [0, 1, 0],
+                }}
+                transition={{ duration: 0.48, ease: DRAW_EASE }}
+              />
+            )}
+            {showFallbackDot && (
               <motion.circle
                 r={2.8}
                 fill={stroke}
                 initial={{ cx: a.fromX, cy: a.fromY }}
                 animate={{
-                  cx: [a.fromX, mx, a.toX],
-                  cy: [a.fromY, (a.fromY + my) / 2, a.toY],
+                  cx: [a.fromX, (a.fromX + 2 * mx + a.toX) / 4, a.toX],
+                  cy: [a.fromY, ly, a.toY],
                 }}
                 transition={packetTransition}
               />
             )}
+
             {a.label &&
               (() => {
                 const labelHasMath = hasInlineMath(a.label);
@@ -305,7 +382,11 @@ export function PointerArcs({ arcs }: { arcs: readonly PointerArc[] }) {
                   Math.ceil(estimateTextWidth(plain, 10.5, labelKind)) + (labelHasMath ? 18 : 10),
                 );
                 return (
-                  <g>
+                  <motion.g
+                    initial={false}
+                    animate={{ opacity: visible ? 1 : 0 }}
+                    transition={{ duration: visible ? 0.18 : 0 }}
+                  >
                     <rect
                       x={lx - alw / 2}
                       y={ly - 8}
@@ -322,10 +403,10 @@ export function PointerArcs({ arcs }: { arcs: readonly PointerArc[] }) {
                       text={a.label}
                       fontSize={10.5}
                       fontWeight={a.active ? 600 : 500}
-                      color={a.active ? stroke : 'var(--wisp-muted)'}
+                      color={useTone ? stroke : 'var(--wisp-muted)'}
                       family={labelKind}
                     />
-                  </g>
+                  </motion.g>
                 );
               })()}
           </motion.g>

@@ -1,5 +1,6 @@
 import { useMemo } from 'react';
-import { Explainer, Stage, type Step } from 'astro-wisp/explainers';
+import { Stage, type Step } from 'astro-wisp/explainers';
+import { BeatExplainer, defaultBeats, type BeatSpec } from '@/explainers/kit';
 import ActiveFocusFrame from '@/explainers/kit/ActiveFocusFrame';
 import DataFlowArrow from '@/explainers/kit/DataFlowArrow';
 import HeatmapMatrix from '@/explainers/kit/HeatmapMatrix';
@@ -10,7 +11,8 @@ import { STAGE_W, assertMaxHues, type AnyTone } from '@/explainers/kit/motion';
 
 export interface KvCacheStepState {
   stepIndex: number;
-  decodeLabel: string;
+  formulaTex: string;
+  beats: BeatSpec[];
   qTitle: string;
   qShape: string;
   kvTitle: string;
@@ -130,9 +132,17 @@ export function buildKvCacheStepSteps(): Step<KvCacheStepState>[] {
 
   return [
     {
+      label: '第 1 步入槽',
+      duration: 4600,
       state: {
         stepIndex: 0,
-        decodeLabel: 'Decode $t=1$',
+        formulaTex: '$t=1:\\; \\text{Write}(k_1,v_1) \\to \\text{Slot }1,\\; 1\\text{ 次点积}$',
+        beats: defaultBeats([
+          '投影首个 Q1 与 k1, v1',
+          '向下写入 KV 槽 1 并喂入矩阵',
+          '聚合写出 O1 [1,d] 并框定槽 1',
+          '记录基线步零节省基准',
+        ]),
         qTitle: '$Q_1$',
         qShape: '$[1, d]$',
         kvTitle: '$k_1, v_1$',
@@ -159,9 +169,18 @@ export function buildKvCacheStepSteps(): Step<KvCacheStepState>[] {
         '第 1 步（$t=1$）：生成单个新 token，投影出 $Q_1, k_1, v_1 \\in \\mathbb{R}^{1 \\times d}$，将 $k_1, v_1$ 写入 KV Cache 第 1 槽位；注意力仅计算第 1 行 $1$ 次点积。',
     },
     {
+      label: '第 2 步复用',
+      duration: 4600,
       state: {
         stepIndex: 1,
-        decodeLabel: 'Decode $t=2$',
+        formulaTex:
+          '$t=2:\\; \\text{Append }(k_2,v_2),\\; \\text{Reuse } K_{1},\\; \\text{仅算第 2 行}$',
+        beats: defaultBeats([
+          '仅投影当前步 Q2 与 k2, v2',
+          '追加槽 2 并复用历史槽 1',
+          '仅点亮第 2 行算出 O2',
+          '核算累计节省 33.3%',
+        ]),
         qTitle: '$Q_2$',
         qShape: '$[1, d]$',
         kvTitle: '$k_2, v_2$',
@@ -182,15 +201,23 @@ export function buildKvCacheStepSteps(): Step<KvCacheStepState>[] {
         stepWorkText: '1 KV / 2 点积',
         cumKvProjText: '2 vs 无Cache 3',
         savingText: '已省 33.3% KV',
-        focusRect: { x: 266, y: 16, w: 254, h: 196, label: '仅算第 2 行', tone: 'q' },
+        focusRect: { x: 266, y: 20, w: 254, h: 198, label: '仅算第 2 行', tone: 'q' },
       },
       caption:
         '第 2 步（$t=2$）：仅对新 token 计算 $Q_2, k_2, v_2$ 并追加到第 2 槽位；第 1 槽位 $k_1, v_1$ 直接复用不重算，注意力只需读取 $K_{1:2}$ 计算第 2 行（$2$ 次点积）。',
     },
     {
+      label: '第 3 步 GEMV',
+      duration: 4600,
       state: {
         stepIndex: 2,
-        decodeLabel: 'Decode $t=3$',
+        formulaTex: '$t=3:\\; Q_3 K_{1:3}^\\top \\Rightarrow 3\\text{ vs }6\\; (\\text{省 }50\\%)$',
+        beats: defaultBeats([
+          '投影单步 Q3 与 k3, v3',
+          '追加槽 3 并读出 K_{1:3} 全向量',
+          '框出第 3 行 GEMV 产出 O3',
+          '确认投影量减半 (50%)',
+        ]),
         qTitle: '$Q_3$',
         qShape: '$[1, d]$',
         kvTitle: '$k_3, v_3$',
@@ -211,15 +238,23 @@ export function buildKvCacheStepSteps(): Step<KvCacheStepState>[] {
         stepWorkText: '1 KV / 3 点积',
         cumKvProjText: '3 vs 无Cache 6',
         savingText: '已省 50.0% KV',
-        focusRect: { x: 266, y: 16, w: 254, h: 196, label: '仅算第 3 行', tone: 'q' },
+        focusRect: { x: 266, y: 20, w: 254, h: 198, label: '仅算第 3 行', tone: 'q' },
       },
       caption:
         '第 3 步（$t=3$）：前 2 步的历史行已定型且无需再输出，$Q_3 [1, d]$ 与扩展后的 $K_{1:3} [3, d]$ 做 GEMV（General Matrix-Vector Multiply，矩阵向量乘），累计 KV 投影次数降为无缓存的一半（$3$ vs $6$）。',
     },
     {
+      label: '第 4 步成链',
+      duration: 4600,
       state: {
         stepIndex: 3,
-        decodeLabel: 'Decode $t=4$',
+        formulaTex: '$t=4:\\; \\sum KV = 4\\text{ vs }10\\; (O(T^3) \\to O(T^2))$',
+        beats: defaultBeats([
+          '输入 Q4 与末位增量 k4, v4',
+          '落盘槽 4 并聚焦单行第 4 行',
+          '写出单步特征 O4 [1,d]',
+          '统计节省 60% KV 计算',
+        ]),
         qTitle: '$Q_4$',
         qShape: '$[1, d]$',
         kvTitle: '$k_4, v_4$',
@@ -246,9 +281,17 @@ export function buildKvCacheStepSteps(): Step<KvCacheStepState>[] {
         '第 4 步（$t=4$）：新写入 $k_4, v_4$ 后缓存增至 $[4, d]$；4 步累计仅执行 $4$ 次 token KV 投影和 $10$ 次点积，而计算复杂度随序列总长 $T$ 从无缓存的 $O(T^3)$ 降至 $O(T^2)$。',
     },
     {
+      label: '无缓存对照',
+      duration: 4600,
       state: {
         stepIndex: 4,
-        decodeLabel: '无 Cache 对照',
+        formulaTex: '$\\text{No Cache}:\\; \\text{重算 } [4,d]\\; Q/K/V\\text{ 与 }10\\text{ 格}$',
+        beats: defaultBeats([
+          '退回全量 Q_{1:4} 与 K/V_{1:4}',
+          '全部 4 个槽位被迫红色重算',
+          '下三角 10 格满算且前 3 行丢弃',
+          '量化长序列 S=2048 差距',
+        ]),
         qTitle: '$Q_{1:4}$',
         qShape: '$[4, d]$ 重算',
         kvTitle: '$K_{1:4}, V_{1:4}$',
@@ -269,7 +312,7 @@ export function buildKvCacheStepSteps(): Step<KvCacheStepState>[] {
         stepWorkText: '单步 4 KV / 10 格',
         cumKvProjText: '4 vs 10 (省 $2.5\\times$)',
         savingText: '$S=2048$ 省 $1024\\times$',
-        focusRect: { x: 266, y: 16, w: 254, h: 196, label: '单步重算下三角', tone: 'k' },
+        focusRect: { x: 266, y: 20, w: 254, h: 198, label: '单步重算下三角', tone: 'k' },
       },
       caption:
         '若关闭 KV Cache，仅在 $t=4$ 这一步就必须重算全部 $[4, d]$ 的 $Q/K/V$ 与下三角 $10$ 格（前 3 行算完即丢弃）。开启缓存大幅节省计算量，同时将 Decode 推向读取 $K_{1:t}, V_{1:t}$ 的 HBM 带宽瓶颈。',
@@ -285,39 +328,81 @@ export default function KvCacheStepExplainer({
   const steps = useMemo(() => buildKvCacheStepSteps(), []);
 
   return (
-    <Explainer title={title} steps={steps}>
-      {(step) => {
+    <BeatExplainer
+      title={title}
+      label="Decode 阶段 KV Cache 增量追加交互推导"
+      steps={steps}
+      stageMinHeight={448}
+      getBeats={(step) => step.state.beats}
+      getFormula={(step) => step.state.formulaTex}
+    >
+      {(step, { beat, dotToken }) => {
         const s = step.state;
+        const slotRevCount = s.stepIndex < 4 && beat === 0 ? s.stepIndex : 4;
+
         return (
-          <Stage width={STAGE_W} height={336} label={title}>
+          <Stage width={STAGE_W} height={336} label="Decode 阶段 KV Cache 增量追加与免重算收益">
             <TensorBlock
               x={22}
-              y={20}
+              y={24}
               w={100}
-              h={36}
+              h={42}
               tone="q"
               name={s.qTitle}
               shape={s.qShape}
+              labelMode="inside"
               active
             />
             <TensorBlock
               x={134}
-              y={20}
+              y={24}
               w={100}
-              h={36}
+              h={42}
               tone="k"
               name={s.kvTitle}
               shape={s.kvShape}
+              labelMode="inside"
               active
+            />
+
+            {/* Top overhead Q_t -> HeatmapMatrix arrow */}
+            <DataFlowArrow
+              points={[
+                [72, 24],
+                [72, 10],
+                [254, 10],
+                [254, 76],
+                [272, 76],
+              ]}
+              tone="q"
+              active
+              flow={beat >= 1}
+              visible={beat >= 1}
+              draw={beat >= 1}
+              dotToken={beat >= 1 ? dotToken : 0}
+            />
+
+            {/* Downward k_t, v_t -> Cache append arrow */}
+            <DataFlowArrow
+              points={[
+                [184, 66],
+                [184, 98],
+              ]}
+              tone="k"
+              active
+              visible={beat >= 1}
+              draw={beat >= 1}
+              dotToken={beat >= 1 ? dotToken : 0}
             />
 
             <SlotStrip
               x={22}
-              y={102}
+              y={104}
               slots={s.kSlots}
               slotW={50}
               slotH={36}
               gap={4}
+              revealedCount={slotRevCount}
               title="$K$ Cache $[t, d]$"
             />
 
@@ -328,31 +413,26 @@ export default function KvCacheStepExplainer({
               slotW={50}
               slotH={36}
               gap={4}
+              revealedCount={slotRevCount}
               title="$V$ Cache $[t, d]$"
             />
 
             <DataFlowArrow
               points={[
-                [236, 38],
-                [270, 38],
-              ]}
-              tone="q"
-              active
-              flow
-            />
-            <DataFlowArrow
-              points={[
                 [236, 138],
-                [270, 138],
+                [272, 138],
               ]}
               tone="k"
               active
-              flow
+              flow={beat >= 1}
+              visible={beat >= 1}
+              draw={beat >= 1}
+              dotToken={beat >= 1 ? dotToken : 0}
             />
 
             <HeatmapMatrix
               x={276}
-              y={26}
+              y={28}
               values={s.matrixValues}
               tone={s.matrixTone}
               selectedTone={s.selectedTone}
@@ -366,6 +446,8 @@ export default function KvCacheStepExplainer({
               maskText="--"
               selected={s.selectedCells}
               softSelected={s.softSelectedCells}
+              showSelected={beat >= 1}
+              dimmed={beat < 1}
               rowLabels={ROW_LABELS}
               colLabels={COL_LABELS}
               rowLabelW={40}
@@ -381,7 +463,10 @@ export default function KvCacheStepExplainer({
               ]}
               tone={s.outTone}
               active
-              flow
+              flow={beat >= 2}
+              visible={beat >= 2}
+              draw={beat >= 2}
+              dotToken={beat >= 2 ? dotToken : 0}
             />
 
             <DataFlowArrow
@@ -394,7 +479,10 @@ export default function KvCacheStepExplainer({
               tone="v"
               active={s.stepIndex < 4}
               dashed={s.stepIndex === 4}
-              flow
+              flow={beat >= 2}
+              visible={beat >= 2}
+              draw={beat >= 2}
+              dotToken={beat >= 2 ? dotToken : 0}
             />
 
             <TensorBlock
@@ -407,6 +495,7 @@ export default function KvCacheStepExplainer({
               shape={s.outShape}
               labelMode="inside"
               active
+              visible={beat >= 2}
             />
 
             <ActiveFocusFrame
@@ -416,7 +505,7 @@ export default function KvCacheStepExplainer({
               h={s.focusRect.h}
               tone={s.focusRect.tone}
               label={s.focusRect.label}
-              visible
+              visible={beat >= 2}
             />
 
             <MetricRow
@@ -424,6 +513,7 @@ export default function KvCacheStepExplainer({
               y={266}
               w={644}
               h={54}
+              revealed={beat >= 3}
               metrics={[
                 { label: '当前上下文', value: s.seqLenText, tone: 'q' },
                 { label: '本步核心计算', value: s.stepWorkText, tone: 'k' },
@@ -434,6 +524,6 @@ export default function KvCacheStepExplainer({
           </Stage>
         );
       }}
-    </Explainer>
+    </BeatExplainer>
   );
 }

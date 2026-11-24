@@ -13,6 +13,16 @@ export {
   useDiagramMotion,
   type AnyTone,
 } from './motion';
+export {
+  default as BeatExplainer,
+  SvgBeatGroup,
+  defaultBeats,
+  MANIM_EASE,
+  MORPH_SPRING,
+  type BeatSpec,
+  type BeatStageRenderCtx,
+  type BeatExplainerProps,
+} from './BeatExplainer';
 export { default as DataFlowArrow, type DataFlowArrowProps, type Point2D } from './DataFlowArrow';
 export { default as ActiveFocusFrame, type ActiveFocusFrameProps } from './ActiveFocusFrame';
 export { default as TensorBlock, type TensorBlockProps, type TensorSplit } from './TensorBlock';
