@@ -55,6 +55,9 @@ import MoeRoutingAlignExplainer, {
 import EngramHashExplainer, {
   buildEngramHashSteps,
 } from '@/content/posts/deepseek/07-engram/explainers/engram-hash';
+import ShortConvExplainer, {
+  buildShortConvSteps,
+} from '@/content/posts/deepseek/07-engram/explainers/short-conv';
 import SpecDecVerifyExplainer, {
   buildSpecDecVerifySteps,
 } from '@/content/posts/deepseek/09-mtp-and-dspark/explainers/SpecDecVerifyExplainer';
@@ -116,6 +119,7 @@ const ALL_EXPLAINERS: ExplainerEntry[] = [
     buildSteps: buildMoeRoutingAlignSteps,
   },
   { name: 'EngramHash', Component: EngramHashExplainer, buildSteps: buildEngramHashSteps },
+  { name: 'ShortConv', Component: ShortConvExplainer, buildSteps: buildShortConvSteps },
   { name: 'SpecDecVerify', Component: SpecDecVerifyExplainer, buildSteps: buildSpecDecVerifySteps },
   {
     name: 'PagedScheduler',
@@ -139,9 +143,9 @@ const ALL_EXPLAINERS: ExplainerEntry[] = [
   },
 ];
 
-describe('all 17 interactive SVG explainers', () => {
-  it('covers exact 17 explainers across all 5 series', () => {
-    expect(ALL_EXPLAINERS).toHaveLength(17);
+describe('all 18 interactive SVG explainers', () => {
+  it('covers exact 18 explainers across all 5 series', () => {
+    expect(ALL_EXPLAINERS).toHaveLength(18);
   });
 
   it.each(ALL_EXPLAINERS)(

@@ -75,9 +75,7 @@ export default function CollisionAndGatherStage({
             aria-label="头 2 碰撞隔离"
           >
             <div className="engram-bank__head">
-              <span>
-                头 2（mod {BANK2.prime} + {BANK2.offset}）
-              </span>
+              <RichText text={`头 2（$\\bmod\\, ${BANK2.prime} + ${BANK2.offset}$）`} />
               <span>{bank2Split ? '隔离错开' : '待对比'}</span>
             </div>
             <div className="engram-slots">
@@ -124,9 +122,7 @@ export default function CollisionAndGatherStage({
             aria-label="头 3 局部碰撞"
           >
             <div className="engram-bank__head">
-              <span>
-                头 3（mod {BANK3.prime} + {BANK3.offset}）
-              </span>
+              <RichText text={`头 3（$\\bmod\\, ${BANK3.prime} + ${BANK3.offset}$）`} />
               <span>{bank3Collide ? '局部碰撞' : '待对比'}</span>
             </div>
             <div className="engram-slots">
@@ -335,7 +331,7 @@ export default function CollisionAndGatherStage({
         <div className="engram-gate-top">
           <span>
             <RichText
-              text={`拼接初值 $\\mathbf{e}_t \\in \\mathbb{R}^{4d_h}$ + 隐状态 $h_t$（“${spec.contextSnippet}”）`}
+              text={`拼接初值 $\\mathbf{e}_t \\in \\mathbb{R}^{4d_h}$ + 隐状态 $\\mathbf{h}_t$（“${spec.contextSnippet}”）`}
             />
           </span>
           <motion.span

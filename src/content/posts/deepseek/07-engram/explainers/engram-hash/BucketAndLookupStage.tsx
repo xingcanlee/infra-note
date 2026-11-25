@@ -1,6 +1,13 @@
 import { RichText, toneStroke } from 'astro-wisp/explainers';
 import { motion } from 'motion/react';
-import { HEADS, MANIM_EASE, MORPH_SPRING, TOTAL_ROWS, type EngramStepState } from './steps';
+import {
+  HEADS,
+  MANIM_EASE,
+  MORPH_SPRING,
+  PRIME_SCAN_NUMS,
+  TOTAL_ROWS,
+  type EngramStepState,
+} from './steps';
 
 interface Props {
   state: EngramStepState;
@@ -9,6 +16,7 @@ interface Props {
 }
 
 const HEAD_CENTERS = [74, 231, 389, 546] as const;
+const BANK_CENTERS = [43, 146, 301, 508] as const;
 
 export default function BucketAndLookupStage({ state, beat, playToken }: Props) {
   const isLookup = state.phase === 'lookup';
@@ -20,9 +28,116 @@ export default function BucketAndLookupStage({ state, beat, playToken }: Props) 
     ]),
   );
 
+  // 第 3 步（建桶）：数轴去重扫描节奏
+  const scan2Active = !isLookup;
+  const seen2Ready = !isLookup && beat >= 1;
+  const scan3Active = !isLookup && beat >= 2;
+  const primes3Ready = !isLookup && beat >= 3;
+  const stripJoined = isLookup || beat >= 4;
+
   return (
     <div className="engram-stage">
-      {/* 寻址期：承接上一步飞来的 h_2 与 h_3 哈希源 */}
+      {/* 第 3 步顶部：4..13 两轮素数扫描轨 + seen 去重 */}
+      {!isLookup && (
+        <div className="engram-scan-box">
+          <div className="engram-scan-row">
+            <div className="engram-scan-label">
+              <span className="engram-tag wisp-kit-tone" data-tone="active">
+                2-gram 顺延
+              </span>
+              <span className="engram-tok__pos">起点 ≥ 4</span>
+            </div>
+            <div className="engram-scan-nums" aria-label="2-gram 素数扫描 4 到 13">
+              {PRIME_SCAN_NUMS.map((num) => {
+                const isHit = num === 5 || num === 7;
+                const isRevealed = isHit ? seen2Ready || num === 5 : false;
+                return (
+                  <motion.span
+                    key={`s2-${num}`}
+                    className="engram-scan-chip"
+                    data-state={
+                      num === 4
+                        ? 'start'
+                        : isHit && (num === 5 ? scan2Active : seen2Ready)
+                          ? 'hit-active'
+                          : num > 7
+                            ? 'unused'
+                            : 'skip'
+                    }
+                    initial={false}
+                    animate={{
+                      scale: isHit && isRevealed && beat === 1 ? [1, 1.16, 1] : 1,
+                    }}
+                    transition={{ duration: 0.32, ease: MANIM_EASE }}
+                  >
+                    {num}
+                  </motion.span>
+                );
+              })}
+            </div>
+            <motion.span
+              className="engram-tag wisp-kit-tone"
+              data-tone={seen2Ready ? 'active' : 'slate'}
+              initial={false}
+              animate={{ opacity: seen2Ready ? 1 : 0.28 }}
+            >
+              <RichText text={'$\\text{seen} = \\{5, 7\\}$'} />
+            </motion.span>
+          </div>
+
+          <motion.div
+            className="engram-scan-row"
+            initial={false}
+            animate={{ opacity: scan3Active ? 1 : 0.22 }}
+            transition={{ duration: 0.32, ease: MANIM_EASE }}
+          >
+            <div className="engram-scan-label">
+              <span className="engram-tag wisp-kit-tone" data-tone={scan3Active ? 'done' : 'slate'}>
+                3-gram 顺延
+              </span>
+              <span className="engram-tok__pos">起点 ≥ 4</span>
+            </div>
+            <div className="engram-scan-nums" aria-label="3-gram 素数扫描与 seen 去重">
+              {PRIME_SCAN_NUMS.map((num) => {
+                const isSeenSkip = num === 5 || num === 7;
+                const isHit = num === 11 || num === 13;
+                const chipState =
+                  num === 4
+                    ? 'start'
+                    : isSeenSkip
+                      ? 'seen'
+                      : isHit && primes3Ready
+                        ? 'hit-done'
+                        : 'skip';
+                return (
+                  <motion.span
+                    key={`s3-${num}`}
+                    className="engram-scan-chip"
+                    data-state={chipState}
+                    initial={false}
+                    animate={{
+                      scale: isHit && primes3Ready && beat === 3 ? [1, 1.16, 1] : 1,
+                    }}
+                    transition={{ duration: 0.34, ease: MANIM_EASE }}
+                  >
+                    {num}
+                  </motion.span>
+                );
+              })}
+            </div>
+            <motion.span
+              className="engram-tag wisp-kit-tone"
+              data-tone={primes3Ready ? 'done' : 'slate'}
+              initial={false}
+              animate={{ opacity: primes3Ready ? 1 : 0.25 }}
+            >
+              {'跳过 5/7 → 11, 13'}
+            </motion.span>
+          </motion.div>
+        </div>
+      )}
+
+      {/* 第 6 步顶部：承接第 5 步滚动异或平滑过渡的 h_2 与 h_3 */}
       {isLookup && (
         <div className="engram-hash-strip">
           <motion.div
@@ -50,13 +165,19 @@ export default function BucketAndLookupStage({ state, beat, playToken }: Props) 
         </div>
       )}
 
-      {/* 顶部四头卡片：建桶期逐头建表；寻址期自动逐头聚光并于第 6 拍全表齐亮 */}
+      {/* 中部四头卡片（第 3 步展示素数与前缀偏移；第 6 步展示取模偏移结果） */}
       <div className="engram-heads-grid">
         {state.headLookups.map((item, idx) => {
           const headMeta = HEADS[idx];
           const isDimmed = spotlightIdx !== null && spotlightIdx !== idx;
-          const revealed = isLookup ? beat >= idx + 1 : beat >= idx;
-          const justFired = isLookup ? beat === idx + 1 : beat === idx;
+          const revealed = isLookup
+            ? beat >= idx + 1
+            : idx === 0
+              ? true
+              : idx === 1
+                ? seen2Ready
+                : primes3Ready;
+          const justFired = isLookup ? beat === idx + 1 : idx <= 1 ? beat === 1 : beat === 3;
           const tone = revealed ? headMeta.tone : 'slate';
 
           if (isLookup) {
@@ -79,7 +200,7 @@ export default function BucketAndLookupStage({ state, beat, playToken }: Props) 
                   <span className="engram-tag">{item.ngram}-gram</span>
                 </div>
                 <span className="engram-head-card__math">
-                  ({item.hashVal} mod {item.prime}) + {item.offset}
+                  <RichText text={`$(${item.hashVal} \\bmod ${item.prime}) + ${item.offset}$`} />
                 </span>
                 <span className="engram-head-card__slot">
                   {revealed ? `行 ${item.slot}` : '行 …'}
@@ -87,21 +208,18 @@ export default function BucketAndLookupStage({ state, beat, playToken }: Props) 
               </motion.div>
             );
           }
+
           return (
             <motion.div
               key={idx}
               layoutId={`engram-head-${idx}`}
               initial={false}
               animate={{
-                opacity: revealed ? 1 : 0.16,
-                y: revealed ? 0 : 8,
-                scale: justFired ? [0.96, 1.04, 1] : revealed ? 1 : 0.96,
+                opacity: revealed ? 1 : 0.18,
+                y: revealed ? 0 : 6,
+                scale: justFired ? [0.96, 1.04, 1] : 1,
               }}
-              transition={{
-                ...MORPH_SPRING,
-                opacity: { duration: revealed ? 0.34 : 0.1 },
-                y: { duration: 0.34, ease: MANIM_EASE },
-              }}
+              transition={{ ...MORPH_SPRING, opacity: { duration: 0.28 } }}
               className="engram-head-card wisp-kit-tone"
               data-tone={tone}
             >
@@ -110,62 +228,31 @@ export default function BucketAndLookupStage({ state, beat, playToken }: Props) 
                 <span className="engram-tag">{headMeta.ngram}-gram</span>
               </div>
               <span className="engram-head-card__math">
-                下界 ≥ {headMeta.lowerBound} → 素数 {headMeta.prime}
+                <RichText text={`素数 $p = ${headMeta.prime}$（$${headMeta.prime}$ 行）`} />
               </span>
-              <span className="engram-head-card__slot">offset = {headMeta.offset}</span>
+              <span className="engram-head-card__slot">
+                <RichText text={`$\\text{offset} = ${headMeta.offset}$`} />
+              </span>
             </motion.div>
           );
         })}
       </div>
 
-      {/* 寻址期：从四张哈希卡指向扁平表汇流线（自动聚光逐头落线，无点击提示） */}
+      {/* 第 6 步：从四张头卡路由到下方一维扁平带四段中心的精确折线 */}
       {isLookup && (
         <div className="engram-lookup-bus">
-          <svg className="engram-gather-svg" viewBox="0 0 620 30" aria-hidden="true">
-            <path
-              d="M 24 26 L 596 26"
-              fill="none"
-              stroke="var(--wisp-border)"
-              strokeWidth={1.5}
-              strokeLinecap="round"
-            />
+          <svg className="engram-gather-svg" viewBox="0 0 620 44" aria-hidden="true">
             {state.headLookups.map((item, idx) => {
-              const x = HEAD_CENTERS[idx];
+              const sx = HEAD_CENTERS[idx];
+              const tx = BANK_CENTERS[idx];
               const dimmed = spotlightIdx !== null && spotlightIdx !== idx;
               const stroke = toneStroke(item.tone);
               const headFired = beat >= idx + 1;
+              const pathD = `M ${sx} 0 L ${sx} 18 L ${tx} 18 L ${tx} 40`;
               return (
                 <g key={idx}>
                   <motion.path
-                    d={`M ${x} 0 L ${x} 24`}
-                    fill="none"
-                    stroke={stroke}
-                    strokeWidth={1.75}
-                    strokeLinecap="round"
-                    initial={false}
-                    animate={{
-                      pathLength: headFired ? 1 : 0,
-                      opacity: headFired ? (dimmed ? 0.22 : 1) : 0.12,
-                    }}
-                    transition={{
-                      duration: headFired ? 0.24 : 0,
-                      delay: 0,
-                      ease: MANIM_EASE,
-                    }}
-                  />
-                  {playToken > 0 && headFired && !dimmed && (
-                    <motion.circle
-                      key={`lk-dot-${idx}-${playToken}`}
-                      cx={x}
-                      r={3}
-                      fill={stroke}
-                      initial={{ cy: 2, opacity: 0 }}
-                      animate={{ cy: [2, 24], opacity: [0, 1, 0] }}
-                      transition={{ duration: 0.28, delay: 0, ease: MANIM_EASE }}
-                    />
-                  )}
-                  <motion.path
-                    d={`M ${x - 5} 19 L ${x} 24 L ${x + 5} 19`}
+                    d={pathD}
                     fill="none"
                     stroke={stroke}
                     strokeWidth={1.75}
@@ -174,13 +261,34 @@ export default function BucketAndLookupStage({ state, beat, playToken }: Props) 
                     initial={false}
                     animate={{
                       pathLength: headFired ? 1 : 0,
-                      opacity: headFired ? (dimmed ? 0.22 : 1) : 0,
+                      opacity: headFired ? (dimmed ? 0.2 : 1) : 0.12,
                     }}
-                    transition={{
-                      duration: headFired ? 0.14 : 0,
-                      delay: headFired ? 0.18 : 0,
-                      ease: MANIM_EASE,
-                    }}
+                    transition={{ duration: headFired ? 0.32 : 0, ease: MANIM_EASE }}
+                  />
+                  {playToken > 0 && headFired && !dimmed && (
+                    <motion.circle
+                      key={`lk-dot-${idx}-${playToken}`}
+                      r={3}
+                      fill={stroke}
+                      initial={{ cx: sx, cy: 0, opacity: 0 }}
+                      animate={{
+                        cx: [sx, sx, tx, tx],
+                        cy: [0, 18, 18, 40],
+                        opacity: [0, 1, 1, 0],
+                      }}
+                      transition={{ duration: 0.42, times: [0, 0.25, 0.65, 1], ease: MANIM_EASE }}
+                    />
+                  )}
+                  <motion.path
+                    d={`M ${tx - 5} 35 L ${tx} 40 L ${tx + 5} 35`}
+                    fill="none"
+                    stroke={stroke}
+                    strokeWidth={1.75}
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    initial={false}
+                    animate={{ opacity: headFired ? (dimmed ? 0.2 : 1) : 0 }}
+                    transition={{ duration: headFired ? 0.14 : 0, delay: headFired ? 0.2 : 0 }}
                   />
                 </g>
               );
@@ -189,29 +297,31 @@ export default function BucketAndLookupStage({ state, beat, playToken }: Props) 
         </div>
       )}
 
-      {/* 扁平一维 36 行嵌入表（保留 layoutId 供第 5 步直接放大为碰撞对照表段） */}
+      {/* 连续一维扁平大表 weight[0..35]（按 5:7:11:13 比例首尾拼接） */}
       <div className="engram-banks-wrap">
-        <motion.div
-          className="engram-banks-title"
-          initial={false}
-          animate={{ scale: !isLookup && beat >= 4 ? [1, 1.02, 1] : 1 }}
-          transition={{ duration: 0.4, ease: MANIM_EASE }}
-        >
+        <div className="engram-banks-title">
           <span>
             <RichText
-              text={
-                isLookup
-                  ? `扁平大表 weight[0..${TOTAL_ROWS - 1}]`
-                  : `扁平大表 weight[0..${TOTAL_ROWS - 1}]（总行数 = 5 + 7 + 11 + 13 = ${TOTAL_ROWS}）`
-              }
+              text={`连续一维扁平物理大表 weight[0..${TOTAL_ROWS - 1}]（$5 + 7 + 11 + 13 = ${TOTAL_ROWS}$ 行）`}
             />
           </span>
-        </motion.div>
+          <span className="engram-tok__pos">
+            <RichText text={'$\\text{offsets} = [0, 5, 12, 23]$'} />
+          </span>
+        </div>
 
-        <div className="engram-banks-grid">
+        <motion.div
+          className="engram-flat-strip"
+          data-joined={stripJoined ? 'true' : undefined}
+          initial={false}
+          animate={{ scale: !isLookup && beat >= 4 ? [1, 1.015, 1] : 1 }}
+          transition={{ duration: 0.4, ease: MANIM_EASE }}
+          aria-label="36 行连续一维扁平嵌入表"
+        >
           {HEADS.map((head, idx) => {
             const dimmed = spotlightIdx !== null && spotlightIdx !== idx;
-            const bankRevealed = isLookup || beat >= idx;
+            const bankRevealed =
+              isLookup || (idx === 0 ? true : idx === 1 ? seen2Ready : primes3Ready);
             return (
               <motion.section
                 key={head.headIdx}
@@ -220,21 +330,17 @@ export default function BucketAndLookupStage({ state, beat, playToken }: Props) 
                   ...MORPH_SPRING,
                   opacity: { duration: bankRevealed ? 0.28 : 0.1 },
                 }}
-                className="engram-bank"
+                className="engram-strip-seg"
+                data-tone={bankRevealed ? head.tone : 'slate'}
                 data-dimmed={dimmed ? 'true' : undefined}
                 initial={false}
-                animate={{
-                  opacity: dimmed ? 0.34 : bankRevealed ? 1 : 0.16,
-                  y: bankRevealed ? 0 : 6,
-                }}
+                animate={{ opacity: dimmed ? 0.32 : bankRevealed ? 1 : 0.18 }}
                 aria-label={`头 ${head.headIdx} 物理槽位 ${head.offset} 到 ${head.offset + head.prime - 1}`}
               >
-                <div className="engram-bank__head">
+                <div className="engram-strip-seg__ruler">
+                  <span>off={head.offset}</span>
                   <span>
-                    头 {head.headIdx}（mod {head.prime}）
-                  </span>
-                  <span>
-                    行 {head.offset}–{head.offset + head.prime - 1}
+                    H{head.headIdx}（{head.prime}）
                   </span>
                 </div>
                 <div className="engram-slots">
@@ -251,17 +357,17 @@ export default function BucketAndLookupStage({ state, beat, playToken }: Props) 
                         initial={false}
                         animate={
                           hitReady
-                            ? { scale: [1, 1.24, 1], opacity: 1 }
+                            ? { scale: [1, 1.22, 1], opacity: 1 }
                             : bankRevealed
                               ? { scale: 1, opacity: 1 }
-                              : { scale: 0.88, opacity: 0.2 }
+                              : { scale: 0.9, opacity: 0.2 }
                         }
                         transition={
                           hitReady
-                            ? { duration: 0.38, delay: 0.2, ease: MANIM_EASE }
+                            ? { duration: 0.36, delay: 0.2, ease: MANIM_EASE }
                             : {
-                                duration: bankRevealed ? 0.24 : 0.08,
-                                delay: !isLookup && bankRevealed ? rem * 0.032 : 0,
+                                duration: bankRevealed ? 0.22 : 0.08,
+                                delay: !isLookup && bankRevealed ? rem * 0.024 : 0,
                                 ease: MANIM_EASE,
                               }
                         }
@@ -274,7 +380,7 @@ export default function BucketAndLookupStage({ state, beat, playToken }: Props) 
               </motion.section>
             );
           })}
-        </div>
+        </motion.div>
       </div>
     </div>
   );

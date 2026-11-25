@@ -1,36 +1,12 @@
 import { RichText, toneFill, toneStroke } from 'astro-wisp/explainers';
 import { motion } from 'motion/react';
-import {
-  MANIM_EASE,
-  MORPH_SPRING,
-  MULTIPLIERS,
-  TOKENS,
-  toBinaryBits,
-  type EngramStepState,
-} from './steps';
+import { MANIM_EASE, MORPH_SPRING, MULTIPLIERS, TOKENS, type EngramStepState } from './steps';
 
 interface Props {
   state: EngramStepState;
   beat: number;
   playToken: number;
 }
-
-const BIT_CONTAINER = {
-  hidden: { opacity: 1 },
-  visible: {
-    opacity: 1,
-    transition: { delayChildren: 0.22, staggerChildren: 0.055 },
-  },
-};
-
-const BIT_CELL = {
-  hidden: { opacity: 0.2, scale: 0.88 },
-  visible: {
-    opacity: 1,
-    scale: 1,
-    transition: { duration: 0.26, ease: MANIM_EASE },
-  },
-};
 
 function XorFunnelSvg({
   tone,
@@ -83,7 +59,7 @@ function XorFunnelSvg({
               opacity: [0, 1, 1, 0],
             }}
             transition={{
-              duration: 0.52,
+              duration: 0.5,
               times: [0, 0.15, 0.88, 1],
               ease: MANIM_EASE,
             }}
@@ -99,7 +75,7 @@ function XorFunnelSvg({
               opacity: [0, 1, 1, 0],
             }}
             transition={{
-              duration: 0.52,
+              duration: 0.5,
               delay: 0.06,
               times: [0, 0.15, 0.88, 1],
               ease: MANIM_EASE,
@@ -108,7 +84,6 @@ function XorFunnelSvg({
         </>
       )}
 
-      {/* 汇合 XOR 算子圆环响应 */}
       <motion.g
         initial={false}
         animate={{
@@ -136,7 +111,7 @@ function XorFunnelSvg({
         strokeLinecap="round"
         initial={false}
         animate={{ pathLength: active ? 1 : 0, opacity: active ? 1 : 0.14 }}
-        transition={fastReset ?? { duration: 0.26, delay: 0.42, ease: MANIM_EASE }}
+        transition={fastReset ?? { duration: 0.26, delay: 0.4, ease: MANIM_EASE }}
       />
       {playToken > 0 && active && (
         <motion.circle
@@ -145,7 +120,7 @@ function XorFunnelSvg({
           fill={stroke}
           initial={{ cx: 140, cy: 28, opacity: 0 }}
           animate={{ cx: 140, cy: [28, 42], opacity: [0, 1, 0] }}
-          transition={{ duration: 0.3, delay: 0.44, ease: MANIM_EASE }}
+          transition={{ duration: 0.3, delay: 0.42, ease: MANIM_EASE }}
         />
       )}
       <motion.path
@@ -157,7 +132,7 @@ function XorFunnelSvg({
         strokeLinejoin="round"
         initial={false}
         animate={{ opacity: active ? 1 : 0 }}
-        transition={fastReset ?? { duration: 0.2, delay: 0.54 }}
+        transition={fastReset ?? { duration: 0.2, delay: 0.52 }}
       />
     </svg>
   );
@@ -175,10 +150,10 @@ export default function SuffixAndXorStage({ state, beat, playToken }: Props) {
     return (
       <div className="engram-stage">
         <p className="engram-stage-note">
-          下方编号为 CompressedTokenizer 归一后的规范 ID（“中国” → 308，“的” → 12，“首” → 88）
+          下方编号为第 1 步归一后的规范 ID（“中国” → 308，“的” → 12，“首” → 88）
         </p>
         <div className="engram-seq-block">
-          {/* 上方：2-gram 标签与向下开口括号（指向上方蓝色标签，与 3-gram 零交叉） */}
+          {/* 上方：2-gram 标签与向下开口括号 */}
           <div className="engram-bracket-labels">
             <motion.div
               className="engram-bracket-pill engram-bracket-pill--2 wisp-kit-tone"
@@ -257,7 +232,7 @@ export default function SuffixAndXorStage({ state, beat, playToken }: Props) {
             />
           </svg>
 
-          {/* 中央：5 词元行（随 beat 逐拍点亮与淡出无关前文） */}
+          {/* 中央：5 词元行 */}
           <div className="engram-seq-grid" role="list" aria-label="输入词元序列">
             {TOKENS.map((tok) => {
               const isContext = tok.role === 'context';
@@ -303,7 +278,7 @@ export default function SuffixAndXorStage({ state, beat, playToken }: Props) {
             })}
           </div>
 
-          {/* 下方：3-gram 上开口括号与向下箭头 */}
+          {/* 下方：3-gram 上开口括号 */}
           <svg className="engram-bracket-svg" viewBox="0 0 620 30" aria-hidden="true">
             <motion.path
               d="M 258 2 L 258 16 L 612 16 L 612 2"
@@ -386,35 +361,18 @@ export default function SuffixAndXorStage({ state, beat, playToken }: Props) {
     );
   }
 
+  // 第 5 步：左 → 横向复用箭 → 右 滚动递推数据接力流
   const h2Active = beat >= 1;
-  const bitsActive = beat >= 2;
-  const reuseActive = beat >= 3;
-  const h3Active = beat >= 4;
-
-  const bitsP0 = toBinaryBits(state.prod0);
-  const bitsP1 = toBinaryBits(state.prod1);
-  const bitsH2 = toBinaryBits(state.h2);
+  const reuseActive = beat >= 2;
+  const h3Active = beat >= 3;
 
   return (
     <div className="engram-stage">
-      <div className="engram-mult-bar wisp-kit-tone" data-tone="highlight">
-        <span>离线奇乘子（不训练、按层独立、按回看位置分配）</span>
-        <span>
-          <RichText
-            text={
-              "$\\text{RNG}(10007 \\cdot l) \\to m_k = 2r_k + 1 < \\lfloor (2^{63}-1)/V' \\rfloor$"
-            }
-          />
-        </span>
-        <span className="engram-tag">
-          <RichText text={'演示缩放：$m=[3,7,9]$'} />
-        </span>
-      </div>
-      <div className="engram-xor-grid">
-        {/* 左栏：2-gram 异或生成 h_2 */}
+      <div className="engram-xor-relay">
+        {/* 左栏：2-gram 混合得出 h_2 */}
         <section className="engram-panel" aria-label="2-gram 滚动异或推导">
           <header className="engram-panel__head">
-            <span>2-gram 前缀混合</span>
+            <span>2-gram 混合</span>
             <span className="engram-tag wisp-kit-tone" data-tone={h2Active ? 'active' : 'slate'}>
               <RichText text={'$h_2$'} />
             </span>
@@ -430,7 +388,9 @@ export default function SuffixAndXorStage({ state, beat, playToken }: Props) {
               <span className="engram-tok__pos">
                 “首” × <RichText text={`$m_0=${MULTIPLIERS[0]}$`} />
               </span>
-              <span className="engram-mul-card__val">88 × 3 = {state.prod0}</span>
+              <span className="engram-mul-card__val">
+                <RichText text={`$88 \\times 3 = ${state.prod0}$`} />
+              </span>
             </motion.div>
             <motion.div
               layoutId="engram-tok-4"
@@ -441,7 +401,9 @@ export default function SuffixAndXorStage({ state, beat, playToken }: Props) {
               <span className="engram-tok__pos">
                 “的” × <RichText text={`$m_1=${MULTIPLIERS[1]}$`} />
               </span>
-              <span className="engram-mul-card__val">12 × 7 = {state.prod1}</span>
+              <span className="engram-mul-card__val">
+                <RichText text={`$12 \\times 7 = ${state.prod1}$`} />
+              </span>
             </motion.div>
           </div>
 
@@ -451,8 +413,8 @@ export default function SuffixAndXorStage({ state, beat, playToken }: Props) {
             layoutId="engram-h2"
             transition={{
               ...MORPH_SPRING,
-              opacity: { duration: h2Active ? 0.3 : 0.1, delay: h2Active ? 0.42 : 0 },
-              scale: { duration: h2Active ? 0.36 : 0.1, delay: h2Active ? 0.42 : 0 },
+              opacity: { duration: h2Active ? 0.3 : 0.1, delay: h2Active ? 0.4 : 0 },
+              scale: { duration: h2Active ? 0.34 : 0.1, delay: h2Active ? 0.4 : 0 },
             }}
             className="engram-xor-result wisp-kit-tone"
             data-tone={h2Active ? 'active' : 'slate'}
@@ -465,63 +427,66 @@ export default function SuffixAndXorStage({ state, beat, playToken }: Props) {
             <RichText text={'$h_2 = 264 \\oplus 84$'} />
             <span className="engram-mul-card__val">{h2Active ? state.h2 : '…'}</span>
           </motion.div>
-
-          <motion.div
-            className="engram-bits"
-            initial={false}
-            animate={{ opacity: bitsActive ? 1 : 0.16 }}
-            transition={{ duration: bitsActive ? 0.3 : 0.1 }}
-            aria-label="9 位二进制按位异或"
-          >
-            <span>264</span>
-            <div className="engram-bits__row">
-              {bitsP0.split('').map((b, idx) => (
-                <span key={idx} className="engram-bit">
-                  {b}
-                </span>
-              ))}
-            </div>
-            <span>⊕ 84</span>
-            <div className="engram-bits__row">
-              {bitsP1.split('').map((b, idx) => (
-                <span key={idx} className="engram-bit">
-                  {b}
-                </span>
-              ))}
-            </div>
-            <span>= {bitsActive ? state.h2 : '…'}</span>
-            <motion.div
-              className="engram-bits__row"
-              variants={BIT_CONTAINER}
-              initial={false}
-              animate={bitsActive ? 'visible' : 'hidden'}
-            >
-              {bitsH2.split('').map((b, idx) => (
-                <motion.span
-                  key={idx}
-                  variants={BIT_CELL}
-                  className="engram-bit"
-                  data-flip={bitsActive && b === '1' ? 'true' : undefined}
-                >
-                  {b}
-                </motion.span>
-              ))}
-            </motion.div>
-          </motion.div>
         </section>
 
-        {/* 右栏：3-gram 直接复用 h_2 */}
+        {/* 中间：显式横向复用接力箭 */}
+        <div className="engram-relay-bridge" aria-hidden="true">
+          <motion.span
+            className="engram-tag wisp-kit-tone"
+            data-tone={reuseActive ? 'active' : 'slate'}
+            initial={false}
+            animate={{ opacity: reuseActive ? 1 : 0.24 }}
+          >
+            <RichText text={'复用 $h_2$'} />
+          </motion.span>
+          <svg className="engram-relay-svg" viewBox="0 0 64 28">
+            <motion.path
+              d="M 4 14 L 56 14"
+              fill="none"
+              stroke={toneStroke('active')}
+              strokeWidth={2}
+              strokeLinecap="round"
+              initial={false}
+              animate={{ pathLength: reuseActive ? 1 : 0, opacity: reuseActive ? 1 : 0.18 }}
+              transition={{ duration: reuseActive ? 0.38 : 0.1, ease: MANIM_EASE }}
+            />
+            <motion.path
+              d="M 50 8 L 57 14 L 50 20"
+              fill="none"
+              stroke={toneStroke('active')}
+              strokeWidth={2}
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              initial={false}
+              animate={{ opacity: reuseActive ? 1 : 0.18 }}
+              transition={{ duration: reuseActive ? 0.2 : 0.08, delay: reuseActive ? 0.24 : 0 }}
+            />
+            {playToken > 0 && reuseActive && (
+              <motion.circle
+                key={`relay-dot-${playToken}`}
+                cy={14}
+                r={3.5}
+                fill={toneStroke('active')}
+                initial={{ cx: 6, opacity: 0 }}
+                animate={{ cx: [6, 54], opacity: [0, 1, 0] }}
+                transition={{ duration: 0.48, ease: MANIM_EASE }}
+              />
+            )}
+          </svg>
+        </div>
+
+        {/* 右栏：3-gram 直接复用 h_2 递推 */}
         <motion.section
           className="engram-panel"
           aria-label="3-gram 滚动复用推导"
           initial={false}
-          animate={{ opacity: reuseActive ? 1 : 0.32 }}
-          transition={{ duration: 0.35, ease: MANIM_EASE }}
+          animate={{ opacity: reuseActive ? 1 : 0.3 }}
+          transition={{ duration: 0.34, ease: MANIM_EASE }}
         >
           <header className="engram-panel__head">
-            <span>3-gram 前缀滚动累加</span>
+            <span>3-gram 滚动递推</span>
             <span className="engram-tag wisp-kit-tone" data-tone={h3Active ? 'done' : 'slate'}>
-              <RichText text={'复用 $h_2$'} />
+              <RichText text={'$h_3$'} />
             </span>
           </header>
 
@@ -532,11 +497,11 @@ export default function SuffixAndXorStage({ state, beat, playToken }: Props) {
               initial={false}
               animate={{
                 opacity: reuseActive ? 1 : 0.18,
-                x: reuseActive ? 0 : -18,
+                x: reuseActive ? 0 : -14,
               }}
-              transition={{ duration: reuseActive ? 0.42 : 0.1, ease: MANIM_EASE }}
+              transition={{ duration: reuseActive ? 0.38 : 0.1, ease: MANIM_EASE }}
             >
-              <span className="engram-tok__pos">复用上步结果</span>
+              <span className="engram-tok__pos">接力上阶结果</span>
               <span className="engram-mul-card__val">
                 <RichText text={`$h_2 = ${state.h2}$`} />
               </span>
@@ -550,7 +515,9 @@ export default function SuffixAndXorStage({ state, beat, playToken }: Props) {
               <span className="engram-tok__pos">
                 “中国” × <RichText text={`$m_2=${MULTIPLIERS[2]}$`} />
               </span>
-              <span className="engram-mul-card__val">308 × 9 = {state.prod2}</span>
+              <span className="engram-mul-card__val">
+                <RichText text={`$308 \\times 9 = ${state.prod2}$`} />
+              </span>
             </motion.div>
           </div>
 
@@ -560,8 +527,8 @@ export default function SuffixAndXorStage({ state, beat, playToken }: Props) {
             layoutId="engram-h3"
             transition={{
               ...MORPH_SPRING,
-              opacity: { duration: h3Active ? 0.3 : 0.1, delay: h3Active ? 0.42 : 0 },
-              scale: { duration: h3Active ? 0.36 : 0.1, delay: h3Active ? 0.42 : 0 },
+              opacity: { duration: h3Active ? 0.3 : 0.1, delay: h3Active ? 0.4 : 0 },
+              scale: { duration: h3Active ? 0.34 : 0.1, delay: h3Active ? 0.4 : 0 },
             }}
             className="engram-xor-result wisp-kit-tone"
             data-tone={h3Active ? 'done' : 'slate'}
@@ -574,21 +541,22 @@ export default function SuffixAndXorStage({ state, beat, playToken }: Props) {
             <RichText text={'$h_3 = h_2 \\oplus 2772$'} />
             <span className="engram-mul-card__val">{h3Active ? state.h3 : '…'}</span>
           </motion.div>
-
-          <motion.p
-            className="engram-verdict"
-            initial={false}
-            animate={{ opacity: h3Active ? 1 : 0.16, y: h3Active ? 0 : 4 }}
-            transition={{ duration: h3Active ? 0.35 : 0.1, delay: h3Active ? 0.48 : 0 }}
-          >
-            <RichText
-              text={
-                '前词“北京”（14）与“是”（9）已在当前窗口外；2-gram 结果 $h_2$ 直接接入异或门，高阶复杂度只随阶数线性 $O(1)$ 递增。'
-              }
-            />
-          </motion.p>
         </motion.section>
       </div>
+
+      {/* 底部：通用滚动递推公式横幅 */}
+      <motion.div
+        className="engram-mult-bar wisp-kit-tone"
+        data-tone={h3Active ? 'done' : 'slate'}
+        initial={false}
+        animate={{ opacity: h3Active ? 1 : 0.35 }}
+        transition={{ duration: 0.3, ease: MANIM_EASE }}
+      >
+        <span>通用滚动递推式（每升一阶只多做 1 次乘 + 1 次异或）</span>
+        <span>
+          <RichText text={"$h_n(t) = h_{n-1}(t) \\oplus (x'_{t-(n-1)} \\cdot m_{n-1})$"} />
+        </span>
+      </motion.div>
     </div>
   );
 }

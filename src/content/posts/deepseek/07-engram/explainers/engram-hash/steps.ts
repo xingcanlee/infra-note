@@ -29,6 +29,13 @@ export interface HeadLookup {
   tone: Tone;
 }
 
+export interface NormalizeGroup {
+  rawVariants: readonly string[];
+  canonical: string;
+  note: string;
+  tone: Tone;
+}
+
 export interface ScenarioSpec {
   id: 'china' | 'new_chief' | 'poem';
   label: string;
@@ -44,7 +51,8 @@ export interface ScenarioSpec {
   verdict: string;
 }
 
-export type EngramPhase = 'suffix' | 'xor' | 'bucket' | 'lookup' | 'collision' | 'gather';
+export type EngramPhase =
+  'normalize' | 'multipliers' | 'bucket' | 'suffix' | 'xor' | 'lookup' | 'collision' | 'gather';
 
 export interface EngramStepState {
   phase: EngramPhase;
@@ -60,34 +68,45 @@ export interface EngramStepState {
 }
 
 export const BEAT_SCHEDULES: Record<EngramPhase, readonly BeatSpec[]> = {
+  normalize: [
+    { at: 0, label: '原始词表 129,280' },
+    { at: 700, label: '规范化折叠变体' },
+    { at: 1500, label: '压缩 23.43% 至 V′' },
+    { at: 2350, label: '映射为规范 ID' },
+  ],
+  multipliers: [
+    { at: 0, label: '直接异或丢词序' },
+    { at: 800, label: '加位置乘子打破交换' },
+    { at: 1650, label: '防 int64 溢出定半界' },
+    { at: 2550, label: '按层抽样得奇乘子' },
+  ],
+  bucket: [
+    { at: 0, label: '2-gram 从 4 顺延' },
+    { at: 750, label: '命中 5 与 7 入 seen' },
+    { at: 1550, label: '3-gram 跳过已用 5/7' },
+    { at: 2350, label: '顺延命中 11 与 13' },
+    { at: 3150, label: '前缀和拼成 36 行带' },
+  ],
   suffix: [
-    { at: 0, label: '读入词元' },
+    { at: 0, label: '读入规范序列' },
     { at: 550, label: '锚定 t=5' },
     { at: 1200, label: '截取 2-gram' },
     { at: 1950, label: '截取 3-gram' },
     { at: 2650, label: '窗口就绪' },
   ],
   xor: [
-    { at: 0, label: '离线奇乘子' },
-    { at: 650, label: '异或得 h₂' },
-    { at: 1450, label: '按位异或' },
-    { at: 2250, label: '复用 h₂' },
-    { at: 2950, label: '累加得 h₃' },
-  ],
-  bucket: [
-    { at: 0, label: '头 0 · 素数 5' },
-    { at: 650, label: '头 1 · 素数 7' },
-    { at: 1300, label: '头 2 · 素数 11' },
-    { at: 1950, label: '头 3 · 素数 13' },
-    { at: 2600, label: '拼成 36 行' },
+    { at: 0, label: '乘上位置奇乘子' },
+    { at: 750, label: '2-gram 异或得 h₂' },
+    { at: 1600, label: '横向复用 h₂ 结果' },
+    { at: 2450, label: '异或前词得 h₃' },
   ],
   lookup: [
-    { at: 0, label: '载入哈希值' },
-    { at: 550, label: '聚光头 0 → 行 3' },
-    { at: 1250, label: '聚光头 1 → 行 10' },
-    { at: 1950, label: '聚光头 2 → 行 16' },
-    { at: 2650, label: '聚光头 3 → 行 24' },
-    { at: 3350, label: '全表落位 [3,10,16,24]' },
+    { at: 0, label: '载入 h₂ 与 h₃' },
+    { at: 600, label: '头 0 命中行 3' },
+    { at: 1300, label: '头 1 命中行 10' },
+    { at: 2000, label: '头 2 命中行 16' },
+    { at: 2700, label: '头 3 命中行 24' },
+    { at: 3400, label: '四槽并行就位' },
   ],
   collision: [
     { at: 0, label: '基准“中国的首”' },
@@ -105,6 +124,38 @@ export const BEAT_SCHEDULES: Record<EngramPhase, readonly BeatSpec[]> = {
 
 export const TOTAL_ROWS = 36;
 
+export const NORMALIZE_EXAMPLES: readonly NormalizeGroup[] = [
+  {
+    rawVariants: ['"Apple"', '"apple"', '" apple"'],
+    canonical: '"apple"',
+    note: '转小写 + 去首尾空白',
+    tone: 'active',
+  },
+  {
+    rawVariants: ['"\\t"', '"\\n"', '"  "'],
+    canonical: '"␣"',
+    note: '空白折叠（合并 163 变体）',
+    tone: 'done',
+  },
+  {
+    rawVariants: ['"A"', '"á"', '" ä"'],
+    canonical: '"a"',
+    note: 'NFD 去变音符（合并 54 变体）',
+    tone: 'highlight',
+  },
+];
+
+export const ORDER_DEMO = {
+  a: 12,
+  b: 88,
+  rawXor: 12 ^ 88,
+  sameXor: 12 ^ 12,
+  fwd: (88 * 3) ^ (12 * 7),
+  rev: (12 * 3) ^ (88 * 7),
+} as const;
+
+export const PRIME_SCAN_NUMS = [4, 5, 6, 7, 8, 9, 10, 11, 12, 13] as const;
+
 export const TOKENS: readonly TokenItem[] = [
   { pos: 1, text: '北京', id: 14, role: 'context' },
   { pos: 2, text: '是', id: 9, role: 'context' },
@@ -117,9 +168,9 @@ export const MULTIPLIERS = [3, 7, 9] as const;
 
 export const HEADS: readonly HeadConfig[] = [
   { headIdx: 0, ngram: 2, lowerBound: 4, prime: 5, offset: 0, tone: 'active' },
-  { headIdx: 1, ngram: 2, lowerBound: 6, prime: 7, offset: 5, tone: 'active' },
-  { headIdx: 2, ngram: 3, lowerBound: 10, prime: 11, offset: 12, tone: 'done' },
-  { headIdx: 3, ngram: 3, lowerBound: 12, prime: 13, offset: 23, tone: 'done' },
+  { headIdx: 1, ngram: 2, lowerBound: 4, prime: 7, offset: 5, tone: 'active' },
+  { headIdx: 2, ngram: 3, lowerBound: 4, prime: 11, offset: 12, tone: 'done' },
+  { headIdx: 3, ngram: 3, lowerBound: 4, prime: 13, offset: 23, tone: 'done' },
 ];
 
 export function computeRollingHash(idT: number, idPrev1: number, idPrev2: number) {
@@ -241,10 +292,48 @@ export function buildEngramHashSteps(): Step<EngramStepState>[] {
 
   return [
     {
-      label: '词缀窗口',
+      label: '词表归一',
+      duration: 5000,
+      caption:
+        "离线阶段用 CompressedTokenizer 把大小写、空白与变音符变体折叠到同一词形，将 129,280 词表压缩 23.43% 至 $V' \\approx 9.9 \\times 10^4$，推理时按原 ID 查表即得规范 ID $x'_t$。",
+      state: {
+        ...base,
+        phase: 'normalize',
+        formulaTex: "$V = 129{,}280 \\;\\xrightarrow{-23.43\\%}\\; V' \\approx 9.9 \\times 10^4$",
+        activeTokens: [1, 2, 3, 4, 5],
+      },
+    },
+    {
+      label: '离线奇乘子',
+      duration: 5400,
+      caption:
+        "直接异或满足交换律且同词归零；为锁死词序，按相对位置 $k$ 分配离线奇数常量 $m_k = 2r_k + 1$（上界受 $\\lfloor(2^{63}-1)/V'\\rfloor$ 保护，奇数保低位满秩），演示缩放为 $[3, 7, 9]$。",
+      state: {
+        ...base,
+        phase: 'multipliers',
+        formulaTex:
+          "$m_k = 2r_k + 1 < \\lfloor (2^{63}-1)/V' \\rfloor,\\; \\text{RNG}(10007\\cdot l)$",
+        activeTokens: [3, 4, 5],
+      },
+    },
+    {
+      label: '素数建桶',
+      duration: 5600,
+      caption:
+        '两阶统一从下界 $4$ 出发：2-gram 顺延拿到素数 $5, 7$；3-gram 因全局 seen 去重跳过已占用的 $5, 7$，顺延拿到 $11, 13$，求前缀和拼成 $36$ 行一维扁平表。',
+      state: {
+        ...base,
+        phase: 'bucket',
+        formulaTex:
+          '$p = [[5, 7], [11, 13]] \\;\\Rightarrow\\; \\text{offsets} = [0, 5, 12, 23],\\; N_{\\text{rows}} = 36$',
+        activeTokens: [3, 4, 5],
+      },
+    },
+    {
+      label: '后缀窗口',
       duration: 4800,
       caption:
-        '先把词元离线归并为规范 ID，在位置 $t = 5$（“首”，ID $88$）向回截取 2-gram 后缀 $(12, 88)$ 与 3-gram 后缀 $(308, 12, 88)$；前文“北京”“是”不参与当前查表。',
+        '进入在线前向：在位置 $t = 5$（“首”，规范 ID $88$）向回截取 2-gram 后缀 $(12, 88)$ 与 3-gram 后缀 $(308, 12, 88)$；前文“北京”“是”不在当前窗口内。',
       state: {
         ...base,
         phase: 'suffix',
@@ -253,36 +342,23 @@ export function buildEngramHashSteps(): Step<EngramStepState>[] {
       },
     },
     {
-      label: '滚动异或',
+      label: '滚动递推',
       duration: 5400,
       caption:
-        "乘子是按层用 10007 × layer 离线生成、不参与训练的奇数常量（上界受 $\\lfloor (2^{63}-1)/V' \\rfloor$ 保护）；此处以缩放奇数 $(3, 7, 9)$ 区分词序算得 $h_2 = 348$，再复用 $h_2$ 异或 $2772$ 得 $h_3 = 2952$。",
+        '先算 2-gram 混合值 $h_2 = (88\\times 3) \\oplus (12\\times 7) = 348$；算 3-gram 时直接横向复用 $h_2$ 异或新词项 $308\\times 9 = 2772$，一次得出 $h_3 = 2952$。',
       state: {
         ...base,
         phase: 'xor',
         formulaTex:
-          '$h_2 = 264 \\oplus 84 = 348 \\;\\longrightarrow\\; h_3 = 348 \\oplus 2772 = 2952$',
+          '$h_2 = 264 \\oplus 84 = 348 \\;\\longrightarrow\\; h_3 = h_2 \\oplus 2772 = 2952$',
         activeTokens: [3, 4, 5],
       },
     },
     {
-      label: '素数建桶',
-      duration: 4800,
-      caption:
-        '建表期跨层全局去重寻得四枚互异素数 $[5, 7, 11, 13]$，本层从 0 求前缀和得首址 $\\text{offsets} = [0, 5, 12, 23]$，拼成 $36$ 行扁平连续物理张量。',
-      state: {
-        ...base,
-        phase: 'bucket',
-        formulaTex:
-          '$p = [5, 7, 11, 13] \\;\\Rightarrow\\; \\text{offsets} = [0, 5, 12, 23],\\; N_{\\text{rows}} = 36$',
-        activeTokens: [3, 4, 5],
-      },
-    },
-    {
-      label: '偏移寻址',
+      label: '偏移落位',
       duration: 5600,
       caption:
-        '各哈希头按 $\\text{slot}_{n,j} = (h_n \\bmod p_j) + \\text{offset}_j$ 并行取模偏移，一次落位到扁平表的第 $3, 10, 16, 24$ 物理行，无须重算或分支跳转。',
+        '各哈希头按 $\\text{slot}_{n,j} = (h_n \\bmod p_j) + \\text{offset}_j$ 并行取模偏移，直接命中 36 行一维扁平表的第 $3, 10, 16, 24$ 物理槽位。',
       state: {
         ...base,
         phase: 'lookup',
@@ -308,12 +384,12 @@ export function buildEngramHashSteps(): Step<EngramStepState>[] {
       label: '拼接门控',
       duration: 5000,
       caption:
-        '按物理行号直接切片 Gather 并拼接为 $\\mathbf{e}_t \\in \\mathbb{R}^{4d_h}$（全程零矩阵乘），最后交由注意力隐状态 $h_t$ 计算门控（下方 $\\alpha_t$ 为语境对比示意值）。',
+        '按物理行号直接切片 Gather 并拼接为 $\\mathbf{e}_t \\in \\mathbb{R}^{4d_h}$（全程零矩阵乘），最后交由注意力隐状态 $\\mathbf{h}_t$ 计算门控（下方 $\\alpha_t$ 为语境对比示意值）。',
       state: {
         ...base,
         phase: 'gather',
         formulaTex:
-          '$\\mathbf{e}_t = [e_3; e_{10}; e_{16}; e_{24}] \\;\\xrightarrow{\\;\\alpha_t(h_t, \\mathbf{e}_t)\\;}\\; \\tilde{\\mathbf{e}}_t$',
+          '$\\mathbf{e}_t = [e_3; e_{10}; e_{16}; e_{24}] \\;\\xrightarrow{\\;\\alpha_t(\\mathbf{h}_t, \\mathbf{e}_t)\\;}\\; \\tilde{\\mathbf{e}}_t$',
         activeTokens: [3, 4, 5],
       },
     },

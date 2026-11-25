@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   BEAT_SCHEDULES,
+  ORDER_DEMO,
   SCENARIOS,
   TOTAL_ROWS,
   buildEngramHashSteps,
@@ -9,7 +10,16 @@ import {
 } from './steps';
 
 describe('EngramHash steps model', () => {
-  it('computes exact rolling XOR hashes and slot indices matching 07-engram article arithmetic', () => {
+  it('computes exact rolling XOR hashes, order sensitivity, and slot indices matching 07-engram article', () => {
+    expect(ORDER_DEMO).toEqual({
+      a: 12,
+      b: 88,
+      rawXor: 84,
+      sameXor: 0,
+      fwd: 348,
+      rev: 588,
+    });
+
     const china = computeRollingHash(88, 12, 308);
     expect(china).toEqual({
       prod0: 264,
@@ -31,9 +41,19 @@ describe('EngramHash steps model', () => {
     expect(TOTAL_ROWS).toBe(36);
   });
 
-  it('produces 6 labeled steps with balanced math delimiters and clean prose', () => {
+  it('produces 8 ordered steps from offline prep to online lookup and gating', () => {
     const steps = buildEngramHashSteps();
-    expect(steps).toHaveLength(6);
+    expect(steps).toHaveLength(8);
+    expect(steps.map((s) => s.state.phase)).toEqual([
+      'normalize',
+      'multipliers',
+      'bucket',
+      'suffix',
+      'xor',
+      'lookup',
+      'collision',
+      'gather',
+    ]);
     for (const step of steps) {
       expect(step.label?.trim().length).toBeGreaterThan(0);
       expect(step.duration).toBeGreaterThanOrEqual(3600);
