@@ -347,7 +347,7 @@ export default function CollisionAndGatherStage({
             }}
             transition={{ duration: gateActive ? 0.32 : 0.08, ease: MANIM_EASE }}
           >
-            <RichText text={`$\\alpha_t = ${spec.alpha.toFixed(2)}$`} />
+            <RichText text={`示意门控 $\\alpha_t = ${spec.alpha.toFixed(2)}$`} />
           </motion.span>
         </div>
 

@@ -1,4 +1,4 @@
-"""Wisp 调色板与 8px 网格辅助模块（对齐 design/palette.json 与 wisp-diagram 规范）。"""
+"""Wisp 调色板与 8px 网格辅助模块（解耦 wisp-diagram 规范基准色与站点 design/palette.json 主题覆盖）。"""
 from __future__ import annotations
 
 import json
@@ -6,21 +6,25 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
-PALETTE_PATH = ROOT / "design" / "palette.json"
+SITE_PALETTE_PATH = ROOT / "design" / "palette.json"
 WISP_SCRIPT = ROOT / "node_modules" / "astro-wisp" / "skills" / "wisp-diagram" / "scripts" / "wisp_diagram.py"
 WISP_SCRIPTS_DIR = WISP_SCRIPT.parent
+WISP_PALETTE_PATH = WISP_SCRIPTS_DIR.parent / "palette.json"
 
 if str(WISP_SCRIPTS_DIR) not in sys.path:
     sys.path.insert(0, str(WISP_SCRIPTS_DIR))
 
-PALETTE: dict = json.loads(PALETTE_PATH.read_text("utf-8"))
+# wisp diagram build/lint 依据 skill 内 palette.json 将源十六进制转化为 var(--wd-*)，再由站点 theme.css 覆盖显示
+PALETTE: dict = json.loads(WISP_PALETTE_PATH.read_text("utf-8"))
+SITE_PALETTE: dict = json.loads(SITE_PALETTE_PATH.read_text("utf-8"))
 BASE_LIGHT: dict[str, str] = {k: v["light"] for k, v in PALETTE["color"]["base"].items() if isinstance(v, dict)}
 SEMANTIC_MAP: dict[str, str] = {
-    k: v for k, v in PALETTE["color"]["semantic"].items() if not k.startswith("$")
+    k: v for k, v in SITE_PALETTE["color"]["semantic"].items() if not k.startswith("$")
 }
 HUE_NAMES: tuple[str, ...] = tuple(
     k for k in PALETTE["color"]["hue"].keys() if not k.startswith("$")
 )
+FONT_SANS = "Inter, Noto Sans SC"
 
 NEUTRAL_HUES = {"slate"}
 MAX_HUES = 3

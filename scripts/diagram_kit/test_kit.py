@@ -70,6 +70,36 @@ def main() -> int:
         drawio_file = c.save(td / "smoke.drawio", strict=True, build_svg=True)
         assert drawio_file.with_suffix(".wisp.svg").exists(), "Missing compiled smoke.wisp.svg"
 
+        # 1b. Test DrawioCanvas relative layout + paper primitives + floating edge label
+        c2 = DrawioCanvas(page_name="Kit Layout Test", diagram_id="smoke-layout")
+        chain = c2.vstack(
+            16,
+            48,
+            [
+                ("n0", "Embed \\([T, d]\\)", "neutral", {"h": 40}),
+                ("n1", "Engram 注入", "violet", {"h": 40, "emphasis": True}),
+                ("n2", "\\(\\text{wkv}\\) 投影", "active", {"kind": "trapezoid", "h": 40}),
+            ],
+            gap=24,
+            default_w=144,
+            connect_chain=True,
+        )
+        c2.wrap_group("g_chain", chain, "相对垂直栈", pad_x=16, pad_top=40, pad_bottom=16, tone="neutral", dashed=False)
+        rx, ry = c2.place_right_of("n1", gap=64, w=96, h=56)
+        c2.datastore("ds", rx, ry, 96, 56, "Host 表", tone="violet")
+        px, py = c2.place_below("ds", gap=24, w=144, h=32)
+        c2.token_pills("tok", px, py, ["\\(t-1\\)", "\\(t\\)"], slot_w=48, gap=8, pill_h=32, active_indices=[1])
+        ax, ay = c2.place_right_of("ds", gap=32, w=24, h=24)
+        c2.op_circle("op", ax, ay, size=24, op="add", tone="highlight")
+        c2.stacked_cards("sc", 360, 176, 136, 40, "多头叠卡", layers=2, tone="active")
+        bw, bh = c2.estimate_box_size("估计宽度 \\(O(1)\\)", font_size=12)
+        assert bw >= 64 and bh >= 32
+        c2.connect("e_ds", "n1", "ds", tone="fg", label="\\(O(1)\\)")
+        c2.frustum_lines("fr", c2.bbox("n1"), c2.bbox("g_chain"), tone="muted", dashed=True)
+        layout_file = c2.save(td / "smoke-layout.drawio", strict=True, build_svg=True)
+        assert layout_file.with_suffix(".wisp.svg").exists(), "Missing compiled smoke-layout.wisp.svg"
+        assert 'fontFamily=Inter, Noto Sans SC' in layout_file.read_text(encoding="utf-8")
+
         # 2. Test ExcalidrawScene bitfield comparison + SVG build
         ex = ExcalidrawScene(seed=1)
         ex.bitfield_comparison(

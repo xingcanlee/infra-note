@@ -228,7 +228,7 @@
       ]
     },
     "src/content/posts/deepseek/06-moe/diagrams/06-deepseekmoe-arch.drawio": {
-      "source": "sha256-dd6cadf97ccbf72fa6732dc1abc0100321cd9b0491ac460d5825d52a220a6cab",
+      "source": "sha256-00bc988726f1e9a39cc615275b5166a8cbdaffbd12c20c24734294080679b6c6",
       "style": "clean",
       "exporter": "drawio-cli",
       "embedFonts": false,
@@ -240,79 +240,79 @@
       ]
     },
     "src/content/posts/deepseek/07-engram/diagrams/11-engram-arch.drawio": {
-      "source": "sha256-34f5137c6b7cd48374cbdc9da07b340c0ea5c344c192c671a2d4fd6c69b949d9",
+      "source": "sha256-46798e80d83886209f7a03c0d1e10b375dddc70b953ab9c047391a2b3613dc66",
       "style": "clean",
       "exporter": "drawio-cli",
       "embedFonts": false,
       "outputs": {
-        "src/content/posts/deepseek/07-engram/diagrams/11-engram-arch.wisp.svg": "sha256-0077b5baf601c5f854ef196149ae5be4fc5c80c54298cef27cb7a966840bbcaf"
+        "src/content/posts/deepseek/07-engram/diagrams/11-engram-arch.wisp.svg": "sha256-b5d8677a52e7b8ef0b01d53c1d4a7e93fc7942d53345a1568aa16a239ac94c9d"
       },
       "pages": [
         "engram-arch"
       ]
     },
     "src/content/posts/deepseek/07-engram/diagrams/11-engram-gate-disambig.drawio": {
-      "source": "sha256-c7dd99e10386da70e725a85a1ec457095628958181224c9bd84f2863d38e9dfb",
+      "source": "sha256-7e53785dcb3934a0d73db05c977d5b5ecd999bb6c86cc31eacfe7a78a0a449fa",
       "style": "clean",
       "exporter": "drawio-cli",
       "embedFonts": false,
       "outputs": {
-        "src/content/posts/deepseek/07-engram/diagrams/11-engram-gate-disambig.wisp.svg": "sha256-12ea9fd2305ef957c9b862596a5ac23b7cd7b017f4f4d7a41e1931af83c35390"
+        "src/content/posts/deepseek/07-engram/diagrams/11-engram-gate-disambig.wisp.svg": "sha256-12ba7e3cd12fd31336b64332abc6fe519dc45da00fe518fa19246e87d2e75597"
       },
       "pages": [
         "engram-gate-disambig"
       ]
     },
     "src/content/posts/deepseek/07-engram/diagrams/11-engram-hash.drawio": {
-      "source": "sha256-f0d45faff1df4aad01bb23e13e0242ca2e9777f2bd058e721b5e25b729e9e879",
+      "source": "sha256-938be05421d6b01dccbd3629c89998404d63a01f1bb3542199fae47b40811c10",
       "style": "clean",
       "exporter": "drawio-cli",
       "embedFonts": false,
       "outputs": {
-        "src/content/posts/deepseek/07-engram/diagrams/11-engram-hash.wisp.svg": "sha256-90f9d2dbabc6890276aad8c8c42985afa5f74a61701c8bb4ee0e94f5317065e2"
+        "src/content/posts/deepseek/07-engram/diagrams/11-engram-hash.wisp.svg": "sha256-e5bda46a5a71e5689c742e688c6b4d66ee16cf7c0a783a20a9f69c62588c60d2"
       },
       "pages": [
         "engram-hash"
       ]
     },
     "src/content/posts/deepseek/07-engram/diagrams/11-engram-layer.drawio": {
-      "source": "sha256-ea4afde268fe5fa08a84cf03074730b8bdf2f7014675a1bc71856ca1db0e3f4c",
+      "source": "sha256-2a2ee52155ec82e9f2e936675cdb0e356b4f56f44d73dc80cb1c70381a921d35",
       "style": "clean",
       "exporter": "drawio-cli",
       "embedFonts": false,
       "outputs": {
-        "src/content/posts/deepseek/07-engram/diagrams/11-engram-layer.wisp.svg": "sha256-cabe66a917efd18743c7a2e37b36e83398dc2c9a2eeb62512a4d57462ad5f5fc"
+        "src/content/posts/deepseek/07-engram/diagrams/11-engram-layer.wisp.svg": "sha256-8af9aa59024d03589aa81d8bd0b8513167a1d381a33e56268a81e7bde767308c"
       },
       "pages": [
         "engram-layer"
       ]
     },
     "src/content/posts/deepseek/07-engram/diagrams/11-engram-runtime.drawio": {
-      "source": "sha256-5e619e87ddfef92824fa2f15b471d206b2b4628c1ab18e9c2167a392d3329456",
+      "source": "sha256-47464e9744a6c01f4ff6381a4a47d22c475748924cbac013de9a8dccdf9f8415",
       "style": "clean",
       "exporter": "drawio-cli",
       "embedFonts": false,
       "outputs": {
-        "src/content/posts/deepseek/07-engram/diagrams/11-engram-runtime.wisp.svg": "sha256-54f484cfff9de3bbd018a17a706e0883f0a9d9a6b1014326c5aebee2411f139d"
+        "src/content/posts/deepseek/07-engram/diagrams/11-engram-runtime.wisp.svg": "sha256-8f77edad9e0fec45ac3b510080bafc7038a75830e99717128f00881720f266a1"
       },
       "pages": [
         "engram-runtime-prefetch"
       ]
     },
     "src/content/posts/deepseek/07-engram/diagrams/11-shortconv-dilation.drawio": {
-      "source": "sha256-313db2da81e5826f2763dc973b8f5235a552bd0a8951931c0877976ce8391cd5",
+      "source": "sha256-c4e229d14b1be9317bc395e77ed20e6c5033571685d8cd552f5eeb84e487d167",
       "style": "clean",
       "exporter": "drawio-cli",
       "embedFonts": false,
       "outputs": {
-        "src/content/posts/deepseek/07-engram/diagrams/11-shortconv-dilation.wisp.svg": "sha256-1586b7abe31bc6573b30ea8e76f8086b4311ea8ad37f46a37fcd5564c6417433"
+        "src/content/posts/deepseek/07-engram/diagrams/11-shortconv-dilation.wisp.svg": "sha256-c55e17ea168158df71dcab9d9acfa07c982874f67384a51c117b5a22d23d85d0"
       },
       "pages": [
         "shortconv-dilation"
       ]
     },
     "src/content/posts/deepseek/08-mhc/diagrams/08-mhc-arch-comp.drawio": {
-      "source": "sha256-706da1671ff077a9024825e0522b6a3fe253a505f119ae28ab05da2931f3ed13",
+      "source": "sha256-dd221683ec241ff857631edb0fc99c42f88d8626cc7610822912cf6d26b8f65c",
       "style": "clean",
       "exporter": "drawio-cli",
       "embedFonts": false,
@@ -324,7 +324,7 @@
       ]
     },
     "src/content/posts/deepseek/08-mhc/diagrams/08-mhc-block-trace.drawio": {
-      "source": "sha256-2c83f7b2ee7bef8d10130da3fec2ec8e6949ccb244091eb6634c4f1e1292829b",
+      "source": "sha256-be244751e9b982e17c091c81d8555af939b2b607603b6afd0edadd902a323b03",
       "style": "clean",
       "exporter": "drawio-cli",
       "embedFonts": false,
@@ -336,7 +336,7 @@
       ]
     },
     "src/content/posts/deepseek/08-mhc/diagrams/08-mhc-single-pass.drawio": {
-      "source": "sha256-6cc0b9672a1f692e081eed3178f364b97fe8e710965faad1e49993e4da970246",
+      "source": "sha256-466a2beaee230d105cc8c2a090c64f97a16194a27dfe8c5c7682a620d34e75aa",
       "style": "clean",
       "exporter": "drawio-cli",
       "embedFonts": false,
@@ -348,7 +348,7 @@
       ]
     },
     "src/content/posts/deepseek/08-mhc/diagrams/08-mhc-sinkhorn-stability.drawio": {
-      "source": "sha256-8d6e1e710c198c46324fe153f000da108e284af6f7304103ea2e5c7b21e17d4d",
+      "source": "sha256-71c8c5ce5897a68e074be7cd6eff1f9c67dfe5b9fb32b1ecb73ff482a22f804a",
       "style": "clean",
       "exporter": "drawio-cli",
       "embedFonts": false,
@@ -372,7 +372,7 @@
       ]
     },
     "src/content/posts/deepseek/09-mtp-and-dspark/diagrams/09-mtp-vllm-runtime.drawio": {
-      "source": "sha256-1f464bd31782c8866e103555919610621f381d8beecf47090466700ee6066abf",
+      "source": "sha256-92653cc0feda06088d98164c935657caa6b9a69d1b30b63651d910d411a466f1",
       "style": "clean",
       "exporter": "drawio-cli",
       "embedFonts": false,
@@ -396,7 +396,7 @@
       ]
     },
     "src/content/posts/deepseek/10-architecture-synthesis/diagrams/10-five-gen-ledger.drawio": {
-      "source": "sha256-400dbf18576a33b254fc50fa4cedab789241f0d398e969b122b1c88e4936971a",
+      "source": "sha256-7f1c3373b9b3ce29791b9cab8838e90e1fc5c76e32c56c6cdc5bfc89d89db018",
       "style": "clean",
       "exporter": "drawio-cli",
       "embedFonts": false,

@@ -84,8 +84,9 @@
    - 写法：` ```mermaid caption="图 N：..." `，节点文字用双引号包裹 `A["..."]`。
    - 约束：不超过 `12` 个节点，禁止手写 `style`、`classDef` 或 `%%{init}%%`，节点文字尽量简短清晰。
 2. **复杂模型架构 / 分布式切分 / 静态硬件双泳道 → `Draw.io`（`scripts/diagram_kit.DrawioCanvas`）**
-   - 写法：由 `scripts/diagrams/<slice>.py` 调用 `DrawioCanvas` 生成未压缩 `.drawio` 并编译 `.wisp.svg`，文章中用 `![alt](./diagrams/foo.drawio '图 N：说明')` 引用。
-   - 约束：画布宽度 `<= 688px`，坐标严格落在 `8px` 网格上，字号仅用 `12 / 14 / 18`，单图非中性（slate）色调 `<= 3` 种，不在画布内重复写图标题；张量块长宽与字节严格按真实比例绘制，切分处画虚线。
+   - 写法：由 `scripts/diagrams/<slice>.py` 调用 `DrawioCanvas` 生成未压缩 `.drawio` 并编译 `.wisp.svg`，文章中用 `![alt](./diagrams/foo.drawio '图 N：说明')` 引用；关键门面架构图生成后可用 Draw.io GUI 做微调定稿。
+   - 布局与配色：优先使用相对布局原语（`vstack`、`hstack`、`place_below`、`place_right_of`、`wrap_group`）与 `connect(..., label=...)` 自动悬浮边标签，避免手写绝对像素坐标和箭头穿字；采用学术粉彩语义分工（`active`/`blue` 表主干计算、`violet` 表静态记忆与扩展、`highlight`/`amber` 表门控与关键高亮）。
+   - 约束：画布宽度 `<= 688px`，坐标严格落在 `8px` 网格上，字号仅用 `12 / 14 / 18`，单图非中性（slate）色调 `<= 3` 种，不在画布内重复写图标题；数学符号（如 `$H_t$`、`$[T, 4, d]$`）与纯工程模块名（如 `Attn`、`MoE`）严格划界；张量块长宽与字节严格按真实比例绘制，切分处画虚线。
 3. **局部直觉对比 / `<= 3` 跳指针映射 / 位宽字段对照 → `Excalidraw`（`scripts/diagram_kit.ExcalidrawScene`）**
    - 写法：调用 `ExcalidrawScene` 生成骨架并用 `wisp_diagram.py new --build` 编译 `.excalidraw` + `.wisp.svg`。
    - 约束：公式用 Unicode（`×`、`√d`、`α`），节点数 `<= 12`，单图 `<= 3` 种非 slate 色调。

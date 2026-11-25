@@ -68,7 +68,7 @@ export const BEAT_SCHEDULES: Record<EngramPhase, readonly BeatSpec[]> = {
     { at: 2650, label: '窗口就绪' },
   ],
   xor: [
-    { at: 0, label: '乘奇系数' },
+    { at: 0, label: '离线奇乘子' },
     { at: 650, label: '异或得 h₂' },
     { at: 1450, label: '按位异或' },
     { at: 2250, label: '复用 h₂' },
@@ -193,7 +193,7 @@ export const SCENARIOS: Record<ScenarioSpec['id'], ScenarioSpec> = {
     ],
     alpha: 0.42,
     gateTone: 'highlight',
-    collisionSummary: '头 3 撞车行 24，头 2 隔离到行 18（与 16 错开 2 行）',
+    collisionSummary: '头 3 在行 24 发生哈希碰撞，头 2 隔离到行 18（错开 2 行）',
     verdict: '局部碰撞导致静默向量混杂，上下文门控主动降权至 0.42 抑制杂音',
   },
   poem: {
@@ -244,7 +244,7 @@ export function buildEngramHashSteps(): Step<EngramStepState>[] {
       label: '词缀窗口',
       duration: 4800,
       caption:
-        '在位置 $t = 5$（“首”，规范 ID $88$）向回截取 2-gram 后缀 $(12, 88)$ 与 3-gram 后缀 $(308, 12, 88)$，前置词“北京”“是”不参与本次局部查表。',
+        '先把词元离线归并为规范 ID，在位置 $t = 5$（“首”，ID $88$）向回截取 2-gram 后缀 $(12, 88)$ 与 3-gram 后缀 $(308, 12, 88)$；前文“北京”“是”不参与当前查表。',
       state: {
         ...base,
         phase: 'suffix',
@@ -256,7 +256,7 @@ export function buildEngramHashSteps(): Step<EngramStepState>[] {
       label: '滚动异或',
       duration: 5400,
       caption:
-        '用有界奇乘数 $(3, 7, 9)$ 区分词序并算得 $h_2 = (88\\times 3)\\oplus(12\\times 7) = 348$；算完后直接复用 $h_2$，再异或 $308\\times 9 = 2772$ 即得 $h_3 = 2952$。',
+        "乘子是按层用 10007 × layer 离线生成、不参与训练的奇数常量（上界受 $\\lfloor (2^{63}-1)/V' \\rfloor$ 保护）；此处以缩放奇数 $(3, 7, 9)$ 区分词序算得 $h_2 = 348$，再复用 $h_2$ 异或 $2772$ 得 $h_3 = 2952$。",
       state: {
         ...base,
         phase: 'xor',
@@ -269,7 +269,7 @@ export function buildEngramHashSteps(): Step<EngramStepState>[] {
       label: '素数建桶',
       duration: 4800,
       caption:
-        '建表期按递增下界寻得四枚互异素数 $[5, 7, 11, 13]$，求前缀和得四头起始偏移 $\\text{offsets} = [0, 5, 12, 23]$，共同拼成 $36$ 行扁平连续物理张量。',
+        '建表期跨层全局去重寻得四枚互异素数 $[5, 7, 11, 13]$，本层从 0 求前缀和得首址 $\\text{offsets} = [0, 5, 12, 23]$，拼成 $36$ 行扁平连续物理张量。',
       state: {
         ...base,
         phase: 'bucket',
@@ -308,7 +308,7 @@ export function buildEngramHashSteps(): Step<EngramStepState>[] {
       label: '拼接门控',
       duration: 5000,
       caption:
-        '按物理行号直接切片 Gather 并拼接为 $\\mathbf{e}_t \\in \\mathbb{R}^{4d_h}$（全程零矩阵乘），最后交由注意力隐状态 $h_t$ 计算门控 $\\alpha_t$ 动态放行或抑噪。',
+        '按物理行号直接切片 Gather 并拼接为 $\\mathbf{e}_t \\in \\mathbb{R}^{4d_h}$（全程零矩阵乘），最后交由注意力隐状态 $h_t$ 计算门控（下方 $\\alpha_t$ 为语境对比示意值）。',
       state: {
         ...base,
         phase: 'gather',

@@ -14,44 +14,44 @@
         "dark": "#6b7078",
         "$comment": "仅用于非文本元素（分隔线、图标），对比度不满足正文 AA"
       },
-      "accent": { "light": "#0f766e", "dark": "#4fd1c0" },
+      "accent": { "light": "#2b5b9e", "dark": "#8db8f2" },
       "accent-fg": { "light": "#ffffff", "dark": "#0b1f1d" },
       "code-bg": { "light": "#f6f6f4", "dark": "#16171a" },
-      "selection": { "light": "#ccf0ea", "dark": "#1d3d39" }
+      "selection": { "light": "#dce8fa", "dark": "#1c2d45" }
     },
     "hue": {
-      "$comment": "8 色分类色板，按「印刷油墨」调：OKLCH 中 light stroke L≈0.37–0.51、C≤0.11，fill 是近纸色的淡洗（L≈0.95、C≈0.02）；dark stroke L≈0.70–0.85、C≤0.10，fill L≈0.26。teal light 与 accent 同色。易混的两两（blue/violet、green/teal、amber/orange、teal/slate）靠明度拉开。stroke 用于线条/文字（对 bg 与自身 fill 都 ≥4.5:1），fill 用于填充底色。顺序即 Pele --pele-series-1..8 的顺序。",
+      "$comment": "8 色分类色板（顶会论文粉彩 + Distill/DeepSeek 克制风格）：以冰蓝、暖杏橙、淡紫为主强调色，轻描边高可读，明暗双模式全量通过 WCAG AA (>=4.5:1) 对比度校验。顺序即 Pele --pele-series-1..8 的顺序。",
       "blue": {
-        "stroke": { "light": "#2f5783", "dark": "#a9cbef" },
-        "fill": { "light": "#e9f2fb", "dark": "#1a2634" }
+        "stroke": { "light": "#2b5b9e", "dark": "#9ec4f6" },
+        "fill": { "light": "#eaf2fd", "dark": "#182436" }
       },
       "amber": {
-        "stroke": { "light": "#7b5518", "dark": "#f2c681" },
-        "fill": { "light": "#fbf2df", "dark": "#2e2515" }
+        "stroke": { "light": "#9a4a16", "dark": "#f2b886" },
+        "fill": { "light": "#fef0e1", "dark": "#2d2117" }
       },
       "green": {
-        "stroke": { "light": "#2c522d", "dark": "#84b585" },
-        "fill": { "light": "#e9f5e9", "dark": "#1a281c" }
+        "stroke": { "light": "#2b6142", "dark": "#8ecaa5" },
+        "fill": { "light": "#ebf5ee", "dark": "#17271d" }
       },
       "rose": {
-        "stroke": { "light": "#984646", "dark": "#eda9aa" },
-        "fill": { "light": "#fcedec", "dark": "#341f1f" }
+        "stroke": { "light": "#9b3d47", "dark": "#f0a5ad" },
+        "fill": { "light": "#fceeee", "dark": "#311d20" }
       },
       "violet": {
-        "stroke": { "light": "#4d335c", "dark": "#bb9ece" },
-        "fill": { "light": "#f5eef9", "dark": "#291e2e" }
+        "stroke": { "light": "#5b4282", "dark": "#c4b0ea" },
+        "fill": { "light": "#f2ecfa", "dark": "#261d33" }
       },
       "teal": {
-        "stroke": { "light": "#0f766e", "dark": "#7fd3c5" },
-        "fill": { "light": "#e3f5f3", "dark": "#112926" }
+        "stroke": { "light": "#1f5f73", "dark": "#8ac9dc" },
+        "fill": { "light": "#e8f4f8", "dark": "#15262e" }
       },
       "orange": {
-        "stroke": { "light": "#762f06", "dark": "#ce8d66" },
-        "fill": { "light": "#fceee4", "dark": "#311f15" }
+        "stroke": { "light": "#8c3d19", "dark": "#e5a37e" },
+        "fill": { "light": "#fdf0e8", "dark": "#2f1e16" }
       },
       "slate": {
-        "stroke": { "light": "#464e57", "dark": "#9da7b3" },
-        "fill": { "light": "#eaedf2", "dark": "#23272b" }
+        "stroke": { "light": "#47505c", "dark": "#a4aebc" },
+        "fill": { "light": "#eef0f4", "dark": "#22252b" }
       }
     },
     "semantic": {
@@ -75,6 +75,7 @@
     "sans": [
       "Inter Variable",
       "Noto Sans SC Variable",
+      "Noto Sans SC",
       "Wisp CJK Fallback",
       "-apple-system",
       "BlinkMacSystemFont",
@@ -92,6 +93,7 @@
       "Menlo",
       "Consolas",
       "Noto Sans SC Variable",
+      "Noto Sans SC",
       "PingFang SC",
       "Microsoft YaHei",
       "monospace"
@@ -99,6 +101,7 @@
     "hand": [
       "Inter Variable",
       "Noto Sans SC Variable",
+      "Noto Sans SC",
       "Wisp CJK Fallback",
       "-apple-system",
       "BlinkMacSystemFont",
@@ -109,7 +112,7 @@
       "Microsoft YaHei",
       "sans-serif"
     ],
-    "$comment": "hand 与 sans 统一使用 Inter + Noto Sans SC 印刷体，保留 Excalidraw 框线手绘感的同时确保技术术语清晰易读。"
+    "$comment": "hand 与 sans 统一使用 Inter + Noto Sans SC 印刷体（同时列出 Noto Sans SC 供无头 SVG/静态导出命中），保留 Excalidraw 框线手绘感的同时确保中英文与技术术语视觉统一。"
   },
   "type": {
     "base-px": { "mobile": 16, "desktop": 17 },

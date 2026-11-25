@@ -68,57 +68,76 @@ def build_06_moe_arch() -> None:
 
 
 def build_07_engram_arch() -> None:
-    """11-engram-arch.drawio：条件计算 (MoE) 与条件记忆 (Engram) 的正交分工。"""
+    """11-engram-arch.drawio：DeepSeek-V4.1-Flash 40 层定位（左）与单处 Engram 四步前向（右，学术粉彩 + 相对布局）。"""
     c = DrawioCanvas(page_name="engram-arch", diagram_id="ds-07-engram-arch", width=688)
 
-    c.node("inp", 168, 8, 352, 40, "输入词元序列与残差隐状态 \\(h_t\\)", tone="neutral", emphasis=True, font_size=12)
-
-    c.group("g_comp", 0, 72, 336, 200, "条件计算：MoE + Attention（动态算力）", tone="highlight", dashed=False)
-    c.node("comp_route", 16, 104, 304, 48, "Router 动态选路计算：\\(O(T \\cdot E)\\)", tone="highlight", font_size=12)
-    c.node(
-        "comp_mlp",
+    # 左区：DeepSeek-V4.1-Flash 40 层架构定位（vstack 自动串联 + wrap_group）
+    left_ids = c.vstack(
         16,
-        176,
-        304,
-        80,
-        "多步深层组合与逻辑推理\n若无静态记忆，高频实体只能靠消耗 FFN 重建",
-        tone="highlight",
-        emphasis=True,
-        font_size=12,
+        48,
+        [
+            ("v_in", "Embed\n552B + 196B", "neutral", {"h": 40, "emphasis": True}),
+            ("v_l0", "L0 · SWA + MoE\n异步预取 L1", "active", {"h": 40}),
+            ("v_l1", "L1 · Engram #1\nSWA + MoE", "violet", {"h": 48, "emphasis": True, "bold": True}),
+            ("v_mid", "L2..L13 · MoE\n异步预取 L14", "active", {"h": 48}),
+            ("v_l14", "L14 · Engram #2\nCSA2 + MoE", "violet", {"h": 48, "emphasis": True, "bold": True}),
+            ("v_tail", "L15..L39\nDecoder + Head", "neutral", {"h": 48}),
+        ],
+        gap=16,
+        default_w=152,
+        connect_chain=True,
     )
-    c.connect("e_c1", "comp_route", "comp_mlp", tone="fg")
+    c.wrap_group("g_arch", left_ids, "V4.1-Flash (40 层)", pad_x=16, pad_top=40, pad_bottom=24, tone="neutral", dashed=False)
 
-    c.group("g_mem", 352, 72, 336, 200, "条件记忆：Engram（静态查表）", tone="active", dashed=False)
-    c.node("mem_hash", 368, 104, 304, 48, "N-gram 哈希索引：\\(O(1)\\) 确定性寻址", tone="active", font_size=12)
-    c.node(
-        "mem_lut",
-        368,
-        176,
-        304,
-        80,
-        "按词尾整数编号直读 Host 大表\n固定实体与短语从 GPU HBM 算力路径剥离",
-        tone="active",
-        emphasis=True,
-        font_size=12,
+    # 右区：单处 Engram 模块四步前向流程（x=232..688）
+    c.group("g_flow", 232, 8, 456, 496, "单处 Engram 四步前向（L1 / L14）", tone="neutral", dashed=True)
+    c.frustum_lines("fr_l1", c.bbox("v_l1"), c.bbox("g_flow"), tone="muted", dashed=True)
+    c.connect("e_call_l14", "v_l14", "g_flow", tone="muted", dashed=True, ortho=False, exit_xy=(1.0, 0.5), entry_xy=(0.0, 328 / 496))
+
+    # ① 输入词元窗口 & 上层残差状态
+    c.token_pills(
+        "tok",
+        248,
+        48,
+        ["\\(x'_{t-2}\\)", "\\(x'_{t-1}\\)", "\\(x'_t\\)"],
+        slot_w=48,
+        gap=8,
+        pill_h=32,
+        active_indices=[1, 2],
     )
-    c.connect("e_m1", "mem_hash", "mem_lut", tone="fg")
+    c.node("f_h", 544, 48, 120, 40, "残差 \\(H_t\\)\n\\([T, 4, d]\\)", tone="neutral", emphasis=True, font_size=12)
 
-    c.connect("e_top_c", "inp", "comp_route", tone="fg", exit_xy=(0.25, 1.0), entry_xy=(0.5, 0.0))
-    c.connect("e_top_m", "inp", "mem_hash", tone="fg", exit_xy=(0.75, 1.0), entry_xy=(0.5, 0.0))
+    # ② 多头哈希叠卡 + Host 大表圆柱（相对定位 + 自动避让边标签）
+    hx, hy = c.place_below("tok_0", gap=40, w=136, h=48, align="left")
+    c.stacked_cards("f_hash", hx, hy, 136, 48, "② 多头滚动 XOR\n\\(h_n \\bmod p_{n,k}\\)", layers=3, tone="active", font_size=12)
+    dx, dy = c.place_right_of("f_hash", gap=80, w=88, h=64, valign="center")
+    c.datastore("f_ddr", dx, dy, 88, 64, "Host 大表\n\\([V, d]\\)", tone="violet", bold=True, font_size=12)
 
-    c.node(
-        "merge",
-        72,
-        296,
-        544,
-        64,
-        "门控融合写回：\\(H'_t = H_t + \\alpha_t \\odot V_t\\)\n分配比例 \\(\\rho\\) 控制算力与记忆配比，把浅层算力留给深层推理",
-        tone="done",
-        emphasis=True,
-        font_size=12,
-    )
-    c.connect("e_bot_c", "comp_mlp", "merge", tone="fg", exit_xy=(0.5, 1.0), entry_xy=(0.25, 0.0))
-    c.connect("e_bot_m", "mem_lut", "merge", tone="fg", exit_xy=(0.5, 1.0), entry_xy=(0.75, 0.0))
+    # ③ wkv 投影梯形 -> K / V 分裂 -> 上下文门控
+    c.trapezoid("f_wkv", 360, 192, 144, 40, "③ \\(\\text{wkv}\\) 投影 \\((5d)\\)", tone="active", size=16, font_size=12)
+    c.node("f_v", 256, 256, 104, 40, "Val \\(V_t\\)\n\\((1d)\\)", tone="violet", emphasis=True, font_size=12)
+    c.node("f_k", 408, 256, 112, 40, "Key \\(K_t\\)\n\\((4d)\\)", tone="active", font_size=12)
+
+    mx, my = c.place_below("f_v", gap=32, w=24, h=24, align="center")
+    c.op_circle("f_mul", mx, my, size=24, op="mul", tone="highlight")
+    c.node("f_gate", 392, 320, 144, 40, "③ 门控打分\n\\(\\alpha_t = \\sigma(\\operatorname{sgn}(z)\\sqrt{|z|})\\)", tone="highlight", emphasis=True, font_size=12)
+
+    # ④ 残差写回 ⊕ -> 主干移交
+    c.op_circle("f_add", 592, 392, size=24, op="add", tone="violet")
+    c.node("f_out", 256, 448, 416, 40, "④ \\(H'_t = H_t + \\alpha_t \\odot V_t \\;\\to\\;\\) mhc_pre \\(\\to\\) Attn \\(\\to\\) MoE", tone="violet", emphasis=True, font_size=12)
+
+    c.connect("e_tok_h", "tok_1", "f_hash", tone="fg")
+    c.connect("e_h_d", "f_hash", "f_ddr", tone="fg", label="\\(O(1)\\)")
+    c.connect("e_d_w", "f_ddr", "f_wkv", tone="fg")
+    c.connect("e_w_v", "f_wkv", "f_v", tone="fg", exit_xy=(0.25, 1.0), entry_xy=(0.5, 0.0))
+    c.connect("e_w_k", "f_wkv", "f_k", tone="fg", exit_xy=(0.75, 1.0), entry_xy=(0.5, 0.0))
+    c.connect("e_v_m", "f_v", "f_mul", tone="fg")
+    c.connect("e_k_g", "f_k", "f_gate", tone="fg")
+    c.connect("e_h_a", "f_h", "f_add", tone="fg")
+    c.connect("e_h_g", "f_h", "f_gate", tone="fg", exit_xy=(0.5, 1.0), entry_xy=(1.0, 0.5))
+    c.connect("e_g_m", "f_gate", "f_mul", tone="fg")
+    c.connect("e_m_a", "f_mul", "f_add", tone="fg", exit_xy=(0.5, 1.0), entry_xy=(0.0, 0.5))
+    c.connect("e_a_o", "f_add", "f_out", tone="fg", exit_xy=(0.5, 1.0), entry_xy=(348 / 416, 0.0))
 
     out = POSTS_ROOT / "07-engram" / "diagrams" / "11-engram-arch.drawio"
     c.save(out, strict=True, build_svg=True)
@@ -128,36 +147,40 @@ def build_07_engram_hash() -> None:
     """11-engram-hash.drawio：素数分桶、前缀偏移与滚动异或防碰撞寻址。"""
     c = DrawioCanvas(page_name="engram-hash", diagram_id="ds-07-engram-hash", width=688)
 
-    c.group("g_build", 0, 8, 688, 192, "阶段一：构造全局互异素数分桶与 1D 扁平物理表（K=2 头示例）", tone="neutral", dashed=False)
-    c.node("b_prime", 16, 40, 208, 64, "1. 递增寻素 + seen_primes 去重\n2-gram: [5, 7]\n3-gram: [11, 13]", tone="active", font_size=12)
-    c.node("b_off", 240, 40, 208, 64, "2. 累加前缀首址 offsets\n[0, 5, 12, 23]\n总槽位 = 5+7+11+13 = 36", tone="active", font_size=12)
-    c.node("b_mult", 464, 40, 208, 64, "3. 逐层生成有界奇乘数\n\\(m_i \\in [1, 2^{31}-1]\\) 奇数\n防止乘 \\(2^k\\) 丢弃低位", tone="highlight", font_size=12)
+    c.group("g_build", 0, 8, 688, 192, "阶段一：互异素数建桶与 1D 扁平大表（\\(K=2\\) 头示例）", tone="neutral", dashed=False)
+    c.node("b_prime", 16, 40, 176, 56, "1. 寻素去重\n\\(p=[5,7],\\,[11,13]\\)", tone="active", font_size=12)
+    c.node("b_off", 208, 40, 176, 56, "2. 首址 offsets\n\\([0, 5, 12, 23]\\)", tone="active", font_size=12)
+    c.node("b_mult", 408, 40, 264, 56, "3. 奇乘子 \\(m_k = 2r_k + 1\\)\n\\(\\text{RNG}(10007\\cdot l),\\; m_k \\lt \\lfloor(2^{63}-1)/V'\\rfloor\\)", tone="highlight", font_size=12)
     c.connect("e_b1", "b_prime", "b_off", tone="fg")
     c.connect("e_b2", "b_off", "b_mult", tone="fg")
 
     # 36 行按 16px/行 严格等比排布：5*16=80, 7*16=112, 11*16=176, 13*16=208，总宽 576，居中 x=56..632
-    c.node("seg0", 56, 120, 80, 48, "2g-H0\n[0..4]", tone="active", font_size=12)
-    c.node("seg1", 136, 120, 112, 48, "2g-H1 (p=7)\n[5..11]", tone="active", font_size=12)
-    c.node("seg2", 248, 120, 176, 48, "3g-H2 (p=11)\n[12..22]", tone="done", font_size=12)
-    c.node("seg3", 424, 120, 208, 48, "3g-H3 (p=13)\n[23..35]", tone="done", font_size=12)
-    c.text("seg_cap", 56, 172, 576, 24, "物理存储：\\([36, d]\\) 连续张量，总行数 \\(= \\sum p_{n,k}\\)", size=12, tone="muted", align="center")
+    c.node("seg0", 56, 112, 80, 48, "2g-\\(H_0\\) (5)\n\\([0..4]\\)", tone="active", font_size=12)
+    c.node("seg1", 136, 112, 112, 48, "2g-\\(H_1\\) (7)\n\\([5..11]\\)", tone="active", font_size=12)
+    c.node("seg2", 248, 112, 176, 48, "3g-\\(H_2\\) (11)\n\\([12..22]\\)", tone="violet", font_size=12)
+    c.node("seg3", 424, 112, 208, 48, "3g-\\(H_3\\) (13)\n\\([23..35]\\)", tone="violet", font_size=12)
+    c.text("seg_cap", 56, 168, 576, 24, "物理存储：\\([36, d]\\) 连续张量（总行数 \\(= 5+7+11+13 = 36\\)）", size=12, tone="muted", align="center")
 
-    c.group("g_calc", 0, 216, 688, 240, "阶段二：后缀 (308, 12, 88) 滚动异或与物理槽位映射（m = [3, 7, 9]）", tone="neutral", dashed=True)
-    c.node("t0", 16, 248, 152, 48, "首字 \\(x'_t = 88\\)\n乘数 \\(m_0 = 3\\)", tone="neutral", font_size=12)
-    c.node("t1", 184, 248, 152, 48, "前缀 \\(x'_{t-1} = 12\\)\n乘数 \\(m_1 = 7\\)", tone="neutral", font_size=12)
-    c.node("t2", 352, 248, 152, 48, "前缀 \\(x'_{t-2} = 308\\)\n乘数 \\(m_2 = 9\\)", tone="neutral", font_size=12)
-    c.node("no_comm", 520, 248, 152, 48, "位置绑定防交换：\n\\((12,88) \\neq (88,12)\\)", tone="highlight", dashed=True, font_size=12)
+    c.group("g_calc", 0, 216, 688, 248, "阶段二：后缀 \\((308, 12, 88)\\) 滚动异或与槽位映射（\\(m = [3, 7, 9]\\)）", tone="neutral", dashed=True)
+    c.node("t0", 16, 248, 136, 40, "\\(x'_t=88 \\times 3\\)", tone="neutral", font_size=12)
+    c.node("t1", 168, 248, 136, 40, "\\(x'_{t-1}=12 \\times 7\\)", tone="neutral", font_size=12)
+    c.node("t2", 344, 248, 136, 40, "\\(x'_{t-2}=308 \\times 9\\)", tone="neutral", font_size=12)
+    c.node("no_comm", 520, 248, 152, 40, "防交换：\\((12,88)\\neq(88,12)\\)", tone="highlight", dashed=True, font_size=12)
 
-    c.node("xor2", 32, 320, 272, 48, "2-gram 混合值：\n\\(h_2 = (88\\times 3) \\oplus (12\\times 7) = 348\\)", tone="active", emphasis=True, font_size=12)
-    c.node("xor3", 352, 320, 320, 48, "复用 \\(h_2\\) 计算 3-gram：\n\\(h_3 = 348 \\oplus (308\\times 9) = 2952\\)", tone="active", emphasis=True, font_size=12)
+    c.op_circle("xor2_op", 144, 320, size=24, op="add", tone="active")
+    c.node("xor2", 192, 312, 152, 40, "\\(h_2 = 348\\)\n2-gram 混合值", tone="active", emphasis=True, font_size=12)
+    c.op_circle("xor3_op", 400, 320, size=24, op="add", tone="violet")
+    c.node("xor3", 456, 312, 216, 40, "\\(h_3 = 348 \\oplus 2772 = 2952\\)\n\\(O(1)\\) 复用 \\(h_2\\)", tone="violet", emphasis=True, font_size=12)
 
-    c.connect("e_t0_x", "t0", "xor2", tone="fg", exit_xy=(0.5, 1.0), entry_xy=(0.25, 0.0))
-    c.connect("e_t1_x", "t1", "xor2", tone="fg", exit_xy=(0.5, 1.0), entry_xy=(0.75, 0.0))
-    c.connect("e_x2_x3", "xor2", "xor3", tone="fg")
-    c.connect("e_t2_x", "t2", "xor3", tone="fg", exit_xy=(0.5, 1.0), entry_xy=(0.25, 0.0))
+    c.connect("e_t0_x", "t0", "xor2_op", tone="fg")
+    c.connect("e_t1_x", "t1", "xor2_op", tone="fg")
+    c.connect("e_x2_b", "xor2_op", "xor2", tone="fg")
+    c.connect("e_x2_x3", "xor2", "xor3_op", tone="fg")
+    c.connect("e_t2_x", "t2", "xor3_op", tone="fg")
+    c.connect("e_x3_b", "xor3_op", "xor3", tone="fg")
 
-    c.node("slot2", 32, 392, 272, 48, "\\(H_0: (348 \\bmod 5)+0 = 3\\)\n\\(H_1: (348 \\bmod 7)+5 = 10\\)", tone="done", emphasis=True, font_size=12)
-    c.node("slot3", 352, 392, 320, 48, "\\(H_2: (2952 \\bmod 11)+12 = 16\\)\n\\(H_3: (2952 \\bmod 13)+23 = 24\\)", tone="done", emphasis=True, font_size=12)
+    c.node("slot2", 160, 392, 200, 48, "\\(H_0: (348\\bmod 5)+0 = 3\\)\n\\(H_1: (348\\bmod 7)+5 = 10\\)", tone="active", emphasis=True, font_size=12)
+    c.node("slot3", 448, 392, 224, 48, "\\(H_2: (2952\\bmod 11)+12 = 16\\)\n\\(H_3: (2952\\bmod 13)+23 = 24\\)", tone="violet", emphasis=True, font_size=12)
     c.connect("e_x2_s", "xor2", "slot2", tone="fg")
     c.connect("e_x3_s", "xor3", "slot3", tone="fg")
 
@@ -169,55 +192,37 @@ def build_07_engram_gate_disambig() -> None:
     """11-engram-gate-disambig.drawio：多头碰撞隔离与上下文门控动态消歧。"""
     c = DrawioCanvas(page_name="engram-gate-disambig", diagram_id="ds-07-engram-gate-disambig", width=688)
 
-    c.group("ga", 0, 8, 336, 120, "语境 A：中国的首 (308, 12, 88)", tone="active", dashed=False)
-    c.node("ca_h", 16, 40, 128, 72, "隐状态 \\(h_t^A\\)\n含“中国”语境", tone="neutral", emphasis=True, font_size=12)
-    c.node("ca_hash", 160, 40, 160, 72, "3-gram \\(h_3 = 2952\\)\n槽位 \\(H_2=16,\\; H_3=24\\)", tone="active", font_size=12)
+    c.group("ga", 0, 8, 336, 104, "语境 A：中国的首 \\((308, 12, 88)\\)", tone="active", dashed=False)
+    c.node("ca_h", 16, 40, 128, 56, "隐状态 \\(h_t^A\\)\n“中国”语境", tone="neutral", emphasis=True, font_size=12)
+    c.node("ca_hash", 160, 40, 160, 56, "3-gram \\(h_3=2952\\)\n\\(H_2=16,\\; H_3=24\\)", tone="active", font_size=12)
 
-    c.group("gb", 352, 8, 336, 120, "语境 B：新任的首 (729, 12, 88)", tone="highlight", dashed=False)
-    c.node("cb_hash", 368, 40, 160, 72, "3-gram \\(h'_3 = 6397\\)\n槽位 \\(H_2=18,\\; H_3=24\\)", tone="highlight", font_size=12)
-    c.node("cb_h", 544, 40, 128, 72, "隐状态 \\(h_t^B\\)\n含“新任”语境", tone="neutral", emphasis=True, font_size=12)
+    c.group("gb", 352, 8, 336, 104, "语境 B：新任的首 \\((729, 12, 88)\\)", tone="highlight", dashed=False)
+    c.node("cb_hash", 368, 40, 160, 56, "3-gram \\(h'_3=6397\\)\n\\(H_2=18,\\; H_3=24\\)", tone="highlight", font_size=12)
+    c.node("cb_h", 544, 40, 128, 56, "隐状态 \\(h_t^B\\)\n“新任”语境", tone="neutral", emphasis=True, font_size=12)
 
-    c.node(
-        "mem_box",
-        160,
-        152,
-        368,
-        96,
-        "多头桶共享内存：局部碰撞与互补\n头 3（\\(\\bmod 13\\)）：均命中槽 \\(24\\)，读出特征混杂\n头 2（\\(\\bmod 11\\)）：A 落 \\(16\\)、B 落 \\(18\\) 各自隔离",
-        tone="neutral",
-        dashed=True,
-        font_size=12,
-    )
-    c.connect("e_am", "ca_hash", "mem_box", tone="fg", ortho=False, exit_xy=(0.5, 1.0), entry_xy=(80 / 368, 0.0))
-    c.connect("e_bm", "cb_hash", "mem_box", tone="fg", ortho=False, exit_xy=(0.5, 1.0), entry_xy=(288 / 368, 0.0))
+    # 桶内存槽位可视化，替代整段文本说明
+    c.group("mem_box", 120, 136, 448, 120, "多头共享桶内存（互异素数局部碰撞隔离）", tone="neutral", dashed=True)
+    c.text("h2_lbl", 128, 168, 136, 32, "Head 2 (\\(\\bmod\\; 11\\))", size=12, tone="fg", align="left", bold=True)
+    c.node("h2_s16", 272, 168, 128, 32, "槽 16（A 独享）", tone="violet", emphasis=True, font_size=12)
+    c.node("h2_s18", 416, 168, 128, 32, "槽 18（B 独享）", tone="highlight", font_size=12)
+    c.text("h3_lbl", 128, 212, 136, 32, "Head 3 (\\(\\bmod\\; 13\\))", size=12, tone="fg", align="left", bold=True)
+    c.node("h3_s24", 272, 208, 272, 36, "槽 24（A / B 碰撞 · 特征混杂）", tone="highlight", dashed=True, emphasis=True, font_size=12)
 
-    c.node(
-        "gate_a",
-        0,
-        272,
-        336,
-        104,
-        "语境 A 门控放行\n\\(K_t^A = W_K e_t^A\\) 与 \\(h_t^A\\) 点积呈正对齐\n\\(\\alpha_t^A = \\sigma(\\dots) \\to 1\\)：高权重放行 \\(V_t\\)",
-        tone="done",
-        emphasis=True,
-        font_size=12,
-    )
-    c.node(
-        "gate_b",
-        352,
-        272,
-        336,
-        104,
-        "语境 B 门控抑噪\n若头 3 碰撞污染使 \\(K_t^B\\) 偏离 \\(h_t^B\\)\n\\(\\alpha_t^B = \\sigma(\\dots) \\to 0\\)：调低权重屏蔽噪声",
-        tone="highlight",
-        dashed=True,
-        font_size=12,
-    )
+    c.connect("e_am", "ca_hash", "mem_box", tone="fg", exit_xy=(0.5, 1.0), entry_xy=(120 / 448, 0.0))
+    c.connect("e_bm", "cb_hash", "mem_box", tone="fg", exit_xy=(0.5, 1.0), entry_xy=(328 / 448, 0.0))
 
-    c.connect("e_ha_g", "ca_h", "gate_a", tone="fg", ortho=False, exit_xy=(0.5, 1.0), entry_xy=(80 / 336, 0.0))
-    c.connect("e_ma_g", "mem_box", "gate_a", tone="fg", ortho=False, exit_xy=(80 / 368, 1.0), entry_xy=(240 / 336, 0.0))
-    c.connect("e_mb_g", "mem_box", "gate_b", tone="fg", ortho=False, exit_xy=(288 / 368, 1.0), entry_xy=(96 / 336, 0.0))
-    c.connect("e_hb_g", "cb_h", "gate_b", tone="fg", ortho=False, exit_xy=(0.5, 1.0), entry_xy=(256 / 336, 0.0))
+    c.op_circle("dot_a", 152, 280, size=24, op="·", tone="violet")
+    c.op_circle("dot_b", 504, 280, size=24, op="·", tone="highlight")
+
+    c.node("gate_a", 0, 336, 336, 56, "语境 A 放行（\\(\\alpha_t^A \\to 1\\)）\n\\(K_t^A\\) 与 \\(h_t^A\\) 对齐，高权重注入 \\(V_t\\)", tone="violet", emphasis=True, font_size=12)
+    c.node("gate_b", 352, 336, 336, 56, "语境 B 抑噪（\\(\\alpha_t^B \\to 0\\)）\n碰撞污染偏离 \\(h_t^B\\)，调低权重屏蔽噪声", tone="highlight", dashed=True, font_size=12)
+
+    c.connect("e_ha_d", "ca_h", "dot_a", tone="fg", exit_xy=(0.5, 1.0), entry_xy=(0.0, 0.5))
+    c.connect("e_ma_d", "mem_box", "dot_a", tone="fg", exit_xy=(120 / 448, 1.0), entry_xy=(1.0, 0.5))
+    c.connect("e_da_g", "dot_a", "gate_a", tone="fg")
+    c.connect("e_mb_d", "mem_box", "dot_b", tone="fg", exit_xy=(328 / 448, 1.0), entry_xy=(0.0, 0.5))
+    c.connect("e_hb_d", "cb_h", "dot_b", tone="fg", exit_xy=(0.5, 1.0), entry_xy=(1.0, 0.5))
+    c.connect("e_db_g", "dot_b", "gate_b", tone="fg")
 
     out = POSTS_ROOT / "07-engram" / "diagrams" / "11-engram-gate-disambig.drawio"
     c.save(out, strict=True, build_svg=True)
@@ -227,74 +232,61 @@ def build_07_engram_layer() -> None:
     """11-engram-layer.drawio：左列 V4.1 L1/L14 层内顺序 + 右列 K [5120]=4d 与 V [1280]=1d 严格 4:1 比例。"""
     c = DrawioCanvas(page_name="engram-layer", diagram_id="ds-07-engram-layer", width=688)
 
-    # 左列：V4.1 L1 / L14 层内注入顺序（x=0..176）
-    c.group("g_left", 0, 8, 176, 416, "V4.1 L1 / L14 注入点", tone="neutral", dashed=False)
-    c.node("l_post", 16, 40, 144, 48, "上层 mhc_post\n输出 4 路状态", tone="done", font_size=12)
-    c.node("l_h4", 16, 104, 144, 48, "\\(H_t \\in \\mathbb{R}^{T \\times 4 \\times d}\\)\n四分支残差张量", tone="neutral", emphasis=True, font_size=12)
-    c.node("l_eng", 16, 176, 144, 48, "Engram 原位更新\n\\(H'_t = H_t + \\alpha_t \\odot V_t\\)", tone="highlight", emphasis=True, font_size=12)
-    c.node("l_pre", 16, 248, 144, 48, "本层 mhc_pre\n聚合 \\(4d \\to 1d\\)", tone="done", font_size=12)
-    c.node("l_h1", 16, 312, 144, 32, "\\([T, d]\\) 单流激活", tone="neutral", font_size=12)
-    c.node("l_attn", 16, 360, 144, 48, "本层 \\(\\text{Attn} \\to \\text{MoE}\\)", tone="active", emphasis=True, font_size=12)
+    # 左列：V4.1 L1 / L14 层内注入顺序（vstack + wrap_group）
+    left_ids = c.vstack(
+        16,
+        48,
+        [
+            ("l_post", "上层 mhc_post\n输出 4 路状态", "violet", {"h": 40}),
+            ("l_h4", "\\(H_t \\in \\mathbb{R}^{T \\times 4 \\times d}\\)", "neutral", {"h": 40, "emphasis": True}),
+            ("l_eng", "Engram 注入\n\\(H'_t = H_t + \\alpha_t \\odot V_t\\)", "highlight", {"h": 48, "emphasis": True}),
+            ("l_pre", "mhc_pre \\((4d \\to 1d)\\)", "violet", {"kind": "trapezoid", "h": 40, "flip_v": True, "size": 16}),
+            ("l_h1", "\\([T, d]\\) 单流激活", "neutral", {"h": 32}),
+            ("l_attn", "Attn \\(\\to\\) MoE", "active", {"h": 48, "emphasis": True}),
+        ],
+        gap=24,
+        default_w=144,
+        connect_chain=True,
+    )
+    c.wrap_group("g_left", left_ids, "L1 / L14 注入点", pad_x=16, pad_top=40, pad_bottom=24, tone="neutral", dashed=False)
 
-    c.connect("e_l1", "l_post", "l_h4", tone="fg")
-    c.connect("e_l2", "l_h4", "l_eng", tone="fg")
-    c.connect("e_l3", "l_eng", "l_pre", tone="fg")
-    c.connect("e_l4", "l_pre", "l_h1", tone="fg")
-    c.connect("e_l5", "l_h1", "l_attn", tone="fg")
+    # 右列：Engram 模块投影、4:1 比例块与门控写回（x=208..688）
+    c.group("g_right", 208, 8, 480, 440, "Engram wkv 4:1 投影与门控写回", tone="neutral", dashed=True)
+    c.frustum_lines("fr_eng", c.bbox("l_eng"), c.bbox("g_right"), tone="muted", dashed=True)
 
-    # 右列：Engram 模块投影、4:1 比例块与门控写回（x=192..688）
-    c.group("g_right", 192, 8, 496, 416, "Engram 模块投影与 4:1 门控写回", tone="neutral", dashed=True)
-    c.node("in_h", 208, 40, 200, 48, "HC 多流 \\(H_t\\)\n\\([B, T, 4, 1280]\\)", tone="neutral", emphasis=True, font_size=12)
-    c.node("in_e", 424, 40, 248, 48, "多头查表拼接 \\(e_t\\)\n\\([B, T, d_{\\text{eng}}]\\)", tone="active", emphasis=True, font_size=12)
+    c.node("in_h", 232, 40, 176, 48, "HC 多流 \\(H_t\\)\n\\([B, T, 4, 1280]\\)", tone="neutral", emphasis=True, font_size=12)
+    c.datastore("in_e", 448, 32, 224, 56, "查表拼接 \\(e_t\\) \\([B, T, d_{\\text{eng}}]\\)", tone="violet", bold=True, font_size=12)
 
-    c.node("proj", 424, 104, 248, 40, "合并投影 \\(\\text{wkv}: e_t \\to (M+1)d = 5d\\)", tone="active", font_size=12)
+    c.trapezoid("proj", 448, 104, 224, 40, "\\(\\text{wkv}: d_{\\text{eng}} \\to 5d\\)", tone="active", size=16, font_size=12)
     c.connect("e_p1", "in_e", "proj", tone="fg")
 
     # 严格 4:1 视觉宽度比：K 占 4 格共 192px (4 * 48px = 5120)，V 占 1 格共 48px (1280)
-    c.group("g_ratio", 208, 160, 464, 96, "", tone="neutral", dashed=True)
-    c.text("g_ratio_lbl", 216, 164, 232, 24, "\\(K / V\\) 严格 \\(4:1\\) 比例（\\(d=1280\\)）", size=12, tone="fg", align="left", bold=True)
+    c.group("g_ratio", 232, 160, 440, 96, "", tone="neutral", dashed=True)
+    c.text("g_ratio_lbl", 240, 164, 184, 24, "\\(K / V = 4:1\\)（\\(d=1280\\)）", size=12, tone="fg", align="left", bold=True)
     for m in range(4):
-        c.node(f"k_stream_{m}", 224 + m * 48, 192, 48, 40, f"\\(K_{m}\\)\n1280", tone="active", font_size=12)
-    c.text("k_bracket", 272, 232, 160, 24, "\\(W_K e_t: 4d = 5120\\)", size=12, tone="fg", align="left")
-    c.text("v_bracket", 488, 192, 104, 40, "\\(W_V e_t\\):\n\\(1d = 1280\\)", size=12, tone="fg", align="right")
-    c.node("v_stream", 600, 192, 48, 40, "\\(V_t\\)\n1280", tone="highlight", emphasis=True, font_size=12)
+        c.node(f"k_stream_{m}", 248 + m * 48, 192, 48, 40, f"\\(K_{m}\\)\n1280", tone="active", font_size=12)
+    c.text("k_bracket", 296, 232, 160, 24, "\\(W_K e_t: 4d = 5120\\)", size=12, tone="fg", align="left")
+    c.text("v_bracket", 496, 192, 104, 40, "\\(W_V e_t\\):\n\\(1d = 1280\\)", size=12, tone="fg", align="right")
+    c.node("v_stream", 608, 192, 48, 40, "\\(V_t\\)\n1280", tone="highlight", emphasis=True, font_size=12)
 
     c.connect("e_pk", "proj", "k_stream_3", tone="fg", exit_xy=(0.15, 1.0), entry_xy=(0.5, 0.0))
     c.connect("e_pv", "proj", "v_stream", tone="fg", exit_xy=(5 / 6, 1.0), entry_xy=(0.5, 0.0))
 
-    # 门控与调制
-    c.node(
-        "gate",
-        208,
-        272,
-        248,
-        64,
-        "门控点积与开方压缩\n\\(z = \\langle \\mathrm{RN}(H_t), \\mathrm{RN}(K_t) \\rangle / \\sqrt{d}\\)\n\\(\\alpha_t = \\sigma(\\operatorname{sign}(z)\\sqrt{|z|})\\)",
-        tone="active",
-        font_size=12,
-    )
-    c.node("mul", 480, 272, 192, 64, "门控加权共享值\n\\(\\alpha_t \\odot V_t \\to [B, T, 4, 1280]\\)", tone="highlight", font_size=12)
+    # 门控点积 + ⊗ 调制 + ⊕ 写回（统一 24x24 算子圆并与箱体中心对齐）
+    c.node("gate", 232, 272, 192, 56, "门控压缩\n\\(\\alpha_t = \\sigma(\\operatorname{sgn}(z)\\sqrt{|z|})\\)", tone="active", font_size=12)
+    c.op_circle("mul_op", 480, 288, size=24, op="mul", tone="highlight")
+    c.node("conv_note", 232, 376, 192, 40, "论文：\\(+\\operatorname{SiLU}(\\operatorname{ShortConv})\\)\nV4.1：移除无状态卷积", tone="neutral", dashed=True, font_size=12)
+    c.op_circle("add_op", 480, 384, size=24, op="add", tone="violet")
+    c.node("res_add", 544, 376, 128, 40, "写回 4 路流\n\\(H'_t = H_t + \\alpha_t\\odot V_t\\)", tone="violet", emphasis=True, font_size=12)
 
-    c.connect("e_hg", "in_h", "gate", tone="fg", exit_xy=(0.0, 0.5), entry_xy=(0.0, 0.5), points=[(200, 64), (200, 304)])
-    c.connect("e_kg", "k_stream_0", "gate", tone="fg", exit_xy=(0.5, 1.0), entry_xy=(40 / 248, 0.0))
-    c.connect("e_gm", "gate", "mul", tone="fg")
-    c.connect("e_vm", "v_stream", "mul", tone="fg", exit_xy=(0.5, 1.0), entry_xy=(144 / 192, 0.0))
-
-    # ShortConv 演进分支与写回
-    c.node(
-        "conv_note",
-        208,
-        360,
-        248,
-        48,
-        "论文：\\(+ \\operatorname{SiLU}(\\operatorname{ShortConv}(\\tilde{V}_t))\\)\nV4.1 线上：无状态化移除卷积",
-        tone="neutral",
-        dashed=True,
-        font_size=12,
-    )
-    c.node("res_add", 480, 360, 192, 48, "残差写回 4 路流\n\\(H'_t = H_t + \\alpha_t \\odot V_t\\)", tone="done", emphasis=True, font_size=12)
-    c.connect("e_mr", "mul", "res_add", tone="fg")
-    c.connect("e_cr", "conv_note", "res_add", tone="muted", dashed=True)
+    c.connect("e_hg", "in_h", "gate", tone="fg", exit_xy=(0.0, 0.5), entry_xy=(0.0, 0.5))
+    c.connect("e_ha", "in_h", "add_op", tone="fg", exit_xy=(0.0, 1 / 3), entry_xy=(0.5, 1.0), points=[(216, 56), (216, 432)])
+    c.connect("e_kg", "k_stream_0", "gate", tone="fg", exit_xy=(0.5, 1.0), entry_xy=(40 / 192, 0.0))
+    c.connect("e_gm", "gate", "mul_op", tone="fg")
+    c.connect("e_vm", "v_stream", "mul_op", tone="fg", exit_xy=(0.5, 1.0), entry_xy=(1.0, 0.5))
+    c.connect("e_ma", "mul_op", "add_op", tone="fg")
+    c.connect("e_cr", "conv_note", "add_op", tone="muted", dashed=True)
+    c.connect("e_ao", "add_op", "res_add", tone="fg")
 
     out = POSTS_ROOT / "07-engram" / "diagrams" / "11-engram-layer.drawio"
     c.save(out, strict=True, build_svg=True)
@@ -310,31 +302,29 @@ def build_07_shortconv_dilation() -> None:
 
     # 上组：标准因果卷积 delta=1（相邻重叠）
     c.group("g_std", 0, 8, 688, 160, "标准因果 1D 卷积（\\(\\delta=1, k=4\\)）：步长紧邻，相邻 N-gram 窗口大量重叠", tone="neutral", dashed=False)
-    for ti, tok in enumerate(tokens):
-        c.node(f"tok_t_{ti}", x0 + ti * pitch, 40, slot_w, 32, tok, tone="neutral", font_size=12)
+    c.token_pills("tok_t", x0, 40, tokens, slot_w=slot_w, gap=gap, pill_h=32)
     c.node("grp_t_0", x0 + 3 * pitch, 88, 4 * slot_w + 3 * gap, 32, "窗口 A：[\\(t-6 \\dots t-3\\)]", tone="active", dashed=True, font_size=12)
     c.node("grp_t_1", x0 + 6 * pitch, 128, 4 * slot_w + 3 * gap, 32, "窗口 B：[\\(t-3 \\dots t\\)] 重复覆盖 \\(t-3\\)", tone="highlight", dashed=True, font_size=12)
 
     # 中组：Engram 空洞因果卷积 delta=3（零重叠抽头与卷积核手算）
-    c.group("g_dil", 0, 184, 688, 168, "Engram 空洞因果卷积（\\(\\delta=3, k=4\\)）：左补零后步幅对齐 \\(3\\)-gram 边界，零重叠覆盖", tone="neutral", dashed=False)
-    taps = {0: ("\\(w_3 x_{t-9}\\)", "highlight"), 3: ("\\(w_2 x_{t-6}\\)", "highlight"), 6: ("\\(w_1 x_{t-3}\\)", "highlight"), 9: ("\\(w_0 x_t\\)", "done")}
-    for ti, tok in enumerate(tokens):
-        is_tap = ti in taps
-        tone = taps[ti][1] if is_tap else "neutral"
-        c.node(f"tok_b_{ti}", x0 + ti * pitch, 216, slot_w, 32, tok, tone=tone, emphasis=is_tap, font_size=12)
+    c.group("g_dil", 0, 184, 688, 168, "Engram 空洞因果卷积（\\(\\delta=3, k=4\\)）：左补零后步幅对齐 \\(3\\)-gram 边界", tone="neutral", dashed=False)
+    taps = {0: ("\\(w_3 x_{t-9}\\)", "highlight"), 3: ("\\(w_2 x_{t-6}\\)", "highlight"), 6: ("\\(w_1 x_{t-3}\\)", "highlight"), 9: ("\\(w_0 x_t\\)", "violet")}
+    tap_tones = [taps[i][1] if i in taps else "neutral" for i in range(len(tokens))]
+    c.token_pills("tok_b", x0, 216, tokens, slot_w=slot_w, gap=gap, pill_h=32, tones=tap_tones, active_indices=taps.keys())
     for idx, (lbl, tone) in taps.items():
         c.node(f"tap_{idx}", x0 + idx * pitch - 8, 264, slot_w + 16, 32, lbl, tone=tone, emphasis=True, font_size=12)
         c.connect(f"e_tap_{idx}", f"tok_b_{idx}", f"tap_{idx}", tone="fg")
-    c.text("dil_eq", 16, 312, 656, 32, "位置 \\(t\\) 卷积累加（前缀不足处左补 \\(0\\)）：\\(y_t = w_0 x_t + w_1 x_{t-3} + w_2 x_{t-6} + w_3 x_{t-9}\\)", size=12, tone="fg", align="center", bold=True)
+    c.text("dil_eq", 16, 312, 656, 32, "左补 \\(0\\) 后位置 \\(t\\) 累加：\\(y_t = w_0 x_t + w_1 x_{t-3} + w_2 x_{t-6} + w_3 x_{t-9}\\)", size=12, tone="fg", align="center", bold=True)
 
-    # 下组：Depthwise 通道分离 vs V4.1 移除对照
-    c.node(
+    # 下组：Depthwise 堆叠叠卡（bg2 顶边对齐 y=368）vs V4.1 移除对照
+    c.stacked_cards(
         "dw_card",
-        0,
-        368,
-        336,
-        72,
-        "Depthwise（\\(\\text{groups}=d\\)）通道分离\n核重排为 \\(d\\) 条独立 \\([4]\\) 一维滤波器\n参数由 \\(4d^2\\) 降至 \\(4d\\)（缩减 \\(d\\) 倍）",
+        8,
+        384,
+        320,
+        64,
+        "Depthwise (\\(\\text{groups}=d\\)) 通道分离\n\\(d\\) 条独立 \\([4]\\) 滤波器 · 参数 \\(4d^2 \\to 4d\\)",
+        layers=3,
         tone="active",
         font_size=12,
     )
@@ -343,8 +333,8 @@ def build_07_shortconv_dilation() -> None:
         352,
         368,
         336,
-        72,
-        "V4.1 线上推理移除了 ShortConv\n原因：Decode 跨步滑窗带来历史张量状态维护成本\n改为无状态查表 \\(+\\) \\(\\text{wkv}\\)，原生支持图内执行",
+        80,
+        "V4.1 移除 ShortConv\n无 Decode 跨步状态维护，原生支持图内执行",
         tone="neutral",
         dashed=True,
         font_size=12,
@@ -384,29 +374,43 @@ def build_07_engram_runtime() -> None:
         ticks=[(0, "0ms"), (2.5, "2.5ms"), (5.0, "5.0ms"), (7.5, "7.5ms"), (10.0, "10.0ms")],
     )
 
-    c.group("hw_note", 0, 200, 688, 160, "掩盖条件 \\(t_{\\text{prefetch}} \\le t_{L_0}\\) 与双硬件分布式查表架构", tone="neutral", dashed=True)
-    c.node(
+    c.group("hw_note", 0, 200, 688, 192, "掩盖条件 \\(t_{\\text{prefetch}} \\le t_{L_0}\\) 与双硬件存储总线", tone="neutral", dashed=True)
+    c.datastore("host_tbl", 16, 240, 104, 136, "Host DDR\n196B 大表\nINT8 / MXFP8", tone="neutral", bold=True, font_size=12)
+
+    gx, gy = c.place_right_of("host_tbl", gap=80, w=208, h=56, valign="top")
+    c.stacked_cards(
         "gpu_pf",
-        16,
-        240,
-        320,
-        104,
-        "NVIDIA GPU（vLLM）\n• Pinned / \\(\\text{cuMem FABRIC}\\) / HBM 对称内存\n• 超 \\(4096\\) token 回退行内直查，\\(\\ge 128\\) 槽切 A2A\n• \\(\\text{EngramPool}\\) 经 \\(\\text{NVLink / IBGDA RDMA}\\) 跨引擎",
+        gx,
+        gy,
+        208,
+        56,
+        "NVIDIA GPU · vLLM\nPinned / cuMem · >4K 回退直查",
+        layers=2,
         tone="active",
-        align="left",
         font_size=12,
     )
-    c.node(
+    gpx, gpy = c.place_right_of("gpu_pf", gap=56, w=208, h=56, valign="center")
+    c.node("gpu_pool", gpx, gpy, 208, 56, "EngramPool 卸载池\nNVLink / IBGDA RDMA", tone="active", dashed=True, font_size=12)
+
+    nx, ny = c.place_below("gpu_pf", gap=24, w=208, h=56, align="left")
+    c.stacked_cards(
         "npu_pf",
-        352,
-        240,
-        320,
-        104,
-        "Huawei Ascend NPU（vllm-ascend）\n• \\(\\text{aclrtHostRegisterV2}\\) 按 \\(2^{22}\\) 行切片映 UVA\n• Triton 经 HCCS 零拷贝直读（INT8 / MXFP8）\n• FULL 图支持单调产槽位，A3 走 \\(\\text{SharedPool / Hixl}\\)",
-        tone="done",
-        align="left",
+        nx,
+        ny,
+        208,
+        56,
+        "Huawei Ascend · NPU\naclrtHostRegisterV2 (UVA)",
+        layers=2,
+        tone="violet",
         font_size=12,
     )
+    npx, npy = c.place_right_of("npu_pf", gap=56, w=208, h=56, valign="center")
+    c.node("npu_pool", npx, npy, 208, 56, "SharedPool / Hixl\nTriton 零拷贝 + FULL 图", tone="violet", dashed=True, font_size=12)
+
+    c.connect("e_hg", "host_tbl", "gpu_pf", tone="fg", label="PCIe", exit_xy=(1.0, 0.2), entry_xy=(0.0, 0.5))
+    c.connect("e_hn", "host_tbl", "npu_pf", tone="fg", label="HCCS", exit_xy=(1.0, 0.8), entry_xy=(0.0, 0.5))
+    c.connect("e_gp", "gpu_pf", "gpu_pool", tone="active")
+    c.connect("e_np", "npu_pf", "npu_pool", tone="violet")
 
     out = POSTS_ROOT / "07-engram" / "diagrams" / "11-engram-runtime.drawio"
     c.save(out, strict=True, build_svg=True)

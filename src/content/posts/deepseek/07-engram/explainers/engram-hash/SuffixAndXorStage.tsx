@@ -174,6 +174,9 @@ export default function SuffixAndXorStage({ state, beat, playToken }: Props) {
 
     return (
       <div className="engram-stage">
+        <p className="engram-stage-note">
+          下方编号为 CompressedTokenizer 归一后的规范 ID（“中国” → 308，“的” → 12，“首” → 88）
+        </p>
         <div className="engram-seq-block">
           {/* 上方：2-gram 标签与向下开口括号（指向上方蓝色标签，与 3-gram 零交叉） */}
           <div className="engram-bracket-labels">
@@ -394,6 +397,19 @@ export default function SuffixAndXorStage({ state, beat, playToken }: Props) {
 
   return (
     <div className="engram-stage">
+      <div className="engram-mult-bar wisp-kit-tone" data-tone="highlight">
+        <span>离线奇乘子（不训练、按层独立、按回看位置分配）</span>
+        <span>
+          <RichText
+            text={
+              "$\\text{RNG}(10007 \\cdot l) \\to m_k = 2r_k + 1 < \\lfloor (2^{63}-1)/V' \\rfloor$"
+            }
+          />
+        </span>
+        <span className="engram-tag">
+          <RichText text={'演示缩放：$m=[3,7,9]$'} />
+        </span>
+      </div>
       <div className="engram-xor-grid">
         {/* 左栏：2-gram 异或生成 h_2 */}
         <section className="engram-panel" aria-label="2-gram 滚动异或推导">

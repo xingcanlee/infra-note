@@ -7,7 +7,7 @@ import subprocess
 from pathlib import Path
 from typing import Any, Sequence
 
-from .tokens import BASE_LIGHT, CANVAS_W, MAX_HUES, WISP_SCRIPT, non_slate_hues, resolve_tone, snap8, snap8_pos
+from .tokens import BASE_LIGHT, CANVAS_W, FONT_SANS, MAX_HUES, WISP_SCRIPT, non_slate_hues, resolve_tone, snap8, snap8_pos
 from wisp_diagram_lib.lint import lint_drawio  # type: ignore[import-not-found]
 from wisp_diagram_lib.xmlfmt import format_xml  # type: ignore[import-not-found]
 
@@ -45,6 +45,7 @@ class DrawioCanvas:
         self.diagram_id = diagram_id
         self.width = snap8(width)
         self._cells: list[str] = []
+        self._boxes: dict[str, tuple[int, int, int, int]] = {}
         self._used_ids: set[str] = {"0", "1"}
         self._used_tones: list[str] = []
         self._has_math = False
@@ -66,6 +67,8 @@ class DrawioCanvas:
         return cid
 
     def _track_tone(self, tone: str | None) -> tuple[str, str]:
+        if tone in ("fg", "muted", "subtle"):
+            return BASE_LIGHT["surface"], BASE_LIGHT[tone]
         if tone:
             self._used_tones.append(tone)
         _, fill, stroke = resolve_tone(tone)
@@ -86,16 +89,279 @@ class DrawioCanvas:
         w: float,
         h: float,
         already_html: bool = False,
+        insert_idx: int | None = None,
     ) -> str:
         x8, y8 = snap8(x), snap8(y)
         w8, h8 = max(8, int(round(w))) if w < 8 else snap8_pos(w), max(8, int(round(h))) if h < 8 else snap8_pos(h)
+        self._boxes[cid] = (x8, y8, w8, h8)
         val = self._check_value(value, already_html=already_html)
-        self._cells.append(
+        cell_xml = (
             f'<mxCell id="{_attr(cid)}" value="{_attr(val)}" style="{_attr(style)}" vertex="1" parent="1">'
             f'<mxGeometry x="{x8}" y="{y8}" width="{w8}" height="{h8}" as="geometry"/>'
             f"</mxCell>"
         )
+        if insert_idx is None:
+            self._cells.append(cell_xml)
+        else:
+            self._cells.insert(insert_idx, cell_xml)
         return cid
+
+    # ------------------------------------------------------------ 相对布局与自适应估算
+
+    def bbox(self, cid: str) -> tuple[int, int, int, int]:
+        """返回已绘制图元 (x, y, w, h)。"""
+        if cid not in self._boxes:
+            raise KeyError(f"未知图元 id: {cid!r}")
+        return self._boxes[cid]
+
+    def center(self, cid: str) -> tuple[float, float]:
+        """返回已绘制图元中心点 (cx, cy)。"""
+        x, y, w, h = self.bbox(cid)
+        return x + w / 2.0, y + h / 2.0
+
+    def estimate_box_size(
+        self,
+        text: str,
+        font_size: int = 12,
+        min_w: int = 64,
+        min_h: int = 32,
+        pad_x: int = 24,
+        pad_y: int = 16,
+    ) -> tuple[int, int]:
+        """按中英文混排与 LaTeX 剥离后的可见字宽估算 8px 吸附尺寸。"""
+        fs = _normalize_fs(font_size)
+        clean = re.sub(r"\\(?:text|operatorname|mathrm|mathbf)\{([^}]*)\}", r"\1", text)
+        clean = clean.replace(r"\(", "").replace(r"\)", "").replace(r"\;", " ")
+        clean = re.sub(r"\\[A-Za-z]+", "m", clean).replace("{", "").replace("}", "")
+        lines = [ln.strip() for ln in clean.replace("<br>", "\n").split("\n") if ln.strip()] or [""]
+        max_px = 0.0
+        for ln in lines:
+            line_px = sum(fs if ord(ch) > 0x7F else fs * 0.58 for ch in ln)
+            if line_px > max_px:
+                max_px = line_px
+        w = min(self.width, snap8_pos(max(min_w, max_px + pad_x)))
+        line_h = int(round(fs * 1.35))
+        h = snap8_pos(max(min_h, len(lines) * line_h + pad_y))
+        return w, h
+
+    def place_below(
+        self,
+        ref_id: str,
+        gap: int = 24,
+        w: int | None = None,
+        h: int | None = None,
+        align: str = "center",
+    ) -> tuple[int, int]:
+        """计算置于 ref_id 正下方（左/中/右对齐）且吸附 8px 网格的 (x, y)。"""
+        rx, ry, rw, _rh = self.bbox(ref_id)
+        tw = snap8_pos(w if w is not None else rw)
+        if align == "left":
+            tx = rx
+        elif align == "right":
+            tx = rx + rw - tw
+        else:
+            tx = snap8(rx + (rw - tw) / 2.0)
+        return tx, snap8(ry + _rh + gap)
+
+    def place_above(
+        self,
+        ref_id: str,
+        gap: int = 24,
+        w: int | None = None,
+        h: int | None = None,
+        align: str = "center",
+    ) -> tuple[int, int]:
+        """计算置于 ref_id 正上方（左/中/右对齐）且吸附 8px 网格的 (x, y)。"""
+        rx, ry, rw, _rh = self.bbox(ref_id)
+        tw = snap8_pos(w if w is not None else rw)
+        th = snap8_pos(h if h is not None else _rh)
+        if align == "left":
+            tx = rx
+        elif align == "right":
+            tx = rx + rw - tw
+        else:
+            tx = snap8(rx + (rw - tw) / 2.0)
+        return tx, snap8(ry - gap - th)
+
+    def place_right_of(
+        self,
+        ref_id: str,
+        gap: int = 24,
+        w: int | None = None,
+        h: int | None = None,
+        valign: str = "center",
+    ) -> tuple[int, int]:
+        """计算置于 ref_id 右侧（上/中/下对齐）且吸附 8px 网格的 (x, y)。"""
+        rx, ry, rw, rh = self.bbox(ref_id)
+        th = snap8_pos(h if h is not None else rh)
+        if valign == "top":
+            ty = ry
+        elif valign == "bottom":
+            ty = ry + rh - th
+        else:
+            ty = snap8(ry + (rh - th) / 2.0)
+        return snap8(rx + rw + gap), ty
+
+    def place_left_of(
+        self,
+        ref_id: str,
+        gap: int = 24,
+        w: int | None = None,
+        h: int | None = None,
+        valign: str = "center",
+    ) -> tuple[int, int]:
+        """计算置于 ref_id 左侧（上/中/下对齐）且吸附 8px 网格的 (x, y)。"""
+        rx, ry, rw, rh = self.bbox(ref_id)
+        tw = snap8_pos(w if w is not None else rw)
+        th = snap8_pos(h if h is not None else rh)
+        if valign == "top":
+            ty = ry
+        elif valign == "bottom":
+            ty = ry + rh - th
+        else:
+            ty = snap8(ry + (rh - th) / 2.0)
+        return snap8(rx - gap - tw), ty
+
+    def _emit_layout_item(
+        self,
+        spec: dict[str, Any] | tuple[Any, ...],
+        x: float,
+        y: float,
+        default_w: int,
+        default_h: int,
+        font_size: int = 12,
+    ) -> str:
+        if isinstance(spec, tuple):
+            cid, label, tone = spec[0], spec[1], spec[2]
+            extra: dict[str, Any] = dict(spec[3]) if len(spec) > 3 else {}
+        else:
+            extra = dict(spec)
+            cid = extra.pop("id")
+            label = extra.pop("label", "")
+            tone = extra.pop("tone", "neutral")
+        kind = extra.pop("kind", "node")
+        w = extra.pop("w", default_w)
+        h = extra.pop("h", default_h)
+        if kind == "trapezoid":
+            return self.trapezoid(cid, x, y, w, h, label, tone=tone, font_size=extra.pop("font_size", font_size), **extra)
+        if kind == "datastore":
+            return self.datastore(cid, x, y, w, h, label, tone=tone, font_size=extra.pop("font_size", font_size), **extra)
+        if kind == "op_circle":
+            size = extra.pop("size", min(w, h, 24))
+            return self.op_circle(cid, x, y, size=size, tone=tone, font_size=extra.pop("font_size", font_size), **extra)
+        if kind == "stacked_cards":
+            self.stacked_cards(cid, x, y, w, h, label, tone=tone, font_size=extra.pop("font_size", font_size), **extra)
+            return cid
+        return self.node(cid, x, y, w, h, label, tone=tone, font_size=extra.pop("font_size", font_size), **extra)
+
+    def vstack(
+        self,
+        x: float,
+        y: float,
+        items: Sequence[dict[str, Any] | tuple[Any, ...]],
+        gap: int = 16,
+        default_w: int = 152,
+        default_h: int = 40,
+        connect_chain: bool = False,
+        conn_tone: str = "fg",
+        align: str = "center",
+    ) -> list[str]:
+        """垂直堆叠一组节点（支持 node/trapezoid/datastore/op_circle/stacked_cards），可选自动串联箭头。"""
+        ids: list[str] = []
+        col_x = snap8(x)
+        cur_y = snap8(y)
+        col_w = snap8_pos(default_w)
+        for idx, item in enumerate(items):
+            iw = item.get("w", col_w) if isinstance(item, dict) else (item[3].get("w", col_w) if len(item) > 3 else col_w)
+            ix = col_x if align == "left" else (col_x + col_w - iw if align == "right" else snap8(col_x + (col_w - iw) / 2.0))
+            cid = self._emit_layout_item(item, ix, cur_y, col_w, default_h)
+            _, iy, _, ih = self.bbox(cid)
+            ids.append(cid)
+            cur_y = snap8(iy + ih + gap)
+            if connect_chain and idx > 0:
+                conn_id = f"ev_{ids[idx - 1]}_{cid}"
+                while conn_id in self._used_ids:
+                    self._auto_idx += 1
+                    conn_id = f"ev_{self._auto_idx}"
+                self.connect(conn_id, ids[idx - 1], cid, tone=conn_tone)
+        return ids
+
+    def hstack(
+        self,
+        x: float,
+        y: float,
+        items: Sequence[dict[str, Any] | tuple[Any, ...]],
+        gap: int = 16,
+        default_w: int = 152,
+        default_h: int = 48,
+        connect_chain: bool = False,
+        conn_tone: str = "fg",
+        valign: str = "center",
+    ) -> list[str]:
+        """水平排列一组节点，可选自动串联箭头。"""
+        ids: list[str] = []
+        cur_x = snap8(x)
+        row_y = snap8(y)
+        row_h = snap8_pos(default_h)
+        for idx, item in enumerate(items):
+            ih = item.get("h", row_h) if isinstance(item, dict) else (item[3].get("h", row_h) if len(item) > 3 else row_h)
+            iy = row_y if valign == "top" else (row_y + row_h - ih if valign == "bottom" else snap8(row_y + (row_h - ih) / 2.0))
+            cid = self._emit_layout_item(item, cur_x, iy, default_w, row_h)
+            ix, _, iw, _ = self.bbox(cid)
+            ids.append(cid)
+            cur_x = snap8(ix + iw + gap)
+            if connect_chain and idx > 0:
+                conn_id = f"eh_{ids[idx - 1]}_{cid}"
+                while conn_id in self._used_ids:
+                    self._auto_idx += 1
+                    conn_id = f"eh_{self._auto_idx}"
+                self.connect(conn_id, ids[idx - 1], cid, tone=conn_tone)
+        return ids
+
+    def wrap_group(
+        self,
+        cid: str,
+        member_ids: Sequence[str],
+        title: str = "",
+        pad_x: int = 16,
+        pad_top: int = 40,
+        pad_bottom: int = 16,
+        tone: str | None = None,
+        dashed: bool = True,
+    ) -> str:
+        """按成员包围盒自动计算外框尺寸与坐标，并将组底框插到成员之前以免遮挡内容。"""
+        boxes = [self.bbox(m) for m in member_ids]
+        min_x = min(bx for bx, _, _, _ in boxes)
+        min_y = min(by for _, by, _, _ in boxes)
+        max_x = max(bx + bw for bx, _, bw, _ in boxes)
+        max_y = max(by + bh for _, by, _, bh in boxes)
+        gx = max(0, snap8(min_x - pad_x))
+        gy = max(0, snap8(min_y - pad_top))
+        gw = snap8_pos((max_x + pad_x) - gx)
+        gh = snap8_pos((max_y + pad_bottom) - gy)
+
+        targets = tuple(f'id="{_attr(m)}"' for m in member_ids)
+        first_idx = len(self._cells)
+        for idx, xml_cell in enumerate(self._cells):
+            if any(t in xml_cell for t in targets):
+                first_idx = idx
+                break
+
+        self._claim_id(cid)
+        if tone:
+            fill, stroke = self._track_tone(tone)
+            font_color = stroke
+        else:
+            fill, stroke = BASE_LIGHT["surface"], BASE_LIGHT["border"]
+            font_color = BASE_LIGHT["muted"]
+        style = (
+            f"rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;"
+            f"fillColor={fill};strokeColor={stroke};strokeWidth=1.25;"
+            f"{'dashed=1;' if dashed else ''}verticalAlign=top;align=left;"
+            f"spacingLeft=12;spacingTop=6;fontFamily={FONT_SANS};fontSize=12;fontStyle=1;"
+            f"fontColor={font_color};container=0;"
+        )
+        return self._add_vertex(cid, title, style, gx, gy, gw, gh, insert_idx=first_idx)
 
     def _add_raw_line(
         self,
@@ -153,7 +419,7 @@ class DrawioCanvas:
             f"rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;"
             f"fillColor={fill};strokeColor={stroke};strokeWidth=1.25;"
             f"{'dashed=1;' if dashed else ''}verticalAlign=top;align=left;"
-            f"spacingLeft=12;spacingTop=6;fontFamily=Inter;fontSize=12;fontStyle=1;"
+            f"spacingLeft=12;spacingTop=6;fontFamily={FONT_SANS};fontSize=12;fontStyle=1;"
             f"fontColor={font_color};container=0;"
         )
         return self._add_vertex(cid, title, style, x, y, w, h)
@@ -183,7 +449,7 @@ class DrawioCanvas:
             f"fillColor={fill};strokeColor={stroke};strokeWidth={sw};"
             f"{'dashed=1;dashPattern=4 4;' if dashed else ''}"
             f"align={align};verticalAlign={valign};spacing=4;"
-            f"fontFamily=Inter;fontSize={fs};{'fontStyle=1;' if bold else ''}"
+            f"fontFamily={FONT_SANS};fontSize={fs};{'fontStyle=1;' if bold else ''}"
             f"fontColor={BASE_LIGHT['fg']};"
         )
         return self._add_vertex(cid, label, style, x, y, w, h)
@@ -211,7 +477,7 @@ class DrawioCanvas:
             _, color = self._track_tone(tone)
         style = (
             f"text;html=1;whiteSpace=wrap;align={align};verticalAlign={valign};"
-            f"fontFamily=Inter;fontSize={fs};{'fontStyle=1;' if bold else ''}fontColor={color};"
+            f"fontFamily={FONT_SANS};fontSize={fs};{'fontStyle=1;' if bold else ''}fontColor={color};"
         )
         return self._add_vertex(cid, text, style, x, y, w, h)
 
@@ -230,12 +496,13 @@ class DrawioCanvas:
         arrow_end: bool = True,
         arrow_start: bool = False,
         emphasis: bool = False,
+        label_pos: str = "auto",
     ) -> str:
         self._claim_id(cid)
         if tone in ("fg", "muted"):
             stroke = BASE_LIGHT[tone]
         else:
-            _, _, stroke = self._track_tone(tone)
+            _, stroke = self._track_tone(tone)
         parts = [
             f"endArrow={'classic' if arrow_end else 'none'}",
             f"startArrow={'classic' if arrow_start else 'none'}",
@@ -251,10 +518,12 @@ class DrawioCanvas:
             parts.append(f"exitX={exit_xy[0]};exitY={exit_xy[1]};exitDx=0;exitDy=0")
         if entry_xy is not None:
             parts.append(f"entryX={entry_xy[0]};entryY={entry_xy[1]};entryDx=0;entryDy=0")
-        val = self._check_value(label) if label else ""
+
+        use_floating_lbl = bool(label and label_pos != "inline" and src in self._boxes and dst in self._boxes)
+        val = "" if use_floating_lbl else (self._check_value(label) if label else "")
         if val:
             parts.append(
-                f"fontFamily=Inter;fontSize=12;fontColor={stroke if tone not in ('fg', 'muted') else BASE_LIGHT['fg']};"
+                f"fontFamily={FONT_SANS};fontSize=12;fontColor={stroke if tone not in ('fg', 'muted') else BASE_LIGHT['fg']};"
                 f"labelBackgroundColor={BASE_LIGHT['bg']}"
             )
         style = ";".join(parts) + ";"
@@ -267,7 +536,240 @@ class DrawioCanvas:
             f'<mxGeometry relative="1" as="geometry">{pts_xml}</mxGeometry>'
             f"</mxCell>"
         )
+        if use_floating_lbl:
+            sx, sy, sw, sh = self._boxes[src]
+            dx, dy, dw, dh = self._boxes[dst]
+            scx = sx + (exit_xy[0] * sw if exit_xy else sw / 2.0)
+            scy = sy + (exit_xy[1] * sh if exit_xy else sh / 2.0)
+            dcx = dx + (entry_xy[0] * dw if entry_xy else dw / 2.0)
+            dcy = dy + (entry_xy[1] * dh if entry_xy else dh / 2.0)
+            mx, my = (scx + dcx) / 2.0, (scy + dcy) / 2.0
+            lw, lh = self.estimate_box_size(label, font_size=12, min_w=40, min_h=24, pad_x=16, pad_y=8)
+            lbl_tone = "fg" if tone in ("fg", "muted") else tone
+            if abs(dcx - scx) >= abs(dcy - scy):
+                ly = snap8(my + 4) if label_pos == "below" else snap8(my - lh - 4)
+                self.text(f"{cid}_lbl", snap8(mx - lw / 2.0), ly, lw, lh, label, size=12, tone=lbl_tone, align="center")
+            else:
+                self.text(f"{cid}_lbl", snap8(mx + 8), snap8(my - lh / 2.0), lw, lh, label, size=12, tone=lbl_tone, align="left")
         return cid
+
+    def op_circle(
+        self,
+        cid: str,
+        x: float,
+        y: float,
+        size: float = 24,
+        op: str = "add",
+        tone: str = "neutral",
+        font_size: int = 12,
+    ) -> str:
+        """论文级圆圈算子：add (⊕ orEllipse), mul (⊗ sumEllipse), 或单字符椭圆算子。"""
+        self._claim_id(cid)
+        fill, stroke = self._track_tone(tone)
+        fs = _normalize_fs(font_size)
+        shape_map = {
+            "add": ("shape=orEllipse;perimeter=ellipsePerimeter;backgroundOutline=1;", ""),
+            "xor": ("shape=orEllipse;perimeter=ellipsePerimeter;backgroundOutline=1;", ""),
+            "⊕": ("shape=orEllipse;perimeter=ellipsePerimeter;backgroundOutline=1;", ""),
+            "mul": ("shape=sumEllipse;perimeter=ellipsePerimeter;backgroundOutline=1;", ""),
+            "⊗": ("shape=sumEllipse;perimeter=ellipsePerimeter;backgroundOutline=1;", ""),
+        }
+        shape_css, auto_val = shape_map.get(op, ("ellipse;", op))
+        style = (
+            f"{shape_css}whiteSpace=wrap;html=1;fillColor={fill};strokeColor={stroke};"
+            f"strokeWidth=1.25;shadow=0;container=0;align=center;verticalAlign=middle;"
+            f"fontFamily={FONT_SANS};fontSize={fs};fontStyle=1;fontColor={BASE_LIGHT['fg']};"
+        )
+        return self._add_vertex(cid, auto_val, style, x, y, size, size)
+
+    def trapezoid(
+        self,
+        cid: str,
+        x: float,
+        y: float,
+        w: float,
+        h: float,
+        label: str = "",
+        tone: str = "active",
+        flip_v: bool = False,
+        size: float = 16,
+        font_size: int = 12,
+        bold: bool = False,
+    ) -> str:
+        """梯形投影/编码器图元，适合表示降维/升维矩阵或门控聚合。"""
+        self._claim_id(cid)
+        fill, stroke = self._track_tone(tone)
+        fs = _normalize_fs(font_size)
+        flip_css = "flipV=1;" if flip_v else ""
+        bold_css = "fontStyle=1;" if bold else ""
+        style = (
+            f"shape=trapezoid;perimeter=trapezoidPerimeter;whiteSpace=wrap;html=1;"
+            f"fixedSize=1;size={snap8(size)};{flip_css}fillColor={fill};strokeColor={stroke};"
+            f"strokeWidth=1.25;rounded=0;shadow=0;container=0;align=center;verticalAlign=middle;"
+            f"fontFamily={FONT_SANS};fontSize={fs};{bold_css}fontColor={BASE_LIGHT['fg']};"
+        )
+        return self._add_vertex(cid, label, style, x, y, w, h)
+
+    def stacked_cards(
+        self,
+        prefix: str,
+        x: float,
+        y: float,
+        w: float,
+        h: float,
+        label: str = "",
+        layers: int = 3,
+        tone: str = "active",
+        dx: float = 8,
+        dy: float = -8,
+        font_size: int = 12,
+        emphasis: bool = False,
+        bold: bool = False,
+    ) -> list[str]:
+        """多层半透明叠卡，表现 Multi-Head / 多槽位并行感，前缀 id 对应最上层前景卡。"""
+        n_layers = max(2, layers)
+        fill, stroke = self._track_tone(tone)
+        fs = _normalize_fs(font_size)
+        sw = 1.75 if emphasis else 1.25
+        ids: list[str] = []
+        for idx in range(n_layers - 1, 0, -1):
+            bid = f"{prefix}_bg{idx}"
+            self._claim_id(bid)
+            opacity = 35 if idx >= 2 else 65
+            bstyle = (
+                f"rounded=1;whiteSpace=wrap;html=1;arcSize=12;fillColor={fill};"
+                f"strokeColor={stroke};strokeWidth=1.25;opacity={opacity};shadow=0;container=0;"
+            )
+            self._add_vertex(bid, "", bstyle, x + idx * dx, y + idx * dy, w, h)
+            ids.append(bid)
+        self._claim_id(prefix)
+        bold_css = "fontStyle=1;" if bold else ""
+        fstyle = (
+            f"rounded=1;whiteSpace=wrap;html=1;arcSize=12;fillColor={fill};"
+            f"strokeColor={stroke};strokeWidth={sw};opacity=100;shadow=0;container=0;"
+            f"align=center;verticalAlign=middle;fontFamily={FONT_SANS};fontSize={fs};{bold_css}fontColor={BASE_LIGHT['fg']};"
+        )
+        self._add_vertex(prefix, label, fstyle, x, y, w, h)
+        ids.append(prefix)
+        return ids
+
+    def curly_bracket(
+        self,
+        cid: str,
+        x: float,
+        y: float,
+        w: float,
+        h: float,
+        label: str = "",
+        tone: str = "fg",
+        flip_h: bool = True,
+        font_size: int = 12,
+        label_pos: str = "right",
+    ) -> str:
+        """花括号分组标注（支持右/左/上/下标签位置）。"""
+        self._claim_id(cid)
+        _, stroke = self._track_tone(tone)
+        fs = _normalize_fs(font_size)
+        pos_css = {
+            "right": "labelPosition=right;verticalLabelPosition=middle;align=left;verticalAlign=middle",
+            "left": "labelPosition=left;verticalLabelPosition=middle;align=right;verticalAlign=middle",
+            "top": "labelPosition=center;verticalLabelPosition=top;align=center;verticalAlign=bottom",
+            "bottom": "labelPosition=center;verticalLabelPosition=bottom;align=center;verticalAlign=top",
+        }.get(label_pos, "labelPosition=right;verticalLabelPosition=middle;align=left;verticalAlign=middle")
+        style = (
+            f"shape=curlyBracket;whiteSpace=wrap;html=1;rounded=1;flipH={1 if flip_h else 0};"
+            f"{pos_css};size=0.5;fillColor=none;strokeColor={stroke};strokeWidth=1.25;"
+            f"shadow=0;container=0;fontFamily={FONT_SANS};fontSize={fs};fontColor={stroke};"
+        )
+        return self._add_vertex(cid, label, style, x, y, w, h)
+
+    def datastore(
+        self,
+        cid: str,
+        x: float,
+        y: float,
+        w: float,
+        h: float,
+        label: str = "",
+        tone: str = "neutral",
+        font_size: int = 12,
+        bold: bool = False,
+    ) -> str:
+        """圆柱存储图元，代表 Host DDR / Embedding Table / KV Store。"""
+        self._claim_id(cid)
+        fill, stroke = self._track_tone(tone)
+        fs = _normalize_fs(font_size)
+        bold_css = "fontStyle=1;" if bold else ""
+        style = (
+            f"shape=datastore;whiteSpace=wrap;html=1;fillColor={fill};strokeColor={stroke};"
+            f"strokeWidth=1.25;shadow=0;container=0;align=center;verticalAlign=middle;"
+            f"fontFamily={FONT_SANS};fontSize={fs};{bold_css}fontColor={BASE_LIGHT['fg']};"
+        )
+        return self._add_vertex(cid, label, style, x, y, w, h)
+
+    def token_pills(
+        self,
+        prefix: str,
+        x: float,
+        y: float,
+        items: list[str],
+        slot_w: float = 48,
+        gap: float = 8,
+        pill_h: float = 32,
+        tones: list[str] | None = None,
+        active_indices: set[int] | list[int] | None = None,
+        font_size: int = 12,
+    ) -> list[str]:
+        """紧凑药丸序列图元，避免手写长序列 for 循环，可选高亮激活槽位。"""
+        active_set = set(active_indices) if active_indices is not None else set()
+        ids: list[str] = []
+        pitch = slot_w + gap
+        for idx, text_val in enumerate(items):
+            cid = f"{prefix}_{idx}"
+            is_act = idx in active_set
+            tone = tones[idx] if tones is not None else ("highlight" if is_act else "neutral")
+            self.node(
+                cid,
+                x + idx * pitch,
+                y,
+                slot_w,
+                pill_h,
+                text_val,
+                tone=tone,
+                emphasis=is_act,
+                font_size=font_size,
+            )
+            ids.append(cid)
+        return ids
+
+    def frustum_lines(
+        self,
+        prefix: str,
+        src_box: tuple[float, float, float, float],
+        dst_box: tuple[float, float, float, float],
+        tone: str = "muted",
+        dashed: bool = True,
+        stroke_w: float = 1.25,
+    ) -> list[str]:
+        """两根斜向虚线展开棱锥（zoom frustum），连接宏观模块与右侧/下方详图框。"""
+        sx, sy, sw, sh = src_box
+        dx, dy, dw, dh = dst_box
+        _, stroke = self._track_tone(tone)
+        if dx >= sx + sw:
+            pairs = [((sx + sw, sy), (dx, dy)), ((sx + sw, sy + sh), (dx, dy + dh))]
+        elif sx >= dx + dw:
+            pairs = [((sx, sy), (dx + dw, dy)), ((sx, sy + sh), (dx + dw, dy + dh))]
+        elif dy >= sy + sh:
+            pairs = [((sx, sy + sh), (dx, dy)), ((sx + sw, sy + sh), (dx + dw, dy))]
+        else:
+            pairs = [((sx, sy), (dx, dy + dh)), ((sx + sw, sy), (dx + dw, dy + dh))]
+        ids: list[str] = []
+        for idx, ((x1, y1), (x2, y2)) in enumerate(pairs):
+            cid = f"{prefix}_{idx}"
+            self._claim_id(cid)
+            self._add_raw_line(cid, x1, y1, x2, y2, stroke=stroke, stroke_w=stroke_w, dashed=dashed)
+            ids.append(cid)
+        return ids
 
     # ------------------------------------------------------------ 高级复用领域组件
 
@@ -316,7 +818,7 @@ class DrawioCanvas:
             f"fillColor={fill};strokeColor={stroke};strokeWidth={sw};"
             f"{'dashed=1;dashPattern=4 4;' if dashed else ''}"
             f"align=center;verticalAlign=middle;spacing=4;"
-            f"fontFamily=Inter;fontSize={_normalize_fs(font_size)};fontColor={BASE_LIGHT['fg']};"
+            f"fontFamily={FONT_SANS};fontSize={_normalize_fs(font_size)};fontColor={BASE_LIGHT['fg']};"
         )
         self._add_vertex(main_id, "\n".join(label_lines), style, x8, y8, w8, h8)
 
