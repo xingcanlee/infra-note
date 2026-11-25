@@ -25,7 +25,18 @@ import AclGraphShadowStreamExplainer from './explainers/AclGraphShadowStreamExpl
 
 ACL Graph 把执行生命周期拆分为彼此隔离的 **Capture（图捕获）**与 **Replay（图重放）**两阶段，端到端流转见图 1。
 
-![ACL Graph 捕获六动作与重放两动作流转原理](./diagrams/04-aclgraph-capture-replay-flow.drawio '图 1：ACL Graph Capture 阶段构造影子流与参数备份及 Replay 阶段懒绑物理 SQ/CQ 流程')
+```mermaid caption="图 1：ACL Graph Capture 阶段构造影子流与参数备份及 Replay 阶段懒绑物理 SQ/CQ 流程"
+flowchart TD
+    subgraph CAP["Capture 阶段：只建逻辑队列，设备零执行"]
+        U1["用户流 CaptureBegin<br/>进入捕获模式"] --> REC["Shadow Stream 影子流<br/>建 LogicSQ + D2D 备 Args"]
+        REC --> ENDG["CaptureEnd 收尾<br/>校验拓扑 + 追加 EndGraph"]
+    end
+    subgraph REP["Replay 阶段：懒绑定与单次 Trigger 连续运行"]
+        PRE["PreModelExecute<br/>BuildSqCq + Refresh 状态"] --> USR["ExecuteAsync 用户流<br/>下发 model exe + notify wait"]
+        USR -->|"Trigger"| MDL["影子队列满载直通<br/>跑完发 Notify 唤醒用户流"]
+    end
+    ENDG -->|"冻结图句柄 modelRI"| PRE
+```
 
 在 **Capture 阶段**，CANN Runtime 的 `src/acl/aclrt_impl/model_ri.cpp` 与会话类 `CaptureSession` 执行六项核心动作[^model-ri-impl][^cap-session]：
 

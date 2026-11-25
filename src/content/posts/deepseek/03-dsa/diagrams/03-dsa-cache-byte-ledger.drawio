@@ -1,0 +1,58 @@
+<mxfile host="wisp-diagram">
+  <diagram id="ds-03-dsa-ledger" name="DeepSeek-V3.2 DSA Cache Comparison">
+    <mxGraphModel dx="800" dy="600" grid="1" gridSize="8" guides="1" page="0" math="1" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="led_grp" value="DeepSeek-V3.2 双精度分离缓存对比（合计 788 B/tok/层 · 主缓存 8.72 → 4.96 GiB）" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#f4f4f2;strokeColor=#5c6067;strokeWidth=1.25;verticalAlign=top;align=left;spacingLeft=12;spacingTop=8;fontFamily=Inter, Noto Sans SC;fontSize=12;fontStyle=1;fontColor=#5c6067;container=0;" vertex="1" parent="1">
+          <mxGeometry x="0" y="8" width="704" height="288" as="geometry" />
+        </mxCell>
+        <mxCell id="main_kv__title" value="主模型 fp8_ds_mla 缓存（656 B/tok）" style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;fontFamily=Inter, Noto Sans SC;fontSize=12;fontStyle=1;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="16" y="48" width="536" height="24" as="geometry" />
+        </mxCell>
+        <mxCell id="main_kv__tot" value="656 B/tok" style="text;html=1;whiteSpace=wrap;align=right;verticalAlign=middle;fontFamily=Inter, Noto Sans SC;fontSize=11;fontColor=#5c6067;" vertex="1" parent="1">
+          <mxGeometry x="560" y="48" width="128" height="24" as="geometry" />
+        </mxCell>
+        <mxCell id="main_kv_0" value="FP8 E4M3 \(c_s^{KV}\) (512 B)" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f2fb;strokeColor=#2f5783;strokeWidth=2;align=center;verticalAlign=middle;spacing=6;fontFamily=Inter, Noto Sans SC;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="16" y="80" width="520" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="main_kv_1" value="" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#fbf2df;strokeColor=#7b5518;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter, Noto Sans SC;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="536" y="80" width="16" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="main_kv__tk1" value="" style="endArrow=none;startArrow=none;html=1;strokeColor=#7b5518;strokeWidth=1.0;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="544" y="120" as="sourcePoint" />
+            <mxPoint x="544" y="136" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="main_kv__nl1" value="4×FP32 缩放 (16 B)" style="text;html=1;whiteSpace=wrap;align=center;verticalAlign=middle;fontFamily=Inter, Noto Sans SC;fontSize=11;fontStyle=1;fontColor=#7b5518;" vertex="1" parent="1">
+          <mxGeometry x="488" y="136" width="112" height="24" as="geometry" />
+        </mxCell>
+        <mxCell id="main_kv_2" value="BF16 RoPE \(k_s^R\)&lt;br&gt;(128 B)" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f5e9;strokeColor=#2c522d;strokeWidth=2;align=center;verticalAlign=middle;spacing=6;fontFamily=Inter, Noto Sans SC;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="552" y="80" width="136" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="idx_kv__title" value="IndexerCache (132 B/tok)" style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;fontFamily=Inter, Noto Sans SC;fontSize=12;fontStyle=1;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="16" y="176" width="216" height="24" as="geometry" />
+        </mxCell>
+        <mxCell id="idx_kv_0" value="FP8 \(k_s^I\) (128 B)" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#fbf2df;strokeColor=#7b5518;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=6;fontFamily=Inter, Noto Sans SC;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="16" y="208" width="184" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="idx_kv_1" value="" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f2fb;strokeColor=#2f5783;strokeWidth=2;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter, Noto Sans SC;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="200" y="208" width="16" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="idx_kv__tk1" value="" style="endArrow=none;startArrow=none;html=1;strokeColor=#2f5783;strokeWidth=1.0;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="208" y="248" as="sourcePoint" />
+            <mxPoint x="208" y="264" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="idx_kv__nl1" value="UE8M0 (4 B)" style="text;html=1;whiteSpace=wrap;align=center;verticalAlign=middle;fontFamily=Inter, Noto Sans SC;fontSize=11;fontStyle=1;fontColor=#2f5783;" vertex="1" parent="1">
+          <mxGeometry x="160" y="264" width="96" height="24" as="geometry" />
+        </mxCell>
+        <mxCell id="cross_bar" value="长短序列吞吐交叉点（\(L \approx 3000\)）：&lt;br&gt;\(L &amp;lt; 3000\) 时非连续 Gather 略慢于稠密 MLA；越过 3000 推向 128K 可达 410 TF" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#f4f4f2;strokeColor=#5c6067;strokeWidth=1;dashed=1;dashPattern=4 4;align=left;verticalAlign=middle;spacing=8;fontFamily=Inter, Noto Sans SC;fontSize=11;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="248" y="184" width="440" height="88" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

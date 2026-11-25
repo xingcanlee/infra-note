@@ -171,7 +171,19 @@ if __name__ == "__main__":
 
 把草稿起草与置信度裁剪接进多卡 TP（Tensor Parallelism，张量并行）与静态图捕获时，两套引擎走出了不同路线。`vLLM` GPU 与 `vllm-ascend` NPU 在词表并行、图模式路由与拒绝采样 Kernel 上的执行栈如图 3 所示。
 
-![vLLM GPU 与 Ascend NPU Speculator 运行时栈对照](./diagrams/09-mtp-vllm-runtime.drawio '图 3：vLLM V1 GPU Speculator 与 vllm-ascend V2 混合扩展运行时栈对照')
+```mermaid caption="图 3：vLLM V1 GPU Speculator 与 vllm-ascend V2 混合扩展运行时栈对照"
+flowchart TD
+    subgraph GPU["NVIDIA GPU · vLLM V1 Spec Decode"]
+        G1["Speculator 继承体系<br/>MTP → DFlash → DSpark"] --> G2["DSparkDraft & Markov<br/>All-to-All 按请求分片采样"]
+        G2 --> G3["CUDA Graph 全图重放<br/>复用 topk 索引跳过 Indexer"]
+        G3 --> G4["Triton 无损拒绝校验<br/>rejection_sampler.py"]
+    end
+    subgraph NPU["Huawei Ascend NPU · vllm-ascend V2"]
+        A1["Ascend 混合扩展栈<br/>AscendMTP / AscendDSpark"] --> A2["LmheadTPDraftSamplingMixin<br/>行填充至对齐容量做采样"]
+        A2 --> A3["ACLGraph + AscendDSASWA<br/>线性物理槽位 Scatter 写入"]
+        A3 --> A4["NPU 校验与重采样 Kernel<br/>_probabilistic_rejection_kernel"]
+    end
+```
 
 下表从五个结构维度对照两套运行时实现[^vllm-spec][^vllm-adaptive][^ascend-spec]：
 

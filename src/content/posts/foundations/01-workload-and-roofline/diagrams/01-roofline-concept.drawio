@@ -1,101 +1,98 @@
 <mxfile host="wisp-diagram">
   <diagram id="foundations-01-roofline-concept" name="Single-Chip Roofline Concept">
-    <mxGraphModel dx="800" dy="600" grid="1" gridSize="8" guides="1" page="0" math="0" shadow="0">
+    <mxGraphModel dx="800" dy="600" grid="1" gridSize="8" guides="1" page="0" math="1" shadow="0">
       <root>
-        <mxCell id="0"/>
-        <mxCell id="1" parent="0"/>
-        <mxCell id="hdr" value="单卡 Roofline 模型几何结构：带宽斜坡（Memory-bound）· 算力拐点 I* · 算力平台（Compute-bound）" style="text;html=1;whiteSpace=wrap;align=center;verticalAlign=middle;fontFamily=Inter;fontSize=12;fontColor=#5c6067;" vertex="1" parent="1">
-          <mxGeometry x="0" y="0" width="688" height="24" as="geometry"/>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="reg_mem" value="Memory-bound · 带宽受限 (\(I &amp;lt; I^*\))" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#fbf2df;strokeColor=#7b5518;strokeWidth=1.25;dashed=1;verticalAlign=top;align=left;spacingLeft=12;spacingTop=8;fontFamily=Inter, Noto Sans SC;fontSize=12;fontStyle=1;fontColor=#7b5518;container=0;" vertex="1" parent="1">
+          <mxGeometry x="72" y="48" width="272" height="232" as="geometry" />
         </mxCell>
-        <mxCell id="y_title" value="实际算力 P_attained (TFLOPS，对数)" style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;fontFamily=Inter;fontSize=12;fontColor=#5c6067;" vertex="1" parent="1">
-          <mxGeometry x="16" y="32" width="240" height="24" as="geometry"/>
+        <mxCell id="reg_cmp" value="Compute-bound · 算力受限 (\(I \ge I^*\))" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f2fb;strokeColor=#2f5783;strokeWidth=1.25;dashed=1;verticalAlign=top;align=left;spacingLeft=12;spacingTop=8;fontFamily=Inter, Noto Sans SC;fontSize=12;fontStyle=1;fontColor=#2f5783;container=0;" vertex="1" parent="1">
+          <mxGeometry x="344" y="48" width="304" height="232" as="geometry" />
         </mxCell>
-        <mxCell id="reg_mem" value="Memory-bound · 带宽受限区 (I &amp;lt; I*)" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#fbf2df;strokeColor=#7b5518;strokeWidth=1.25;dashed=1;verticalAlign=top;align=left;spacingLeft=12;spacingTop=6;fontFamily=Inter;fontSize=12;fontStyle=1;fontColor=#7b5518;container=0;" vertex="1" parent="1">
-          <mxGeometry x="72" y="56" width="272" height="256" as="geometry"/>
-        </mxCell>
-        <mxCell id="reg_cmp" value="Compute-bound · 算力受限区 (I ≥ I*)" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f2fb;strokeColor=#2f5783;strokeWidth=1.25;dashed=1;verticalAlign=top;align=left;spacingLeft=12;spacingTop=6;fontFamily=Inter;fontSize=12;fontStyle=1;fontColor=#2f5783;container=0;" vertex="1" parent="1">
-          <mxGeometry x="344" y="56" width="304" height="256" as="geometry"/>
-        </mxCell>
-        <mxCell id="ax_y" value="" style="endArrow=classic;startArrow=none;html=1;strokeColor=#1d1d1f;strokeWidth=1.5;" edge="1" parent="1">
+        <mxCell id="rf__ay" value="" style="endArrow=classic;startArrow=none;html=1;strokeColor=#1d1d1f;strokeWidth=1.5;" edge="1" parent="1">
           <mxGeometry relative="1" as="geometry">
-            <mxPoint x="72" y="312" as="sourcePoint"/>
-            <mxPoint x="72" y="56" as="targetPoint"/>
+            <mxPoint x="72" y="280" as="sourcePoint" />
+            <mxPoint x="72" y="48" as="targetPoint" />
           </mxGeometry>
         </mxCell>
-        <mxCell id="ax_x" value="" style="endArrow=classic;startArrow=none;html=1;strokeColor=#1d1d1f;strokeWidth=1.5;" edge="1" parent="1">
+        <mxCell id="rf__ax" value="" style="endArrow=classic;startArrow=none;html=1;strokeColor=#1d1d1f;strokeWidth=1.5;" edge="1" parent="1">
           <mxGeometry relative="1" as="geometry">
-            <mxPoint x="72" y="312" as="sourcePoint"/>
-            <mxPoint x="648" y="312" as="targetPoint"/>
+            <mxPoint x="72" y="280" as="sourcePoint" />
+            <mxPoint x="648" y="280" as="targetPoint" />
           </mxGeometry>
         </mxCell>
-        <mxCell id="guide_y" value="" style="endArrow=none;startArrow=none;html=1;strokeColor=#5c6067;strokeWidth=1.0;dashed=1;dashPattern=4 4;" edge="1" parent="1">
+        <mxCell id="rf__ylbl" value="\(P_{\text{attained}}\) (TFLOPS，对数)" style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;fontFamily=Inter, Noto Sans SC;fontSize=11;fontColor=#5c6067;" vertex="1" parent="1">
+          <mxGeometry x="72" y="24" width="256" height="24" as="geometry" />
+        </mxCell>
+        <mxCell id="rf__xlbl" value="算术强度 \(I\) (FLOPs/B，对数) →" style="text;html=1;whiteSpace=wrap;align=right;verticalAlign=middle;fontFamily=Inter, Noto Sans SC;fontSize=11;fontColor=#5c6067;" vertex="1" parent="1">
+          <mxGeometry x="424" y="288" width="224" height="24" as="geometry" />
+        </mxCell>
+        <mxCell id="rf__yg0" value="" style="endArrow=none;startArrow=none;html=1;strokeColor=#2f5783;strokeWidth=1.0;dashed=1;dashPattern=4 4;" edge="1" parent="1">
           <mxGeometry relative="1" as="geometry">
-            <mxPoint x="72" y="120" as="sourcePoint"/>
-            <mxPoint x="344" y="120" as="targetPoint"/>
+            <mxPoint x="72" y="104" as="sourcePoint" />
+            <mxPoint x="648" y="104" as="targetPoint" />
           </mxGeometry>
         </mxCell>
-        <mxCell id="guide_ridge" value="" style="endArrow=none;startArrow=none;html=1;strokeColor=#2f5783;strokeWidth=1.25;dashed=1;dashPattern=4 4;" edge="1" parent="1">
+        <mxCell id="rf__ygl0" value="\(P_{\text{peak}}\)" style="text;html=1;whiteSpace=wrap;align=right;verticalAlign=middle;fontFamily=Inter, Noto Sans SC;fontSize=12;fontStyle=1;fontColor=#2f5783;" vertex="1" parent="1">
+          <mxGeometry x="8" y="96" width="56" height="24" as="geometry" />
+        </mxCell>
+        <mxCell id="rf__xg0" value="" style="endArrow=none;startArrow=none;html=1;strokeColor=#2f5783;strokeWidth=1.25;dashed=1;dashPattern=4 4;" edge="1" parent="1">
           <mxGeometry relative="1" as="geometry">
-            <mxPoint x="344" y="120" as="sourcePoint"/>
-            <mxPoint x="344" y="312" as="targetPoint"/>
+            <mxPoint x="344" y="48" as="sourcePoint" />
+            <mxPoint x="344" y="280" as="targetPoint" />
           </mxGeometry>
+        </mxCell>
+        <mxCell id="rf__xgl0" value="拐点 \(I^* = P_{\text{peak}} / \text{BW}\)" style="text;html=1;whiteSpace=wrap;align=center;verticalAlign=middle;fontFamily=Inter, Noto Sans SC;fontSize=12;fontStyle=1;fontColor=#2f5783;" vertex="1" parent="1">
+          <mxGeometry x="272" y="288" width="144" height="24" as="geometry" />
         </mxCell>
         <mxCell id="roof_slope" value="" style="endArrow=none;startArrow=none;html=1;strokeColor=#7b5518;strokeWidth=3.0;" edge="1" parent="1">
           <mxGeometry relative="1" as="geometry">
-            <mxPoint x="104" y="280" as="sourcePoint"/>
-            <mxPoint x="344" y="120" as="targetPoint"/>
+            <mxPoint x="104" y="264" as="sourcePoint" />
+            <mxPoint x="344" y="104" as="targetPoint" />
           </mxGeometry>
         </mxCell>
         <mxCell id="roof_ceil" value="" style="endArrow=none;startArrow=none;html=1;strokeColor=#2f5783;strokeWidth=3.0;" edge="1" parent="1">
           <mxGeometry relative="1" as="geometry">
-            <mxPoint x="344" y="120" as="sourcePoint"/>
-            <mxPoint x="632" y="120" as="targetPoint"/>
+            <mxPoint x="344" y="104" as="sourcePoint" />
+            <mxPoint x="632" y="104" as="targetPoint" />
           </mxGeometry>
         </mxCell>
-        <mxCell id="dot_dec" value="" style="ellipse;whiteSpace=wrap;html=1;fillColor=#fbf2df;strokeColor=#7b5518;strokeWidth=2;" vertex="1" parent="1">
-          <mxGeometry x="144" y="240" width="16" height="16" as="geometry"/>
+        <mxCell id="dot_dec" value="" style="ellipse;whiteSpace=wrap;html=1;fillColor=#fbf2df;strokeColor=#7b5518;strokeWidth=2;shadow=0;container=0;" vertex="1" parent="1">
+          <mxGeometry x="144" y="224" width="16" height="16" as="geometry" />
         </mxCell>
-        <mxCell id="dot_bat" value="" style="ellipse;whiteSpace=wrap;html=1;fillColor=#fbf2df;strokeColor=#7b5518;strokeWidth=2;" vertex="1" parent="1">
-          <mxGeometry x="240" y="176" width="16" height="16" as="geometry"/>
+        <mxCell id="dot_bat" value="" style="ellipse;whiteSpace=wrap;html=1;fillColor=#fbf2df;strokeColor=#7b5518;strokeWidth=2;shadow=0;container=0;" vertex="1" parent="1">
+          <mxGeometry x="240" y="160" width="16" height="16" as="geometry" />
         </mxCell>
-        <mxCell id="dot_ridge" value="" style="ellipse;whiteSpace=wrap;html=1;fillColor=#e9f2fb;strokeColor=#2f5783;strokeWidth=2;" vertex="1" parent="1">
-          <mxGeometry x="336" y="112" width="16" height="16" as="geometry"/>
+        <mxCell id="dot_ridge" value="" style="ellipse;whiteSpace=wrap;html=1;fillColor=#e9f2fb;strokeColor=#2f5783;strokeWidth=2;shadow=0;container=0;" vertex="1" parent="1">
+          <mxGeometry x="336" y="96" width="16" height="16" as="geometry" />
         </mxCell>
-        <mxCell id="dot_pre" value="" style="ellipse;whiteSpace=wrap;html=1;fillColor=#e9f2fb;strokeColor=#2f5783;strokeWidth=2;" vertex="1" parent="1">
-          <mxGeometry x="536" y="112" width="16" height="16" as="geometry"/>
+        <mxCell id="dot_pre" value="" style="ellipse;whiteSpace=wrap;html=1;fillColor=#e9f2fb;strokeColor=#2f5783;strokeWidth=2;shadow=0;container=0;" vertex="1" parent="1">
+          <mxGeometry x="528" y="96" width="16" height="16" as="geometry" />
         </mxCell>
-        <mxCell id="slope_lbl" value="带宽斜坡&lt;br&gt;P = I × BW_HBM" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#fbf2df;strokeColor=#7b5518;strokeWidth=1.25;dashed=1;dashPattern=4 4;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
-          <mxGeometry x="88" y="136" width="144" height="48" as="geometry"/>
+        <mxCell id="slope_lbl" value="带宽斜坡&lt;br&gt;\(P = I \times \text{BW}_{\text{HBM}}\)" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#fbf2df;strokeColor=#7b5518;strokeWidth=1.25;dashed=1;dashPattern=4 4;align=center;verticalAlign=middle;spacing=6;fontFamily=Inter, Noto Sans SC;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="88" y="128" width="144" height="48" as="geometry" />
         </mxCell>
-        <mxCell id="ceil_lbl" value="算力平台上限：P_attained = P_peak" style="text;html=1;whiteSpace=wrap;align=center;verticalAlign=middle;fontFamily=Inter;fontSize=12;fontStyle=1;fontColor=#2f5783;" vertex="1" parent="1">
-          <mxGeometry x="360" y="88" width="272" height="24" as="geometry"/>
+        <mxCell id="ceil_lbl" value="算力平台：\(P_{\text{attained}} = P_{\text{peak}}\)" style="text;html=1;whiteSpace=wrap;align=center;verticalAlign=middle;fontFamily=Inter, Noto Sans SC;fontSize=11;fontStyle=1;fontColor=#2f5783;" vertex="1" parent="1">
+          <mxGeometry x="360" y="80" width="272" height="24" as="geometry" />
         </mxCell>
-        <mxCell id="call_dec" value="类型 B (RMSNorm / SiLU)&lt;br&gt;&amp;amp; Decode (M=1)：卡带宽" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#fbf2df;strokeColor=#7b5518;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
-          <mxGeometry x="168" y="248" width="168" height="48" as="geometry"/>
+        <mxCell id="call_dec" value="类型 B (RMSNorm/SiLU)&lt;br&gt;&amp;amp; Decode (\(M=1\))" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#fbf2df;strokeColor=#7b5518;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=6;fontFamily=Inter, Noto Sans SC;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="168" y="224" width="168" height="48" as="geometry" />
         </mxCell>
-        <mxCell id="call_bat" value="增大 M&lt;br&gt;沿斜坡右移" style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;fontFamily=Inter;fontSize=12;fontStyle=1;fontColor=#7b5518;" vertex="1" parent="1">
-          <mxGeometry x="256" y="192" width="80" height="32" as="geometry"/>
+        <mxCell id="call_bat" value="增大 \(M\)&lt;br&gt;沿斜坡右移" style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;fontFamily=Inter, Noto Sans SC;fontSize=12;fontStyle=1;fontColor=#7b5518;" vertex="1" parent="1">
+          <mxGeometry x="256" y="168" width="80" height="32" as="geometry" />
         </mxCell>
-        <mxCell id="call_pre" value="类型 A · Prefill&lt;br&gt;大 M GEMM：吃满算力" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f2fb;strokeColor=#2f5783;strokeWidth=2;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
-          <mxGeometry x="464" y="152" width="168" height="48" as="geometry"/>
+        <mxCell id="call_pre" value="类型 A · Prefill&lt;br&gt;大 \(M\) GEMM：吃满算力" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f2fb;strokeColor=#2f5783;strokeWidth=2;align=center;verticalAlign=middle;spacing=6;fontFamily=Inter, Noto Sans SC;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="456" y="136" width="176" height="48" as="geometry" />
         </mxCell>
         <mxCell id="stem_pre" value="" style="endArrow=none;startArrow=none;html=1;strokeColor=#2f5783;strokeWidth=1.25;" edge="1" parent="1">
           <mxGeometry relative="1" as="geometry">
-            <mxPoint x="544" y="128" as="sourcePoint"/>
-            <mxPoint x="544" y="152" as="targetPoint"/>
+            <mxPoint x="536" y="112" as="sourcePoint" />
+            <mxPoint x="536" y="136" as="targetPoint" />
           </mxGeometry>
         </mxCell>
-        <mxCell id="takeaway" value="跨过拐点 I* 才进入算力受限区：&lt;br&gt;• GEMM (I ≈ M) 靠增大并发 M 右移&lt;br&gt;• Vector (I = O(1)) 恒卡在左侧斜坡" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#f4f4f2;strokeColor=#5c6067;strokeWidth=1;dashed=1;dashPattern=4 4;align=left;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
-          <mxGeometry x="360" y="224" width="272" height="72" as="geometry"/>
-        </mxCell>
-        <mxCell id="y_peak" value="P_peak" style="text;html=1;whiteSpace=wrap;align=right;verticalAlign=middle;fontFamily=Inter;fontSize=12;fontStyle=1;fontColor=#2f5783;" vertex="1" parent="1">
-          <mxGeometry x="0" y="104" width="64" height="32" as="geometry"/>
-        </mxCell>
-        <mxCell id="x_ridge" value="拐点 I* = P_peak / BW" style="text;html=1;whiteSpace=wrap;align=center;verticalAlign=middle;fontFamily=Inter;fontSize=12;fontStyle=1;fontColor=#2f5783;" vertex="1" parent="1">
-          <mxGeometry x="272" y="320" width="144" height="24" as="geometry"/>
-        </mxCell>
-        <mxCell id="x_title" value="算术强度 I (FLOPs/B，对数) →" style="text;html=1;whiteSpace=wrap;align=right;verticalAlign=middle;fontFamily=Inter;fontSize=12;fontColor=#5c6067;" vertex="1" parent="1">
-          <mxGeometry x="448" y="320" width="200" height="24" as="geometry"/>
+        <mxCell id="takeaway" value="跨过拐点 \(I^*\) 才进入算力受限区：&lt;br&gt;• GEMM (\(I \approx M\)) 靠增大并发右移&lt;br&gt;• Vector (\(I = O(1)\)) 恒卡在左侧斜坡" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#f4f4f2;strokeColor=#5c6067;strokeWidth=1;dashed=1;dashPattern=4 4;align=left;verticalAlign=middle;spacing=6;fontFamily=Inter, Noto Sans SC;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="360" y="200" width="272" height="72" as="geometry" />
         </mxCell>
       </root>
     </mxGraphModel>

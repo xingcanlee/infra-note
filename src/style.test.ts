@@ -76,7 +76,7 @@ function toVisibleText(input: string): string {
 function extractMermaidText(rawBody: string): string {
   const parts: string[] = [];
   for (const m of rawBody.matchAll(/^```mermaid\b[^\n]*\n([\s\S]*?)^```/gm)) {
-    parts.push(m[0]);
+    parts.push(m[0].replace(/\$\$[^$\n]+?\$\$/g, ''));
   }
   return parts.join('\n');
 }
@@ -301,6 +301,13 @@ describe('infra-note writing style gate', () => {
         if (lineCount > 90) {
           violations.push(`${doc.label}: python block too long (${lineCount} > 90 lines)`);
         }
+      }
+
+      const strippedMermaid = extractMermaidText(body);
+      if (/[_^]\{[^}]+\}/.test(strippedMermaid)) {
+        violations.push(
+          `${doc.label}: bare TeX brace subscript/superscript outside $$...$$ in mermaid`,
+        );
       }
     }
 

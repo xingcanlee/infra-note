@@ -66,7 +66,7 @@ $$
 
 ```mermaid caption="图 3：EP 跨卡通信 Dispatch、块对齐计算与 Combine 重排流水线"
 flowchart TD
-  IN["token 隐藏状态 u_t"] --> RT["Sigmoid + 偏置选路"]
+  IN["token 隐藏状态 $$u_t$$"] --> RT["Sigmoid + 偏置选路"]
   IN --> SH["1 共享专家并行计算"]
   RT -->|"EP 跨卡分发"| DISP["Dispatch A2A"]
   DISP --> ALIGN["moe_align_block_size 填充"]

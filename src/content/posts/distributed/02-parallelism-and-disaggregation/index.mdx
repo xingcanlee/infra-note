@@ -88,7 +88,29 @@ $$
 
 将集群物理拆分为独立扩缩容的 Prefill 实例池与 Decode 实例池，是兼顾 TTFT 与 TPOT 的标准做法。这套 **PD（Prefill-Decode Disaggregation，预填充-解码分离）**架构的数据面与控制面分工如图 3 所示。
 
-![Prefill-Decode 分离池与异步零拷贝 KV 传输引擎架构](./diagrams/02-pd-disaggregation-arch.drawio '图 3：PD 分离架构下的 NIXL / Mooncake 与昇腾 MemFabric 传输栈')
+```mermaid caption="图 3：PD 分离架构下的 NIXL / Mooncake 与昇腾 MemFabric 传输栈"
+flowchart LR
+  RT["全局调度器 Router / Proxy<br/>分离 TTFT 与 TPOT SLA · 交换 Block ID 与远端端口"]
+  subgraph PF["Prefill 实例池（算力密集）"]
+    direction TB
+    P1["高 TP 实例 (TP4/8)<br/>长 Prompt 计算 + 首字"] --> P2["Paged KV Pool<br/>[blocks, bs, kv]"]
+  end
+  subgraph XF["异步零拷贝 KV 传输引擎"]
+    direction TB
+    X1["NVIDIA · NIXL / Mooncake<br/>UCX / GPUDirect / Layer-wise 边算边推"]
+    X2["昇腾 · MooncakeLayerwise + MemFabric<br/>SDMA / DEVICE_RDMA / URMA"]
+  end
+  subgraph DC["Decode 实例池（访存密集）"]
+    direction TB
+    D1["Attn DP + MoE EP<br/>远端注册 HBM 槽（单向 RDMA 直写）"] --> D2["持续自回归 Decode<br/>稳态低抖动 TPOT"]
+  end
+  RT -->|"1. Prefill 请求"| P1
+  RT -.->|"2. 元数据建链"| D1
+  P2 -->|"RDMA"| X1
+  P2 -->|"SDMA"| X2
+  X1 -->|"Ready"| D1
+  X2 -->|"Notify"| D1
+```
 
 ### 异构布局重映射与逐层流式推送
 

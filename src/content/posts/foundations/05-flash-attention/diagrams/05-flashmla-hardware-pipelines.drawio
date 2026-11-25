@@ -1,77 +1,386 @@
 <mxfile host="wisp-diagram">
-  <diagram id="foundations-04-flashmla-hardware-pipelines" name="FlashMLA Multi-Hardware Pipeline Evolution">
+  <diagram id="foundations-05-flashmla-pipelines" name="FlashMLA Multi-Hardware Pipeline Evolution">
     <mxGraphModel dx="800" dy="600" grid="1" gridSize="8" guides="1" page="0" math="1" shadow="0">
       <root>
-        <mxCell id="0"/>
-        <mxCell id="1" parent="0"/>
-        <mxCell id="hdr" value="多代硬件注意力执行流水线对比：从串行屏障到 H800 跷跷板、B200 TMEM 与昇腾 1C2V" style="text;html=1;whiteSpace=wrap;align=center;verticalAlign=middle;fontFamily=Inter;fontSize=12;fontColor=#5c6067;" vertex="1" parent="1">
-          <mxGeometry x="0" y="0" width="688" height="24" as="geometry"/>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="fla_ser" value="1. 串行无重叠基线（有效重叠 &amp;lt; 25%）：搬运 / 矩阵 / Softmax 依次等待气泡" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#f4f4f2;strokeColor=#5c6067;strokeWidth=1.25;verticalAlign=top;align=left;spacingLeft=12;spacingTop=8;fontFamily=Inter, Noto Sans SC;fontSize=12;fontStyle=1;fontColor=#5c6067;container=0;" vertex="1" parent="1">
+          <mxGeometry x="0" y="8" width="688" height="80" as="geometry" />
         </mxCell>
-        <mxCell id="g1" value="1. 串行无重叠基线（有效重叠 &lt; 25%，搬运/矩阵/Softmax 依次等待气泡）" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#f4f4f2;strokeColor=#e2e2dd;strokeWidth=1;dashed=1;verticalAlign=top;align=left;spacingLeft=12;spacingTop=6;fontFamily=Inter;fontSize=12;fontStyle=1;fontColor=#5c6067;container=0;" vertex="1" parent="1">
-          <mxGeometry x="8" y="32" width="672" height="88" as="geometry"/>
+        <mxCell id="fla_ser__ln0" value="单流串行" style="text;html=1;whiteSpace=wrap;align=right;verticalAlign=middle;fontFamily=Inter, Noto Sans SC;fontSize=12;fontStyle=1;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="8" y="40" width="96" height="32" as="geometry" />
         </mxCell>
-        <mxCell id="s_tma" value="读 \(K_0/V_0\)" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#fbf2df;strokeColor=#7b5518;strokeWidth=1.25;align=center;verticalAlign=middle;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
-          <mxGeometry x="24" y="64" width="112" height="40" as="geometry"/>
+        <mxCell id="fla_ser__bg0" value="" style="rounded=1;absoluteArcSize=1;arcSize=8;html=1;fillColor=#f4f4f2;strokeColor=#e2e2dd;strokeWidth=1;" vertex="1" parent="1">
+          <mxGeometry x="112" y="40" width="560" height="32" as="geometry" />
         </mxCell>
-        <mxCell id="s_qk" value="GEMM \(QK^\top\)" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f2fb;strokeColor=#2f5783;strokeWidth=1.25;align=center;verticalAlign=middle;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
-          <mxGeometry x="152" y="64" width="112" height="40" as="geometry"/>
+        <mxCell id="fla_ser__tg0_1" value="" style="endArrow=none;startArrow=none;html=1;strokeColor=#e2e2dd;strokeWidth=1.0;dashed=1;dashPattern=4 4;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="256" y="40" as="sourcePoint" />
+            <mxPoint x="256" y="72" as="targetPoint" />
+          </mxGeometry>
         </mxCell>
-        <mxCell id="s_sm" value="Softmax + 缩放" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f5e9;strokeColor=#2c522d;strokeWidth=1.25;align=center;verticalAlign=middle;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
-          <mxGeometry x="280" y="64" width="128" height="40" as="geometry"/>
+        <mxCell id="fla_ser__tg0_2" value="" style="endArrow=none;startArrow=none;html=1;strokeColor=#e2e2dd;strokeWidth=1.0;dashed=1;dashPattern=4 4;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="392" y="40" as="sourcePoint" />
+            <mxPoint x="392" y="72" as="targetPoint" />
+          </mxGeometry>
         </mxCell>
-        <mxCell id="s_pv" value="GEMM \(P \cdot V\)" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f2fb;strokeColor=#2f5783;strokeWidth=1.25;align=center;verticalAlign=middle;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
-          <mxGeometry x="424" y="64" width="112" height="40" as="geometry"/>
+        <mxCell id="fla_ser__tg0_3" value="" style="endArrow=none;startArrow=none;html=1;strokeColor=#e2e2dd;strokeWidth=1.0;dashed=1;dashPattern=4 4;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="528" y="40" as="sourcePoint" />
+            <mxPoint x="528" y="72" as="targetPoint" />
+          </mxGeometry>
         </mxCell>
-        <mxCell id="s_wo" value="写回 \(O\)（空等长）" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#fbf2df;strokeColor=#7b5518;strokeWidth=1.25;align=center;verticalAlign=middle;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
-          <mxGeometry x="552" y="64" width="112" height="40" as="geometry"/>
+        <mxCell id="fla_ser__b0_0" value="读 K/V" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#f4f4f2;strokeColor=#5c6067;strokeWidth=1;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter, Noto Sans SC;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="112" y="40" width="88" height="32" as="geometry" />
         </mxCell>
-        <mxCell id="g2" value="2. Hopper H800 FlashMLA 双 Warpgroup 跷跷板（65,536 reg 限制 → 劈半 \(O_L \mid O_R\)，660 TF / 3 TB/s）" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#f4f4f2;strokeColor=#e2e2dd;strokeWidth=1;dashed=1;verticalAlign=top;align=left;spacingLeft=12;spacingTop=6;fontFamily=Inter;fontSize=12;fontStyle=1;fontColor=#5c6067;container=0;" vertex="1" parent="1">
-          <mxGeometry x="8" y="136" width="672" height="120" as="geometry"/>
+        <mxCell id="fla_ser__b0_1" value="GEMM \(QK^\top\)" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f2fb;strokeColor=#2f5783;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter, Noto Sans SC;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="200" y="40" width="128" height="32" as="geometry" />
         </mxCell>
-        <mxCell id="h_tma" value="&lt;b&gt;9 路 64×64 TMA&lt;/b&gt;&lt;br&gt;EVICT_FIRST 异步预取 576 维宽行" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#fbf2df;strokeColor=#7b5518;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
-          <mxGeometry x="24" y="168" width="208" height="72" as="geometry"/>
+        <mxCell id="fla_ser__b0_2" value="Softmax+缩放" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#fbf2df;strokeColor=#7b5518;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter, Noto Sans SC;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="328" y="40" width="128" height="32" as="geometry" />
         </mxCell>
-        <mxCell id="h_wg0" value="&lt;b&gt;WG0（\(O_L\;[64,256]\)，\(\le 128\) reg）&lt;/b&gt;：\(QK_0^\top\) → Softmax L → \(PV_L\)（与 WG1 交替让 Tensor Core）" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f2fb;strokeColor=#2f5783;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
-          <mxGeometry x="248" y="168" width="416" height="32" as="geometry"/>
+        <mxCell id="fla_ser__b0_3" value="GEMM P·V" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f2fb;strokeColor=#2f5783;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter, Noto Sans SC;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="456" y="40" width="128" height="32" as="geometry" />
         </mxCell>
-        <mxCell id="h_wg1" value="&lt;b&gt;WG1（\(O_R\;[64,256]\)）&lt;/b&gt;：错开一拍交替执行 \(QK_0^\top\) / Softmax R / \(PV_R\)" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f5e9;strokeColor=#2c522d;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
-          <mxGeometry x="248" y="208" width="416" height="32" as="geometry"/>
+        <mxCell id="fla_ser__b0_4" value="写回 O" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#f4f4f2;strokeColor=#5c6067;strokeWidth=1;dashed=1;dashPattern=4 4;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter, Noto Sans SC;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="584" y="40" width="88" height="32" as="geometry" />
         </mxCell>
-        <mxCell id="g3" value="3. Blackwell B200 FA-4（1613 TF，71% 峰值）：专用 TMEM 释放寄存器并拆四路协同" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#f4f4f2;strokeColor=#e2e2dd;strokeWidth=1;dashed=1;verticalAlign=top;align=left;spacingLeft=12;spacingTop=6;fontFamily=Inter;fontSize=12;fontStyle=1;fontColor=#5c6067;container=0;" vertex="1" parent="1">
-          <mxGeometry x="8" y="272" width="672" height="104" as="geometry"/>
+        <mxCell id="fla_h800" value="2. Hopper H800 FlashMLA 双 Warpgroup 跷跷板（65,536 reg → 劈半 \(O_L \mid O_R\)，660 TF）" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f2fb;strokeColor=#2f5783;strokeWidth=1.25;verticalAlign=top;align=left;spacingLeft=12;spacingTop=8;fontFamily=Inter, Noto Sans SC;fontSize=12;fontStyle=1;fontColor=#2f5783;container=0;" vertex="1" parent="1">
+          <mxGeometry x="0" y="104" width="688" height="160" as="geometry" />
         </mxCell>
-        <mxCell id="b_tmem" value="&lt;b&gt;TMA + UMMA → 256 KB TMEM&lt;/b&gt;&lt;br&gt;就地持有 \(128\times 128\) 累加器" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f2fb;strokeColor=#2f5783;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
-          <mxGeometry x="24" y="304" width="208" height="56" as="geometry"/>
+        <mxCell id="fla_h800__ln0" value="TMA 预取" style="text;html=1;whiteSpace=wrap;align=right;verticalAlign=middle;fontFamily=Inter, Noto Sans SC;fontSize=12;fontStyle=1;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="8" y="136" width="96" height="32" as="geometry" />
         </mxCell>
-        <mxCell id="b_sm" value="&lt;b&gt;2× Softmax WG&lt;/b&gt;&lt;br&gt;3 次 FMA 多项式分流 10%–25% \(\text{exp2}\)" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f5e9;strokeColor=#2c522d;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
-          <mxGeometry x="248" y="304" width="216" height="56" as="geometry"/>
+        <mxCell id="fla_h800__bg0" value="" style="rounded=1;absoluteArcSize=1;arcSize=8;html=1;fillColor=#f4f4f2;strokeColor=#e2e2dd;strokeWidth=1;" vertex="1" parent="1">
+          <mxGeometry x="112" y="136" width="560" height="32" as="geometry" />
         </mxCell>
-        <mxCell id="b_corr" value="&lt;b&gt;1× Correction WG&lt;/b&gt;&lt;br&gt;\(\Delta m &gt; 8.0\) 才重缩放 TMEM" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#fbf2df;strokeColor=#7b5518;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
-          <mxGeometry x="480" y="304" width="184" height="56" as="geometry"/>
+        <mxCell id="fla_h800__tg0_1" value="" style="endArrow=none;startArrow=none;html=1;strokeColor=#e2e2dd;strokeWidth=1.0;dashed=1;dashPattern=4 4;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="256" y="136" as="sourcePoint" />
+            <mxPoint x="256" y="168" as="targetPoint" />
+          </mxGeometry>
         </mxCell>
-        <mxCell id="g4" value="4. 昇腾 Ascend 950 1C2V（410 TF Prefill 95% / 360 TF Decode 83%）：Cube-MTE2-Vector Ping-Pong" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#f4f4f2;strokeColor=#e2e2dd;strokeWidth=1;dashed=1;verticalAlign=top;align=left;spacingLeft=12;spacingTop=6;fontFamily=Inter;fontSize=12;fontStyle=1;fontColor=#5c6067;container=0;" vertex="1" parent="1">
-          <mxGeometry x="8" y="392" width="672" height="104" as="geometry"/>
+        <mxCell id="fla_h800__tg0_2" value="" style="endArrow=none;startArrow=none;html=1;strokeColor=#e2e2dd;strokeWidth=1.0;dashed=1;dashPattern=4 4;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="392" y="136" as="sourcePoint" />
+            <mxPoint x="392" y="168" as="targetPoint" />
+          </mxGeometry>
         </mxCell>
-        <mxCell id="a_mte" value="&lt;b&gt;MTE2（16 槽发射队列）&lt;/b&gt;&lt;br&gt;gather2 + ND2NZ 异步预取" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#fbf2df;strokeColor=#7b5518;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
-          <mxGeometry x="24" y="424" width="184" height="56" as="geometry"/>
+        <mxCell id="fla_h800__tg0_3" value="" style="endArrow=none;startArrow=none;html=1;strokeColor=#e2e2dd;strokeWidth=1.0;dashed=1;dashPattern=4 4;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="528" y="136" as="sourcePoint" />
+            <mxPoint x="528" y="168" as="targetPoint" />
+          </mxGeometry>
         </mxCell>
-        <mxCell id="a_cube" value="&lt;b&gt;1× Cube（4096 FMA/clk）&lt;/b&gt;&lt;br&gt;\(QK_i^\top \to 256\;\text{KB L0C}\) + 延迟 \(S_{i-1}V_{i-1}\)" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f2fb;strokeColor=#2f5783;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
-          <mxGeometry x="224" y="424" width="216" height="56" as="geometry"/>
+        <mxCell id="fla_h800__b0_0" value="9路 64×64 EVICT" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#fbf2df;strokeColor=#7b5518;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter, Noto Sans SC;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="112" y="136" width="112" height="32" as="geometry" />
         </mxCell>
-        <mxCell id="a_vec" value="&lt;b&gt;2× Vector（UB 持 \(\tilde{O}\)）&lt;/b&gt;&lt;br&gt;FixPipe 迁出 + RESCALE_THRES=6 跳过" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f5e9;strokeColor=#2c522d;strokeWidth=2;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
-          <mxGeometry x="456" y="424" width="208" height="56" as="geometry"/>
+        <mxCell id="fla_h800__b0_1" value="异步预取下一块 576B" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#fbf2df;strokeColor=#7b5518;strokeWidth=1.25;dashed=1;dashPattern=4 4;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter, Noto Sans SC;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="224" y="136" width="224" height="32" as="geometry" />
         </mxCell>
-        <mxCell id="e_s1" value="" style="endArrow=classic;startArrow=none;html=1;strokeColor=#1d1d1f;strokeWidth=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="s_tma" target="s_qk">
-          <mxGeometry relative="1" as="geometry"/>
+        <mxCell id="fla_h800__ln1" value="WG0 (\(O_L\))" style="text;html=1;whiteSpace=wrap;align=right;verticalAlign=middle;fontFamily=Inter, Noto Sans SC;fontSize=12;fontStyle=1;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="8" y="176" width="96" height="32" as="geometry" />
         </mxCell>
-        <mxCell id="e_s2" value="" style="endArrow=classic;startArrow=none;html=1;strokeColor=#1d1d1f;strokeWidth=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="s_qk" target="s_sm">
-          <mxGeometry relative="1" as="geometry"/>
+        <mxCell id="fla_h800__bg1" value="" style="rounded=1;absoluteArcSize=1;arcSize=8;html=1;fillColor=#f4f4f2;strokeColor=#e2e2dd;strokeWidth=1;" vertex="1" parent="1">
+          <mxGeometry x="112" y="176" width="560" height="32" as="geometry" />
         </mxCell>
-        <mxCell id="e_s3" value="" style="endArrow=classic;startArrow=none;html=1;strokeColor=#1d1d1f;strokeWidth=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="s_sm" target="s_pv">
-          <mxGeometry relative="1" as="geometry"/>
+        <mxCell id="fla_h800__tg1_1" value="" style="endArrow=none;startArrow=none;html=1;strokeColor=#e2e2dd;strokeWidth=1.0;dashed=1;dashPattern=4 4;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="256" y="176" as="sourcePoint" />
+            <mxPoint x="256" y="208" as="targetPoint" />
+          </mxGeometry>
         </mxCell>
-        <mxCell id="e_s4" value="" style="endArrow=classic;startArrow=none;html=1;strokeColor=#1d1d1f;strokeWidth=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="s_pv" target="s_wo">
-          <mxGeometry relative="1" as="geometry"/>
+        <mxCell id="fla_h800__tg1_2" value="" style="endArrow=none;startArrow=none;html=1;strokeColor=#e2e2dd;strokeWidth=1.0;dashed=1;dashPattern=4 4;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="392" y="176" as="sourcePoint" />
+            <mxPoint x="392" y="208" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="fla_h800__tg1_3" value="" style="endArrow=none;startArrow=none;html=1;strokeColor=#e2e2dd;strokeWidth=1.0;dashed=1;dashPattern=4 4;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="528" y="176" as="sourcePoint" />
+            <mxPoint x="528" y="208" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="fla_h800__b1_0" value="\(QK_0^\top\)" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f2fb;strokeColor=#2f5783;strokeWidth=2;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter, Noto Sans SC;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="168" y="176" width="120" height="32" as="geometry" />
+        </mxCell>
+        <mxCell id="fla_h800__b1_1" value="SM L" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#fbf2df;strokeColor=#7b5518;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter, Noto Sans SC;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="288" y="176" width="104" height="32" as="geometry" />
+        </mxCell>
+        <mxCell id="fla_h800__b1_2" value="\(P\cdot V_L\)" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f2fb;strokeColor=#2f5783;strokeWidth=2;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter, Noto Sans SC;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="392" y="176" width="120" height="32" as="geometry" />
+        </mxCell>
+        <mxCell id="fla_h800__ln2" value="WG1 (\(O_R\))" style="text;html=1;whiteSpace=wrap;align=right;verticalAlign=middle;fontFamily=Inter, Noto Sans SC;fontSize=12;fontStyle=1;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="8" y="216" width="96" height="32" as="geometry" />
+        </mxCell>
+        <mxCell id="fla_h800__bg2" value="" style="rounded=1;absoluteArcSize=1;arcSize=8;html=1;fillColor=#f4f4f2;strokeColor=#e2e2dd;strokeWidth=1;" vertex="1" parent="1">
+          <mxGeometry x="112" y="216" width="560" height="32" as="geometry" />
+        </mxCell>
+        <mxCell id="fla_h800__tg2_1" value="" style="endArrow=none;startArrow=none;html=1;strokeColor=#e2e2dd;strokeWidth=1.0;dashed=1;dashPattern=4 4;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="256" y="216" as="sourcePoint" />
+            <mxPoint x="256" y="248" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="fla_h800__tg2_2" value="" style="endArrow=none;startArrow=none;html=1;strokeColor=#e2e2dd;strokeWidth=1.0;dashed=1;dashPattern=4 4;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="392" y="216" as="sourcePoint" />
+            <mxPoint x="392" y="248" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="fla_h800__tg2_3" value="" style="endArrow=none;startArrow=none;html=1;strokeColor=#e2e2dd;strokeWidth=1.0;dashed=1;dashPattern=4 4;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="528" y="216" as="sourcePoint" />
+            <mxPoint x="528" y="248" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="fla_h800__b2_0" value="\(QK_0^\top\)" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f2fb;strokeColor=#2f5783;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter, Noto Sans SC;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="232" y="216" width="128" height="32" as="geometry" />
+        </mxCell>
+        <mxCell id="fla_h800__b2_1" value="SM R" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#fbf2df;strokeColor=#7b5518;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter, Noto Sans SC;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="360" y="216" width="96" height="32" as="geometry" />
+        </mxCell>
+        <mxCell id="fla_h800__b2_2" value="\(P\cdot V_R\)" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f2fb;strokeColor=#2f5783;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter, Noto Sans SC;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="456" y="216" width="128" height="32" as="geometry" />
+        </mxCell>
+        <mxCell id="fla_b200" value="3. Blackwell B200 FA-4（1613 TF，71% 峰值）：256 KB TMEM 释放寄存器并拆四路协同" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f2fb;strokeColor=#2f5783;strokeWidth=1.25;verticalAlign=top;align=left;spacingLeft=12;spacingTop=8;fontFamily=Inter, Noto Sans SC;fontSize=12;fontStyle=1;fontColor=#2f5783;container=0;" vertex="1" parent="1">
+          <mxGeometry x="0" y="280" width="688" height="160" as="geometry" />
+        </mxCell>
+        <mxCell id="fla_b200__ln0" value="UMMA→TMEM" style="text;html=1;whiteSpace=wrap;align=right;verticalAlign=middle;fontFamily=Inter, Noto Sans SC;fontSize=12;fontStyle=1;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="8" y="312" width="96" height="32" as="geometry" />
+        </mxCell>
+        <mxCell id="fla_b200__bg0" value="" style="rounded=1;absoluteArcSize=1;arcSize=8;html=1;fillColor=#f4f4f2;strokeColor=#e2e2dd;strokeWidth=1;" vertex="1" parent="1">
+          <mxGeometry x="112" y="312" width="560" height="32" as="geometry" />
+        </mxCell>
+        <mxCell id="fla_b200__tg0_1" value="" style="endArrow=none;startArrow=none;html=1;strokeColor=#e2e2dd;strokeWidth=1.0;dashed=1;dashPattern=4 4;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="256" y="312" as="sourcePoint" />
+            <mxPoint x="256" y="344" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="fla_b200__tg0_2" value="" style="endArrow=none;startArrow=none;html=1;strokeColor=#e2e2dd;strokeWidth=1.0;dashed=1;dashPattern=4 4;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="392" y="312" as="sourcePoint" />
+            <mxPoint x="392" y="344" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="fla_b200__tg0_3" value="" style="endArrow=none;startArrow=none;html=1;strokeColor=#e2e2dd;strokeWidth=1.0;dashed=1;dashPattern=4 4;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="528" y="312" as="sourcePoint" />
+            <mxPoint x="528" y="344" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="fla_b200__b0_0" value="TMA+UMMA 128×128" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f2fb;strokeColor=#2f5783;strokeWidth=2;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter, Noto Sans SC;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="112" y="312" width="176" height="32" as="geometry" />
+        </mxCell>
+        <mxCell id="fla_b200__b0_1" value="UMMA P·V 连续流" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f2fb;strokeColor=#2f5783;strokeWidth=2;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter, Noto Sans SC;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="288" y="312" width="184" height="32" as="geometry" />
+        </mxCell>
+        <mxCell id="fla_b200__ln1" value="2×Softmax" style="text;html=1;whiteSpace=wrap;align=right;verticalAlign=middle;fontFamily=Inter, Noto Sans SC;fontSize=12;fontStyle=1;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="8" y="352" width="96" height="32" as="geometry" />
+        </mxCell>
+        <mxCell id="fla_b200__bg1" value="" style="rounded=1;absoluteArcSize=1;arcSize=8;html=1;fillColor=#f4f4f2;strokeColor=#e2e2dd;strokeWidth=1;" vertex="1" parent="1">
+          <mxGeometry x="112" y="352" width="560" height="32" as="geometry" />
+        </mxCell>
+        <mxCell id="fla_b200__tg1_1" value="" style="endArrow=none;startArrow=none;html=1;strokeColor=#e2e2dd;strokeWidth=1.0;dashed=1;dashPattern=4 4;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="256" y="352" as="sourcePoint" />
+            <mxPoint x="256" y="384" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="fla_b200__tg1_2" value="" style="endArrow=none;startArrow=none;html=1;strokeColor=#e2e2dd;strokeWidth=1.0;dashed=1;dashPattern=4 4;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="392" y="352" as="sourcePoint" />
+            <mxPoint x="392" y="384" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="fla_b200__tg1_3" value="" style="endArrow=none;startArrow=none;html=1;strokeColor=#e2e2dd;strokeWidth=1.0;dashed=1;dashPattern=4 4;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="528" y="352" as="sourcePoint" />
+            <mxPoint x="528" y="384" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="fla_b200__b1_0" value="3-FMA exp2 分流" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#fbf2df;strokeColor=#7b5518;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter, Noto Sans SC;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="200" y="352" width="144" height="32" as="geometry" />
+        </mxCell>
+        <mxCell id="fla_b200__b1_1" value="下一块 Softmax" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#fbf2df;strokeColor=#7b5518;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter, Noto Sans SC;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="344" y="352" width="152" height="32" as="geometry" />
+        </mxCell>
+        <mxCell id="fla_b200__ln2" value="Correction" style="text;html=1;whiteSpace=wrap;align=right;verticalAlign=middle;fontFamily=Inter, Noto Sans SC;fontSize=12;fontStyle=1;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="8" y="392" width="96" height="32" as="geometry" />
+        </mxCell>
+        <mxCell id="fla_b200__bg2" value="" style="rounded=1;absoluteArcSize=1;arcSize=8;html=1;fillColor=#f4f4f2;strokeColor=#e2e2dd;strokeWidth=1;" vertex="1" parent="1">
+          <mxGeometry x="112" y="392" width="560" height="32" as="geometry" />
+        </mxCell>
+        <mxCell id="fla_b200__tg2_1" value="" style="endArrow=none;startArrow=none;html=1;strokeColor=#e2e2dd;strokeWidth=1.0;dashed=1;dashPattern=4 4;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="256" y="392" as="sourcePoint" />
+            <mxPoint x="256" y="424" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="fla_b200__tg2_2" value="" style="endArrow=none;startArrow=none;html=1;strokeColor=#e2e2dd;strokeWidth=1.0;dashed=1;dashPattern=4 4;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="392" y="392" as="sourcePoint" />
+            <mxPoint x="392" y="424" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="fla_b200__tg2_3" value="" style="endArrow=none;startArrow=none;html=1;strokeColor=#e2e2dd;strokeWidth=1.0;dashed=1;dashPattern=4 4;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="528" y="392" as="sourcePoint" />
+            <mxPoint x="528" y="424" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="fla_b200__b2_0" value="Δm&amp;gt;8 重缩放" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f2fb;strokeColor=#2f5783;strokeWidth=1.25;dashed=1;dashPattern=4 4;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter, Noto Sans SC;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="312" y="392" width="128" height="32" as="geometry" />
+        </mxCell>
+        <mxCell id="fla_b200__sav" value="1613 TF&lt;br&gt;(71% 峰值)" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#fbf2df;strokeColor=#7b5518;strokeWidth=1.25;dashed=1;dashPattern=4 4;align=center;verticalAlign=middle;spacing=6;fontFamily=Inter, Noto Sans SC;fontSize=12;fontStyle=1;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="496" y="312" width="176" height="112" as="geometry" />
+        </mxCell>
+        <mxCell id="fla_npu" value="4. 昇腾 Ascend 950 1C2V（410 TF Prefill 95% / Decode 83%）：Cube-MTE2-Vector Ping-Pong" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e3f5f3;strokeColor=#0f766e;strokeWidth=1.25;verticalAlign=top;align=left;spacingLeft=12;spacingTop=8;fontFamily=Inter, Noto Sans SC;fontSize=12;fontStyle=1;fontColor=#0f766e;container=0;" vertex="1" parent="1">
+          <mxGeometry x="0" y="456" width="688" height="160" as="geometry" />
+        </mxCell>
+        <mxCell id="fla_npu__ln0" value="MTE2 (16槽)" style="text;html=1;whiteSpace=wrap;align=right;verticalAlign=middle;fontFamily=Inter, Noto Sans SC;fontSize=12;fontStyle=1;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="8" y="488" width="96" height="32" as="geometry" />
+        </mxCell>
+        <mxCell id="fla_npu__bg0" value="" style="rounded=1;absoluteArcSize=1;arcSize=8;html=1;fillColor=#f4f4f2;strokeColor=#e2e2dd;strokeWidth=1;" vertex="1" parent="1">
+          <mxGeometry x="112" y="488" width="560" height="32" as="geometry" />
+        </mxCell>
+        <mxCell id="fla_npu__tg0_1" value="" style="endArrow=none;startArrow=none;html=1;strokeColor=#e2e2dd;strokeWidth=1.0;dashed=1;dashPattern=4 4;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="256" y="488" as="sourcePoint" />
+            <mxPoint x="256" y="520" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="fla_npu__tg0_2" value="" style="endArrow=none;startArrow=none;html=1;strokeColor=#e2e2dd;strokeWidth=1.0;dashed=1;dashPattern=4 4;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="392" y="488" as="sourcePoint" />
+            <mxPoint x="392" y="520" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="fla_npu__tg0_3" value="" style="endArrow=none;startArrow=none;html=1;strokeColor=#e2e2dd;strokeWidth=1.0;dashed=1;dashPattern=4 4;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="528" y="488" as="sourcePoint" />
+            <mxPoint x="528" y="520" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="fla_npu__b0_0" value="gather2+ND2NZ 预取" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#fbf2df;strokeColor=#7b5518;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter, Noto Sans SC;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="112" y="488" width="160" height="32" as="geometry" />
+        </mxCell>
+        <mxCell id="fla_npu__b0_1" value="双缓冲 Tile \(K_{i+1}\)" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#fbf2df;strokeColor=#7b5518;strokeWidth=1.25;dashed=1;dashPattern=4 4;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter, Noto Sans SC;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="272" y="488" width="168" height="32" as="geometry" />
+        </mxCell>
+        <mxCell id="fla_npu__ln1" value="1×Cube" style="text;html=1;whiteSpace=wrap;align=right;verticalAlign=middle;fontFamily=Inter, Noto Sans SC;fontSize=12;fontStyle=1;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="8" y="528" width="96" height="32" as="geometry" />
+        </mxCell>
+        <mxCell id="fla_npu__bg1" value="" style="rounded=1;absoluteArcSize=1;arcSize=8;html=1;fillColor=#f4f4f2;strokeColor=#e2e2dd;strokeWidth=1;" vertex="1" parent="1">
+          <mxGeometry x="112" y="528" width="560" height="32" as="geometry" />
+        </mxCell>
+        <mxCell id="fla_npu__tg1_1" value="" style="endArrow=none;startArrow=none;html=1;strokeColor=#e2e2dd;strokeWidth=1.0;dashed=1;dashPattern=4 4;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="256" y="528" as="sourcePoint" />
+            <mxPoint x="256" y="560" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="fla_npu__tg1_2" value="" style="endArrow=none;startArrow=none;html=1;strokeColor=#e2e2dd;strokeWidth=1.0;dashed=1;dashPattern=4 4;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="392" y="528" as="sourcePoint" />
+            <mxPoint x="392" y="560" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="fla_npu__tg1_3" value="" style="endArrow=none;startArrow=none;html=1;strokeColor=#e2e2dd;strokeWidth=1.0;dashed=1;dashPattern=4 4;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="528" y="528" as="sourcePoint" />
+            <mxPoint x="528" y="560" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="fla_npu__b1_0" value="\(QK_i^\top \to \text{L0C}\)" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e3f5f3;strokeColor=#0f766e;strokeWidth=2;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter, Noto Sans SC;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="176" y="528" width="152" height="32" as="geometry" />
+        </mxCell>
+        <mxCell id="fla_npu__b1_1" value="延迟 \(S_{i-1}V_{i-1}\)" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e3f5f3;strokeColor=#0f766e;strokeWidth=2;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter, Noto Sans SC;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="328" y="528" width="152" height="32" as="geometry" />
+        </mxCell>
+        <mxCell id="fla_npu__ln2" value="2×Vector" style="text;html=1;whiteSpace=wrap;align=right;verticalAlign=middle;fontFamily=Inter, Noto Sans SC;fontSize=12;fontStyle=1;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="8" y="568" width="96" height="32" as="geometry" />
+        </mxCell>
+        <mxCell id="fla_npu__bg2" value="" style="rounded=1;absoluteArcSize=1;arcSize=8;html=1;fillColor=#f4f4f2;strokeColor=#e2e2dd;strokeWidth=1;" vertex="1" parent="1">
+          <mxGeometry x="112" y="568" width="560" height="32" as="geometry" />
+        </mxCell>
+        <mxCell id="fla_npu__tg2_1" value="" style="endArrow=none;startArrow=none;html=1;strokeColor=#e2e2dd;strokeWidth=1.0;dashed=1;dashPattern=4 4;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="256" y="568" as="sourcePoint" />
+            <mxPoint x="256" y="600" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="fla_npu__tg2_2" value="" style="endArrow=none;startArrow=none;html=1;strokeColor=#e2e2dd;strokeWidth=1.0;dashed=1;dashPattern=4 4;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="392" y="568" as="sourcePoint" />
+            <mxPoint x="392" y="600" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="fla_npu__tg2_3" value="" style="endArrow=none;startArrow=none;html=1;strokeColor=#e2e2dd;strokeWidth=1.0;dashed=1;dashPattern=4 4;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="528" y="568" as="sourcePoint" />
+            <mxPoint x="528" y="600" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="fla_npu__b2_0" value="FixPipe→UB" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f2fb;strokeColor=#2f5783;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter, Noto Sans SC;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="256" y="568" width="168" height="32" as="geometry" />
+        </mxCell>
+        <mxCell id="fla_npu__b2_1" value="THRES=6 跳过" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e3f5f3;strokeColor=#0f766e;strokeWidth=1.25;dashed=1;dashPattern=4 4;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter, Noto Sans SC;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="424" y="568" width="128" height="32" as="geometry" />
+        </mxCell>
+        <mxCell id="fla__axis" value="" style="endArrow=none;startArrow=none;html=1;strokeColor=#5c6067;strokeWidth=1.25;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="112" y="624" as="sourcePoint" />
+            <mxPoint x="672" y="624" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="fla__tk0" value="" style="endArrow=none;startArrow=none;html=1;strokeColor=#5c6067;strokeWidth=1.0;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="112" y="616" as="sourcePoint" />
+            <mxPoint x="112" y="624" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="fla__tl0" value="0%" style="text;html=1;whiteSpace=wrap;align=center;verticalAlign=middle;fontFamily=Inter, Noto Sans SC;fontSize=11;fontColor=#5c6067;" vertex="1" parent="1">
+          <mxGeometry x="80" y="624" width="64" height="24" as="geometry" />
+        </mxCell>
+        <mxCell id="fla__tk1" value="" style="endArrow=none;startArrow=none;html=1;strokeColor=#5c6067;strokeWidth=1.0;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="256" y="616" as="sourcePoint" />
+            <mxPoint x="256" y="624" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="fla__tl1" value="25%" style="text;html=1;whiteSpace=wrap;align=center;verticalAlign=middle;fontFamily=Inter, Noto Sans SC;fontSize=11;fontColor=#5c6067;" vertex="1" parent="1">
+          <mxGeometry x="224" y="624" width="64" height="24" as="geometry" />
+        </mxCell>
+        <mxCell id="fla__tk2" value="" style="endArrow=none;startArrow=none;html=1;strokeColor=#5c6067;strokeWidth=1.0;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="392" y="616" as="sourcePoint" />
+            <mxPoint x="392" y="624" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="fla__tl2" value="50%" style="text;html=1;whiteSpace=wrap;align=center;verticalAlign=middle;fontFamily=Inter, Noto Sans SC;fontSize=11;fontColor=#5c6067;" vertex="1" parent="1">
+          <mxGeometry x="360" y="624" width="64" height="24" as="geometry" />
+        </mxCell>
+        <mxCell id="fla__tk3" value="" style="endArrow=none;startArrow=none;html=1;strokeColor=#5c6067;strokeWidth=1.0;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="528" y="616" as="sourcePoint" />
+            <mxPoint x="528" y="624" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="fla__tl3" value="75%" style="text;html=1;whiteSpace=wrap;align=center;verticalAlign=middle;fontFamily=Inter, Noto Sans SC;fontSize=11;fontColor=#5c6067;" vertex="1" parent="1">
+          <mxGeometry x="496" y="624" width="64" height="24" as="geometry" />
+        </mxCell>
+        <mxCell id="fla__tk4" value="" style="endArrow=none;startArrow=none;html=1;strokeColor=#5c6067;strokeWidth=1.0;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="672" y="616" as="sourcePoint" />
+            <mxPoint x="672" y="624" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="fla__tl4" value="100%" style="text;html=1;whiteSpace=wrap;align=right;verticalAlign=middle;fontFamily=Inter, Noto Sans SC;fontSize=11;fontColor=#5c6067;" vertex="1" parent="1">
+          <mxGeometry x="624" y="624" width="64" height="24" as="geometry" />
         </mxCell>
       </root>
     </mxGraphModel>

@@ -2,63 +2,135 @@
   <diagram id="aclgraph-01-sqcq" name="Host Device SQ CQ Arch">
     <mxGraphModel dx="800" dy="600" grid="1" gridSize="8" guides="1" page="0" math="0" shadow="0">
       <root>
-        <mxCell id="0"/>
-        <mxCell id="1" parent="0"/>
-        <mxCell id="host_grp" value="Host 侧：异步任务构建与队列入队" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#f4f4f2;strokeColor=#5c6067;strokeWidth=1.25;dashed=1;verticalAlign=top;align=left;spacingLeft=12;spacingTop=6;fontFamily=Inter;fontSize=12;fontStyle=1;fontColor=#5c6067;container=0;" vertex="1" parent="1">
-          <mxGeometry x="0" y="0" width="688" height="96" as="geometry"/>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="host_grp" value="Host 侧：异步任务构建与队列入队" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#f4f4f2;strokeColor=#5c6067;strokeWidth=1.25;verticalAlign=top;align=left;spacingLeft=12;spacingTop=8;fontFamily=Inter, Noto Sans SC;fontSize=12;fontStyle=1;fontColor=#5c6067;container=0;" vertex="1" parent="1">
+          <mxGeometry x="0" y="0" width="688" height="120" as="geometry" />
         </mxCell>
-        <mxCell id="py" value="PyTorch / ACL API&lt;br&gt;下发异步算子与 Event" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#f4f4f2;strokeColor=#5c6067;strokeWidth=1;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
-          <mxGeometry x="16" y="32" width="184" height="48" as="geometry"/>
+        <mxCell id="py" value="PyTorch / ACL API&lt;br&gt;异步算子与 Event" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#f4f4f2;strokeColor=#5c6067;strokeWidth=1;align=center;verticalAlign=middle;spacing=6;fontFamily=Inter, Noto Sans SC;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="16" y="40" width="152" height="56" as="geometry" />
         </mxCell>
-        <mxCell id="disp" value="Runtime 队列缓冲&lt;br&gt;CUDA Pushbuffer / CANN TaskQ" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f2fb;strokeColor=#2f5783;strokeWidth=2;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
-          <mxGeometry x="240" y="32" width="200" height="48" as="geometry"/>
+        <mxCell id="pb_0" value="Task 0" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f2fb;strokeColor=#2f5783;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter, Noto Sans SC;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="200" y="48" width="56" height="40" as="geometry" />
         </mxCell>
-        <mxCell id="doorbell" value="Doorbell 唤醒寄存器&lt;br&gt;写物理 SQ 尾指针后返回" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#f4f4f2;strokeColor=#5c6067;strokeWidth=1;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
-          <mxGeometry x="480" y="32" width="192" height="48" as="geometry"/>
+        <mxCell id="pb_1" value="Task 1" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f2fb;strokeColor=#2f5783;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter, Noto Sans SC;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="256" y="48" width="56" height="40" as="geometry" />
         </mxCell>
-        <mxCell id="h1" value="" style="endArrow=classic;startArrow=none;html=1;strokeColor=#1d1d1f;strokeWidth=1.25;edgeStyle=orthogonalEdgeStyle;rounded=1;" edge="1" parent="1" source="py" target="disp">
-          <mxGeometry relative="1" as="geometry"/>
+        <mxCell id="pb_2" value="Task 2" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f2fb;strokeColor=#2f5783;strokeWidth=2;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter, Noto Sans SC;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="312" y="48" width="56" height="40" as="geometry" />
         </mxCell>
-        <mxCell id="h2" value="" style="endArrow=classic;startArrow=none;html=1;strokeColor=#1d1d1f;strokeWidth=1.25;edgeStyle=orthogonalEdgeStyle;rounded=1;" edge="1" parent="1" source="disp" target="doorbell">
-          <mxGeometry relative="1" as="geometry"/>
+        <mxCell id="pb_3" value="..." style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#f4f4f2;strokeColor=#5c6067;strokeWidth=1;dashed=1;dashPattern=4 4;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter, Noto Sans SC;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="368" y="48" width="56" height="40" as="geometry" />
         </mxCell>
-        <mxCell id="dev_grp" value="Device 侧：硬件 SQ/CQ 与 TS 调度" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f2fb;strokeColor=#2f5783;strokeWidth=1.25;dashed=1;verticalAlign=top;align=left;spacingLeft=12;spacingTop=6;fontFamily=Inter;fontSize=12;fontStyle=1;fontColor=#2f5783;container=0;" vertex="1" parent="1">
-          <mxGeometry x="0" y="152" width="688" height="256" as="geometry"/>
+        <mxCell id="pb__title" value="Pushbuffer / TaskQ" style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;fontFamily=Inter, Noto Sans SC;fontSize=12;fontStyle=1;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="200" y="24" width="224" height="24" as="geometry" />
         </mxCell>
-        <mxCell id="sq0" value="Stream 0 -&amp;gt; SQ0 / CQ0 (Compute)&lt;br&gt;FIFO 串行出队：MatMul -&amp;gt; AddNorm" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f2fb;strokeColor=#2f5783;strokeWidth=2;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
-          <mxGeometry x="16" y="216" width="288" height="64" as="geometry"/>
+        <mxCell id="pb__tail" value="▲ Tail" style="text;html=1;whiteSpace=wrap;align=center;verticalAlign=middle;fontFamily=Inter, Noto Sans SC;fontSize=11;fontStyle=1;fontColor=#7b5518;" vertex="1" parent="1">
+          <mxGeometry x="312" y="88" width="56" height="24" as="geometry" />
         </mxCell>
-        <mxCell id="sq1" value="Stream 1 -&amp;gt; SQ1 / CQ1 (Copy/Comm)&lt;br&gt;与 SQ0 并行运行，硬件独立仲裁" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#fbf2df;strokeColor=#7b5518;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
-          <mxGeometry x="384" y="216" width="288" height="64" as="geometry"/>
+        <mxCell id="doorbell" value="Doorbell 唤醒寄存器&lt;br&gt;写物理 SQ 尾指针后返回" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#fbf2df;strokeColor=#7b5518;strokeWidth=2;align=center;verticalAlign=middle;spacing=6;fontFamily=Inter, Noto Sans SC;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="488" y="40" width="184" height="56" as="geometry" />
         </mxCell>
-        <mxCell id="ts" value="TS 任务调度与硬同步原语池&lt;br&gt;Event (65536/卡) 跨流阻断放行 · Notify (8192/卡) 轻量通知 · 完成后回写 CQ" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f5e9;strokeColor=#2c522d;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
-          <mxGeometry x="16" y="328" width="656" height="64" as="geometry"/>
+        <mxCell id="h1" value="" style="endArrow=classic;startArrow=none;html=1;strokeColor=#1d1d1f;strokeWidth=1.25;" edge="1" parent="1" source="py" target="pb_0">
+          <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="d_sq0" value="" style="endArrow=classic;startArrow=none;html=1;strokeColor=#1d1d1f;strokeWidth=1.25;edgeStyle=orthogonalEdgeStyle;rounded=1;exitX=0.25;exitY=1.0;exitDx=0;exitDy=0;entryX=0.5;entryY=0.0;entryDx=0;entryDy=0;" edge="1" parent="1" source="doorbell" target="sq0">
+        <mxCell id="h2" value="" style="endArrow=classic;startArrow=none;html=1;strokeColor=#1d1d1f;strokeWidth=1.25;" edge="1" parent="1" source="pb_3" target="doorbell">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="dev_grp" value="Device 侧：硬件 SQ / CQ 槽位队列与 TS 同步调度" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f2fb;strokeColor=#2f5783;strokeWidth=1.25;verticalAlign=top;align=left;spacingLeft=12;spacingTop=8;fontFamily=Inter, Noto Sans SC;fontSize=12;fontStyle=1;fontColor=#2f5783;container=0;" vertex="1" parent="1">
+          <mxGeometry x="0" y="184" width="688" height="304" as="geometry" />
+        </mxCell>
+        <mxCell id="sq0__title" value="Stream 0 → SQ0 / CQ0" style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;fontFamily=Inter, Noto Sans SC;fontSize=12;fontStyle=1;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="16" y="224" width="224" height="24" as="geometry" />
+        </mxCell>
+        <mxCell id="sq0_0" value="MatMul" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f2fb;strokeColor=#2f5783;strokeWidth=2;align=center;verticalAlign=middle;spacing=6;fontFamily=Inter, Noto Sans SC;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="16" y="248" width="72" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="sq0_1" value="AddNorm" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f2fb;strokeColor=#2f5783;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=6;fontFamily=Inter, Noto Sans SC;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="88" y="248" width="72" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="sq0_2" value="Rec E1" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#fbf2df;strokeColor=#7b5518;strokeWidth=2;align=center;verticalAlign=middle;spacing=6;fontFamily=Inter, Noto Sans SC;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="160" y="248" width="72" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="sq0_3" value="空闲槽" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#f4f4f2;strokeColor=#5c6067;strokeWidth=1;dashed=1;dashPattern=4 4;align=center;verticalAlign=middle;spacing=6;fontFamily=Inter, Noto Sans SC;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="232" y="248" width="72" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="sq0__head" value="▲ Head" style="text;html=1;whiteSpace=wrap;align=center;verticalAlign=middle;fontFamily=Inter, Noto Sans SC;fontSize=11;fontStyle=1;fontColor=#2f5783;" vertex="1" parent="1">
+          <mxGeometry x="16" y="288" width="72" height="24" as="geometry" />
+        </mxCell>
+        <mxCell id="sq0__tail" value="▲ Tail" style="text;html=1;whiteSpace=wrap;align=center;verticalAlign=middle;fontFamily=Inter, Noto Sans SC;fontSize=11;fontStyle=1;fontColor=#7b5518;" vertex="1" parent="1">
+          <mxGeometry x="160" y="288" width="72" height="24" as="geometry" />
+        </mxCell>
+        <mxCell id="sq1__title" value="Stream 1 → SQ1 / CQ1" style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;fontFamily=Inter, Noto Sans SC;fontSize=12;fontStyle=1;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="384" y="224" width="224" height="24" as="geometry" />
+        </mxCell>
+        <mxCell id="sq1_0" value="Wait E1" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#fbf2df;strokeColor=#7b5518;strokeWidth=2;align=center;verticalAlign=middle;spacing=6;fontFamily=Inter, Noto Sans SC;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="384" y="248" width="72" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="sq1_1" value="Copy" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f5e9;strokeColor=#2c522d;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=6;fontFamily=Inter, Noto Sans SC;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="456" y="248" width="72" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="sq1_2" value="AllRed" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f5e9;strokeColor=#2c522d;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=6;fontFamily=Inter, Noto Sans SC;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="528" y="248" width="72" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="sq1_3" value="空闲槽" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#f4f4f2;strokeColor=#5c6067;strokeWidth=1;dashed=1;dashPattern=4 4;align=center;verticalAlign=middle;spacing=6;fontFamily=Inter, Noto Sans SC;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="600" y="248" width="72" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="sq1__head" value="▲ Head" style="text;html=1;whiteSpace=wrap;align=center;verticalAlign=middle;fontFamily=Inter, Noto Sans SC;fontSize=11;fontStyle=1;fontColor=#2f5783;" vertex="1" parent="1">
+          <mxGeometry x="384" y="288" width="72" height="24" as="geometry" />
+        </mxCell>
+        <mxCell id="sq1__tail" value="▲ Tail" style="text;html=1;whiteSpace=wrap;align=center;verticalAlign=middle;fontFamily=Inter, Noto Sans SC;fontSize=11;fontStyle=1;fontColor=#7b5518;" vertex="1" parent="1">
+          <mxGeometry x="528" y="288" width="72" height="24" as="geometry" />
+        </mxCell>
+        <mxCell id="ts_pool" value="硬同步原语池&lt;br&gt;Event (65536) · Notify (8192)" style="shape=datastore;whiteSpace=wrap;html=1;fillColor=#fbf2df;strokeColor=#7b5518;strokeWidth=1.25;shadow=0;container=0;align=center;verticalAlign=middle;fontFamily=Inter, Noto Sans SC;fontSize=12;fontStyle=1;fontColor=#1d1d1f;spacing=6;" vertex="1" parent="1">
+          <mxGeometry x="16" y="368" width="200" height="72" as="geometry" />
+        </mxCell>
+        <mxCell id="ts_sched" value="TS 硬件调度器 &amp;amp; 仲裁器&lt;br&gt;FIFO 保序出队 · 跨流阻断放行不回退 CPU · 完成后回写 CQ" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f5e9;strokeColor=#2c522d;strokeWidth=2;align=center;verticalAlign=middle;spacing=6;fontFamily=Inter, Noto Sans SC;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="256" y="376" width="416" height="56" as="geometry" />
+        </mxCell>
+        <mxCell id="d_sq0" value="" style="endArrow=classic;startArrow=none;html=1;strokeColor=#1d1d1f;strokeWidth=1.25;edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;exitX=0.25;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="doorbell" target="sq0_3">
           <mxGeometry relative="1" as="geometry">
             <Array as="points">
-              <mxPoint x="528" y="192"/>
-              <mxPoint x="160" y="192"/>
+              <mxPoint x="536" y="160" />
+              <mxPoint x="268" y="160" />
             </Array>
           </mxGeometry>
         </mxCell>
-        <mxCell id="d_sq1" value="" style="endArrow=classic;startArrow=none;html=1;strokeColor=#1d1d1f;strokeWidth=1.25;edgeStyle=orthogonalEdgeStyle;rounded=1;exitX=0.75;exitY=1.0;exitDx=0;exitDy=0;entryX=0.8333;entryY=0.0;entryDx=0;entryDy=0;" edge="1" parent="1" source="doorbell" target="sq1">
-          <mxGeometry relative="1" as="geometry"/>
+        <mxCell id="d_sq0_lbl" value="写 SQE + 敲 Doorbell" style="text;html=1;whiteSpace=wrap;align=center;verticalAlign=middle;fontFamily=Inter, Noto Sans SC;fontSize=11;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="320" y="128" width="160" height="24" as="geometry" />
         </mxCell>
-        <mxCell id="lbl_sqe" value="写 SQE + 敲 Doorbell" style="text;html=1;whiteSpace=wrap;align=right;verticalAlign=middle;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
-          <mxGeometry x="344" y="112" width="168" height="24" as="geometry"/>
+        <mxCell id="d_sq1" value="" style="endArrow=classic;startArrow=none;html=1;strokeColor=#1d1d1f;strokeWidth=1.25;edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;exitX=0.804;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="doorbell" target="sq1_3">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="636" y="160" />
+            </Array>
+          </mxGeometry>
         </mxCell>
-        <mxCell id="s0_ts" value="" style="endArrow=classic;startArrow=none;html=1;strokeColor=#1d1d1f;strokeWidth=1.25;edgeStyle=orthogonalEdgeStyle;rounded=1;exitX=0.5;exitY=1.0;exitDx=0;exitDy=0;entryX=0.2195;entryY=0.0;entryDx=0;entryDy=0;" edge="1" parent="1" source="sq0" target="ts">
-          <mxGeometry relative="1" as="geometry"/>
+        <mxCell id="s0_ts" value="" style="endArrow=classic;startArrow=none;html=1;strokeColor=#7b5518;strokeWidth=1.25;edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;exitX=0.9;exitY=1;exitDx=0;exitDy=0;entryX=0.75;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="sq0_2" target="ts_pool">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="225" y="328" />
+              <mxPoint x="166" y="328" />
+            </Array>
+          </mxGeometry>
         </mxCell>
-        <mxCell id="ts_s1" value="" style="endArrow=classic;startArrow=none;html=1;strokeColor=#1d1d1f;strokeWidth=1.25;edgeStyle=orthogonalEdgeStyle;rounded=1;exitX=0.7805;exitY=0.0;exitDx=0;exitDy=0;entryX=0.5;entryY=1.0;entryDx=0;entryDy=0;" edge="1" parent="1" source="ts" target="sq1">
-          <mxGeometry relative="1" as="geometry"/>
+        <mxCell id="s0_ts_lbl" value="Record E1" style="text;html=1;whiteSpace=wrap;align=right;verticalAlign=middle;fontFamily=Inter, Noto Sans SC;fontSize=11;fontStyle=1;fontColor=#7b5518;" vertex="1" parent="1">
+          <mxGeometry x="72" y="320" width="88" height="24" as="geometry" />
         </mxCell>
-        <mxCell id="lbl_rec" value="Record E1" style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
-          <mxGeometry x="176" y="288" width="112" height="24" as="geometry"/>
+        <mxCell id="ts_s1" value="" style="endArrow=classic;startArrow=none;html=1;strokeColor=#7b5518;strokeWidth=1.25;edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;exitX=0.95;exitY=0;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="ts_pool" target="sq1_0">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="206" y="344" />
+              <mxPoint x="352" y="344" />
+              <mxPoint x="352" y="268" />
+            </Array>
+          </mxGeometry>
         </mxCell>
-        <mxCell id="lbl_wait" value="Wait E1" style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
-          <mxGeometry x="544" y="288" width="104" height="24" as="geometry"/>
+        <mxCell id="ts_s1_lbl" value="Wait E1" style="text;html=1;whiteSpace=wrap;align=center;verticalAlign=middle;fontFamily=Inter, Noto Sans SC;fontSize=11;fontStyle=1;fontColor=#7b5518;" vertex="1" parent="1">
+          <mxGeometry x="248" y="312" width="80" height="24" as="geometry" />
+        </mxCell>
+        <mxCell id="pool_ts" value="" style="endArrow=classic;startArrow=none;html=1;strokeColor=#1d1d1f;strokeWidth=1.25;exitX=1;exitY=0.6;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="ts_pool" target="ts_sched">
+          <mxGeometry relative="1" as="geometry" />
         </mxCell>
       </root>
     </mxGraphModel>

@@ -16,7 +16,27 @@ import AclGraphDynamicControlExplainer from './explainers/AclGraphDynamicControl
 | 算子参数层面 | `seq_kv` 增长使 Host 预计算 Tiling 失效 | `TaskGrp` + `TaskUpdate` 划槽原地刷新 |
 | 控制流层面   | 条件跳出与循环依赖 CPU `Synchronize`    | `CondHandle` + 条件子图无往返分支循环 |
 
-![ACL Graph TaskGrp 局部刷新与 Conditional Subgraph 控制流结构](./diagrams/05-cond-subgraph-runtime-flow.drawio '图 1：父图内嵌可原地覆写的 TaskGrp 槽位、ExternalEvent 保序同步边界以及 CondHandle 条件分支子图协同结构')
+```mermaid caption="图 1：父图内嵌可原地覆写的 TaskGrp 槽位、ExternalEvent 保序同步边界以及 CondHandle 条件分支子图协同结构"
+flowchart TB
+  subgraph P["父 ACL Graph 主逻辑流 (Parent CaptureModel)"]
+    direction LR
+    P0["前驱 Task<br/>Norm / QKV"] --> P1["TaskGrp<br/>SinkSqe=1 可原地覆写"]
+    P1 --> P2["notify wait<br/>SQE+1"]
+    P2 --> P3["后续 Task<br/>Notify 唤醒"]
+    P2 --> P4{"CondTask<br/>*devAddr"}
+  end
+  subgraph U["Replay 前热刷新 (TaskUpdate)"]
+    direction TB
+    U0["update_stream TaskUpdateBegin<br/>原地重写 PA/FIA Tiling 描述符"] --> U1["ExternalEvent<br/>更新流 record → 主图 wait + reset"]
+  end
+  subgraph S["CondHandle 与条件子图"]
+    direction TB
+    S0["CondHandle (8B devAddr_)<br/>PreExecute H2D 条件字"] --> S1["Sub Graph 0 (IF / WHILE)<br/>结尾共享 subModelNotify_"]
+    S0 -.-> S2["Sub Graph 1 (Else)<br/>同发 Notify Record 返回"]
+  end
+  U1 --> P1
+  S0 --> P4
+```
 
 ## TaskGrp 划槽与热刷新
 

@@ -25,7 +25,16 @@ tags: [vLLM, CUDA Graph, torch.compile, Scheduler]
 
 沿用前面的 `(4, FULL)` 与 `(19, PIECEWISE)` 示例，全组最终一致对齐到 `PIECEWISE` 与分桶 $T = 20$。所有 Rank 从而以对称的 `(20, H)` 张量穿越每一层 `All-to-All`。图 1 展示了从本地投票分化到主机共识对齐的完整链路。
 
-![多卡 DP 运行时模式对齐与防死锁共识：Rank 0 (4 tok FULL) 与 Rank 1 (19 tok PIECEWISE) 经 cpu_all_reduce_ 同步后保守裁决为 PIECEWISE 与 T=20 对称桶](./diagrams/05-dp-dispatch-consensus.drawio '图 1：多卡 DP 运行时模式对齐与防死锁共识')
+```mermaid caption="图 1：多卡 DP 运行时模式对齐与防死锁共识"
+flowchart TB
+  R0["Rank 0：4 tok 纯 Decode<br/>候选模式 FULL(2) · (4, H)"] --> M0["dispatch_cg_and_sync_dp<br/>(7, dp_size) CPU 元数据张量"]
+  R1["Rank 1：19 tok Chunked Prefill<br/>候选模式 PW(1) · (19→20, H)"] --> M0
+  M0 --> C1["模式取保守最小值<br/>min(FULL, PW) → PW(1)"]
+  M0 --> C2["长度取最大对齐分桶<br/>max(4, 19) → T=20"]
+  C1 --> OUT["对称穿越 EP All-to-All<br/>全组统一形状 (20, H)"]
+  C2 --> OUT
+  M0 -.->|"若无跨卡共识"| ERR["(4, H) vs (20, H) 缓冲失配<br/>EP All-to-All 超时挂死"]
+```
 
 ## 三层同心包装与 NONE 透传不变量
 
@@ -70,7 +79,7 @@ flowchart TD
     S -->|ALWAYS| C1["保留 FULL 全批静态图"]
     S -->|UNIFORM 仅解码| C2["切为 FULL_AND_PIECEWISE<br/>或 FULL_DECODE_ONLY"]
     S -->|NEVER| C3["降级 PIECEWISE 或 NONE"]
-    C1 --> T["预展平 O(1) 分桶查找表"]
+    C1 --> T["预展平 $$O(1)$$ 分桶查找表"]
     C2 --> T
     C3 --> T
     T --> D["运行期 dispatch 常量时间命中"]

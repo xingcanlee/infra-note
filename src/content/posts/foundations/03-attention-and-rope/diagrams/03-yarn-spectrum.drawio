@@ -1,41 +1,185 @@
 <mxfile host="wisp-diagram">
-  <diagram id="foundations-02-yarn-spectrum" name="YaRN Frequency Ramp and Cache Layout">
+  <diagram id="foundations-03-yarn-spectrum" name="YaRN Frequency Ramp and Cache Layout">
     <mxGraphModel dx="800" dy="600" grid="1" gridSize="8" guides="1" page="0" math="1" shadow="0">
       <root>
-        <mxCell id="0"/>
-        <mxCell id="1" parent="0"/>
-        <mxCell id="hdr" value="YaRN 分频斜坡外推（\(L=4096 \to 128\text{K},\; s=40,\; d_{\text{rope}}=64\)）与双后端 Cache 排布" style="text;html=1;whiteSpace=wrap;align=center;verticalAlign=middle;fontFamily=Inter;fontSize=12;fontColor=#5c6067;" vertex="1" parent="1">
-          <mxGeometry x="0" y="0" width="688" height="24" as="geometry"/>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="spec_grp" value="1. 32 对旋转通道频谱外推斜坡（\(L=4096 \to 128\text{K},\; s=40,\; \text{low}=10,\; \text{high}=23\)）" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#f4f4f2;strokeColor=#5c6067;strokeWidth=1.25;verticalAlign=top;align=left;spacingLeft=12;spacingTop=8;fontFamily=Inter, Noto Sans SC;fontSize=12;fontStyle=1;fontColor=#5c6067;container=0;" vertex="1" parent="1">
+          <mxGeometry x="0" y="8" width="688" height="264" as="geometry" />
         </mxCell>
-        <mxCell id="spec_grp" value="1. 32 对旋转通道频谱对比（按 4K 原生窗转过圈数 \(r_i = L/\lambda_i\) 划定 \(\text{low}=10,\;\text{high}=23\)）" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#f4f4f2;strokeColor=#e2e2dd;strokeWidth=1;dashed=1;verticalAlign=top;align=left;spacingLeft=12;spacingTop=6;fontFamily=Inter;fontSize=12;fontStyle=1;fontColor=#5c6067;container=0;" vertex="1" parent="1">
-          <mxGeometry x="8" y="32" width="672" height="192" as="geometry"/>
+        <mxCell id="yarn__base" value="" style="endArrow=none;startArrow=none;html=1;strokeColor=#5c6067;strokeWidth=1.25;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="16" y="160" as="sourcePoint" />
+            <mxPoint x="672" y="160" as="targetPoint" />
+          </mxGeometry>
         </mxCell>
-        <mxCell id="row_nat" value="&lt;b&gt;4K 原生（\(s=1\)）&lt;/b&gt;：全部 32 对通道保持原速 \(\text{extrap}_i = 1.0\)，\(\theta_i = 10000^{-2i/64}\)，无需 \(\text{mscale}\) 修正" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f2fb;strokeColor=#2f5783;strokeWidth=1;align=left;verticalAlign=middle;spacingLeft=12;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
-          <mxGeometry x="24" y="64" width="640" height="32" as="geometry"/>
+        <mxCell id="yarn_0" value="" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f2fb;strokeColor=#2f5783;strokeWidth=2;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter, Noto Sans SC;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="32" y="48" width="32" height="112" as="geometry" />
         </mxCell>
-        <mxCell id="row_pi" value="&lt;b&gt;线性插值 PI（全频 \(/40\)）&lt;/b&gt;：所有通道等比压缩至 \(0.025\)，高频 \(i=0\) 也被缩放 \(40\times\)，近邻词序判别受损" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#f4f4f2;strokeColor=#5c6067;strokeWidth=1;dashed=1;align=left;verticalAlign=middle;spacingLeft=12;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
-          <mxGeometry x="24" y="104" width="640" height="32" as="geometry"/>
+        <mxCell id="yarn__lbl_0" value="i0" style="text;html=1;whiteSpace=wrap;align=center;verticalAlign=middle;fontFamily=Inter, Noto Sans SC;fontSize=11;fontColor=#5c6067;" vertex="1" parent="1">
+          <mxGeometry x="32" y="160" width="32" height="24" as="geometry" />
         </mxCell>
-        <mxCell id="y_hi" value="&lt;b&gt;YaRN 高频 \(i=0..10\)&lt;/b&gt;&lt;br&gt;\(r_i &gt; \beta_{\text{fast}}=32\) 圈&lt;br&gt;\(\text{extrap}_i = 1.00\)（不缩）&lt;br&gt;完整保留局部语序" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f2fb;strokeColor=#2f5783;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
-          <mxGeometry x="24" y="144" width="208" height="72" as="geometry"/>
+        <mxCell id="yarn_1" value="" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f2fb;strokeColor=#2f5783;strokeWidth=2;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter, Noto Sans SC;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="72" y="48" width="32" height="112" as="geometry" />
         </mxCell>
-        <mxCell id="y_mid" value="&lt;b&gt;中频斜坡 \(i=11..22\)&lt;/b&gt;&lt;br&gt;\(1 \le r_i \le 32\) 圈&lt;br&gt;\(i=14: 0.69,\;17: 0.46,\;20: 0.23\)&lt;br&gt;线性斜坡平滑衔接" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#fbf2df;strokeColor=#7b5518;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
-          <mxGeometry x="248" y="144" width="224" height="72" as="geometry"/>
+        <mxCell id="yarn__lbl_1" value="i2" style="text;html=1;whiteSpace=wrap;align=center;verticalAlign=middle;fontFamily=Inter, Noto Sans SC;fontSize=11;fontColor=#5c6067;" vertex="1" parent="1">
+          <mxGeometry x="72" y="160" width="32" height="24" as="geometry" />
         </mxCell>
-        <mxCell id="y_lo" value="&lt;b&gt;低频 \(i=23..31\)&lt;/b&gt;&lt;br&gt;\(r_i &lt; \beta_{\text{slow}}=1\) 圈&lt;br&gt;\(\text{extrap}_i = 0.00\;(\theta_i/40)\)&lt;br&gt;撑开长距离位置相位" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e3f5f3;strokeColor=#0f766e;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
-          <mxGeometry x="488" y="144" width="176" height="72" as="geometry"/>
+        <mxCell id="yarn_2" value="" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f2fb;strokeColor=#2f5783;strokeWidth=2;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter, Noto Sans SC;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="112" y="48" width="32" height="112" as="geometry" />
         </mxCell>
-        <mxCell id="eq_box" value="频谱混合：\(\theta'_i = (1-\text{extrap}_i)\,\theta_i/s + \text{extrap}_i\,\theta_i\)　|　温度修正：\(\text{mscale}=0.1\ln(40)+1=1.3689\)，等效 \(\text{softmax\_scale} \times 1.8739\)" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#fbf2df;strokeColor=#7b5518;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
-          <mxGeometry x="8" y="240" width="672" height="48" as="geometry"/>
+        <mxCell id="yarn__lbl_2" value="i4" style="text;html=1;whiteSpace=wrap;align=center;verticalAlign=middle;fontFamily=Inter, Noto Sans SC;fontSize=11;fontColor=#5c6067;" vertex="1" parent="1">
+          <mxGeometry x="112" y="160" width="32" height="24" as="geometry" />
         </mxCell>
-        <mxCell id="cache_grp" value="2. 双后端预乘 \(\text{mscale}\) 频率 Cache 布局对照" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#f4f4f2;strokeColor=#e2e2dd;strokeWidth=1;dashed=1;verticalAlign=top;align=left;spacingLeft=12;spacingTop=6;fontFamily=Inter;fontSize=12;fontStyle=1;fontColor=#5c6067;container=0;" vertex="1" parent="1">
-          <mxGeometry x="8" y="304" width="672" height="128" as="geometry"/>
+        <mxCell id="yarn_3" value="" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f2fb;strokeColor=#2f5783;strokeWidth=2;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter, Noto Sans SC;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="152" y="48" width="32" height="112" as="geometry" />
         </mxCell>
-        <mxCell id="c_gpu" value="&lt;b&gt;vLLM GPU：cos_sin_cache \([S_{\max}, 64]\)&lt;/b&gt;&lt;br&gt;\([\cos\cdot\text{mscale}\;[32]\;|\;\sin\cdot\text{mscale}\;[32]]\)&lt;br&gt;CUDA / FlashInfer 原地 index_select" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f2fb;strokeColor=#2f5783;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
-          <mxGeometry x="24" y="336" width="304" height="80" as="geometry"/>
+        <mxCell id="yarn__lbl_3" value="i6" style="text;html=1;whiteSpace=wrap;align=center;verticalAlign=middle;fontFamily=Inter, Noto Sans SC;fontSize=11;fontColor=#5c6067;" vertex="1" parent="1">
+          <mxGeometry x="152" y="160" width="32" height="24" as="geometry" />
         </mxCell>
-        <mxCell id="c_npu" value="&lt;b&gt;vllm-ascend：_cos_sin_flat 与 _cos_mla&lt;/b&gt;&lt;br&gt;\([\cos_0,\sin_0,\cos_1,\sin_1,\dots]\) 展平静态缓冲&lt;br&gt;避开 aclnnIndex 拷贝 · 适配 ACLGraph · 受 192 KB UB 分块" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e3f5f3;strokeColor=#0f766e;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
-          <mxGeometry x="352" y="336" width="312" height="80" as="geometry"/>
+        <mxCell id="yarn_4" value="" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f2fb;strokeColor=#2f5783;strokeWidth=2;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter, Noto Sans SC;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="192" y="48" width="32" height="112" as="geometry" />
+        </mxCell>
+        <mxCell id="yarn__lbl_4" value="i8" style="text;html=1;whiteSpace=wrap;align=center;verticalAlign=middle;fontFamily=Inter, Noto Sans SC;fontSize=11;fontColor=#5c6067;" vertex="1" parent="1">
+          <mxGeometry x="192" y="160" width="32" height="24" as="geometry" />
+        </mxCell>
+        <mxCell id="yarn_5" value="" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f2fb;strokeColor=#2f5783;strokeWidth=2;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter, Noto Sans SC;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="232" y="48" width="32" height="112" as="geometry" />
+        </mxCell>
+        <mxCell id="yarn__lbl_5" value="i10" style="text;html=1;whiteSpace=wrap;align=center;verticalAlign=middle;fontFamily=Inter, Noto Sans SC;fontSize=11;fontColor=#5c6067;" vertex="1" parent="1">
+          <mxGeometry x="232" y="160" width="32" height="24" as="geometry" />
+        </mxCell>
+        <mxCell id="yarn_6" value="" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#fbf2df;strokeColor=#7b5518;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter, Noto Sans SC;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="272" y="64" width="32" height="96" as="geometry" />
+        </mxCell>
+        <mxCell id="yarn__lbl_6" value="12" style="text;html=1;whiteSpace=wrap;align=center;verticalAlign=middle;fontFamily=Inter, Noto Sans SC;fontSize=11;fontColor=#5c6067;" vertex="1" parent="1">
+          <mxGeometry x="272" y="160" width="32" height="24" as="geometry" />
+        </mxCell>
+        <mxCell id="yarn_7" value="" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#fbf2df;strokeColor=#7b5518;strokeWidth=2;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter, Noto Sans SC;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="312" y="80" width="32" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="yarn__lbl_7" value="14" style="text;html=1;whiteSpace=wrap;align=center;verticalAlign=middle;fontFamily=Inter, Noto Sans SC;fontSize=11;fontColor=#5c6067;" vertex="1" parent="1">
+          <mxGeometry x="312" y="160" width="32" height="24" as="geometry" />
+        </mxCell>
+        <mxCell id="yarn_8" value="" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#fbf2df;strokeColor=#7b5518;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter, Noto Sans SC;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="352" y="96" width="32" height="64" as="geometry" />
+        </mxCell>
+        <mxCell id="yarn__lbl_8" value="16" style="text;html=1;whiteSpace=wrap;align=center;verticalAlign=middle;fontFamily=Inter, Noto Sans SC;fontSize=11;fontColor=#5c6067;" vertex="1" parent="1">
+          <mxGeometry x="352" y="160" width="32" height="24" as="geometry" />
+        </mxCell>
+        <mxCell id="yarn_9" value="" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#fbf2df;strokeColor=#7b5518;strokeWidth=2;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter, Noto Sans SC;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="392" y="112" width="32" height="48" as="geometry" />
+        </mxCell>
+        <mxCell id="yarn__lbl_9" value="17" style="text;html=1;whiteSpace=wrap;align=center;verticalAlign=middle;fontFamily=Inter, Noto Sans SC;fontSize=11;fontColor=#5c6067;" vertex="1" parent="1">
+          <mxGeometry x="392" y="160" width="32" height="24" as="geometry" />
+        </mxCell>
+        <mxCell id="yarn_10" value="" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#fbf2df;strokeColor=#7b5518;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter, Noto Sans SC;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="432" y="136" width="32" height="24" as="geometry" />
+        </mxCell>
+        <mxCell id="yarn__lbl_10" value="20" style="text;html=1;whiteSpace=wrap;align=center;verticalAlign=middle;fontFamily=Inter, Noto Sans SC;fontSize=11;fontColor=#5c6067;" vertex="1" parent="1">
+          <mxGeometry x="432" y="160" width="32" height="24" as="geometry" />
+        </mxCell>
+        <mxCell id="yarn_11" value="" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#fbf2df;strokeColor=#7b5518;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter, Noto Sans SC;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="472" y="152" width="32" height="8" as="geometry" />
+        </mxCell>
+        <mxCell id="yarn__lbl_11" value="22" style="text;html=1;whiteSpace=wrap;align=center;verticalAlign=middle;fontFamily=Inter, Noto Sans SC;fontSize=11;fontColor=#5c6067;" vertex="1" parent="1">
+          <mxGeometry x="472" y="160" width="32" height="24" as="geometry" />
+        </mxCell>
+        <mxCell id="yarn_12" value="" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#f4f4f2;strokeColor=#5c6067;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter, Noto Sans SC;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="512" y="152" width="32" height="8" as="geometry" />
+        </mxCell>
+        <mxCell id="yarn__lbl_12" value="24" style="text;html=1;whiteSpace=wrap;align=center;verticalAlign=middle;fontFamily=Inter, Noto Sans SC;fontSize=11;fontColor=#5c6067;" vertex="1" parent="1">
+          <mxGeometry x="512" y="160" width="32" height="24" as="geometry" />
+        </mxCell>
+        <mxCell id="yarn_13" value="" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#f4f4f2;strokeColor=#5c6067;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter, Noto Sans SC;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="552" y="152" width="32" height="8" as="geometry" />
+        </mxCell>
+        <mxCell id="yarn__lbl_13" value="26" style="text;html=1;whiteSpace=wrap;align=center;verticalAlign=middle;fontFamily=Inter, Noto Sans SC;fontSize=11;fontColor=#5c6067;" vertex="1" parent="1">
+          <mxGeometry x="552" y="160" width="32" height="24" as="geometry" />
+        </mxCell>
+        <mxCell id="yarn_14" value="" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#f4f4f2;strokeColor=#5c6067;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter, Noto Sans SC;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="592" y="152" width="32" height="8" as="geometry" />
+        </mxCell>
+        <mxCell id="yarn__lbl_14" value="28" style="text;html=1;whiteSpace=wrap;align=center;verticalAlign=middle;fontFamily=Inter, Noto Sans SC;fontSize=11;fontColor=#5c6067;" vertex="1" parent="1">
+          <mxGeometry x="592" y="160" width="32" height="24" as="geometry" />
+        </mxCell>
+        <mxCell id="yarn_15" value="" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#f4f4f2;strokeColor=#5c6067;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter, Noto Sans SC;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="632" y="152" width="32" height="8" as="geometry" />
+        </mxCell>
+        <mxCell id="yarn__lbl_15" value="30" style="text;html=1;whiteSpace=wrap;align=center;verticalAlign=middle;fontFamily=Inter, Noto Sans SC;fontSize=11;fontColor=#5c6067;" vertex="1" parent="1">
+          <mxGeometry x="632" y="160" width="32" height="24" as="geometry" />
+        </mxCell>
+        <mxCell id="y_hi_note" value="高频 \(i\le 10\)：\(\text{extrap}_i=1.0\)（保词序）" style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;fontFamily=Inter, Noto Sans SC;fontSize=11;fontStyle=1;fontColor=#2f5783;" vertex="1" parent="1">
+          <mxGeometry x="16" y="184" width="256" height="24" as="geometry" />
+        </mxCell>
+        <mxCell id="y_mid_note" value="中频 \(11..22\)：线性斜坡混合" style="text;html=1;whiteSpace=wrap;align=center;verticalAlign=middle;fontFamily=Inter, Noto Sans SC;fontSize=11;fontStyle=1;fontColor=#7b5518;" vertex="1" parent="1">
+          <mxGeometry x="280" y="184" width="216" height="24" as="geometry" />
+        </mxCell>
+        <mxCell id="y_lo_note" value="低频 \(i\ge 23\)：\(\theta_i/40\)" style="text;html=1;whiteSpace=wrap;align=right;verticalAlign=middle;fontFamily=Inter, Noto Sans SC;fontSize=11;fontStyle=1;fontColor=#5c6067;" vertex="1" parent="1">
+          <mxGeometry x="504" y="184" width="168" height="24" as="geometry" />
+        </mxCell>
+        <mxCell id="eq_box" value="\(\theta'_i = (1-\text{extrap}_i)\,\theta_i/s + \text{extrap}_i\,\theta_i\)   |   温度修正：\(\text{mscale} = 0.1\ln(s) + 1 \approx 1.37\)" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#f4f4f2;strokeColor=#5c6067;strokeWidth=1;dashed=1;dashPattern=4 4;align=center;verticalAlign=middle;spacing=6;fontFamily=Inter, Noto Sans SC;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="16" y="216" width="656" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="cache_grp" value="2. 双后端预乘 \(\text{mscale}\) 频率 Cache 物理布局对照" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#f4f4f2;strokeColor=#5c6067;strokeWidth=1.25;verticalAlign=top;align=left;spacingLeft=12;spacingTop=8;fontFamily=Inter, Noto Sans SC;fontSize=12;fontStyle=1;fontColor=#5c6067;container=0;" vertex="1" parent="1">
+          <mxGeometry x="0" y="288" width="688" height="160" as="geometry" />
+        </mxCell>
+        <mxCell id="gpu_lbl" value="vLLM GPU：对半拼接 [cos | sin]" style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;fontFamily=Inter, Noto Sans SC;fontSize=11;fontStyle=1;fontColor=#2f5783;" vertex="1" parent="1">
+          <mxGeometry x="16" y="320" width="200" height="24" as="geometry" />
+        </mxCell>
+        <mxCell id="gpu_cs_0" value="c0" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f2fb;strokeColor=#2f5783;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter, Noto Sans SC;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="224" y="320" width="48" height="32" as="geometry" />
+        </mxCell>
+        <mxCell id="gpu_cs_1" value="c1" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f2fb;strokeColor=#2f5783;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter, Noto Sans SC;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="280" y="320" width="48" height="32" as="geometry" />
+        </mxCell>
+        <mxCell id="gpu_cs_2" value="c2" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f2fb;strokeColor=#2f5783;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter, Noto Sans SC;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="336" y="320" width="48" height="32" as="geometry" />
+        </mxCell>
+        <mxCell id="gpu_cs_3" value="c3" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f2fb;strokeColor=#2f5783;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter, Noto Sans SC;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="392" y="320" width="48" height="32" as="geometry" />
+        </mxCell>
+        <mxCell id="gpu_cs_4" value="s0" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#fbf2df;strokeColor=#7b5518;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter, Noto Sans SC;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="448" y="320" width="48" height="32" as="geometry" />
+        </mxCell>
+        <mxCell id="gpu_cs_5" value="s1" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#fbf2df;strokeColor=#7b5518;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter, Noto Sans SC;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="504" y="320" width="48" height="32" as="geometry" />
+        </mxCell>
+        <mxCell id="gpu_cs_6" value="s2" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#fbf2df;strokeColor=#7b5518;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter, Noto Sans SC;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="560" y="320" width="48" height="32" as="geometry" />
+        </mxCell>
+        <mxCell id="gpu_cs_7" value="s3" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#fbf2df;strokeColor=#7b5518;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter, Noto Sans SC;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="616" y="320" width="48" height="32" as="geometry" />
+        </mxCell>
+        <mxCell id="npu_lbl" value="vllm-ascend：奇偶交错展平" style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;fontFamily=Inter, Noto Sans SC;fontSize=11;fontStyle=1;fontColor=#0f766e;" vertex="1" parent="1">
+          <mxGeometry x="16" y="368" width="200" height="24" as="geometry" />
+        </mxCell>
+        <mxCell id="npu_cs_0" value="c0" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e3f5f3;strokeColor=#0f766e;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter, Noto Sans SC;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="224" y="368" width="48" height="32" as="geometry" />
+        </mxCell>
+        <mxCell id="npu_cs_1" value="s0" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#fbf2df;strokeColor=#7b5518;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter, Noto Sans SC;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="280" y="368" width="48" height="32" as="geometry" />
+        </mxCell>
+        <mxCell id="npu_cs_2" value="c1" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e3f5f3;strokeColor=#0f766e;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter, Noto Sans SC;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="336" y="368" width="48" height="32" as="geometry" />
+        </mxCell>
+        <mxCell id="npu_cs_3" value="s1" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#fbf2df;strokeColor=#7b5518;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter, Noto Sans SC;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="392" y="368" width="48" height="32" as="geometry" />
+        </mxCell>
+        <mxCell id="npu_cs_4" value="c2" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e3f5f3;strokeColor=#0f766e;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter, Noto Sans SC;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="448" y="368" width="48" height="32" as="geometry" />
+        </mxCell>
+        <mxCell id="npu_cs_5" value="s2" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#fbf2df;strokeColor=#7b5518;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter, Noto Sans SC;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="504" y="368" width="48" height="32" as="geometry" />
+        </mxCell>
+        <mxCell id="npu_cs_6" value="c3" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e3f5f3;strokeColor=#0f766e;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter, Noto Sans SC;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="560" y="368" width="48" height="32" as="geometry" />
+        </mxCell>
+        <mxCell id="npu_cs_7" value="s3" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#fbf2df;strokeColor=#7b5518;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter, Noto Sans SC;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="616" y="368" width="48" height="32" as="geometry" />
+        </mxCell>
+        <mxCell id="cache_note" value="注：Ascend 端显式拆出 _cos_sin_flat 与 _cos_mla 静态缓冲，避开 aclnnRotaryPositionEmbedding 动态切片限制" style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;fontFamily=Inter, Noto Sans SC;fontSize=11;fontColor=#5c6067;" vertex="1" parent="1">
+          <mxGeometry x="16" y="416" width="656" height="24" as="geometry" />
         </mxCell>
       </root>
     </mxGraphModel>

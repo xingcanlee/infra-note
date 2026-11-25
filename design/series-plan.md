@@ -10,10 +10,10 @@
 
 首页 `summarizeSeries` 按系列内最新 `pubDate` 降序排列，时间锚定使首页按学习顺序精确呈现 **`foundations`（1）→ `distributed`（2）→ `deepseek`（3）→ `vllm`（4）→ `aclgraph`（5）**。
 
-## 可复用组件工程（文章就近 `explainers/` + `astro-wisp/explainers` + `scripts/diagram_kit`）
+## 可复用组件与单源图表（文章就近 `explainers/` + `astro-wisp` + 单源 `.drawio`/`.excalidraw`）
 
 - **交互式讲解架构**：17 枚文章专属 `<Explainer>` 组件已随文章就近存放在各自 `src/content/posts/<series>/<slug>/explainers/` 下，复用 `astro-wisp/explainers` 的新版外壳（顶部阶段标签、重播、自动演示与原生 `<dialog>` 全屏推演），其中 `07-engram` 率先采用模块化文件 + HTML/SVG 混合聚焦舞台 + `motion/react` 渐进推导；存量共享原语保留在 `src/explainers/kit/` 供其余组件使用，全站 `<= 3` 非 slate 色调，全部基于 `var(--wisp-*)` 语义令牌。
-- **静态图生成器套件（`scripts/diagram_kit/`）**：封装 `DrawioCanvas`（`tensor_block`、`proportional_strip`、`heatmap_grid`、`swimlane_pair`、`horizontal_lanes`、`multi_lane_bus`）与 `ExcalidrawScene`（`bitfield_comparison`、`quadrant_cards`、`tap_contrast`），按系列通过 `scripts/diagrams/*.py` 确定性生成并经过 `lint --strict` 校验。
+- **静态图表工作流（`design/diagram-workflow.md`）**：流程、分层、双端对照与状态转换优先采用 Pele（Mermaid）；LLM 论文结构图、矩阵网格与等比时间线直接以未压缩 `.drawio` / `.excalidraw` 为唯一真相源，配合 `wisp diagram lint --fix`、`pnpm diagram build` 与明暗 PNG 目视验收交付。
 
 ---
 

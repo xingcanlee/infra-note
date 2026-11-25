@@ -1,0 +1,61 @@
+<mxfile host="wisp-diagram">
+  <diagram id="ds-01-mla-ledger" name="MLA KV Byte Comparison">
+    <mxGraphModel dx="800" dy="600" grid="1" gridSize="8" guides="1" page="0" math="1" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="led_grp" value="DeepSeek-V3 / V3.2 单 token 每层 KV 字节开销对照" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#f4f4f2;strokeColor=#5c6067;strokeWidth=1.25;verticalAlign=top;align=left;spacingLeft=12;spacingTop=8;fontFamily=Inter, Noto Sans SC;fontSize=12;fontStyle=1;fontColor=#5c6067;container=0;" vertex="1" parent="1">
+          <mxGeometry x="0" y="8" width="704" height="288" as="geometry" />
+        </mxCell>
+        <mxCell id="led_cmp__title" value="压缩尺度：MHA-128H (65,536 B) → GQA-8 (4,096 B) → MLA (1,152 B)" style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;fontFamily=Inter, Noto Sans SC;fontSize=12;fontStyle=1;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="16" y="48" width="536" height="24" as="geometry" />
+        </mxCell>
+        <mxCell id="led_cmp__tot" value="按字节缩尺" style="text;html=1;whiteSpace=wrap;align=right;verticalAlign=middle;fontFamily=Inter, Noto Sans SC;fontSize=11;fontColor=#5c6067;" vertex="1" parent="1">
+          <mxGeometry x="560" y="48" width="128" height="24" as="geometry" />
+        </mxCell>
+        <mxCell id="led_cmp_0" value="MHA-128H FP8 (32,768 B)" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#fcedec;strokeColor=#984646;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=6;fontFamily=Inter, Noto Sans SC;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="16" y="80" width="576" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="led_cmp_1" value="GQA-8&lt;br&gt;(4096 B)" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f2fb;strokeColor=#2f5783;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=6;fontFamily=Inter, Noto Sans SC;fontSize=11;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="592" y="80" width="80" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="led_cmp_2" value="" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f5e9;strokeColor=#2c522d;strokeWidth=2;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter, Noto Sans SC;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="672" y="80" width="16" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="led_cmp__tk2" value="" style="endArrow=none;startArrow=none;html=1;strokeColor=#2c522d;strokeWidth=1.0;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="680" y="120" as="sourcePoint" />
+            <mxPoint x="680" y="136" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="led_cmp__nl2" value="MLA (1152 B)" style="text;html=1;whiteSpace=wrap;align=right;verticalAlign=middle;fontFamily=Inter, Noto Sans SC;fontSize=11;fontStyle=1;fontColor=#2c522d;" vertex="1" parent="1">
+          <mxGeometry x="592" y="136" width="96" height="24" as="geometry" />
+        </mxCell>
+        <mxCell id="led_fp8__title" value="DS-V3.2 fp8_ds_mla 混合格式（共 656 B/tok，较 BF16 再省 43%）" style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;fontFamily=Inter, Noto Sans SC;fontSize=12;fontStyle=1;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="16" y="176" width="536" height="24" as="geometry" />
+        </mxCell>
+        <mxCell id="led_fp8__tot" value="656 B/tok" style="text;html=1;whiteSpace=wrap;align=right;verticalAlign=middle;fontFamily=Inter, Noto Sans SC;fontSize=11;fontColor=#5c6067;" vertex="1" parent="1">
+          <mxGeometry x="560" y="176" width="128" height="24" as="geometry" />
+        </mxCell>
+        <mxCell id="led_fp8_0" value="FP8 E4M3 \(c_s^{KV}\) (512 B)" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f5e9;strokeColor=#2c522d;strokeWidth=2;align=center;verticalAlign=middle;spacing=6;fontFamily=Inter, Noto Sans SC;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="16" y="208" width="520" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="led_fp8_1" value="" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f2fb;strokeColor=#2f5783;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter, Noto Sans SC;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="536" y="208" width="16" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="led_fp8__tk1" value="" style="endArrow=none;startArrow=none;html=1;strokeColor=#2f5783;strokeWidth=1.0;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="544" y="248" as="sourcePoint" />
+            <mxPoint x="544" y="264" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="led_fp8__nl1" value="4×FP32 缩放 (16 B)" style="text;html=1;whiteSpace=wrap;align=center;verticalAlign=middle;fontFamily=Inter, Noto Sans SC;fontSize=11;fontStyle=1;fontColor=#2f5783;" vertex="1" parent="1">
+          <mxGeometry x="488" y="264" width="112" height="24" as="geometry" />
+        </mxCell>
+        <mxCell id="led_fp8_2" value="BF16 RoPE \(k_s^R\)&lt;br&gt;(128 B)" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f2fb;strokeColor=#2f5783;strokeWidth=2;align=center;verticalAlign=middle;spacing=6;fontFamily=Inter, Noto Sans SC;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="552" y="208" width="136" height="40" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

@@ -78,17 +78,17 @@
 
 ## 4. 四选一可视化路由与可复用组件体系
 
-拒绝“只有圆角方框 + 公式”的低信息密度图；单篇文章内鼓励按场景混用下列四类工具，图号从 `图 1：` 起按正文出现顺序连续递增：
+拒绝“只有圆角方框 + 公式”的低信息密度图；单篇文章内鼓励按场景混用下列四类工具，具体选型边界、单源工作流与论文级出图验收规范见 [diagram-workflow.md](./diagram-workflow.md)，图号从 `图 1：` 起按正文出现顺序连续递增：
 
-1. **简单控制流 / 模块调用 / 排障决策树 → `Mermaid`**
-   - 写法：` ```mermaid caption="图 N：..." `，节点文字用双引号包裹 `A["..."]`。
+1. **简单控制流 / 分层架构 / 双端对照 / 状态转换 / 排障决策树 → `Pele（Mermaid）`**
+   - 写法：` ```mermaid caption="图 N：..." `，节点文字用双引号包裹 `A["..."]`；标签内数学符号与公式用 `$$...$$` 包裹（纯代码/API 标识符保持普通文本）。
    - 约束：不超过 `12` 个节点，禁止手写 `style`、`classDef` 或 `%%{init}%%`，节点文字尽量简短清晰。
-2. **复杂模型架构 / 分布式切分 / 静态硬件双泳道 → `Draw.io`（`scripts/diagram_kit.DrawioCanvas`）**
-   - 写法：由 `scripts/diagrams/<slice>.py` 调用 `DrawioCanvas` 生成未压缩 `.drawio` 并编译 `.wisp.svg`，文章中用 `![alt](./diagrams/foo.drawio '图 N：说明')` 引用；关键门面架构图生成后可用 Draw.io GUI 做微调定稿。
-   - 布局与配色：优先使用相对布局原语（`vstack`、`hstack`、`place_below`、`place_right_of`、`wrap_group`）与 `connect(..., label=...)` 自动悬浮边标签，避免手写绝对像素坐标和箭头穿字；采用学术粉彩语义分工（`active`/`blue` 表主干计算、`violet` 表静态记忆与扩展、`highlight`/`amber` 表门控与关键高亮）。
-   - 约束：画布宽度 `<= 688px`，坐标严格落在 `8px` 网格上，字号仅用 `12 / 14 / 18`，单图非中性（slate）色调 `<= 3` 种，不在画布内重复写图标题；数学符号（如 `$H_t$`、`$[T, 4, d]$`）与纯工程模块名（如 `Attn`、`MoE`）严格划界；张量块长宽与字节严格按真实比例绘制，切分处画虚线。
-3. **局部直觉对比 / `<= 3` 跳指针映射 / 位宽字段对照 → `Excalidraw`（`scripts/diagram_kit.ExcalidrawScene`）**
-   - 写法：调用 `ExcalidrawScene` 生成骨架并用 `wisp_diagram.py new --build` 编译 `.excalidraw` + `.wisp.svg`。
+2. **LLM 论文级结构图 / 硬件泳道 / 矩阵与掩码网格 / 等比时间线 → 单源 `Draw.io`（`.drawio`）**
+   - 写法：直接维护未压缩 `.drawio` XML 或使用 Draw.io 桌面端加载 `wisp-drawio-library.xml` 元件库拖拽微调，再执行 `pnpm diagram lint --fix && pnpm diagram build`；文章中用 `![alt](./diagrams/foo.drawio '图 N：说明')` 引用。
+   - 布局与配色：优先大留白与少跨线，用梯形、算子圆 `⊕/⊗/·`、圆柱存储、微缩矩阵块与专家条带替代纯文字方框；中性底框配 `<= 3` 种语义色，短边或绕行边采用 `labelBackgroundColor=#ffffff` 白底内联标签。
+   - 约束：画布宽度 `<= 688px`，坐标严格落在 `8px` 网格上，字号仅用 `12 / 14 / 18`，不在画布内重复写图标题；数学符号与工程模块名严格划界。
+3. **局部直觉对比 / `<= 3` 跳指针映射 / 位宽字段对照 → 单源 `Excalidraw`（`.excalidraw`）**
+   - 写法：通过 `wisp_diagram.py new` 由骨架 JSON 转换并编译 `.excalidraw` + `.wisp.svg`，之后以 `.excalidraw` 为准。
    - 约束：公式用 Unicode（`×`、`√d`、`α`），节点数 `<= 12`，单图 `<= 3` 种非 slate 色调。
 4. **矩阵变换、注意力/稀疏掩码、数值热力分布、离群值、`> 3` 次指针寻址或时间步演化 → 交互讲解 `<Explainer>`**
    - 就近目录结构与公共套件：文章私有交互讲解统一放置在文章目录 `src/content/posts/<series>/<slug>/explainers/` 下（单文件组件 `FooExplainer.tsx` 或模块化子目录 `<name>/{index.tsx,steps.ts,*Stage.tsx,style.css}`），在 `index.mdx` 中直接 `./explainers/...` 导入并挂载 `<FooExplainer client:visible title="图 N：..." />`；所有讲解统一组合 `src/explainers/kit/` 的 `<BeatExplainer>`（提供顶部公式推导横幅 `.wisp-kit-banner`、节拍进度细线与视口触发的页内 3–6 拍自动时序推进）、`SvgBeatGroup` 及 `motion/react` 原生编排（`initial={false}`、`pathLength`、`layoutId`，不自建动画 hook 封装）。每个步进阶段必须声明简短 `label`、`duration >= 3600`（末拍后留 `>= 1500ms` 停顿）与 `stageMinHeight` 防止切步跳高。

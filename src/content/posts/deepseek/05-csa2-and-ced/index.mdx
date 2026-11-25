@@ -92,7 +92,20 @@ $$
 
 各节点仅划出 10% 的主机内存组成高周转率热缓冲池，专门缓存 Prompt 尾与输出尾两处 SWA 快照。一旦遇到全局 KV 命中而 SWA 过期未命中，**Encoder SWA Bounded Replay** 只重放命中点前末尾 $n_{\text{win}} = 128$ 个 token（而非全网 $5{,}120$ 个），即可恢复局部状态完成推理。
 
-![CED 非对称编码-解码、SSD/DRAM 分级缓存与 SWA 有界重放架构](./diagrams/05-ced-prefix-arch.drawio '图 3：CED 非对称编码-解码、SSD/DRAM 分级缓存与 SWA 有界重放架构')
+```mermaid caption="图 3：CED 非对称编码-解码、SSD/DRAM 分级缓存与 SWA 有界重放架构"
+flowchart TB
+  subgraph CED["Causal Encoder-Decoder (CED) Prefill 算力减半"]
+    direction TB
+    C0["Causal Encoder (L0..19, 激活 ~8B)<br/>处理完整长度 $$N$$ · 生成 1.5 份全局 KV"] --> C1["编码器顶层隐状态 $$H_{L/2}$$"]
+    C1 --> C2["直接投影 L20..39 全局 KV<br/>$$C_l = H_{L/2} W_l^{KV}$$（免跑上层 MoE）"]
+    C2 --> C3["DecoderReplayLayers (L20..39)<br/>仅末尾 $$n_{\mathrm{win}}=128$$ 跑局部 SWA"]
+  end
+  subgraph TIER["智能体多轮分级存储与 SWA 有界重放"]
+    direction TB
+    T0["SSD 持久化前缀池 (TTL ≥ 72h)<br/>只存全局 KV (890 B/tok · V4 的 1/8)"] -->|"全局命中"| T1["Host DRAM 热缓冲池 (10% RAM)<br/>仅缓存 Prompt/输出尾两处 SWA 快照"]
+    T1 -->|"SWA 过期"| T2["HBM 有界重放兜底<br/>仅回放命中点前 128 token + 增量编码后缀"]
+  end
+```
 
 ## 论文概念与双硬件上游源码映射
 

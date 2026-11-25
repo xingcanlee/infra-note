@@ -1,35 +1,185 @@
 <mxfile host="wisp-diagram">
-  <diagram id="foundations-05-outlier-quant-comparison" name="Outlier Channel Trap and SQNR Recovery">
+  <diagram id="foundations-06-outlier-quant" name="Outlier Channel Trap and SQNR Recovery">
     <mxGraphModel dx="800" dy="600" grid="1" gridSize="8" guides="1" page="0" math="1" shadow="0">
       <root>
-        <mxCell id="0"/>
-        <mxCell id="1" parent="0"/>
-        <mxCell id="hdr" value="离群通道陷阱与量化精度恢复对照：BF16 激活 \(X\;[4, 8]\)（列 \(c_3 = \pm 12.4\) vs 正常列 \(\pm 0.02\text{–}0.49\)）" style="text;html=1;whiteSpace=wrap;align=center;verticalAlign=middle;fontFamily=Inter;fontSize=12;fontColor=#5c6067;" vertex="1" parent="1">
-          <mxGeometry x="0" y="0" width="688" height="24" as="geometry"/>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="g_raw" value="1. 原始激活 \(X\;[4, 8]\)：单列 \(c_3\) 离群尖刺" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#fcedec;strokeColor=#984646;strokeWidth=1.25;verticalAlign=top;align=left;spacingLeft=12;spacingTop=8;fontFamily=Inter, Noto Sans SC;fontSize=12;fontStyle=1;fontColor=#984646;container=0;" vertex="1" parent="1">
+          <mxGeometry x="0" y="8" width="304" height="200" as="geometry" />
         </mxCell>
-        <mxCell id="in_box" value="&lt;b&gt;原始激活分布 \(X\;[4, 8]\)&lt;/b&gt;：7 个正常通道（28 元素）集中于 \(\pm 0.02\text{–}0.49\)，仅单列 \(c_3\) 突刺至 \(\pm 12.4\)（\(25\times\) 正常峰值），拉爆全局量化步长" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#fcedec;strokeColor=#984646;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
-          <mxGeometry x="8" y="32" width="672" height="48" as="geometry"/>
+        <mxCell id="sp_raw__base" value="" style="endArrow=none;startArrow=none;html=1;strokeColor=#5c6067;strokeWidth=1.25;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="16" y="96" as="sourcePoint" />
+            <mxPoint x="288" y="96" as="targetPoint" />
+          </mxGeometry>
         </mxCell>
-        <mxCell id="grid_grp" value="五种量化方案的零桶截断与正常通道 SQNR 保真度对比（约每 6.02 dB 等价多保住 1 bit 有效精度）" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#f4f4f2;strokeColor=#e2e2dd;strokeWidth=1;dashed=1;verticalAlign=top;align=left;spacingLeft=12;spacingTop=6;fontFamily=Inter;fontSize=12;fontStyle=1;fontColor=#5c6067;container=0;" vertex="1" parent="1">
-          <mxGeometry x="8" y="96" width="672" height="264" as="geometry"/>
+        <mxCell id="sp_raw_0" value="" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#f4f4f2;strokeColor=#5c6067;strokeWidth=1;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter, Noto Sans SC;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="32" y="88" width="24" height="8" as="geometry" />
         </mxCell>
-        <mxCell id="m_int8" value="&lt;b&gt;1. Per-Tensor INT8（基线受损）&lt;/b&gt;&lt;br&gt;全张量按 \(s = 12.4/127 \approx 0.0976\) 放缩&lt;br&gt;&lt;b&gt;10 / 28 正常元素落入 0 桶&lt;/b&gt;，浪费 96% 刻度&lt;br&gt;SQNR = &lt;b&gt;20.25 dB&lt;/b&gt;" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#fcedec;strokeColor=#984646;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
-          <mxGeometry x="24" y="128" width="312" height="80" as="geometry"/>
+        <mxCell id="sp_raw__lbl_0" value="c0" style="text;html=1;whiteSpace=wrap;align=center;verticalAlign=middle;fontFamily=Inter, Noto Sans SC;fontSize=11;fontColor=#5c6067;" vertex="1" parent="1">
+          <mxGeometry x="32" y="136" width="24" height="24" as="geometry" />
         </mxCell>
-        <mxCell id="m_smh" value="&lt;b&gt;2. SmoothQuant + Hadamard-8（最优恢复）&lt;/b&gt;&lt;br&gt;\(s_3 = \sqrt{12.4/0.48} \approx 5.083\) 平滑后乘正交 \(H_8\)&lt;br&gt;峰值降至 \(1.354\)（步长 \(0.0107\)），&lt;b&gt;0 / 28 归零&lt;/b&gt;&lt;br&gt;SQNR = &lt;b&gt;39.69 dB&lt;/b&gt;（\(+19.44\;\text{dB}\)，多保 &gt;3 bit）" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f5e9;strokeColor=#2c522d;strokeWidth=2;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
-          <mxGeometry x="352" y="128" width="312" height="80" as="geometry"/>
+        <mxCell id="sp_raw_1" value="" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#f4f4f2;strokeColor=#5c6067;strokeWidth=1;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter, Noto Sans SC;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="64" y="96" width="24" height="8" as="geometry" />
         </mxCell>
-        <mxCell id="m_fp8" value="&lt;b&gt;3. FP8 E4M3 块缩放（原生抗离群）&lt;/b&gt;&lt;br&gt;4-bit 指数自带对数刻度，无需离线旋转 · &lt;b&gt;0 / 28 归零&lt;/b&gt;&lt;br&gt;本例 &lt;b&gt;32.11 dB&lt;/b&gt;；DeepSeek \(1\times 128\) GEMM 达 &lt;b&gt;29.38 dB&lt;/b&gt;" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#fbf2df;strokeColor=#7b5518;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
-          <mxGeometry x="24" y="224" width="216" height="120" as="geometry"/>
+        <mxCell id="sp_raw__lbl_1" value="c1" style="text;html=1;whiteSpace=wrap;align=center;verticalAlign=middle;fontFamily=Inter, Noto Sans SC;fontSize=11;fontColor=#5c6067;" vertex="1" parent="1">
+          <mxGeometry x="64" y="136" width="24" height="24" as="geometry" />
         </mxCell>
-        <mxCell id="m_fp4" value="&lt;b&gt;4. 无微缩放单尺度 FP4&lt;/b&gt;&lt;br&gt;E2M1 正半轴仅 7 个离散幅值&lt;br&gt;单尺度使正常通道全部截断为 0&lt;br&gt;SQNR = &lt;b&gt;0.00 dB&lt;/b&gt;" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#fcedec;strokeColor=#984646;strokeWidth=1.25;dashed=1;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
-          <mxGeometry x="256" y="224" width="176" height="120" as="geometry"/>
+        <mxCell id="sp_raw_2" value="" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#f4f4f2;strokeColor=#5c6067;strokeWidth=1;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter, Noto Sans SC;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="96" y="88" width="24" height="8" as="geometry" />
         </mxCell>
-        <mxCell id="m_mx" value="&lt;b&gt;5. OCP MXFP4 + 平滑旋转&lt;/b&gt;&lt;br&gt;每 32 元素共享 1 B E8M0 指数块（均摊 4.25 bit）&lt;br&gt;\([4,8]\) 恢复至 &lt;b&gt;8.60 dB&lt;/b&gt;；\([64,128]\) GEMM 由 15.10 → &lt;b&gt;25.24 dB&lt;/b&gt;" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#fbf2df;strokeColor=#7b5518;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
-          <mxGeometry x="448" y="224" width="216" height="120" as="geometry"/>
+        <mxCell id="sp_raw__lbl_2" value="c2" style="text;html=1;whiteSpace=wrap;align=center;verticalAlign=middle;fontFamily=Inter, Noto Sans SC;fontSize=11;fontColor=#5c6067;" vertex="1" parent="1">
+          <mxGeometry x="96" y="136" width="24" height="24" as="geometry" />
         </mxCell>
-        <mxCell id="ftr" value="恒等变换：SmoothQuant \((X\,\text{diag}(s)^{-1})(\text{diag}(s)\,W)\)　|　Hadamard \((X H)(H^\top W)\)　|　Embed / LM Head / Router 保留 BF16" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#f4f4f2;strokeColor=#5c6067;strokeWidth=1;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#5c6067;" vertex="1" parent="1">
-          <mxGeometry x="8" y="376" width="672" height="40" as="geometry"/>
+        <mxCell id="sp_raw_3" value="" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#fcedec;strokeColor=#984646;strokeWidth=2;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter, Noto Sans SC;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="128" y="48" width="24" height="48" as="geometry" />
+        </mxCell>
+        <mxCell id="sp_raw__lbl_3" value="c3*" style="text;html=1;whiteSpace=wrap;align=center;verticalAlign=middle;fontFamily=Inter, Noto Sans SC;fontSize=11;fontColor=#5c6067;" vertex="1" parent="1">
+          <mxGeometry x="128" y="136" width="24" height="24" as="geometry" />
+        </mxCell>
+        <mxCell id="sp_raw_4" value="" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#f4f4f2;strokeColor=#5c6067;strokeWidth=1;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter, Noto Sans SC;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="160" y="96" width="24" height="8" as="geometry" />
+        </mxCell>
+        <mxCell id="sp_raw__lbl_4" value="c4" style="text;html=1;whiteSpace=wrap;align=center;verticalAlign=middle;fontFamily=Inter, Noto Sans SC;fontSize=11;fontColor=#5c6067;" vertex="1" parent="1">
+          <mxGeometry x="160" y="136" width="24" height="24" as="geometry" />
+        </mxCell>
+        <mxCell id="sp_raw_5" value="" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#f4f4f2;strokeColor=#5c6067;strokeWidth=1;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter, Noto Sans SC;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="192" y="88" width="24" height="8" as="geometry" />
+        </mxCell>
+        <mxCell id="sp_raw__lbl_5" value="c5" style="text;html=1;whiteSpace=wrap;align=center;verticalAlign=middle;fontFamily=Inter, Noto Sans SC;fontSize=11;fontColor=#5c6067;" vertex="1" parent="1">
+          <mxGeometry x="192" y="136" width="24" height="24" as="geometry" />
+        </mxCell>
+        <mxCell id="sp_raw_6" value="" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#f4f4f2;strokeColor=#5c6067;strokeWidth=1;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter, Noto Sans SC;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="224" y="96" width="24" height="8" as="geometry" />
+        </mxCell>
+        <mxCell id="sp_raw__lbl_6" value="c6" style="text;html=1;whiteSpace=wrap;align=center;verticalAlign=middle;fontFamily=Inter, Noto Sans SC;fontSize=11;fontColor=#5c6067;" vertex="1" parent="1">
+          <mxGeometry x="224" y="136" width="24" height="24" as="geometry" />
+        </mxCell>
+        <mxCell id="sp_raw_7" value="" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#f4f4f2;strokeColor=#5c6067;strokeWidth=1;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter, Noto Sans SC;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="256" y="88" width="24" height="8" as="geometry" />
+        </mxCell>
+        <mxCell id="sp_raw__lbl_7" value="c7" style="text;html=1;whiteSpace=wrap;align=center;verticalAlign=middle;fontFamily=Inter, Noto Sans SC;fontSize=11;fontColor=#5c6067;" vertex="1" parent="1">
+          <mxGeometry x="256" y="136" width="24" height="24" as="geometry" />
+        </mxCell>
+        <mxCell id="raw_cap" value="正常列仅占满量程 4%，INT8 放缩被截断归 0" style="text;html=1;whiteSpace=wrap;align=center;verticalAlign=middle;fontFamily=Inter, Noto Sans SC;fontSize=11;fontColor=#984646;" vertex="1" parent="1">
+          <mxGeometry x="16" y="168" width="272" height="24" as="geometry" />
+        </mxCell>
+        <mxCell id="g_smh" value="2. SmoothQuant + \(H_8\) 旋转均匀化" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f5e9;strokeColor=#2c522d;strokeWidth=1.25;verticalAlign=top;align=left;spacingLeft=12;spacingTop=8;fontFamily=Inter, Noto Sans SC;fontSize=12;fontStyle=1;fontColor=#2c522d;container=0;" vertex="1" parent="1">
+          <mxGeometry x="384" y="8" width="304" height="200" as="geometry" />
+        </mxCell>
+        <mxCell id="sp_smh__base" value="" style="endArrow=none;startArrow=none;html=1;strokeColor=#5c6067;strokeWidth=1.25;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="400" y="96" as="sourcePoint" />
+            <mxPoint x="672" y="96" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="sp_smh_0" value="" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f5e9;strokeColor=#2c522d;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter, Noto Sans SC;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="416" y="80" width="24" height="16" as="geometry" />
+        </mxCell>
+        <mxCell id="sp_smh__lbl_0" value="c0" style="text;html=1;whiteSpace=wrap;align=center;verticalAlign=middle;fontFamily=Inter, Noto Sans SC;fontSize=11;fontColor=#5c6067;" vertex="1" parent="1">
+          <mxGeometry x="416" y="136" width="24" height="24" as="geometry" />
+        </mxCell>
+        <mxCell id="sp_smh_1" value="" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f5e9;strokeColor=#2c522d;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter, Noto Sans SC;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="448" y="96" width="24" height="16" as="geometry" />
+        </mxCell>
+        <mxCell id="sp_smh__lbl_1" value="c1" style="text;html=1;whiteSpace=wrap;align=center;verticalAlign=middle;fontFamily=Inter, Noto Sans SC;fontSize=11;fontColor=#5c6067;" vertex="1" parent="1">
+          <mxGeometry x="448" y="136" width="24" height="24" as="geometry" />
+        </mxCell>
+        <mxCell id="sp_smh_2" value="" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f5e9;strokeColor=#2c522d;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter, Noto Sans SC;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="480" y="80" width="24" height="16" as="geometry" />
+        </mxCell>
+        <mxCell id="sp_smh__lbl_2" value="c2" style="text;html=1;whiteSpace=wrap;align=center;verticalAlign=middle;fontFamily=Inter, Noto Sans SC;fontSize=11;fontColor=#5c6067;" vertex="1" parent="1">
+          <mxGeometry x="480" y="136" width="24" height="24" as="geometry" />
+        </mxCell>
+        <mxCell id="sp_smh_3" value="" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f5e9;strokeColor=#2c522d;strokeWidth=2;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter, Noto Sans SC;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="512" y="80" width="24" height="16" as="geometry" />
+        </mxCell>
+        <mxCell id="sp_smh__lbl_3" value="c3" style="text;html=1;whiteSpace=wrap;align=center;verticalAlign=middle;fontFamily=Inter, Noto Sans SC;fontSize=11;fontColor=#5c6067;" vertex="1" parent="1">
+          <mxGeometry x="512" y="136" width="24" height="24" as="geometry" />
+        </mxCell>
+        <mxCell id="sp_smh_4" value="" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f5e9;strokeColor=#2c522d;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter, Noto Sans SC;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="544" y="96" width="24" height="16" as="geometry" />
+        </mxCell>
+        <mxCell id="sp_smh__lbl_4" value="c4" style="text;html=1;whiteSpace=wrap;align=center;verticalAlign=middle;fontFamily=Inter, Noto Sans SC;fontSize=11;fontColor=#5c6067;" vertex="1" parent="1">
+          <mxGeometry x="544" y="136" width="24" height="24" as="geometry" />
+        </mxCell>
+        <mxCell id="sp_smh_5" value="" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f5e9;strokeColor=#2c522d;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter, Noto Sans SC;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="576" y="80" width="24" height="16" as="geometry" />
+        </mxCell>
+        <mxCell id="sp_smh__lbl_5" value="c5" style="text;html=1;whiteSpace=wrap;align=center;verticalAlign=middle;fontFamily=Inter, Noto Sans SC;fontSize=11;fontColor=#5c6067;" vertex="1" parent="1">
+          <mxGeometry x="576" y="136" width="24" height="24" as="geometry" />
+        </mxCell>
+        <mxCell id="sp_smh_6" value="" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f5e9;strokeColor=#2c522d;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter, Noto Sans SC;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="608" y="96" width="24" height="16" as="geometry" />
+        </mxCell>
+        <mxCell id="sp_smh__lbl_6" value="c6" style="text;html=1;whiteSpace=wrap;align=center;verticalAlign=middle;fontFamily=Inter, Noto Sans SC;fontSize=11;fontColor=#5c6067;" vertex="1" parent="1">
+          <mxGeometry x="608" y="136" width="24" height="24" as="geometry" />
+        </mxCell>
+        <mxCell id="sp_smh_7" value="" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f5e9;strokeColor=#2c522d;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter, Noto Sans SC;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="640" y="80" width="24" height="16" as="geometry" />
+        </mxCell>
+        <mxCell id="sp_smh__lbl_7" value="c7" style="text;html=1;whiteSpace=wrap;align=center;verticalAlign=middle;fontFamily=Inter, Noto Sans SC;fontSize=11;fontColor=#5c6067;" vertex="1" parent="1">
+          <mxGeometry x="640" y="136" width="24" height="24" as="geometry" />
+        </mxCell>
+        <mxCell id="smh_cap" value="方差平摊至 8 列（\(s_3\approx 5.08\)），无截断归零" style="text;html=1;whiteSpace=wrap;align=center;verticalAlign=middle;fontFamily=Inter, Noto Sans SC;fontSize=11;fontColor=#2c522d;" vertex="1" parent="1">
+          <mxGeometry x="400" y="168" width="272" height="24" as="geometry" />
+        </mxCell>
+        <mxCell id="e_tf" value="" style="endArrow=classic;startArrow=none;html=1;strokeColor=#1d1d1f;strokeWidth=1.25;" edge="1" parent="1" source="g_raw" target="g_smh">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_tf_lbl" value="Smooth + H8" style="text;html=1;whiteSpace=wrap;align=center;verticalAlign=middle;fontFamily=Inter, Noto Sans SC;fontSize=11;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="296" y="80" width="96" height="24" as="geometry" />
+        </mxCell>
+        <mxCell id="g_sqnr" value="3. 正常通道 SQNR 保真度对比（约每 6.02 dB 等价多保住 1 bit 有效精度）" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#f4f4f2;strokeColor=#5c6067;strokeWidth=1.25;verticalAlign=top;align=left;spacingLeft=12;spacingTop=8;fontFamily=Inter, Noto Sans SC;fontSize=12;fontStyle=1;fontColor=#5c6067;container=0;" vertex="1" parent="1">
+          <mxGeometry x="0" y="224" width="688" height="208" as="geometry" />
+        </mxCell>
+        <mxCell id="sq_lbl_0" value="无微缩放 FP4 (E2M1)" style="text;html=1;whiteSpace=wrap;align=right;verticalAlign=middle;fontFamily=Inter, Noto Sans SC;fontSize=12;fontStyle=1;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="8" y="256" width="152" height="24" as="geometry" />
+        </mxCell>
+        <mxCell id="sq_bar_0" value="" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#fcedec;strokeColor=#984646;strokeWidth=2;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter, Noto Sans SC;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="168" y="256" width="16" height="24" as="geometry" />
+        </mxCell>
+        <mxCell id="sq_val_0" value="0.00 dB（正常列全截断为 0）" style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;fontFamily=Inter, Noto Sans SC;fontSize=12;fontStyle=1;fontColor=#984646;" vertex="1" parent="1">
+          <mxGeometry x="192" y="256" width="488" height="24" as="geometry" />
+        </mxCell>
+        <mxCell id="sq_lbl_1" value="OCP MXFP4 + 旋转" style="text;html=1;whiteSpace=wrap;align=right;verticalAlign=middle;fontFamily=Inter, Noto Sans SC;fontSize=12;fontStyle=1;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="8" y="288" width="152" height="24" as="geometry" />
+        </mxCell>
+        <mxCell id="sq_bar_1" value="" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f2fb;strokeColor=#2f5783;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter, Noto Sans SC;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="168" y="288" width="88" height="24" as="geometry" />
+        </mxCell>
+        <mxCell id="sq_val_1" value="8.60 dB（32 共享 1B E8M0）" style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;fontFamily=Inter, Noto Sans SC;fontSize=12;fontColor=#2f5783;" vertex="1" parent="1">
+          <mxGeometry x="264" y="288" width="416" height="24" as="geometry" />
+        </mxCell>
+        <mxCell id="sq_lbl_2" value="Per-Tensor INT8" style="text;html=1;whiteSpace=wrap;align=right;verticalAlign=middle;fontFamily=Inter, Noto Sans SC;fontSize=12;fontStyle=1;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="8" y="320" width="152" height="24" as="geometry" />
+        </mxCell>
+        <mxCell id="sq_bar_2" value="" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#fcedec;strokeColor=#984646;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter, Noto Sans SC;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="168" y="320" width="136" height="24" as="geometry" />
+        </mxCell>
+        <mxCell id="sq_val_2" value="10/28 正常元素落入 0 桶" style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;fontFamily=Inter, Noto Sans SC;fontSize=12;fontColor=#984646;" vertex="1" parent="1">
+          <mxGeometry x="312" y="320" width="368" height="24" as="geometry" />
+        </mxCell>
+        <mxCell id="sq_lbl_3" value="FP8 E4M3 块缩放" style="text;html=1;whiteSpace=wrap;align=right;verticalAlign=middle;fontFamily=Inter, Noto Sans SC;fontSize=12;fontStyle=1;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="8" y="352" width="152" height="24" as="geometry" />
+        </mxCell>
+        <mxCell id="sq_bar_3" value="" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f2fb;strokeColor=#2f5783;strokeWidth=2;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter, Noto Sans SC;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="168" y="352" width="216" height="24" as="geometry" />
+        </mxCell>
+        <mxCell id="sq_val_3" value="32.11 dB（4b 指数原生抗离群）" style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;fontFamily=Inter, Noto Sans SC;fontSize=12;fontStyle=1;fontColor=#2f5783;" vertex="1" parent="1">
+          <mxGeometry x="392" y="352" width="288" height="24" as="geometry" />
+        </mxCell>
+        <mxCell id="sq_lbl_4" value="SmoothQuant + H8" style="text;html=1;whiteSpace=wrap;align=right;verticalAlign=middle;fontFamily=Inter, Noto Sans SC;fontSize=12;fontStyle=1;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="8" y="384" width="152" height="24" as="geometry" />
+        </mxCell>
+        <mxCell id="sq_bar_4" value="" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f5e9;strokeColor=#2c522d;strokeWidth=2;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter, Noto Sans SC;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="168" y="384" width="280" height="24" as="geometry" />
+        </mxCell>
+        <mxCell id="sq_val_4" value="最优恢复（接近无损全精度）" style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;fontFamily=Inter, Noto Sans SC;fontSize=12;fontStyle=1;fontColor=#2c522d;" vertex="1" parent="1">
+          <mxGeometry x="456" y="384" width="224" height="24" as="geometry" />
+        </mxCell>
+        <mxCell id="ftr_eq" value="恒等变换：\((X\,\operatorname{diag}(s)^{-1})(\operatorname{diag}(s)\,W)\)   |   正交旋转：\((XH)(H^\top W)\)" style="text;html=1;whiteSpace=wrap;align=center;verticalAlign=middle;fontFamily=Inter, Noto Sans SC;fontSize=11;fontColor=#5c6067;" vertex="1" parent="1">
+          <mxGeometry x="0" y="440" width="688" height="24" as="geometry" />
         </mxCell>
       </root>
     </mxGraphModel>

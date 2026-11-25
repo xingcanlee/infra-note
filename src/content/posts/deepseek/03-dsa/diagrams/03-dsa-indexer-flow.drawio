@@ -1,41 +1,83 @@
 <mxfile host="wisp-diagram">
-  <diagram id="deepseek-03-dsa-indexer-flow" name="DeepSeek-V3.2 DSA Indexer and Byte Ledger">
+  <diagram id="ds-03-dsa-flow" name="DeepSeek-V3.2 DSA Indexer Flow">
     <mxGraphModel dx="800" dy="600" grid="1" gridSize="8" guides="1" page="0" math="1" shadow="0">
       <root>
-        <mxCell id="0"/>
-        <mxCell id="1" parent="0"/>
-        <mxCell id="hdr" value="DeepSeek-V3.2 DSA：闪电索引器 Top-k 筛选、128 头稀疏 Gather 与 656 B + 132 B 混合精度缓存" style="text;html=1;whiteSpace=wrap;align=center;verticalAlign=middle;fontFamily=Inter;fontSize=12;fontColor=#5c6067;" vertex="1" parent="1">
-          <mxGeometry x="0" y="0" width="688" height="24" as="geometry"/>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="pipe_grp" value="DSA 粗筛与精算分离：复杂度由 \(O(L^2)\) 降至 \(O(Lk)\)（\(L=131{,}072,\; k=2048\) 仅取 1.56%）" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f2fb;strokeColor=#2f5783;strokeWidth=1.25;verticalAlign=top;align=left;spacingLeft=12;spacingTop=8;fontFamily=Inter, Noto Sans SC;fontSize=12;fontStyle=1;fontColor=#2f5783;container=0;" vertex="1" parent="1">
+          <mxGeometry x="0" y="8" width="704" height="200" as="geometry" />
         </mxCell>
-        <mxCell id="pipe_grp" value="1. 粗筛与精算分离：复杂度由 \(O(L^2)\) 降至 \(O(Lk)\)（\(L=131{,}072,\; k=2048\) 仅取 1.56% 历史槽位）" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#f4f4f2;strokeColor=#e2e2dd;strokeWidth=1;dashed=1;verticalAlign=top;align=left;spacingLeft=12;spacingTop=6;fontFamily=Inter;fontSize=12;fontStyle=1;fontColor=#5c6067;container=0;" vertex="1" parent="1">
-          <mxGeometry x="8" y="32" width="672" height="192" as="geometry"/>
+        <mxCell id="idx_box_bg1" value="" style="rounded=1;whiteSpace=wrap;html=1;arcSize=12;fillColor=#fbf2df;strokeColor=#7b5518;strokeWidth=1.25;opacity=60;shadow=0;container=0;spacing=6;" vertex="1" parent="1">
+          <mxGeometry x="24" y="56" width="176" height="88" as="geometry" />
         </mxCell>
-        <mxCell id="idx_box" value="&lt;b&gt;Lightning Indexer（FP8 ReLU 打分）&lt;/b&gt;&lt;br&gt;\(I_{t,s}=\sum_{j=1}^{64} w_{t,j}^I \operatorname{ReLU}(\mathbf{q}_{t,j}^I\cdot \mathbf{k}_s^I)\)&lt;br&gt;\(H^I=64\) 头填满 TC/Cube（算力 &lt;b&gt;&gt;30× 省&lt;/b&gt;）&lt;br&gt;例 \([s_0..s_7]\): \([0.0, 3.8, 0.4, 5.1, 0.0, 2.6, 0.2, 4.3]\)" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#fbf2df;strokeColor=#7b5518;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
-          <mxGeometry x="24" y="64" width="232" height="144" as="geometry"/>
+        <mxCell id="idx_box" value="Lightning Indexer&lt;br&gt;64 头 FP8 ReLU 打分&lt;br&gt;\(\sum w^I \operatorname{ReLU}(\mathbf{q}\cdot\mathbf{k})\)" style="rounded=1;whiteSpace=wrap;html=1;arcSize=12;fillColor=#fbf2df;strokeColor=#7b5518;strokeWidth=2;opacity=100;shadow=0;container=0;align=center;verticalAlign=middle;spacing=6;fontFamily=Inter, Noto Sans SC;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="16" y="64" width="176" height="88" as="geometry" />
         </mxCell>
-        <mxCell id="topk_box" value="&lt;b&gt;Top-k 离散筛选&lt;/b&gt;&lt;br&gt;截取前 \(k=2048\) 槽&lt;br&gt;（例 \(k=3\) 选中&lt;br&gt;\(\{s_1, s_3, s_7\}\)）&lt;br&gt;其余跳过" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#fbf2df;strokeColor=#7b5518;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
-          <mxGeometry x="280" y="64" width="136" height="144" as="geometry"/>
+        <mxCell id="rel_t" value="ReLU 稀疏打分" style="text;html=1;whiteSpace=wrap;align=center;verticalAlign=middle;fontFamily=Inter, Noto Sans SC;fontSize=11;fontStyle=1;fontColor=#7b5518;" vertex="1" parent="1">
+          <mxGeometry x="216" y="48" width="144" height="24" as="geometry" />
         </mxCell>
-        <mxCell id="gather_box" value="&lt;b&gt;FlashMLA 稀疏按索引 Gather&lt;/b&gt;&lt;br&gt;主模型 128 头吸收态 MQA&lt;br&gt;仅从 HBM 搬运 Top-k 潜向量&lt;br&gt;\(\mathbf{u}_t = \operatorname{Attn}(\mathbf{h}_t,\;\{c_s \mid I_{t,s}\in \text{Top-}k\})\)&lt;br&gt;复杂度压至 \(O(Lk)\)" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f5e9;strokeColor=#2c522d;strokeWidth=2;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
-          <mxGeometry x="440" y="64" width="224" height="144" as="geometry"/>
+        <mxCell id="rel_base" value="" style="endArrow=none;startArrow=none;html=1;strokeColor=#5c6067;strokeWidth=1.25;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="216" y="136" as="sourcePoint" />
+            <mxPoint x="360" y="136" as="targetPoint" />
+          </mxGeometry>
         </mxCell>
-        <mxCell id="led_grp" value="2. 双精度分离缓存开销（总计 788 B/tok/层，较 1152 B BF16 MLA 主干从 8.72 GiB 降至 4.96 GiB + 索引）" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#f4f4f2;strokeColor=#e2e2dd;strokeWidth=1;dashed=1;verticalAlign=top;align=left;spacingLeft=12;spacingTop=6;fontFamily=Inter;fontSize=12;fontStyle=1;fontColor=#5c6067;container=0;" vertex="1" parent="1">
-          <mxGeometry x="8" y="240" width="672" height="200" as="geometry"/>
+        <mxCell id="rel_0" value="" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#f4f4f2;strokeColor=#5c6067;strokeWidth=1;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter, Noto Sans SC;fontSize=11;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="224" y="128" width="16" height="8" as="geometry" />
         </mxCell>
-        <mxCell id="main_kv" value="&lt;b&gt;主模型 fp8_ds_mla 缓存（656 B/tok）&lt;/b&gt;：FP8 E4M3 \(c_s^{KV}\) (512 B) + 4×FP32 缩放 (16 B) + BF16 敏感 RoPE \(k_s^R\) (128 B)" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f5e9;strokeColor=#2c522d;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
-          <mxGeometry x="24" y="272" width="640" height="40" as="geometry"/>
+        <mxCell id="rel_l0" value="0" style="text;html=1;whiteSpace=wrap;align=center;verticalAlign=middle;fontFamily=Inter, Noto Sans SC;fontSize=11;fontColor=#5c6067;" vertex="1" parent="1">
+          <mxGeometry x="224" y="136" width="16" height="24" as="geometry" />
         </mxCell>
-        <mxCell id="idx_kv" value="&lt;b&gt;IndexerCache 目录缓存（132 B/tok）&lt;/b&gt;：1 头共享 FP8 \(\mathbf{k}_s^I\) (128 B) + 整条共用 1 个 UE8M0 缩放因子 (4 B)" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#fbf2df;strokeColor=#7b5518;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
-          <mxGeometry x="24" y="320" width="640" height="40" as="geometry"/>
+        <mxCell id="rel_1" value="" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#fbf2df;strokeColor=#7b5518;strokeWidth=2;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter, Noto Sans SC;fontSize=11;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="248" y="80" width="16" height="56" as="geometry" />
         </mxCell>
-        <mxCell id="cross_bar" value="&lt;b&gt;长短序列吞吐交叉点（\(L \approx 3000\)）&lt;/b&gt;：\(L &lt; 3000\) 时非连续 Gather 略慢于稠密 MLA；越过 3000 推向 128K 后 Hopper CTA Cluster Kernel 达 &lt;b&gt;410 TFLOPS&lt;/b&gt; 反超基线" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f2fb;strokeColor=#2f5783;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
-          <mxGeometry x="24" y="376" width="640" height="48" as="geometry"/>
+        <mxCell id="rel_l1" value="1*" style="text;html=1;whiteSpace=wrap;align=center;verticalAlign=middle;fontFamily=Inter, Noto Sans SC;fontSize=11;fontStyle=1;fontColor=#7b5518;" vertex="1" parent="1">
+          <mxGeometry x="248" y="136" width="16" height="24" as="geometry" />
         </mxCell>
-        <mxCell id="e1" value="" style="endArrow=classic;startArrow=none;html=1;strokeColor=#1d1d1f;strokeWidth=1.25;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="idx_box" target="topk_box">
-          <mxGeometry relative="1" as="geometry"/>
+        <mxCell id="rel_2" value="" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#f4f4f2;strokeColor=#5c6067;strokeWidth=1;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter, Noto Sans SC;fontSize=11;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="272" y="120" width="16" height="16" as="geometry" />
         </mxCell>
-        <mxCell id="e2" value="" style="endArrow=classic;startArrow=none;html=1;strokeColor=#1d1d1f;strokeWidth=1.25;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="topk_box" target="gather_box">
-          <mxGeometry relative="1" as="geometry"/>
+        <mxCell id="rel_l2" value="2" style="text;html=1;whiteSpace=wrap;align=center;verticalAlign=middle;fontFamily=Inter, Noto Sans SC;fontSize=11;fontColor=#5c6067;" vertex="1" parent="1">
+          <mxGeometry x="272" y="136" width="16" height="24" as="geometry" />
+        </mxCell>
+        <mxCell id="rel_3" value="" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#fbf2df;strokeColor=#7b5518;strokeWidth=2;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter, Noto Sans SC;fontSize=11;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="296" y="88" width="16" height="48" as="geometry" />
+        </mxCell>
+        <mxCell id="rel_l3" value="3*" style="text;html=1;whiteSpace=wrap;align=center;verticalAlign=middle;fontFamily=Inter, Noto Sans SC;fontSize=11;fontStyle=1;fontColor=#7b5518;" vertex="1" parent="1">
+          <mxGeometry x="296" y="136" width="16" height="24" as="geometry" />
+        </mxCell>
+        <mxCell id="rel_4" value="" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#f4f4f2;strokeColor=#5c6067;strokeWidth=1;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter, Noto Sans SC;fontSize=11;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="320" y="128" width="16" height="8" as="geometry" />
+        </mxCell>
+        <mxCell id="rel_l4" value="4" style="text;html=1;whiteSpace=wrap;align=center;verticalAlign=middle;fontFamily=Inter, Noto Sans SC;fontSize=11;fontColor=#5c6067;" vertex="1" parent="1">
+          <mxGeometry x="320" y="136" width="16" height="24" as="geometry" />
+        </mxCell>
+        <mxCell id="rel_5" value="" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#f4f4f2;strokeColor=#5c6067;strokeWidth=1;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter, Noto Sans SC;fontSize=11;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="344" y="120" width="16" height="16" as="geometry" />
+        </mxCell>
+        <mxCell id="rel_l5" value="5" style="text;html=1;whiteSpace=wrap;align=center;verticalAlign=middle;fontFamily=Inter, Noto Sans SC;fontSize=11;fontColor=#5c6067;" vertex="1" parent="1">
+          <mxGeometry x="344" y="136" width="16" height="24" as="geometry" />
+        </mxCell>
+        <mxCell id="topk_sub" value="Top-k 离散筛选 (k=2048)" style="text;html=1;whiteSpace=wrap;align=center;verticalAlign=middle;fontFamily=Inter, Noto Sans SC;fontSize=11;fontColor=#5c6067;" vertex="1" parent="1">
+          <mxGeometry x="208" y="168" width="160" height="24" as="geometry" />
+        </mxCell>
+        <mxCell id="gather_box_bg1" value="" style="rounded=1;whiteSpace=wrap;html=1;arcSize=12;fillColor=#e9f2fb;strokeColor=#2f5783;strokeWidth=1.25;opacity=60;shadow=0;container=0;spacing=6;" vertex="1" parent="1">
+          <mxGeometry x="392" y="56" width="168" height="88" as="geometry" />
+        </mxCell>
+        <mxCell id="gather_box" value="FlashMLA 稀疏 Gather&lt;br&gt;128 头吸收态 MQA&lt;br&gt;仅搬运 Top-k 槽位" style="rounded=1;whiteSpace=wrap;html=1;arcSize=12;fillColor=#e9f2fb;strokeColor=#2f5783;strokeWidth=2;opacity=100;shadow=0;container=0;align=center;verticalAlign=middle;spacing=6;fontFamily=Inter, Noto Sans SC;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="384" y="64" width="168" height="88" as="geometry" />
+        </mxCell>
+        <mxCell id="kv_pool" value="主模型 +&lt;br&gt;目录 KV 池" style="shape=datastore;whiteSpace=wrap;html=1;fillColor=#e9f5e9;strokeColor=#2c522d;strokeWidth=1.25;shadow=0;container=0;align=center;verticalAlign=middle;spacing=6;fontFamily=Inter, Noto Sans SC;fontSize=12;fontStyle=1;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="576" y="64" width="112" height="88" as="geometry" />
+        </mxCell>
+        <mxCell id="e1" value="" style="endArrow=classic;startArrow=none;html=1;strokeColor=#1d1d1f;strokeWidth=1.25;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="idx_box" target="rel_0">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e2" value="" style="endArrow=classic;startArrow=none;html=1;strokeColor=#1d1d1f;strokeWidth=1.25;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="rel_5" target="gather_box">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_kv" value="" style="endArrow=classic;startArrow=none;html=1;strokeColor=#2c522d;strokeWidth=1.25;exitX=0;exitY=0.5;exitDx=0;exitDy=0;entryX=1;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="kv_pool" target="gather_box">
+          <mxGeometry relative="1" as="geometry" />
         </mxCell>
       </root>
     </mxGraphModel>

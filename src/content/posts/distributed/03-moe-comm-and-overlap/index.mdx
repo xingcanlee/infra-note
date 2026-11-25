@@ -55,7 +55,18 @@ flowchart TD
 
 在接口演进上，DeepEP v2.5 已将统一通信缓冲从 `ElasticBuffer` 重构拆分为 `EPBuffer` 并移除 v1 接口[^deepep-epbuffer]。而当前基线 vLLM 中的 `DeepEPV2All2AllManager` 与 `DeepEPV2PrepareAndFinalize` 仍过渡绑定 `ElasticBuffer` 接口[^vllm-v2-cg]。
 
-![NVIDIA DeepEP 与华为昇腾 HCCL MC2 通算融合架构对照](./diagrams/03-deepep-vs-mc2-arch.drawio '图 2：NVIDIA DeepEP v2 统一 EPBuffer 与华为昇腾 HCCL MC2 通算融合架构对比')
+```mermaid caption="图 2：NVIDIA DeepEP v2 统一 EPBuffer 与华为昇腾 HCCL MC2 通算融合架构对比"
+flowchart TD
+    subgraph GPU["NVIDIA DeepEP (EPBuffer) + vLLM"]
+        G1["Prefill HT 分层转发<br/>RDMA 单份跨机 + NVLink 扇出"] --> G2["Decode LL 纯 RDMA IBGDA<br/>Warp 直写网卡 Doorbell"]
+        G2 --> G3["DeepEPV2PrepareAndFinalize<br/>统一 EPBuffer + DBO recv_hook"]
+    end
+    subgraph NPU["华为昇腾 HCCL MC2 通算融合"]
+        A1["Dispatch · distribute_dispatch_v2<br/>AIV 打包 + 窗口化通信量化"] --> A2["AICore GroupedMatmul<br/>收满 Slice 即启动矩阵乘"]
+        A2 --> A3["Combine · distribute_combine_v2<br/>回传原地 Top-K 加权归约"]
+        A3 --> A4["A2 HCCS / A3 Unified Bus<br/>Dispatch-FFN-Combine 三合一"]
+    end
+```
 
 统一底座靠四项工程折中把双态能力揉入同一接口。底层按节点数切换单机或两级中继 Kernel，并依带宽推算 **SM（Streaming Multiprocessor，流式多处理器）**与网卡 **QP（Queue Pair，队列对）**配额[^deepep-qps]。
 

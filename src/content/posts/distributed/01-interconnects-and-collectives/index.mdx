@@ -53,7 +53,21 @@ $$
 
 公式中的 $\alpha$ 与 $\beta$ 最终都锚定在硬件物理互连的层级结构上。阅读硬件拓扑时，区分 **Scale-Up（纵向扩展域）**与 **Scale-Out（横向扩展域）**的边界至关重要，NVIDIA GPU 与华为昇腾 NPU 的三层物理互联栈如图 2 所示。
 
-![NVIDIA 与华为昇腾 Scale-Up vs Scale-Out 分层互联对比](./diagrams/01-nvlink-vs-hccs-arch.drawio '图 2：NVIDIA GPU 与昇腾 NPU 分层物理互联栈（Scale-Up vs Scale-Out）')
+```mermaid caption="图 2：NVIDIA GPU 与昇腾 NPU 分层物理互联栈（Scale-Up vs Scale-Out）"
+flowchart TB
+  subgraph NV["NVIDIA GPU 互联栈"]
+    direction TB
+    G1["Tier 1 · Tensor Core + HBM3e<br/>片上 TMA 多维张量搬运"] --> G2["Tier 2 · 机内 Scale-Up<br/>8 卡 NVLink 4/5 (900/1800 GB/s) + NVSwitch"]
+    G2 --> G3["Tier 2 · 超节点 Scale-Up<br/>GB200 NVL72 (MNNVL 统一内存域)"]
+    G3 -.-> G4["Tier 3 · 跨机 Scale-Out<br/>ConnectX-7/8 IB / RoCEv2 · GPUDirect / IBGDA"]
+  end
+  subgraph HW["华为昇腾 NPU 互联栈"]
+    direction TB
+    A1["Tier 1 · DaVinci AICore + HBM<br/>片上 Unified Buffer + SDMA"] --> A2["Tier 2 · 机内 Scale-Up<br/>910B HCCS 对等直连 (392 GB/s) + SDMA 零拷贝"]
+    A2 --> A3["Tier 2 · 超节点 Scale-Up<br/>CloudMatrix 384 (Unified Bus 对等内存池)"]
+    A3 -.-> A4["Tier 3 · 跨机 Scale-Out<br/>参数面 RoCE 多轨网卡 · DEVICE_RDMA / URMA"]
+  end
+```
 
 从图 2 最顶层往下看，两家的数据搬运通路在单卡内部就已分道扬镳。NVIDIA GPU 围绕 Tensor Core 与 HBM3e（High Bandwidth Memory 3e，高带宽显存）设计存储通路。片上配备 TMA（Tensor Memory Accelerator，异步张量内存加速器），直接完成全局显存与共享内存之间的多维张量块搬运。
 

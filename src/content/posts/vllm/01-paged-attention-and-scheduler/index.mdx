@@ -67,7 +67,20 @@ $$
 
 vLLM V1 取消了这两类阶段的调度隔离。在每一步 `Scheduler.schedule()` 中，引擎只维护一个全局 token 配额上限 `token_budget` 与统一的调度映射 `num_scheduled_tokens`[^vllm-scheduler]。调度器眼里没有独立的 Prefill 或 Decode 模式。每条请求只记录已计算长度 `num_computed_tokens` 与含草稿目标长度 `num_tokens_with_spec`。图 2 展示了这套统一调度器到硬件 KV 写入算子的完整流向。
 
-![V1 调度器与 GPU/NPU KV Cache 写入架构](./diagrams/01-v1-scheduler-arch.drawio '图 2：V1 统一调度与异构 KV 写入路径')
+```mermaid caption="图 2：V1 统一调度与异构 KV 写入路径"
+flowchart TD
+    subgraph SCH["Scheduler.schedule() 统一配额调度"]
+        Q["等待/运行队列<br/>(Chunked + Decode)"] --> B["token_budget 裁剪<br/>消除阶段隔离"]
+        B --> O["num_scheduled_tokens<br/>{req_id: tok_cnt}"]
+    end
+    subgraph POOL["KVCacheManager 与 BlockPool"]
+        PF["Prefix Cache 哈希树<br/>命中则 ref_cnt += 1"] --> PL["BlockPool (Free FIFO)<br/>B0 保留为 null_block"]
+        PL --> SM["slot_mapping[]<br/>Padding 槽位填 -1"]
+    end
+    O -->|"alloc / free"| PL
+    SM -->|"NVIDIA GPU"| GK["reshape_and_cache_flash<br/>遇 slot < 0 跳过写回"]
+    SM -->|"Ascend NPU"| NK["npu_scatter_pa_kv_cache<br/>AICore 按槽位 Scatter 写入"]
+```
 
 每轮调度优先遍历运行中的请求。自回归生成通常只申请 $1$ 个新 token；推进中的 **Chunked Prefill（分块预填充）**切片则按单步阈值与剩余 `token_budget` 切出一段。还有剩余预算时再从等待队列接纳新请求。按照前文 16 token 预算的微例，两条解码请求各占 $1$ 个 token，剩余 $14$ 个预算正好分给一条长提示词切片，三者在同一个前向步内混合批执行。
 

@@ -2,122 +2,146 @@
   <diagram id="ds-08-mhc-block-trace" name="mhc-block-trace">
     <mxGraphModel dx="800" dy="600" grid="1" gridSize="8" guides="1" page="0" math="1" shadow="0">
       <root>
-        <mxCell id="0"/>
-        <mxCell id="1" parent="0"/>
-        <mxCell id="g_blk" value="1 个 Transformer 层 = 2 个 mHC 子层" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#f4f4f2;strokeColor=#5c6067;strokeWidth=1.25;verticalAlign=top;align=left;spacingLeft=12;spacingTop=6;fontFamily=Inter, Noto Sans SC;fontSize=12;fontStyle=1;fontColor=#5c6067;container=0;" vertex="1" parent="1">
-          <mxGeometry x="0" y="8" width="272" height="440" as="geometry"/>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="g_blk" value="1 个 Transformer 层 = 2 个 mHC 子层" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#f4f4f2;strokeColor=#5c6067;strokeWidth=1.25;verticalAlign=top;align=left;spacingLeft=12;spacingTop=8;fontFamily=Inter, Noto Sans SC;fontSize=12;fontStyle=1;fontColor=#5c6067;container=0;" vertex="1" parent="1">
+          <mxGeometry x="0" y="8" width="272" height="440" as="geometry" />
         </mxCell>
         <mxCell id="b_in__s1" value="" style="rounded=1;absoluteArcSize=1;arcSize=8;html=1;fillColor=#f4f4f2;strokeColor=#5c6067;strokeWidth=1;" vertex="1" parent="1">
-          <mxGeometry x="24" y="392" width="96" height="32" as="geometry"/>
+          <mxGeometry x="24" y="392" width="96" height="32" as="geometry" />
         </mxCell>
         <mxCell id="b_in" value="\(\mathbf{x}_l\) [4, C]" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#f4f4f2;strokeColor=#5c6067;strokeWidth=1;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter, Noto Sans SC;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
-          <mxGeometry x="16" y="400" width="96" height="32" as="geometry"/>
+          <mxGeometry x="16" y="400" width="96" height="32" as="geometry" />
         </mxCell>
         <mxCell id="s1_res" value="Res Mixing" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f5e9;strokeColor=#2c522d;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter, Noto Sans SC;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
-          <mxGeometry x="16" y="328" width="96" height="32" as="geometry"/>
+          <mxGeometry x="16" y="328" width="96" height="32" as="geometry" />
         </mxCell>
-        <mxCell id="s1_attn" value="Pre → RMSNorm&lt;br&gt;→ Attention → Post" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f2fb;strokeColor=#2f5783;strokeWidth=2;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter, Noto Sans SC;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
-          <mxGeometry x="136" y="320" width="128" height="48" as="geometry"/>
+        <mxCell id="s1_attn" value="Pre → RMSNorm&lt;br&gt;→ Attention → Post" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f2fb;strokeColor=#2f5783;strokeWidth=2;align=center;verticalAlign=middle;spacing=6;fontFamily=Inter, Noto Sans SC;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="136" y="320" width="128" height="56" as="geometry" />
         </mxCell>
-        <mxCell id="s1_add" value="⊕" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#f4f4f2;strokeColor=#5c6067;strokeWidth=1;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter, Noto Sans SC;fontSize=14;fontStyle=1;fontColor=#1d1d1f;" vertex="1" parent="1">
-          <mxGeometry x="48" y="272" width="32" height="32" as="geometry"/>
+        <mxCell id="s1_add" value="" style="shape=orEllipse;perimeter=ellipsePerimeter;backgroundOutline=1;whiteSpace=wrap;html=1;fillColor=#e9f5e9;strokeColor=#2c522d;strokeWidth=1.25;shadow=0;container=0;align=center;verticalAlign=middle;fontFamily=Inter, Noto Sans SC;fontSize=12;fontStyle=1;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="48" y="272" width="32" height="32" as="geometry" />
         </mxCell>
         <mxCell id="b_mid__s1" value="" style="rounded=1;absoluteArcSize=1;arcSize=8;html=1;fillColor=#f4f4f2;strokeColor=#5c6067;strokeWidth=1;" vertex="1" parent="1">
-          <mxGeometry x="24" y="208" width="96" height="32" as="geometry"/>
+          <mxGeometry x="24" y="208" width="96" height="32" as="geometry" />
         </mxCell>
         <mxCell id="b_mid" value="\(\mathbf{x}_{l+1}\) [4, C]" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#f4f4f2;strokeColor=#5c6067;strokeWidth=1;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter, Noto Sans SC;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
-          <mxGeometry x="16" y="216" width="96" height="32" as="geometry"/>
+          <mxGeometry x="16" y="216" width="96" height="32" as="geometry" />
         </mxCell>
         <mxCell id="s2_res" value="Res Mixing" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f5e9;strokeColor=#2c522d;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter, Noto Sans SC;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
-          <mxGeometry x="16" y="152" width="96" height="32" as="geometry"/>
+          <mxGeometry x="16" y="152" width="96" height="32" as="geometry" />
         </mxCell>
-        <mxCell id="s2_moe" value="Pre → RMSNorm&lt;br&gt;→ MoE / FFN → Post" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#fbf2df;strokeColor=#7b5518;strokeWidth=2;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter, Noto Sans SC;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
-          <mxGeometry x="136" y="144" width="128" height="48" as="geometry"/>
+        <mxCell id="s2_moe" value="Pre → RMSNorm&lt;br&gt;→ MoE / FFN → Post" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#fbf2df;strokeColor=#7b5518;strokeWidth=2;align=center;verticalAlign=middle;spacing=6;fontFamily=Inter, Noto Sans SC;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="136" y="144" width="128" height="56" as="geometry" />
         </mxCell>
-        <mxCell id="s2_add" value="⊕" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#f4f4f2;strokeColor=#5c6067;strokeWidth=1;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter, Noto Sans SC;fontSize=14;fontStyle=1;fontColor=#1d1d1f;" vertex="1" parent="1">
-          <mxGeometry x="48" y="96" width="32" height="32" as="geometry"/>
+        <mxCell id="s2_add" value="" style="shape=orEllipse;perimeter=ellipsePerimeter;backgroundOutline=1;whiteSpace=wrap;html=1;fillColor=#e9f5e9;strokeColor=#2c522d;strokeWidth=1.25;shadow=0;container=0;align=center;verticalAlign=middle;fontFamily=Inter, Noto Sans SC;fontSize=12;fontStyle=1;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="48" y="96" width="32" height="32" as="geometry" />
         </mxCell>
         <mxCell id="b_out__s1" value="" style="rounded=1;absoluteArcSize=1;arcSize=8;html=1;fillColor=#f4f4f2;strokeColor=#5c6067;strokeWidth=1;" vertex="1" parent="1">
-          <mxGeometry x="24" y="48" width="96" height="24" as="geometry"/>
+          <mxGeometry x="24" y="40" width="96" height="32" as="geometry" />
         </mxCell>
         <mxCell id="b_out" value="\(\mathbf{x}_{l+2}\) [4, C]" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#f4f4f2;strokeColor=#5c6067;strokeWidth=1;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter, Noto Sans SC;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
-          <mxGeometry x="16" y="56" width="96" height="24" as="geometry"/>
+          <mxGeometry x="16" y="48" width="96" height="32" as="geometry" />
         </mxCell>
-        <mxCell id="eb1" value="" style="endArrow=classic;startArrow=none;html=1;strokeColor=#1d1d1f;strokeWidth=1.25;edgeStyle=orthogonalEdgeStyle;rounded=1;exitX=0.5;exitY=0.0;exitDx=0;exitDy=0;entryX=0.5;entryY=1.0;entryDx=0;entryDy=0;" edge="1" parent="1" source="b_in" target="s1_res">
-          <mxGeometry relative="1" as="geometry"/>
+        <mxCell id="eb1" value="" style="endArrow=classic;startArrow=none;html=1;strokeColor=#1d1d1f;strokeWidth=1.25;edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;exitX=0.5;exitY=0.0;exitDx=0;exitDy=0;entryX=0.5;entryY=1.0;entryDx=0;entryDy=0;" edge="1" parent="1" source="b_in" target="s1_res">
+          <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="eb2" value="" style="endArrow=classic;startArrow=none;html=1;strokeColor=#1d1d1f;strokeWidth=1.25;edgeStyle=orthogonalEdgeStyle;rounded=1;exitX=1.0;exitY=0.5;exitDx=0;exitDy=0;entryX=0.5;entryY=1.0;entryDx=0;entryDy=0;" edge="1" parent="1" source="b_in" target="s1_attn">
+        <mxCell id="eb2" value="" style="endArrow=classic;startArrow=none;html=1;strokeColor=#1d1d1f;strokeWidth=1.25;edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;exitX=1.0;exitY=0.5;exitDx=0;exitDy=0;entryX=0.5;entryY=1.0;entryDx=0;entryDy=0;" edge="1" parent="1" source="b_in" target="s1_attn">
           <mxGeometry relative="1" as="geometry">
             <Array as="points">
-              <mxPoint x="200" y="416"/>
+              <mxPoint x="200" y="416" />
             </Array>
           </mxGeometry>
         </mxCell>
-        <mxCell id="eb3" value="" style="endArrow=classic;startArrow=none;html=1;strokeColor=#1d1d1f;strokeWidth=1.25;edgeStyle=orthogonalEdgeStyle;rounded=1;exitX=0.5;exitY=0.0;exitDx=0;exitDy=0;entryX=0.5;entryY=1.0;entryDx=0;entryDy=0;" edge="1" parent="1" source="s1_res" target="s1_add">
-          <mxGeometry relative="1" as="geometry"/>
+        <mxCell id="eb3" value="" style="endArrow=classic;startArrow=none;html=1;strokeColor=#1d1d1f;strokeWidth=1.25;edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;exitX=0.5;exitY=0.0;exitDx=0;exitDy=0;entryX=0.5;entryY=1.0;entryDx=0;entryDy=0;" edge="1" parent="1" source="s1_res" target="s1_add">
+          <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="eb4" value="" style="endArrow=classic;startArrow=none;html=1;strokeColor=#1d1d1f;strokeWidth=1.25;edgeStyle=orthogonalEdgeStyle;rounded=1;exitX=0.5;exitY=0.0;exitDx=0;exitDy=0;entryX=1.0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="s1_attn" target="s1_add">
+        <mxCell id="eb4" value="" style="endArrow=classic;startArrow=none;html=1;strokeColor=#1d1d1f;strokeWidth=1.25;edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;exitX=0.5;exitY=0.0;exitDx=0;exitDy=0;entryX=1.0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="s1_attn" target="s1_add">
           <mxGeometry relative="1" as="geometry">
             <Array as="points">
-              <mxPoint x="200" y="288"/>
+              <mxPoint x="200" y="288" />
             </Array>
           </mxGeometry>
         </mxCell>
-        <mxCell id="eb5" value="" style="endArrow=classic;startArrow=none;html=1;strokeColor=#1d1d1f;strokeWidth=1.25;edgeStyle=orthogonalEdgeStyle;rounded=1;exitX=0.5;exitY=0.0;exitDx=0;exitDy=0;entryX=0.5;entryY=1.0;entryDx=0;entryDy=0;" edge="1" parent="1" source="s1_add" target="b_mid">
-          <mxGeometry relative="1" as="geometry"/>
+        <mxCell id="eb5" value="" style="endArrow=classic;startArrow=none;html=1;strokeColor=#1d1d1f;strokeWidth=1.25;edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;exitX=0.5;exitY=0.0;exitDx=0;exitDy=0;entryX=0.5;entryY=1.0;entryDx=0;entryDy=0;" edge="1" parent="1" source="s1_add" target="b_mid">
+          <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="eb6" value="" style="endArrow=classic;startArrow=none;html=1;strokeColor=#1d1d1f;strokeWidth=1.25;edgeStyle=orthogonalEdgeStyle;rounded=1;exitX=0.5;exitY=0.0;exitDx=0;exitDy=0;entryX=0.5;entryY=1.0;entryDx=0;entryDy=0;" edge="1" parent="1" source="b_mid" target="s2_res">
-          <mxGeometry relative="1" as="geometry"/>
+        <mxCell id="eb6" value="" style="endArrow=classic;startArrow=none;html=1;strokeColor=#1d1d1f;strokeWidth=1.25;edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;exitX=0.5;exitY=0.0;exitDx=0;exitDy=0;entryX=0.5;entryY=1.0;entryDx=0;entryDy=0;" edge="1" parent="1" source="b_mid" target="s2_res">
+          <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="eb7" value="" style="endArrow=classic;startArrow=none;html=1;strokeColor=#1d1d1f;strokeWidth=1.25;edgeStyle=orthogonalEdgeStyle;rounded=1;exitX=1.0;exitY=0.5;exitDx=0;exitDy=0;entryX=0.5;entryY=1.0;entryDx=0;entryDy=0;" edge="1" parent="1" source="b_mid" target="s2_moe">
+        <mxCell id="eb7" value="" style="endArrow=classic;startArrow=none;html=1;strokeColor=#1d1d1f;strokeWidth=1.25;edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;exitX=1.0;exitY=0.5;exitDx=0;exitDy=0;entryX=0.5;entryY=1.0;entryDx=0;entryDy=0;" edge="1" parent="1" source="b_mid" target="s2_moe">
           <mxGeometry relative="1" as="geometry">
             <Array as="points">
-              <mxPoint x="200" y="232"/>
+              <mxPoint x="200" y="232" />
             </Array>
           </mxGeometry>
         </mxCell>
-        <mxCell id="eb8" value="" style="endArrow=classic;startArrow=none;html=1;strokeColor=#1d1d1f;strokeWidth=1.25;edgeStyle=orthogonalEdgeStyle;rounded=1;exitX=0.5;exitY=0.0;exitDx=0;exitDy=0;entryX=0.5;entryY=1.0;entryDx=0;entryDy=0;" edge="1" parent="1" source="s2_res" target="s2_add">
-          <mxGeometry relative="1" as="geometry"/>
+        <mxCell id="eb8" value="" style="endArrow=classic;startArrow=none;html=1;strokeColor=#1d1d1f;strokeWidth=1.25;edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;exitX=0.5;exitY=0.0;exitDx=0;exitDy=0;entryX=0.5;entryY=1.0;entryDx=0;entryDy=0;" edge="1" parent="1" source="s2_res" target="s2_add">
+          <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="eb9" value="" style="endArrow=classic;startArrow=none;html=1;strokeColor=#1d1d1f;strokeWidth=1.25;edgeStyle=orthogonalEdgeStyle;rounded=1;exitX=0.5;exitY=0.0;exitDx=0;exitDy=0;entryX=1.0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="s2_moe" target="s2_add">
+        <mxCell id="eb9" value="" style="endArrow=classic;startArrow=none;html=1;strokeColor=#1d1d1f;strokeWidth=1.25;edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;exitX=0.5;exitY=0.0;exitDx=0;exitDy=0;entryX=1.0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="s2_moe" target="s2_add">
           <mxGeometry relative="1" as="geometry">
             <Array as="points">
-              <mxPoint x="200" y="112"/>
+              <mxPoint x="200" y="112" />
             </Array>
           </mxGeometry>
         </mxCell>
-        <mxCell id="eb10" value="" style="endArrow=classic;startArrow=none;html=1;strokeColor=#1d1d1f;strokeWidth=1.25;edgeStyle=orthogonalEdgeStyle;rounded=1;exitX=0.5;exitY=0.0;exitDx=0;exitDy=0;entryX=0.5;entryY=1.0;entryDx=0;entryDy=0;" edge="1" parent="1" source="s2_add" target="b_out">
-          <mxGeometry relative="1" as="geometry"/>
+        <mxCell id="eb10" value="" style="endArrow=classic;startArrow=none;html=1;strokeColor=#1d1d1f;strokeWidth=1.25;edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;exitX=0.5;exitY=0.0;exitDx=0;exitDy=0;entryX=0.5;entryY=1.0;entryDx=0;entryDy=0;" edge="1" parent="1" source="s2_add" target="b_out">
+          <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="g_trace" value="单子层数值推演（取 n=4 分支首维，初值均值 = 25.0）" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f2fb;strokeColor=#2f5783;strokeWidth=1.25;dashed=1;verticalAlign=top;align=left;spacingLeft=12;spacingTop=6;fontFamily=Inter, Noto Sans SC;fontSize=12;fontStyle=1;fontColor=#2f5783;container=0;" vertex="1" parent="1">
-          <mxGeometry x="288" y="8" width="400" height="440" as="geometry"/>
+        <mxCell id="g_trace" value="单子层数值推演（\(n=4\) 分支首维，均值 = 25.0）" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f2fb;strokeColor=#2f5783;strokeWidth=1.25;dashed=1;verticalAlign=top;align=left;spacingLeft=12;spacingTop=8;fontFamily=Inter, Noto Sans SC;fontSize=12;fontStyle=1;fontColor=#2f5783;container=0;" vertex="1" parent="1">
+          <mxGeometry x="288" y="8" width="400" height="440" as="geometry" />
         </mxCell>
-        <mxCell id="tr_in" value="输入 4 分支 \(\mathbf{x}_l = [10.0,\ 20.0,\ 30.0,\ 40.0]^\top\)&lt;br&gt;（4 分支求和 = 100.0，均值 = 25.0）" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#f4f4f2;strokeColor=#5c6067;strokeWidth=1;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter, Noto Sans SC;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
-          <mxGeometry x="304" y="40" width="368" height="48" as="geometry"/>
+        <mxCell id="tr_in_t" value="输入 \(\mathbf{x}_l\)（4 分支总和 = 100.0，均值 = 25.0）：" style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;fontFamily=Inter, Noto Sans SC;fontSize=12;fontStyle=1;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="304" y="40" width="368" height="24" as="geometry" />
         </mxCell>
-        <mxCell id="tr_res" value="① 主干 Res Mapping&lt;br&gt;\(\mathcal{H}_l^{\mathrm{res}}\) (4×4 双随机)&lt;br&gt;&lt;br&gt;[19.0, 24.0, 26.0, 31.0]&lt;br&gt;总和 = 100 · 均值 = 25.0&lt;br&gt;极值收敛，均值严格守恒" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f5e9;strokeColor=#2c522d;strokeWidth=2;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter, Noto Sans SC;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
-          <mxGeometry x="304" y="112" width="176" height="136" as="geometry"/>
+        <mxCell id="tr_in_0" value="10.0" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#f4f4f2;strokeColor=#5c6067;strokeWidth=1;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter, Noto Sans SC;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="304" y="64" width="88" height="32" as="geometry" />
         </mxCell>
-        <mxCell id="tr_sub" value="② 支路 Pre → \(\mathcal{F}\) → Post&lt;br&gt;Pre [0.5, 0.2, 0.2, 0.1]&lt;br&gt;→ 单流 \(h_l^{\mathrm{in}} = 19.0\)&lt;br&gt;→ Layer \(\mathcal{F}\) 输出 +4.0&lt;br&gt;Post [1.2, 0.8, 0.5, 1.5]&lt;br&gt;得 [+4.8, +3.2, +2.0, +6.0]" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f2fb;strokeColor=#2f5783;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter, Noto Sans SC;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
-          <mxGeometry x="496" y="112" width="176" height="136" as="geometry"/>
+        <mxCell id="tr_in_1" value="20.0" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#f4f4f2;strokeColor=#5c6067;strokeWidth=1;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter, Noto Sans SC;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="400" y="64" width="88" height="32" as="geometry" />
         </mxCell>
-        <mxCell id="tr_out" value="③ 残差写回相加&lt;br&gt;\(\mathbf{x}_{l+1} = \mathbf{h}_l^{\mathrm{res}} + \mathbf{h}_l^{\mathrm{post}} = [23.8,\ 27.2,\ 28.0,\ 37.0]^\top\)" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f5e9;strokeColor=#2c522d;strokeWidth=2;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter, Noto Sans SC;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
-          <mxGeometry x="304" y="272" width="368" height="56" as="geometry"/>
+        <mxCell id="tr_in_2" value="30.0" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#f4f4f2;strokeColor=#5c6067;strokeWidth=1;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter, Noto Sans SC;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="496" y="64" width="88" height="32" as="geometry" />
         </mxCell>
-        <mxCell id="tr_note" value="对照左图可见两个结构事实：&lt;br&gt;• RMSNorm 只在右支路 Layer F 入口，管不到左侧 Res 主干&lt;br&gt;• 30 层共 60 次 Res 连乘，微偏会被放大至 ~3000×" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#f4f4f2;strokeColor=#5c6067;strokeWidth=1;dashed=1;dashPattern=4 4;align=left;verticalAlign=middle;spacing=4;fontFamily=Inter, Noto Sans SC;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
-          <mxGeometry x="304" y="344" width="368" height="88" as="geometry"/>
+        <mxCell id="tr_in_3" value="40.0" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#f4f4f2;strokeColor=#5c6067;strokeWidth=1;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter, Noto Sans SC;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="592" y="64" width="88" height="32" as="geometry" />
         </mxCell>
-        <mxCell id="et1" value="" style="endArrow=classic;startArrow=none;html=1;strokeColor=#1d1d1f;strokeWidth=1.25;edgeStyle=orthogonalEdgeStyle;rounded=1;exitX=0.2391304347826087;exitY=1.0;exitDx=0;exitDy=0;entryX=0.5;entryY=0.0;entryDx=0;entryDy=0;" edge="1" parent="1" source="tr_in" target="tr_res">
-          <mxGeometry relative="1" as="geometry"/>
+        <mxCell id="tr_res" value="① 主干 Res Mapping&lt;br&gt;\(\mathcal{H}_l^{\mathrm{res}}\) (4×4 双随机)&lt;br&gt;[19.0, 24.0, 26.0, 31.0]&lt;br&gt;总和 = 100 · 均值 = 25.0&lt;br&gt;极值收敛，均值守恒" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f5e9;strokeColor=#2c522d;strokeWidth=2;align=center;verticalAlign=middle;spacing=6;fontFamily=Inter, Noto Sans SC;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="304" y="120" width="176" height="128" as="geometry" />
         </mxCell>
-        <mxCell id="et2" value="" style="endArrow=classic;startArrow=none;html=1;strokeColor=#1d1d1f;strokeWidth=1.25;edgeStyle=orthogonalEdgeStyle;rounded=1;exitX=0.7608695652173914;exitY=1.0;exitDx=0;exitDy=0;entryX=0.5;entryY=0.0;entryDx=0;entryDy=0;" edge="1" parent="1" source="tr_in" target="tr_sub">
-          <mxGeometry relative="1" as="geometry"/>
+        <mxCell id="tr_sub" value="② 支路 Pre → \(\mathcal{F}\) → Post&lt;br&gt;Pre [0.5, 0.2, 0.2, 0.1]&lt;br&gt;→ \(h_l^{\mathrm{in}}=19.0 \to \mathcal{F}: +4.0\)&lt;br&gt;Post [1.2, 0.8, 0.5, 1.5]&lt;br&gt;得 [+4.8, +3.2, +2.0, +6.0]" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f2fb;strokeColor=#2f5783;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=6;fontFamily=Inter, Noto Sans SC;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="496" y="120" width="176" height="128" as="geometry" />
         </mxCell>
-        <mxCell id="et3" value="" style="endArrow=classic;startArrow=none;html=1;strokeColor=#1d1d1f;strokeWidth=1.25;edgeStyle=orthogonalEdgeStyle;rounded=1;exitX=0.5;exitY=1.0;exitDx=0;exitDy=0;entryX=0.2391304347826087;entryY=0.0;entryDx=0;entryDy=0;" edge="1" parent="1" source="tr_res" target="tr_out">
-          <mxGeometry relative="1" as="geometry"/>
+        <mxCell id="tr_out_0" value="23.8" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f5e9;strokeColor=#2c522d;strokeWidth=2;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter, Noto Sans SC;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="304" y="280" width="88" height="32" as="geometry" />
         </mxCell>
-        <mxCell id="et4" value="" style="endArrow=classic;startArrow=none;html=1;strokeColor=#1d1d1f;strokeWidth=1.25;edgeStyle=orthogonalEdgeStyle;rounded=1;exitX=0.5;exitY=1.0;exitDx=0;exitDy=0;entryX=0.7608695652173914;entryY=0.0;entryDx=0;entryDy=0;" edge="1" parent="1" source="tr_sub" target="tr_out">
-          <mxGeometry relative="1" as="geometry"/>
+        <mxCell id="tr_out_1" value="27.2" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f5e9;strokeColor=#2c522d;strokeWidth=2;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter, Noto Sans SC;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="400" y="280" width="88" height="32" as="geometry" />
+        </mxCell>
+        <mxCell id="tr_out_2" value="28.0" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f5e9;strokeColor=#2c522d;strokeWidth=2;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter, Noto Sans SC;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="496" y="280" width="88" height="32" as="geometry" />
+        </mxCell>
+        <mxCell id="tr_out_3" value="37.0" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f5e9;strokeColor=#2c522d;strokeWidth=2;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter, Noto Sans SC;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="592" y="280" width="88" height="32" as="geometry" />
+        </mxCell>
+        <mxCell id="tr_out_t" value="③ 残差写回 \(\mathbf{x}_{l+1} = \mathbf{h}_l^{\mathrm{res}} + \mathbf{h}_l^{\mathrm{post}}\)" style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;fontFamily=Inter, Noto Sans SC;fontSize=12;fontStyle=1;fontColor=#2c522d;" vertex="1" parent="1">
+          <mxGeometry x="304" y="320" width="368" height="24" as="geometry" />
+        </mxCell>
+        <mxCell id="tr_note" value="结构事实：&lt;br&gt;• RMSNorm 只在右支路 Layer F 入口，管不到左侧 Res 主干&lt;br&gt;• 30 层共 60 次 Res 连乘，微偏会被放大至 ~3000×" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#f4f4f2;strokeColor=#5c6067;strokeWidth=1;dashed=1;dashPattern=4 4;align=left;verticalAlign=middle;spacing=6;fontFamily=Inter, Noto Sans SC;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="304" y="352" width="368" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="et1" value="" style="endArrow=classic;startArrow=none;html=1;strokeColor=#1d1d1f;strokeWidth=1.25;edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;exitX=0.5;exitY=1.0;exitDx=0;exitDy=0;entryX=0.5;entryY=0.0;entryDx=0;entryDy=0;" edge="1" parent="1" source="tr_in_1" target="tr_res">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="et2" value="" style="endArrow=classic;startArrow=none;html=1;strokeColor=#1d1d1f;strokeWidth=1.25;edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;exitX=0.5;exitY=1.0;exitDx=0;exitDy=0;entryX=0.5;entryY=0.0;entryDx=0;entryDy=0;" edge="1" parent="1" source="tr_in_2" target="tr_sub">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="et3" value="" style="endArrow=classic;startArrow=none;html=1;strokeColor=#1d1d1f;strokeWidth=1.25;edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;exitX=0.5;exitY=1.0;exitDx=0;exitDy=0;entryX=0.5;entryY=0.0;entryDx=0;entryDy=0;" edge="1" parent="1" source="tr_res" target="tr_out_1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="et4" value="" style="endArrow=classic;startArrow=none;html=1;strokeColor=#1d1d1f;strokeWidth=1.25;edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;exitX=0.5;exitY=1.0;exitDx=0;exitDy=0;entryX=0.5;entryY=0.0;entryDx=0;entryDy=0;" edge="1" parent="1" source="tr_sub" target="tr_out_2">
+          <mxGeometry relative="1" as="geometry" />
         </mxCell>
       </root>
     </mxGraphModel>

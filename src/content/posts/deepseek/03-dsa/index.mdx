@@ -43,9 +43,9 @@ $$
 
 放大到生产尺寸（$L = 131{,}072$、$k = 2048$）时，主模型 128 个高精度头每步仅从 HBM 稀疏读取约 1.56% 的历史潜向量。主注意力算力随之大幅压缩，而长上下文精度不受影响。DeepSeek-V3.2-Exp 在 AA-LCR 与 Fiction.liveBench 上，持平或反超稠密基线 V3.1-Terminus[^ds32]。
 
-图 1 展示了这组 8 槽位算例的 ReLU 打分、Top-$k$ 筛选、按索引 Gather、生产字节开销与序列长度交叉点。
+图 1 展示了 64 头闪电索引器的 ReLU 稀疏打分、Top-$k$ 离散筛选与 FlashMLA 稀疏 Gather 主流程。
 
-![DeepSeek-V3.2 DSA 闪电索引器流程：64 头共享单 FP8 键 ReLU 打分、Top-k 离散筛选、FlashMLA 稀疏 Gather 与 656 B + 132 B 双精度缓存开销](./diagrams/03-dsa-indexer-flow.drawio '图 1：DeepSeek-V3.2 DSA 闪电索引器、Top-K 按索引 Gather 与 656 B + 132 B 字节开销')
+![DeepSeek-V3.2 DSA 闪电索引器流程：64 头共享单 FP8 键 ReLU 打分、Top-k 离散筛选与 FlashMLA 稀疏 Gather](./diagrams/03-dsa-indexer-flow.drawio '图 1：DeepSeek-V3.2 DSA 闪电索引器与 Top-K 按索引 Gather 流程')
 
 ## 两阶段蒸馏预热与梯度隔离
 
@@ -53,11 +53,11 @@ $$
 
 ```mermaid caption="图 2：两阶段 KL 蒸馏预热与稀疏联合训练梯度隔离"
 flowchart TD
-    M["稠密主注意力概率 p_t"] -->|"全头求和并 L1 归一"| KL1["阶段一：Dense Warm-up (2.1B token)"]
-    IDX["闪电索引器 I_{t,s}"] -->|"冻结主模型，lr=1e-3"| KL1
-    KL1 -->|"开启 Top-2048 稀疏筛选 S_t"| SP["阶段二：Sparse Training (943.7B token)"]
-    H["主干输入 h_t / c_t"] -->|"detach 切断反传"| IDX2["索引器仅受子集 KL 约束"]
-    H -->|"常规交叉熵损失"| MAIN["主模型仅在 S_t 上精算"]
+    M["稠密主注意力概率 $$p_t$$"] -->|"全头求和并 L1 归一"| KL1["阶段一：Dense Warm-up (2.1B token)"]
+    IDX["闪电索引器 $$I_{t,s}$$"] -->|"冻结主模型，lr=1e-3"| KL1
+    KL1 -->|"开启 Top-2048 稀疏筛选 $$\mathcal{S}_t$$"| SP["阶段二：Sparse Training (943.7B token)"]
+    H["主干输入 $$h_t / c_t$$"] -->|"detach 切断反传"| IDX2["索引器仅受子集 KL 约束"]
+    H -->|"常规交叉熵损失"| MAIN["主模型仅在 $$\mathcal{S}_t$$ 上精算"]
     SP --> IDX2
     SP --> MAIN
 ```
@@ -76,7 +76,9 @@ flowchart TD
 
 为此 DeepSeek-V3.2 与 FlashMLA 设计了 `fp8_ds_mla` 混合精度格式[^flashmla]。512 维无位置内容潜向量 $c_s^{KV}$ 以 `fp8_e4m3` 存储（512 B），每 128 维配 1 个 FP32 缩放因子（共 16 B）。对量化敏感的 64 维 RoPE 位置键 $k_s^R$ 则保留 BF16（128 B）。
 
-三项合计恰好为 656 B/token，使 128K × 62 层主缓存从 8.72 GiB 降至 4.96 GiB。再叠加前文所述的 132 B/token 索引器缓存，单请求长上下文总缓存压至每层每 token 788 B。
+三项合计恰好为 656 B/token，使 128K × 62 层主缓存从 8.72 GiB 降至 4.96 GiB。再叠加前文所述的 132 B/token 索引器缓存，单请求长上下文总缓存压至每层每 token 788 B。图 3 按字节对比两种缓存字段结构并标出 3,000 token 吞吐交叉点。
+
+![DeepSeek-V3.2 fp8_ds_mla 与 IndexerCache 字节布局对照及 3,000 token 吞吐交叉点](./diagrams/03-dsa-cache-byte-ledger.drawio '图 3：DeepSeek-V3.2 双精度分离缓存字节对比（656 B + 132 B）')
 
 两者的缩放因子精度也各自贴合用途。索引器键只需做相对排序，`DeepseekV32IndexerCache` 让整条 128 维键共用 1 个 4 字节纯指数 UE8M0 块缩放因子，换取更小的目录体积与整数移位对齐。主潜缓存直接参与高精度加权求和，因此保留 4 个 FP32 缩放因子与 BF16 旋转键。
 
@@ -86,11 +88,23 @@ flowchart TD
 
 在这一流水线调度下，`fp8_ds_mla` 解码 Kernel 在 `topk = 2048` 条件下跑出 410 TFLOPS，并在序列超过约 3,000 token 后反超稠密解码 Kernel。
 
-图 3 对照了 NVIDIA GPU（`vLLM`[^vllm]）与华为昇腾 NPU（`vllm-ascend`[^ascend]）的运行时组件与分页对齐差异。在 NVIDIA GPU 上，`Indexer` 将键值映射与每头权重映射融合为一次 BF16 GEMM，并利用融合算子完成 Q 的 RoPE 旋转与量化。分页块统一按 64 token 粒度喂给 `SparseAttnIndexer` 与 `FlashMLASparseBackend`。
+图 4 对照了 NVIDIA GPU（`vLLM`[^vllm]）与华为昇腾 NPU（`vllm-ascend`[^ascend]）的运行时组件与分页对齐差异。在 NVIDIA GPU 上，`Indexer` 将键值映射与每头权重映射融合为一次 BF16 GEMM，并利用融合算子完成 Q 的 RoPE 旋转与量化。分页块统一按 64 token 粒度喂给 `SparseAttnIndexer` 与 `FlashMLASparseBackend`。
 
 在华为昇腾 NPU 上，`AscendSFAImpl` 根据硬件代际与量化开关路由三类预处理路径（融合前端 prolog、组合量化投影或原生投影），并可用独立流并行发射索引查询与键量化。尽管昇腾物理分页对齐至达芬奇 Cube 友好的 128 token 大小，`npu_sparse_flash_attention` 仍能按逻辑粒度 1 逐 token 读取选中的潜向量。
 
-![vLLM GPU FlashMLA Sparse 与 vllm-ascend NPU AscendSFA 运行时对照](./diagrams/03-dsa-gpu-vs-npu-runtime.drawio '图 3：vLLM GPU（FlashMLA Sparse）与 vllm-ascend NPU（AscendSFA）运行时对照')
+```mermaid caption="图 4：vLLM GPU（FlashMLA Sparse）与 vllm-ascend NPU（AscendSFA）运行时对照"
+flowchart TD
+    subgraph GPU["NVIDIA GPU · vLLM FlashMLA Sparse"]
+        G1["Indexer (deepseek_v2.py)<br/>Q RoPE 旋转与量化缩放"] --> G2["DeepseekV32IndexerCache<br/>128B FP8 + 4B ue8m0"]
+        G2 --> G3["SparseAttnIndexer (bs=64)<br/>fp8_fp4_paged_mqa_logits"]
+        G3 --> G4["FlashMLASparseBackend<br/>CTA Cluster DSMEM 656B 读取"]
+    end
+    subgraph NPU["Huawei Ascend NPU · vllm-ascend SFA"]
+        A1["AscendSFAImpl 预处理<br/>PROLOG_V3 / MLAPO / _q_stream"] --> A2["AscendSFAIndexerBackend<br/>PA_BSND 分离 K 与 Scale"]
+        A2 --> A3["npu_lightning_indexer<br/>bs=128 对齐达芬奇 Cube"]
+        A3 --> A4["npu_sparse_flash_attention<br/>sparse_bs=1 逐 token Gather"]
+    end
+```
 
 | 对比维度     | `vLLM` GPU[^vllm]                      | `vllm-ascend` NPU[^ascend]                 |
 | :----------- | :------------------------------------- | :----------------------------------------- |

@@ -32,7 +32,23 @@ flowchart TD
     D -->|"否"| A["完整 FX Subgraph 移交 AOTAutograd"]
 ```
 
-![TorchDynamo、Dynamic Shapes、AOTAutograd 与 GPU/NPU 双端编译通路对比](./diagrams/02-dynamo-aot-inductor-vs-ascend.drawio '图 2：PyTorch 前端抓图降级管线及 GPU Inductor 与昇腾 AscendCompiler 后端分叉架构')
+```mermaid caption="图 2：PyTorch 前端抓图降级管线及 GPU Inductor 与昇腾 AscendCompiler 后端分叉架构"
+flowchart TD
+    subgraph FE["PyTorch 通用前端"]
+        FE0["TorchDynamo<br/>PEP 523 提取 FX"] --> FE1["SymInt & Guards<br/>0/1 特化防重编"]
+        FE1 --> FE2["AOTAutograd<br/>输出 Core ATen IR"]
+    end
+    subgraph GPU["GPU · Inductor 路径"]
+        G1["TorchInductor<br/>Loop Fusion 循环融合"] --> G2["Triton / CUDA Kernel<br/>降低 HBM 往返"]
+        G2 --> G3["外层接入 CUDAGraph<br/>消除 Launch 气泡"]
+    end
+    subgraph NPU["Ascend · 编译融合路径"]
+        N1["AscendCompiler<br/>oot_compiler 分段切图"] --> N2["npugraph_ex<br/>GraphFusionPass 融合"]
+        N2 --> N3["外层接入 ACLGraph<br/>消除发射气泡"]
+    end
+    FE2 -->|"下发 FX IR"| G1
+    FE2 -->|"下发 FX IR"| N1
+```
 
 ## 动态形状与符号守卫陷阱
 

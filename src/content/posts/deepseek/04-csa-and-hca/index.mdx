@@ -85,10 +85,10 @@ DeepSeek-V4-Flash 采用 43 层交错配置（前 2 层纯 SWA 配后 41 层 CSA
 
 ```mermaid caption="图 3：流式环形状态缓存与双端 Kernel 调度链路"
 flowchart TD
-    TOK["新到达 token 隐状态 H"] -->|"投影 KV 与门控分 Z"| RING["FP32 环形 StateCache"]
-    RING -->|"到达周期边界 p % m == m - 1"| NORM["跨环 Softmax 折叠 + RMSNorm"]
+    TOK["新到达 token 隐状态 $$H$$"] -->|"投影 KV 与门控分 $$Z$$"| RING["FP32 环形 StateCache"]
+    RING -->|"到达周期边界 $$p \bmod m = m - 1$$"| NORM["跨环 Softmax 折叠 + RMSNorm"]
     NORM -->|"块坐标 RoPE + 混合量化"| MAIN["Paged Main KV 分页主缓存"]
-    MAIN -->|"MQA 核心注意力 + Sink"| INV["输出端末 64 维施加 R_{-t} 逆旋转"]
+    MAIN -->|"MQA 核心注意力 + Sink"| INV["输出端末 64 维施加 $$R_{-t}$$ 逆旋转"]
 ```
 
 未闭合的尾部状态必须保留在独立的 FP32 环形缓冲区（`CompressorStateCache`）里：折块前的特征如果提前量化成低比特，跨步累加的数值误差会成倍放大。只有当序列新增位置跨过周期边界 $p \bmod m = m - 1$ 时，引擎才触发折叠、归一、部分 RoPE 并写回 HBM。

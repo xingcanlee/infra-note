@@ -11,7 +11,24 @@ tags: [vLLM-Ascend, npugraph_ex, SuperKernel, XliteGraph, '207008', '507011', Pr
 
 ## 生产四层软硬件调用栈映射
 
-![ACL Graph 在 vLLM-Ascend 全链路四层软硬件映射架构](./diagrams/06-aclgraph-four-layer-stack.drawio '图 1：ACL Graph 贯穿 vllm-ascend、torch_npu、cann/runtime 与 HDK/NPU 物理队列的四层调用栈映射')
+```mermaid caption="图 1：ACL Graph 贯穿 vllm-ascend、torch_npu、cann/runtime 与 HDK/NPU 物理队列的四层调用栈映射"
+flowchart TD
+    subgraph L1["L1 · vLLM-Ascend 调度与编译层"]
+        L1A["cudagraph_mode 分桶<br/>FULL / PIECEWISE + MTP"] --> L1B["npugraph_ex + ACLGraphWrapper<br/>模式替换与 weak_ref"]
+    end
+    subgraph L2["L2 · PyTorch + torch_npu 桥接层"]
+        L2A["NPUGraph 与 Pool 管理<br/>capture_begin / replay"] --> L2B["_GraphDispatchMode<br/>自动包裹 TaskGrp 与条件流"]
+    end
+    subgraph L3["L3 · CANN Runtime 模型运行时"]
+        L3A["CaptureSession + CaptureModel<br/>拓扑校验与 CopyTaskArgs"] --> L3B["DeviceSqCqPool & Notify<br/>物理 SQ/CQ 上限 1024"]
+    end
+    subgraph L4["L4 · Ascend HDK 与 NPU 硬件层"]
+        L4A["物理 SQ/CQ 队列<br/>超限报 207008"] --> L4B["TS 固件与 AICore<br/>异常报 507011 / UAF"]
+    end
+    L1B -->|"封装捕获/重放"| L2A
+    L2B -->|"下沉逻辑队列"| L3A
+    L3B -->|"提交物理队列"| L4A
+```
 
 从上层框架到底层芯片固件，生产全栈划分为边界明确的四层架构（见图 1 与图 2）：
 

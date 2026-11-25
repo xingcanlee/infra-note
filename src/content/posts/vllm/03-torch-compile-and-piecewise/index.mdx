@@ -50,7 +50,21 @@ flowchart TD
 
 切图完成后，整层计算被拆成性质不同的两类子图，切分与融合前后的形态对照见图 2。
 
-![FX Graph split_graph 与算子融合前后对比](./diagrams/03-fx-split-graph.drawio '图 2：FX Graph 切分隔离与子图算子融合示意图')
+```mermaid caption="图 2：FX Graph 切分隔离与子图算子融合示意图"
+flowchart TB
+  subgraph B["切分前：单层原始 Torch FX 图"]
+    direction LR
+    B0["RMSNorm + Act<br/>(Pointwise)"] --> B1["QKV Linear<br/>(GEMM)"]
+    B1 --> B2{"unified_attention<br/>splitting_ops"}
+    B2 --> B3["Gate + SiLU * Up<br/>(GEMM + Pointwise)"]
+  end
+  subgraph A["split_graph 切分后：纯张量编译融合与注意力 Eager 旁路隔离"]
+    direction LR
+    S0["submod_0 (静态编译)<br/>RMSNorm 融合 + QKV GEMM<br/>CUDAGraph / ACLGraph (PW)"] --> S1["submod_1 (Eager 隔离)<br/>跳过图捕获 · 直调 PagedAttention"]
+    S1 --> S2["submod_2 (静态编译)<br/>Gate/Up GEMM + SiLU * Mul<br/>CUDAGraph / ACLGraph (PW)"]
+  end
+  B2 -.->|"split_graph"| S1
+```
 
 纯张量子图（如 `submod_0` 与 `submod_2`）内部只包含形状拓扑静态的 `RMSNorm`、QKV 线性投影、旋转位置编码、激活与残差加法，仅有批维度 `num_tokens` 为符号变量。
 
@@ -64,7 +78,19 @@ flowchart TD
 
 走出 FX 切图阶段进入硬件后端代码生成时，NVIDIA GPU 与华为昇腾 NPU 分化出两条编译与缓存管线，具体对比见图 3。
 
-![Inductor/Triton 与 Ascend npugraph_ex 编译管线对比](./diagrams/03-inductor-vs-ascend-compile.drawio '图 3：PyTorch Inductor 与昇腾 AscendCompiler 管线对比')
+```mermaid caption="图 3：PyTorch Inductor 与昇腾 AscendCompiler 管线对比"
+flowchart TD
+    subgraph GPU["NVIDIA GPU · TorchInductor + Triton"]
+        G0["TorchCompileWithNoGuardsWrapper<br/>跳过动态 Shape Guard"] --> G1["VllmBackend + split_graph<br/>按 splitting_ops 切分 FX"]
+        G1 --> G2["TorchInductor FX Fusion<br/>编译生成 Triton 融合算子"]
+        G2 --> G3["CUDAGraphWrapper (PW)<br/>捕获静态分段低开销重放"]
+    end
+    subgraph NPU["Ascend NPU · AscendCompiler + npugraph_ex"]
+        A0["TorchCompileWithNoGuardsWrapper<br/>共用上层无 Guard 入口"] --> A1["AscendCompiler.compile<br/>oot_compiler (禁用 Inductor)"]
+        A1 --> A2["npugraph_ex / GraphFusionPass<br/>下沉 GE 图或模式匹配融合"]
+        A2 --> A3["ACLGraphWrapper / Updatable<br/>aclmdlRI 静态捕获与热更新"]
+    end
+```
 
 在 NVIDIA 侧，`VllmBackend` 默认启用 PyTorch TorchInductor，通过内置图优化 Pass 生成 Triton 融合 Kernel。生成的编译产物会直接持久化到磁盘缓存，以便下次服务重启时复用[^vllm-torch-compile-doc]。
 

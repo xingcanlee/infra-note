@@ -57,9 +57,9 @@ $$
 
 每个 token 只在最终输出时按头乘一次 $W_{UV,h}$，即可把 512 维潜输出恢复为 128 维多头特征。工程上把 $W_{UV,h}$ 与输出投影 $W^O$ 分开乘算，既保留了张量并行按头切分的独立性，也能直接复用现成的批矩阵乘算子。
 
-为了对比前后双向吸收与显存节省效果，图 1 以 DeepSeek-V3 生产维度对照了 Naive 展开路径、矩阵吸收等价变换以及每层 KV 字节开销。
+为了对比前后双向吸收与 Naive 展开路径，图 1 以 DeepSeek-V3 生产维度对照两者的潜向量读取与投影开销。
 
-![MLA 双向矩阵吸收对照：对比 Naive 解压 32 倍膨胀路径与 Decode 双向矩阵吸收等价路径，并汇总 MHA、GQA、MLA BF16 与 fp8_ds_mla 单 token 字节开销](./diagrams/01-mla-matrix-absorption.drawio '图 1：MLA 矩阵吸收等价变换与单 token 字节开销')
+![MLA 双向矩阵吸收对照：对比 Naive 解压 32 倍膨胀路径与 Decode 双向矩阵吸收等价路径](./diagrams/01-mla-matrix-absorption.drawio '图 1：MLA Naive 展开路径与 Decode 双向矩阵吸收等价变换')
 
 从图 1 可以看出，Naive 路径在单步解码时会把 512 维潜向量展开为 $128 \times 128 = 16{,}384$ 维的临时 Key 和 Value。双向吸收把 $W_{UK}$ 留在 Query 侧、把 $W_{UV}$ 推迟到注意力归约之后。历史缓存因此始终只存一份共享潜向量，等价于把 128 头 MHA 化归为 1 头 **MQA（Multi-Query Attention，多查询注意力）**。
 
@@ -93,6 +93,10 @@ $$
 | GQA-8（8 个 KV 头）      |               2,048 |  4,096 B |           244.00 KiB |         3.56× |
 | MLA（512 + 64 联合缓存） |                 576 |  1,152 B |            68.62 KiB | 1.00×（基准） |
 
+图 3 按字节比例尺直观对比 MHA-128H、GQA-8 与 MLA 的压缩尺度，并细拆 DeepSeek-V3.2 混合精度格式 `fp8_ds_mla`（656 B/token）的逐字段开销。
+
+![DeepSeek-V3 与 V3.2 单 token 每层 KV 字节开销对照：按字节比例尺对比 MHA-128H、GQA-8 与 MLA，并细拆 fp8_ds_mla 656 B/tok 混合精度结构](./diagrams/01-mla-kv-byte-ledger.drawio '图 3：DeepSeek-V3 / V3.2 单 token 每层 KV 字节开销对照')
+
 ## Prefill 与 Decode 的双路径选择
 
 既然矩阵吸收能把 **HBM（High Bandwidth Memory，高带宽显存）**缓存读取压缩近 57 倍，为什么引擎在长提示词 Prefill（预填充）阶段反而切回显式展开的 MHA 路径？拆开单步注意力的计算量与访存开销即可看清分界线。
@@ -111,9 +115,23 @@ FlashMLA 的 Roofline 分析以 H800 SXM5 为例（降频峰值约 865 TFLOPS、
 
 ## GPU 与昇腾 NPU 的引擎实现对照
 
-两套硬件架构的指令与内存布局差异，决定了上游推理引擎在算子拆分和 KV 排布上的不同取舍。图 3 对照了 NVIDIA GPU（`vLLM` / `FlashMLA`）与华为昇腾 NPU（`vllm-ascend`）两条生产执行链路。
+两套硬件架构的指令与内存布局差异，决定了上游推理引擎在算子拆分和 KV 排布上的不同取舍。图 4 对照了 NVIDIA GPU（`vLLM` / `FlashMLA`）与华为昇腾 NPU（`vllm-ascend`）两条生产执行链路。
 
-![vLLM GPU 与 vllm-ascend NPU 的 MLA 权重分形与算子调度对照](./diagrams/01-mla-gpu-vs-npu-runtime.drawio '图 3：vLLM GPU 与 vllm-ascend NPU 的 MLA 权重分形与算子调度对照')
+```mermaid caption="图 4：vLLM GPU 与 vllm-ascend NPU 的 MLA 权重分形与算子调度对照"
+flowchart TD
+    subgraph GPU["NVIDIA GPU · vLLM (vllm@bb23c0a8)"]
+        G1["split_kv_b_proj 拆权重<br/>W_UK_T + W_UV"] --> G2["forward_impl 分流<br/>按 128 阈值切 MHA / Decode"]
+        G2 --> G3["_prepare_mqa_query<br/>bmm 吸收输出 512 维"]
+        G3 --> G4["FlashMLAImpl.forward_mqa<br/>单张 [num_blocks, bs, 1, 576]"]
+        G4 --> G5["_v_up_proj<br/>bmm(output, W_UV) → o_proj"]
+    end
+    subgraph NPU["Ascend NPU · vllm-ascend@3649b8ff"]
+        A1["maybe_trans_nz 重排<br/>权重转 FRACTAL_NZ"] --> A2["AscendMLAImpl 分流<br/>Prefill BF16 / Decode MLAPO"]
+        A2 --> A3["npu_mla_prolog_v3<br/>融合 Q/KV 投影与 RoPE"]
+        A3 --> A4["npu_fused_infer_attention_score_v2<br/>分离读 kv_c + k_pe PA_NZ"]
+        A4 --> A5["_v_up_proj<br/>npu_transpose_batchmatmul"]
+    end
+```
 
 在 DeepSeek-V3 官方参考代码[^dsv3-code]中，`MLA` 模块以 `impl` 参数区分展开与吸收两条路径。到了 vLLM GPU 生产栈[^vllm-mla][^vllm-flashmla]，`MLAAttention` 在加载权重后拆出 Query 侧吸收权重 `W_UK_T` 与输出侧上投影 `W_UV`，并向内存管理器声明单头 576 维缓存。
 

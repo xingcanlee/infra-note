@@ -15,7 +15,23 @@ tags: [ACL Graph, CUDA Graph, torch.compile, CANN, Ascend, vLLM-Ascend]
 - 第二层是编译器静态化（`torch.compile`），通过算子融合压低 HBM 往返次数，但仍受限于动态注意力切段。
 - 第三层是设备端静态执行图（CUDA Graph 与昇腾 ACL Graph），把整段拓扑固化到驱动或硬件侧，将数百次发射压缩为单条触发指令。
 
-![执行图三层技术栈导览](./diagrams/00-three-layer-execution-stack.drawio '图 1：从异构算力流、编译静态化到静态执行图的三层演进路线')
+```mermaid caption="图 1：从异构算力流、编译静态化到静态执行图的三层演进路线"
+flowchart BT
+    subgraph L1["第一层：异构算力流与同步原语 (Ch01)"]
+        B1["Host 异步入队<br/>Pushbuffer / TaskQ"] --> B2["SQ / CQ 队列<br/>单卡上限 1024"]
+        B2 --> B3["Event 与 Notify<br/>跨流与 Host 同步"]
+    end
+    subgraph L2["第二层：编译期静态化与融合 (Ch02)"]
+        D1["TorchDynamo<br/>PEP 523 与 Guard"] --> D2["Symbolic Shapes<br/>符号分片切图"]
+        D2 --> D3["Inductor / Ascend<br/>融合降 HBM 访存"]
+    end
+    subgraph L3["第三层：静态图捕获与生产系统 (Ch03–06)"]
+        C3["Ch03 CUDA Graph<br/>DAG 与四大边界"] --> C4["Ch04 影子流<br/>Args 备份与 EndGraph"]
+        C4 --> C5["Ch05–06 扩展排障<br/>TaskGrp / 条件子图"]
+    end
+    B3 -->|"仍留 Launch 墙"| D1
+    D3 -->|"静态捕图消气泡"| C3
+```
 
 ## 六章演进路线与前置关联
 

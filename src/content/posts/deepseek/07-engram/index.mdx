@@ -375,7 +375,7 @@ classDiagram
     DeepseekV41Model --> EngramBatch : runs multi-layer plan
     DeepseekV41Model --> EngramPrefetch : decode side-stream
     DeepseekV41ModelState --> NgramHashState : stateless hash
-    Engram --> ParallelEngramEmbedding : fetches e_t
+    Engram --> ParallelEngramEmbedding : fetches $$e_t$$
     ParallelEngramEmbedding --> EngramLayout : addresses
     ParallelEngramEmbedding --> DPSharedEngramStorage : shares host RAM
     ParallelEngramEmbedding ..> EngramConfig : configured by
@@ -425,9 +425,9 @@ sequenceDiagram
     Pool-->>Batch: 回填 FP8+Scale 并解包为 MXFP8 激活
     Note over Layer: L1/L14 处拆分 Mega-mHC 延迟融合
     Layer->>Layer: 显式执行 mhc_post 后转入 Engram
-    Layer->>Batch: 消费 e_t 并执行 fused wkv + post gate
+    Layer->>Batch: 消费 $$e_t$$ 并执行 fused wkv + post gate
     Layer->>Pool: Decode 走 EngramPrefetch 侧流接力 WKV
-    Layer->>Layer: 回写 H_t 后接 mhc_pre 进入 Attn
+    Layer->>Layer: 回写 $$H_t$$ 后接 mhc_pre 进入 Attn
 ```
 
 在模型层边界处，L1 与 L14 必须显式拆开 `Mega-mHC` 单遍融合[^vllm-model]。常规层把上层 `mhc_post` 与本层 `mhc_pre` 融成一个算子省掉四流写回。而这两层必须在两者之间把完整四分支状态交给 Engram 原位更新，再接 `EngramPrefetch`[^vllm-prefetch] 在 Decode 侧流投影。真实拆分如下：
@@ -492,7 +492,7 @@ classDiagram
     AscendDeepseekV41Model --> EngramModelState : pre-forward hook
     AscendDeepseekV41Model --> AscendEngram : executes at L1 and L14
     EngramModelState --> AscendNgramHashState : drives
-    AscendEngram --> AscendParallelEngramEmbedding : fetches e_t
+    AscendEngram --> AscendParallelEngramEmbedding : fetches $$e_t$$
     AscendParallelEngramEmbedding *-- HostUvaBuffer : A2 UVA slice
     AscendParallelEngramEmbedding *-- SharedUvaBuffer : co-located shm
     AscendParallelEngramEmbedding *-- LocalSharedVmmBuffer : native C++ VMM

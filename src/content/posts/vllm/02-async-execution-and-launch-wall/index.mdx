@@ -62,7 +62,19 @@ Step $N+1$ 的异步批指令随后到达执行器时，输入拼装 Kernel 在�
 
 与此同时，为了把采样结果最终交还外层调度器用于停机判断与文本返回，执行器会在创建后处理前构造 `AsyncOutput`（见图 2）[^vllm-async-output]。它让独立的 `copy_stream` 先等待主计算流到达采样完成点，再以 `non_blocking=True` 将采样 token ID 与数量异步拷向 CPU **Pinned Memory（锁页内存）**。最后它记录一个阻塞型 `copy_event`，并立即把控制权交还主线程。
 
-![vLLM GPU 与 Ascend NPU 异步输出架构对比](./diagrams/02-async-output-arch.drawio '图 2：GPU AsyncOutput 与 NPU 异步事件机制对比')
+```mermaid caption="图 2：GPU AsyncOutput 与 NPU 异步事件机制对比"
+flowchart TD
+    subgraph GPU["NVIDIA GPU · AsyncOutput (MRV2)"]
+        G1["GPUModelRunner 主线程<br/>无同步入队 Step N"] --> G2["Default CUDA Stream<br/>前向计算与采样"]
+        G2 -->|"async copy"| G3["copy_stream + AsyncOutput<br/>锁页 D2H + copy_event"]
+        G3 -->|"copy_event"| G4["AsyncOutput.get_output()<br/>Step N+1 准备完再同步"]
+    end
+    subgraph NPU["Ascend NPU · NPUModelRunner 流水"]
+        A1["NPUModelRunner 主线程<br/>异步下发至 CANN TaskQ"] --> A2["CANN TaskQueue 流水<br/>AICore 连续消费任务块"]
+        A2 -->|"async copy"| A3["copy_stream + AscendAsyncOutput<br/>锁页拷贝并记录事件"]
+        A3 -->|"NPU Event"| A4["aclrtSynchronizeEvent<br/>读 token 时才等待完成"]
+    end
+```
 
 如此一来，CPU 在后台 **DMA（Direct Memory Access，直接内存访问）**引擎搬运 Step $N$ 采样结果的同时，已经开始组织并提交 Step $N+1$ 的计算任务。直到引擎必须读取真实 token 序列检查停止符或返回客户端时，才调用 `get_output()` 执行 `copy_event.synchronize()` 兑现同步[^vllm-async-output]。图 3 概括了这套两阶段交错周期。
 
