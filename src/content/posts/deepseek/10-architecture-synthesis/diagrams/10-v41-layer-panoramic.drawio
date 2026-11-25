@@ -25,7 +25,7 @@
         <mxCell id="s1_pre" value="1. Mega-mHC Pre-Mix&lt;br&gt;\([B,4,H]\to[B,H]\) 10d&lt;br&gt;20 轮 Sinkhorn ≤1.6×" style="shape=trapezoid;perimeter=trapezoidPerimeter;whiteSpace=wrap;html=1;fixedSize=1;size=16;flipV=1;fillColor=#f5eef9;strokeColor=#4d335c;strokeWidth=1.25;rounded=0;shadow=0;container=0;align=center;verticalAlign=middle;fontFamily=Inter, Noto Sans SC;fontSize=12;fontColor=#1d1d1f;spacing=6;" vertex="1" parent="1">
           <mxGeometry x="512" y="24" width="176" height="64" as="geometry" />
         </mxCell>
-        <mxCell id="e_b_a" value="" style="endArrow=classic;startArrow=none;html=1;strokeColor=#1d1d1f;strokeWidth=1.25;edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;exitX=1.0;exitY=0.5;exitDx=0;exitDy=0;entryX=0.5;entryY=1.0;entryDx=0;entryDy=0;" edge="1" parent="1" source="bus_top_1" target="eng_add">
+        <mxCell id="e_b_a" value="" style="endArrow=classic;startArrow=none;html=1;strokeColor=#1d1d1f;strokeWidth=1.25;edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=10;exitX=1.0;exitY=0.5;exitDx=0;exitDy=0;entryX=0.5;entryY=1.0;entryDx=0;entryDy=0;" edge="1" parent="1" source="bus_top_1" target="eng_add">
           <mxGeometry relative="1" as="geometry">
             <Array as="points">
               <mxPoint x="176" y="44" />
@@ -58,7 +58,7 @@
         <mxCell id="s4_moe" value="4. DeepSeekMoE + 共享专家&lt;br&gt;无辅损 Top-8 + 1 Shared&lt;br&gt;GPU DeepEP+DeepGEMM / NPU MC2" style="rounded=1;whiteSpace=wrap;html=1;arcSize=12;fillColor=#e9f2fb;strokeColor=#2f5783;strokeWidth=1.75;opacity=100;shadow=0;container=0;align=center;verticalAlign=middle;fontFamily=Inter, Noto Sans SC;fontSize=12;fontColor=#1d1d1f;spacing=6;" vertex="1" parent="1">
           <mxGeometry x="416" y="184" width="248" height="72" as="geometry" />
         </mxCell>
-        <mxCell id="e_pre_csa" value="" style="endArrow=classic;startArrow=none;html=1;strokeColor=#1d1d1f;strokeWidth=1.25;edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;exitX=0.5;exitY=1.0;exitDx=0;exitDy=0;entryX=0.85;entryY=0.0;entryDx=0;entryDy=0;" edge="1" parent="1" source="s1_pre" target="s2_csa">
+        <mxCell id="e_pre_csa" value="" style="endArrow=classic;startArrow=none;html=1;strokeColor=#1d1d1f;strokeWidth=1.25;edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=10;exitX=0.5;exitY=1.0;exitDx=0;exitDy=0;entryX=0.85;entryY=0.0;entryDx=0;entryDy=0;" edge="1" parent="1" source="s1_pre" target="s2_csa">
           <mxGeometry relative="1" as="geometry">
             <Array as="points">
               <mxPoint x="600" y="120" />
@@ -69,7 +69,7 @@
         <mxCell id="e_kv_csa" value="" style="endArrow=classic;startArrow=none;html=1;strokeColor=#7b5518;strokeWidth=1.25;" edge="1" parent="1" source="s2_kv" target="s2_csa">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="e_csa_moe" value="" style="endArrow=classic;startArrow=none;html=1;strokeColor=#1d1d1f;strokeWidth=1.25;edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;exitX=0.8;exitY=1.0;exitDx=0;exitDy=0;entryX=0.0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="s2_csa" target="s4_moe">
+        <mxCell id="e_csa_moe" value="" style="endArrow=classic;startArrow=none;html=1;strokeColor=#1d1d1f;strokeWidth=1.25;edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=10;exitX=0.8;exitY=1.0;exitDx=0;exitDy=0;entryX=0.0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="s2_csa" target="s4_moe">
           <mxGeometry relative="1" as="geometry">
             <Array as="points">
               <mxPoint x="192" y="272" />
@@ -108,7 +108,7 @@
         <mxCell id="s6_dspark" value="6. DSpark 并行草稿链&lt;br&gt;3 层 SWA + r=256 Markov → 3~5 tok" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#fbf2df;strokeColor=#7b5518;strokeWidth=2;align=center;verticalAlign=middle;spacing=6;fontFamily=Inter, Noto Sans SC;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
           <mxGeometry x="448" y="344" width="224" height="48" as="geometry" />
         </mxCell>
-        <mxCell id="e_moe_post" value="" style="endArrow=classic;startArrow=none;html=1;strokeColor=#1d1d1f;strokeWidth=1.25;edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;exitX=0.5;exitY=1.0;exitDx=0;exitDy=0;entryX=0.5;entryY=0.0;entryDx=0;entryDy=0;" edge="1" parent="1" source="s4_moe" target="s5_post">
+        <mxCell id="e_moe_post" value="" style="endArrow=classic;startArrow=none;html=1;strokeColor=#1d1d1f;strokeWidth=1.25;edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=10;exitX=0.5;exitY=1.0;exitDx=0;exitDy=0;entryX=0.5;entryY=0.0;entryDx=0;entryDy=0;" edge="1" parent="1" source="s4_moe" target="s5_post">
           <mxGeometry relative="1" as="geometry">
             <Array as="points">
               <mxPoint x="544" y="296" />

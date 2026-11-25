@@ -106,22 +106,22 @@
         <mxCell id="npu_pool" value="SharedPool / Hixl&lt;br&gt;Triton 零拷贝 + FULL 图" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#f5eef9;strokeColor=#4d335c;strokeWidth=1.25;dashed=1;dashPattern=4 4;align=center;verticalAlign=middle;spacing=6;fontFamily=Inter, Noto Sans SC;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
           <mxGeometry x="464" y="328" width="208" height="64" as="geometry" />
         </mxCell>
-        <mxCell id="e_hg" value="" style="endArrow=classic;startArrow=none;html=1;strokeColor=#1d1d1f;strokeWidth=1.25;edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;exitX=1.0;exitY=0.2;exitDx=0;exitDy=0;entryX=0.0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="host_tbl" target="gpu_pf">
+        <mxCell id="e_hg" value="" style="endArrow=classic;startArrow=none;html=1;strokeColor=#1d1d1f;strokeWidth=1.25;edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=10;exitX=1.0;exitY=0.2;exitDx=0;exitDy=0;entryX=0.0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="host_tbl" target="gpu_pf">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
         <mxCell id="e_hg_lbl" value="PCIe" style="text;html=1;whiteSpace=wrap;align=center;verticalAlign=middle;fontFamily=Inter, Noto Sans SC;fontSize=11;fontColor=#1d1d1f;" vertex="1" parent="1">
           <mxGeometry x="144" y="240" width="40" height="24" as="geometry" />
         </mxCell>
-        <mxCell id="e_hn" value="" style="endArrow=classic;startArrow=none;html=1;strokeColor=#1d1d1f;strokeWidth=1.25;edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;exitX=1.0;exitY=0.8;exitDx=0;exitDy=0;entryX=0.0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="host_tbl" target="npu_pf">
+        <mxCell id="e_hn" value="" style="endArrow=classic;startArrow=none;html=1;strokeColor=#1d1d1f;strokeWidth=1.25;edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=10;exitX=1.0;exitY=0.8;exitDx=0;exitDy=0;entryX=0.0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="host_tbl" target="npu_pf">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
         <mxCell id="e_hn_lbl" value="HCCS" style="text;html=1;whiteSpace=wrap;align=center;verticalAlign=middle;fontFamily=Inter, Noto Sans SC;fontSize=11;fontColor=#1d1d1f;" vertex="1" parent="1">
           <mxGeometry x="144" y="328" width="40" height="24" as="geometry" />
         </mxCell>
-        <mxCell id="e_gp" value="" style="endArrow=classic;startArrow=none;html=1;strokeColor=#2f5783;strokeWidth=1.25;edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;" edge="1" parent="1" source="gpu_pf" target="gpu_pool">
+        <mxCell id="e_gp" value="" style="endArrow=classic;startArrow=none;html=1;strokeColor=#2f5783;strokeWidth=1.25;edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=10;" edge="1" parent="1" source="gpu_pf" target="gpu_pool">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="e_np" value="" style="endArrow=classic;startArrow=none;html=1;strokeColor=#4d335c;strokeWidth=1.25;edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;" edge="1" parent="1" source="npu_pf" target="npu_pool">
+        <mxCell id="e_np" value="" style="endArrow=classic;startArrow=none;html=1;strokeColor=#4d335c;strokeWidth=1.25;edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=10;" edge="1" parent="1" source="npu_pf" target="npu_pool">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
       </root>

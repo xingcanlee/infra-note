@@ -22,10 +22,10 @@
         <mxCell id="cap_end" value="CaptureEnd 冻结图实例&lt;br&gt;跳过后续 Python 分发&lt;br&gt;与动态 Shape 分支" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#f4f4f2;strokeColor=#5c6067;strokeWidth=1;align=center;verticalAlign=middle;spacing=6;fontFamily=Inter, Noto Sans SC;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
           <mxGeometry x="488" y="48" width="184" height="64" as="geometry" />
         </mxCell>
-        <mxCell id="e_p_d" value="" style="endArrow=classic;startArrow=none;html=1;strokeColor=#1d1d1f;strokeWidth=1.25;edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;exitX=1.0;exitY=0.5;exitDx=0;exitDy=0;entryX=0.0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="pool" target="dag">
+        <mxCell id="e_p_d" value="" style="endArrow=classic;startArrow=none;html=1;strokeColor=#1d1d1f;strokeWidth=1.25;edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=10;exitX=1.0;exitY=0.5;exitDx=0;exitDy=0;entryX=0.0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="pool" target="dag">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="e_d_c" value="" style="endArrow=classic;startArrow=none;html=1;strokeColor=#1d1d1f;strokeWidth=1.25;edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;exitX=1.0;exitY=0.5;exitDx=0;exitDy=0;entryX=0.0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="dag" target="cap_end">
+        <mxCell id="e_d_c" value="" style="endArrow=classic;startArrow=none;html=1;strokeColor=#1d1d1f;strokeWidth=1.25;edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=10;exitX=1.0;exitY=0.5;exitDx=0;exitDy=0;entryX=0.0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="dag" target="cap_end">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
         <mxCell id="g_rep" value="2. Replay 重放（真实请求 \(B=3 \to\) 桶 4）：原地覆写固定地址 + 单次 Launch" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f5e9;strokeColor=#2c522d;strokeWidth=1.25;verticalAlign=top;align=left;spacingLeft=12;spacingTop=8;fontFamily=Inter, Noto Sans SC;fontSize=12;fontStyle=1;fontColor=#2c522d;container=0;" vertex="1" parent="1">
@@ -55,16 +55,16 @@
         <mxCell id="out_buf" value="固定输出缓冲&lt;br&gt;0x7f00_3000&lt;br&gt;weak_ref_tensors" style="shape=datastore;whiteSpace=wrap;html=1;fillColor=#fbf2df;strokeColor=#7b5518;strokeWidth=1.25;shadow=0;container=0;align=center;verticalAlign=middle;fontFamily=Inter, Noto Sans SC;fontSize=12;fontColor=#1d1d1f;spacing=6;" vertex="1" parent="1">
           <mxGeometry x="528" y="224" width="144" height="80" as="geometry" />
         </mxCell>
-        <mxCell id="e_pool_in" value="" style="endArrow=classic;startArrow=none;html=1;strokeColor=#2f5783;strokeWidth=1.25;edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;dashed=1;dashPattern=4 4;exitX=0.5;exitY=1.0;exitDx=0;exitDy=0;entryX=0.1511627906976744;entryY=0.0;entryDx=0;entryDy=0;" edge="1" parent="1" source="pool" target="g_rep">
+        <mxCell id="e_pool_in" value="" style="endArrow=classic;startArrow=none;html=1;strokeColor=#2f5783;strokeWidth=1.25;edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=10;dashed=1;dashPattern=4 4;exitX=0.5;exitY=1.0;exitDx=0;exitDy=0;entryX=0.1511627906976744;entryY=0.0;entryDx=0;entryDy=0;" edge="1" parent="1" source="pool" target="g_rep">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
         <mxCell id="e_pool_in_lbl" value="锁定同一指针" style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;fontFamily=Inter, Noto Sans SC;fontSize=11;fontColor=#2f5783;" vertex="1" parent="1">
           <mxGeometry x="112" y="144" width="88" height="24" as="geometry" />
         </mxCell>
-        <mxCell id="e_in_l" value="" style="endArrow=classic;startArrow=none;html=1;strokeColor=#1d1d1f;strokeWidth=1.25;edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;exitX=1.0;exitY=0.5;exitDx=0;exitDy=0;entryX=0.0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="in_buf_3" target="launch">
+        <mxCell id="e_in_l" value="" style="endArrow=classic;startArrow=none;html=1;strokeColor=#1d1d1f;strokeWidth=1.25;edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=10;exitX=1.0;exitY=0.5;exitDx=0;exitDy=0;entryX=0.0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="in_buf_3" target="launch">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="e_l_o" value="" style="endArrow=classic;startArrow=none;html=1;strokeColor=#1d1d1f;strokeWidth=1.25;edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;exitX=1.0;exitY=0.5;exitDx=0;exitDy=0;entryX=0.0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="launch" target="out_buf">
+        <mxCell id="e_l_o" value="" style="endArrow=classic;startArrow=none;html=1;strokeColor=#1d1d1f;strokeWidth=1.25;edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=10;exitX=1.0;exitY=0.5;exitDx=0;exitDy=0;entryX=0.0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="launch" target="out_buf">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
         <mxCell id="rep_note" value="注：第 4 槽须刷写 PAD_SLOT_ID = -1 且置位 is_padding = True，防止缩容时残留槽号写穿活跃 KV 块（四道硬边界见图 2）" style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;fontFamily=Inter, Noto Sans SC;fontSize=11;fontColor=#5c6067;" vertex="1" parent="1">

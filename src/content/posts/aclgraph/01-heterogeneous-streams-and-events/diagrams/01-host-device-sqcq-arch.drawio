@@ -88,7 +88,7 @@
         <mxCell id="ts_sched" value="TS 硬件调度器 &amp;amp; 仲裁器&lt;br&gt;FIFO 保序出队 · 跨流阻断放行不回退 CPU · 完成后回写 CQ" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f5e9;strokeColor=#2c522d;strokeWidth=2;align=center;verticalAlign=middle;spacing=6;fontFamily=Inter, Noto Sans SC;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
           <mxGeometry x="256" y="376" width="416" height="56" as="geometry" />
         </mxCell>
-        <mxCell id="d_sq0" value="" style="endArrow=classic;startArrow=none;html=1;strokeColor=#1d1d1f;strokeWidth=1.25;edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;exitX=0.25;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="doorbell" target="sq0_3">
+        <mxCell id="d_sq0" value="" style="endArrow=classic;startArrow=none;html=1;strokeColor=#1d1d1f;strokeWidth=1.25;edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=10;exitX=0.25;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="doorbell" target="sq0_3">
           <mxGeometry relative="1" as="geometry">
             <Array as="points">
               <mxPoint x="536" y="160" />
@@ -99,14 +99,14 @@
         <mxCell id="d_sq0_lbl" value="写 SQE + 敲 Doorbell" style="text;html=1;whiteSpace=wrap;align=center;verticalAlign=middle;fontFamily=Inter, Noto Sans SC;fontSize=11;fontColor=#1d1d1f;" vertex="1" parent="1">
           <mxGeometry x="320" y="128" width="160" height="24" as="geometry" />
         </mxCell>
-        <mxCell id="d_sq1" value="" style="endArrow=classic;startArrow=none;html=1;strokeColor=#1d1d1f;strokeWidth=1.25;edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;exitX=0.804;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="doorbell" target="sq1_3">
+        <mxCell id="d_sq1" value="" style="endArrow=classic;startArrow=none;html=1;strokeColor=#1d1d1f;strokeWidth=1.25;edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=10;exitX=0.804;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="doorbell" target="sq1_3">
           <mxGeometry relative="1" as="geometry">
             <Array as="points">
               <mxPoint x="636" y="160" />
             </Array>
           </mxGeometry>
         </mxCell>
-        <mxCell id="s0_ts" value="" style="endArrow=classic;startArrow=none;html=1;strokeColor=#7b5518;strokeWidth=1.25;edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;exitX=0.9;exitY=1;exitDx=0;exitDy=0;entryX=0.75;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="sq0_2" target="ts_pool">
+        <mxCell id="s0_ts" value="" style="endArrow=classic;startArrow=none;html=1;strokeColor=#7b5518;strokeWidth=1.25;edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=10;exitX=0.9;exitY=1;exitDx=0;exitDy=0;entryX=0.75;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="sq0_2" target="ts_pool">
           <mxGeometry relative="1" as="geometry">
             <Array as="points">
               <mxPoint x="225" y="328" />
@@ -117,7 +117,7 @@
         <mxCell id="s0_ts_lbl" value="Record E1" style="text;html=1;whiteSpace=wrap;align=right;verticalAlign=middle;fontFamily=Inter, Noto Sans SC;fontSize=11;fontStyle=1;fontColor=#7b5518;" vertex="1" parent="1">
           <mxGeometry x="72" y="320" width="88" height="24" as="geometry" />
         </mxCell>
-        <mxCell id="ts_s1" value="" style="endArrow=classic;startArrow=none;html=1;strokeColor=#7b5518;strokeWidth=1.25;edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;exitX=0.95;exitY=0;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="ts_pool" target="sq1_0">
+        <mxCell id="ts_s1" value="" style="endArrow=classic;startArrow=none;html=1;strokeColor=#7b5518;strokeWidth=1.25;edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=10;exitX=0.95;exitY=0;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="ts_pool" target="sq1_0">
           <mxGeometry relative="1" as="geometry">
             <Array as="points">
               <mxPoint x="206" y="344" />

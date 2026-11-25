@@ -28,19 +28,19 @@
         <mxCell id="m_full" value="Full Mode (4 层)&lt;br&gt;L2/8/14 + L20 建池" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f2fb;strokeColor=#2f5783;strokeWidth=2;align=center;verticalAlign=middle;spacing=6;fontFamily=Inter, Noto Sans SC;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
           <mxGeometry x="16" y="176" width="160" height="48" as="geometry" />
         </mxCell>
-        <mxCell id="ev_m_swa_m_full" value="" style="endArrow=classic;startArrow=none;html=1;strokeColor=#1d1d1f;strokeWidth=1.25;edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;" edge="1" parent="1" source="m_swa" target="m_full">
+        <mxCell id="ev_m_swa_m_full" value="" style="endArrow=classic;startArrow=none;html=1;strokeColor=#1d1d1f;strokeWidth=1.25;edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=6;" edge="1" parent="1" source="m_swa" target="m_full">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
         <mxCell id="m_reidx" value="Reindex Mode (4 层)&lt;br&gt;L24/28/32/36 重索引" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#fbf2df;strokeColor=#7b5518;strokeWidth=2;align=center;verticalAlign=middle;spacing=6;fontFamily=Inter, Noto Sans SC;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
           <mxGeometry x="16" y="240" width="160" height="48" as="geometry" />
         </mxCell>
-        <mxCell id="ev_m_full_m_reidx" value="" style="endArrow=classic;startArrow=none;html=1;strokeColor=#1d1d1f;strokeWidth=1.25;edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;" edge="1" parent="1" source="m_full" target="m_reidx">
+        <mxCell id="ev_m_full_m_reidx" value="" style="endArrow=classic;startArrow=none;html=1;strokeColor=#1d1d1f;strokeWidth=1.25;edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=6;" edge="1" parent="1" source="m_full" target="m_reidx">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
         <mxCell id="m_reuse" value="Reuse Mode (30 层)&lt;br&gt;全复用 · 11 融合核" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f5e9;strokeColor=#2c522d;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=6;fontFamily=Inter, Noto Sans SC;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
           <mxGeometry x="16" y="304" width="160" height="48" as="geometry" />
         </mxCell>
-        <mxCell id="ev_m_reidx_m_reuse" value="" style="endArrow=classic;startArrow=none;html=1;strokeColor=#1d1d1f;strokeWidth=1.25;edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;" edge="1" parent="1" source="m_reidx" target="m_reuse">
+        <mxCell id="ev_m_reidx_m_reuse" value="" style="endArrow=classic;startArrow=none;html=1;strokeColor=#1d1d1f;strokeWidth=1.25;edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=6;" edge="1" parent="1" source="m_reidx" target="m_reuse">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
         <mxCell id="csa2_detail" value="3. HSI 两级分层稀疏索引器（1M 下缩至 1.64%）与 CED 减半" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#fbf2df;strokeColor=#7b5518;strokeWidth=1.25;dashed=1;verticalAlign=top;align=left;spacingLeft=12;spacingTop=8;fontFamily=Inter, Noto Sans SC;fontSize=12;fontStyle=1;fontColor=#7b5518;container=0;" vertex="1" parent="1">

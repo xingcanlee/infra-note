@@ -175,19 +175,19 @@
         <mxCell id="s_out" value="4. 与 cmp / win 分支 Sigmoid 门控融合&lt;br&gt;\(o_t^* = g_{\text{cmp}}O_{\text{cmp}} + g_{\text{slc}}O_{\text{slc}} + g_{\text{win}}O_{\text{win}}\)" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#f4f4f2;strokeColor=#5c6067;strokeWidth=1;align=center;verticalAlign=middle;spacing=6;fontFamily=Inter, Noto Sans SC;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
           <mxGeometry x="360" y="296" width="312" height="56" as="geometry" />
         </mxCell>
-        <mxCell id="se_0" value="" style="endArrow=classic;startArrow=none;html=1;strokeColor=#1d1d1f;strokeWidth=1.25;edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;exitX=0.692;exitY=1.0;exitDx=0;exitDy=0;entryX=0.5;entryY=0.0;entryDx=0;entryDy=0;" edge="1" parent="1" source="s_grid" target="s_load">
+        <mxCell id="se_0" value="" style="endArrow=classic;startArrow=none;html=1;strokeColor=#1d1d1f;strokeWidth=1.25;edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=6;exitX=0.692;exitY=1.0;exitDx=0;exitDy=0;entryX=0.5;entryY=0.0;entryDx=0;entryDy=0;" edge="1" parent="1" source="s_grid" target="s_load">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
         <mxCell id="se_1" value="" style="endArrow=classic;startArrow=none;html=1;strokeColor=#1d1d1f;strokeWidth=1.25;" edge="1" parent="1" source="s_hbm" target="s_load">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="se_2" value="" style="endArrow=classic;startArrow=none;html=1;strokeColor=#1d1d1f;strokeWidth=1.25;edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;exitX=0.5;exitY=1.0;exitDx=0;exitDy=0;entryX=0.692;entryY=0.0;entryDx=0;entryDy=0;" edge="1" parent="1" source="s_load" target="s_mma">
+        <mxCell id="se_2" value="" style="endArrow=classic;startArrow=none;html=1;strokeColor=#1d1d1f;strokeWidth=1.25;edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=10;exitX=0.5;exitY=1.0;exitDx=0;exitDy=0;entryX=0.692;entryY=0.0;entryDx=0;entryDy=0;" edge="1" parent="1" source="s_load" target="s_mma">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
         <mxCell id="se_3" value="" style="endArrow=classic;startArrow=none;html=1;strokeColor=#1d1d1f;strokeWidth=1.25;" edge="1" parent="1" source="s_mma" target="s_out">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="se_link" value="共享 \(\mathcal{I}_t\)" style="endArrow=classic;startArrow=none;html=1;strokeColor=#2c522d;strokeWidth=1.25;edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;exitX=1.0;exitY=0.5;exitDx=0;exitDy=0;entryX=0.0;entryY=0.5;entryDx=0;entryDy=0;fontFamily=Inter, Noto Sans SC;fontSize=11;fontColor=#2c522d;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="hm_good_1_4" target="s_grid">
+        <mxCell id="se_link" value="共享 \(\mathcal{I}_t\)" style="endArrow=classic;startArrow=none;html=1;strokeColor=#2c522d;strokeWidth=1.25;edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=10;exitX=1.0;exitY=0.5;exitDx=0;exitDy=0;entryX=0.0;entryY=0.5;entryDx=0;entryDy=0;fontFamily=Inter, Noto Sans SC;fontSize=11;fontColor=#2c522d;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="hm_good_1_4" target="s_grid">
           <mxGeometry relative="1" as="geometry">
             <Array as="points">
               <mxPoint x="320" y="288" />

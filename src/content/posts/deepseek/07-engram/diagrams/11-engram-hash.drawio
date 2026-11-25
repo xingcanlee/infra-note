@@ -16,10 +16,10 @@
         <mxCell id="b_mult" value="3. 奇乘子 \(m_k = 2r_k + 1\)&lt;br&gt;\(\text{RNG}(10007\cdot l),\; m_k \lt \lfloor(2^{63}-1)/V'\rfloor\)" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#fbf2df;strokeColor=#7b5518;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=6;fontFamily=Inter, Noto Sans SC;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
           <mxGeometry x="408" y="40" width="264" height="56" as="geometry" />
         </mxCell>
-        <mxCell id="e_b1" value="" style="endArrow=classic;startArrow=none;html=1;strokeColor=#1d1d1f;strokeWidth=1.25;edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;" edge="1" parent="1" source="b_prime" target="b_off">
+        <mxCell id="e_b1" value="" style="endArrow=classic;startArrow=none;html=1;strokeColor=#1d1d1f;strokeWidth=1.25;edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=6;" edge="1" parent="1" source="b_prime" target="b_off">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="e_b2" value="" style="endArrow=classic;startArrow=none;html=1;strokeColor=#1d1d1f;strokeWidth=1.25;edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;" edge="1" parent="1" source="b_off" target="b_mult">
+        <mxCell id="e_b2" value="" style="endArrow=classic;startArrow=none;html=1;strokeColor=#1d1d1f;strokeWidth=1.25;edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=10;" edge="1" parent="1" source="b_off" target="b_mult">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
         <mxCell id="seg0" value="2g-\(H_0\) (5)&lt;br&gt;\([0..4]\)" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f2fb;strokeColor=#2f5783;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=6;fontFamily=Inter, Noto Sans SC;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
@@ -64,22 +64,22 @@
         <mxCell id="xor3" value="\(h_3 = 348 \oplus 2772 = 2952\)&lt;br&gt;\(O(1)\) 复用 \(h_2\)" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#f5eef9;strokeColor=#4d335c;strokeWidth=2;align=center;verticalAlign=middle;spacing=6;fontFamily=Inter, Noto Sans SC;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
           <mxGeometry x="456" y="312" width="216" height="40" as="geometry" />
         </mxCell>
-        <mxCell id="e_t0_x" value="" style="endArrow=classic;startArrow=none;html=1;strokeColor=#1d1d1f;strokeWidth=1.25;edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;" edge="1" parent="1" source="t0" target="xor2_op">
+        <mxCell id="e_t0_x" value="" style="endArrow=classic;startArrow=none;html=1;strokeColor=#1d1d1f;strokeWidth=1.25;edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=10;" edge="1" parent="1" source="t0" target="xor2_op">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="e_t1_x" value="" style="endArrow=classic;startArrow=none;html=1;strokeColor=#1d1d1f;strokeWidth=1.25;edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;" edge="1" parent="1" source="t1" target="xor2_op">
+        <mxCell id="e_t1_x" value="" style="endArrow=classic;startArrow=none;html=1;strokeColor=#1d1d1f;strokeWidth=1.25;edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=10;" edge="1" parent="1" source="t1" target="xor2_op">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="e_x2_b" value="" style="endArrow=classic;startArrow=none;html=1;strokeColor=#1d1d1f;strokeWidth=1.25;edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;" edge="1" parent="1" source="xor2_op" target="xor2">
+        <mxCell id="e_x2_b" value="" style="endArrow=classic;startArrow=none;html=1;strokeColor=#1d1d1f;strokeWidth=1.25;edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=10;" edge="1" parent="1" source="xor2_op" target="xor2">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="e_x2_x3" value="" style="endArrow=classic;startArrow=none;html=1;strokeColor=#1d1d1f;strokeWidth=1.25;edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;" edge="1" parent="1" source="xor2" target="xor3_op">
+        <mxCell id="e_x2_x3" value="" style="endArrow=classic;startArrow=none;html=1;strokeColor=#1d1d1f;strokeWidth=1.25;edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=10;" edge="1" parent="1" source="xor2" target="xor3_op">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="e_t2_x" value="" style="endArrow=classic;startArrow=none;html=1;strokeColor=#1d1d1f;strokeWidth=1.25;edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;" edge="1" parent="1" source="t2" target="xor3_op">
+        <mxCell id="e_t2_x" value="" style="endArrow=classic;startArrow=none;html=1;strokeColor=#1d1d1f;strokeWidth=1.25;edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=10;" edge="1" parent="1" source="t2" target="xor3_op">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="e_x3_b" value="" style="endArrow=classic;startArrow=none;html=1;strokeColor=#1d1d1f;strokeWidth=1.25;edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;" edge="1" parent="1" source="xor3_op" target="xor3">
+        <mxCell id="e_x3_b" value="" style="endArrow=classic;startArrow=none;html=1;strokeColor=#1d1d1f;strokeWidth=1.25;edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=10;" edge="1" parent="1" source="xor3_op" target="xor3">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
         <mxCell id="slot2" value="\(H_0: (348\bmod 5)+0 = 3\)&lt;br&gt;\(H_1: (348\bmod 7)+5 = 10\)" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f2fb;strokeColor=#2f5783;strokeWidth=2;align=center;verticalAlign=middle;spacing=6;fontFamily=Inter, Noto Sans SC;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
@@ -88,10 +88,10 @@
         <mxCell id="slot3" value="\(H_2: (2952\bmod 11)+12 = 16\)&lt;br&gt;\(H_3: (2952\bmod 13)+23 = 24\)" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#f5eef9;strokeColor=#4d335c;strokeWidth=2;align=center;verticalAlign=middle;spacing=6;fontFamily=Inter, Noto Sans SC;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
           <mxGeometry x="448" y="392" width="224" height="48" as="geometry" />
         </mxCell>
-        <mxCell id="e_x2_s" value="" style="endArrow=classic;startArrow=none;html=1;strokeColor=#1d1d1f;strokeWidth=1.25;edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;" edge="1" parent="1" source="xor2" target="slot2">
+        <mxCell id="e_x2_s" value="" style="endArrow=classic;startArrow=none;html=1;strokeColor=#1d1d1f;strokeWidth=1.25;edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=10;" edge="1" parent="1" source="xor2" target="slot2">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="e_x3_s" value="" style="endArrow=classic;startArrow=none;html=1;strokeColor=#1d1d1f;strokeWidth=1.25;edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;" edge="1" parent="1" source="xor3" target="slot3">
+        <mxCell id="e_x3_s" value="" style="endArrow=classic;startArrow=none;html=1;strokeColor=#1d1d1f;strokeWidth=1.25;edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=10;" edge="1" parent="1" source="xor3" target="slot3">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
       </root>
