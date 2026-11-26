@@ -187,23 +187,23 @@ flowchart TD
 
 下表从五个结构维度对照两套运行时实现[^vllm-spec][^vllm-adaptive][^ascend-spec]：
 
-| 机制维度     | `vllm` GPU 栈              | `vllm-ascend` NPU 栈              |
-| ------------ | -------------------------- | --------------------------------- |
-| 草稿调度类   | 复用 `DFlash` 与独立重排器 | 混入词表对齐与 NPU 专属图管理     |
-| 稀疏索引复用 | 步间压缩复用首步候选索引   | 跳过 `DSA`/`SFA` 步间解码重写     |
-| 多卡词表采样 | 按请求转置词表分片本地采样 | 填充至统一容量后再做集合裁剪      |
-| 静态图适配   | 按自适应开关切换图捕获模式 | 关闭 FIA 尾填充并动态重分配槽位   |
-| 拒绝采样核   | 支持 FP64 校验与批量分片   | 禁 FP64/水印，改用概率拒绝 Triton |
+| 机制维度     | `vllm` GPU 栈              | `vllm-ascend` NPU 栈                  |
+| ------------ | -------------------------- | ------------------------------------- |
+| 草稿调度类   | 复用 `DFlash` 与独立重排器 | 混入词表对齐与 NPU 专属图管理         |
+| 稀疏索引复用 | 步间压缩复用首步候选索引   | 跳过 `DSA`/`SFA` 步间解码重写         |
+| 多卡词表采样 | 按请求转置词表分片本地采样 | 填充至统一容量后再做集合裁剪          |
+| 静态图适配   | 按自适应开关切换图捕获模式 | 关闭 FIA 尾部填充并动态重分配槽位     |
+| 拒绝采样算子 | 支持 FP64 校验与批量分片   | 禁用 FP64 与水印，改用概率拒绝 Triton |
 
 围绕多卡采样与静态图对齐，两套运行时分岔在两处。第一处在词表并行边界：`vLLM` GPU 侧通过 `DSparkSpeculator` 里的 `all_to_all_vocab_shards` 重排词表分片[^vllm-spec]。转置后，每张卡持有部分请求的完整词表。
 
 随后 $\gamma$ 步 `DSparkMarkovHead` 采样循环就能留在单卡本地完成，无需每步做卡间 `AllReduce`。
 
-昇腾 `AscendDSparkSpeculator` 则关闭了 `supports_batch_sharded_draft_logits`[^ascend-spec]。它改由 `LmheadTPDraftSamplingMixin` 在 `compute_draft_logits` 前把输入行填充到 TP 约定上限，算完再裁回真实行数。同时 NPU 拒绝采样核禁用 FP64 校验、`fly_window_size` 飞行窗口与水印路径。
+昇腾 `AscendDSparkSpeculator` 则关闭了 `supports_batch_sharded_draft_logits`[^ascend-spec]。它改由 `LmheadTPDraftSamplingMixin` 在 `compute_draft_logits` 前把输入行填充到 TP 约定上限，算完再裁回真实行数。同时 NPU 拒绝采样算子禁用 FP64 校验、`fly_window_size` 飞行窗口与水印路径。
 
 第二处在动态验证步数与静态图捕获的兼容：只要开启 `AdaptiveVerificationManager`，各请求的验证步数就会随置信度实时波动，破坏固定输入长度 `FULL` 图假设。
 
-GPU 侧在调度初始化阶段由 `resolve_adaptive_cudagraph_mode` 切至兼容可变长批的图路由[^vllm-adaptive]。NPU 侧则在 `NPUModelRunner` 中跳过固定图形状的 FIA 序列尾填充，改用 `compact_batch` 与 `reallocate_drafts` 紧缩有效草稿位后再验证[^ascend-spec]。
+GPU 侧在调度初始化阶段由 `resolve_adaptive_cudagraph_mode` 切至兼容可变长批的图路由[^vllm-adaptive]。NPU 侧则在 `NPUModelRunner` 中跳过固定图形状的 FIA 序列尾部填充，改用 `compact_batch` 与 `reallocate_drafts` 紧缩有效草稿位后再验证[^ascend-spec]。
 
 部署开启推测解码时需守住两道边界。一方面，高温度采样或生僻代码场景会让平均接受率跌破盈亏线，此时草稿与多槽位验证反而拖慢延迟，必须依赖动态预算截断主动缩回验证长度。另一方面，前缀拒绝丢弃尾部草稿时，引擎既要回退分页 KV 指针，也必须重置 DSpark 的 `context_wkv_proj` 状态。同时 SWA 边界与预取的 Engram 槽位也要一并回滚，避免脏状态污染后续前缀。
 

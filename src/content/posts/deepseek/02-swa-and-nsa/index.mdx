@@ -98,11 +98,11 @@ $$
 
 下表汇总了 Sink 滑动窗口与生产稀疏注意力在两条硬件生态中的对应调度方式：
 
-| 机制维度          | `vLLM` GPU                         | `vllm-ascend` NPU                   |
-| :---------------- | :--------------------------------- | :---------------------------------- |
-| Sink 滑窗入口     | `FlashAttentionBackend`（SM90+）   | `AscendAttentionBackendImpl` 调 FIA |
-| 掩码与偏置传参    | `window_size` 配 `s_aux`           | `sparse_mode=4` 配 `learnable_sink` |
-| DeepSeek 稀疏主线 | 单头 MLA 叠 DSA（V3.2）/ CSA（V4） | `AscendSFAImpl`、`AscendDSAV41Impl` |
+| 机制维度          | `vLLM` GPU                         | `vllm-ascend` NPU                     |
+| :---------------- | :--------------------------------- | :------------------------------------ |
+| Sink 滑窗入口     | `FlashAttentionBackend`（SM90+）   | `AscendAttentionBackendImpl` 调用 FIA |
+| 掩码与偏置传参    | `window_size` 配 `s_aux`           | `sparse_mode=4` 配 `learnable_sink`   |
+| DeepSeek 稀疏主线 | 单头 MLA 叠 DSA（V3.2）/ CSA（V4） | `AscendSFAImpl`、`AscendDSAV41Impl`   |
 
 ## PyTorch 参考实现与数值核验
 

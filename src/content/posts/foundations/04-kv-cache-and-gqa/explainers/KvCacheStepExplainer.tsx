@@ -251,7 +251,7 @@ export function buildKvCacheStepSteps(): Step<KvCacheStepState>[] {
         formulaTex: '$t=4:\\; \\sum KV = 4\\text{ vs }10\\; (O(T^3) \\to O(T^2))$',
         beats: defaultBeats([
           '输入 Q4 与末位增量 k4, v4',
-          '落盘槽 4 并聚焦单行第 4 行',
+          '写入槽 4 并聚焦第 4 行',
           '写出单步特征 O4 [1,d]',
           '统计节省 60% KV 计算',
         ]),

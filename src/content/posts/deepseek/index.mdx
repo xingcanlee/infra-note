@@ -50,11 +50,11 @@ flowchart TD
 | [01 MLA 多头潜在注意力](./01-mla/)                                       | GQA 掉精度，压缩受阻于 RoPE    | 低秩 $c_t^{KV}$、解耦 RoPE 与矩阵吸收  |
 | [02 NSA 原生稀疏注意力](./02-swa-and-nsa/)                               | 固定滑窗丢失远处关键上下文     | Attention Sink、三路门控与 GQA 组块    |
 | [03 DSA 稀疏注意力](./03-dsa/)                                           | 静态分块难兼容单头 MLA         | FP8 ReLU 闪电索引、Top-$k$ 与 656+132B |
-| [04 序列压缩注意力（上）：V4 CSA 与 HCA](./04-csa-and-hca/)              | 逐 token 缓存随上下文线增      | CSA（$m=4$）、HCA（$m'=128$）与逆 RoPE |
+| [04 序列压缩注意力（上）：V4 CSA 与 HCA](./04-csa-and-hca/)              | 逐 token 缓存随长度线性增长    | CSA（$m=4$）、HCA（$m'=128$）与逆 RoPE |
 | [05 序列压缩注意力（下）：V4.1 CSA2 与 CED](./05-csa2-and-ced/)          | 跨层冗余写入与多轮前缀重算     | 890 B/tok 三维压缩、HSI 与 CED 边界    |
 | [06 DeepSeekMoE：细粒度专家与无损均衡](./06-moe/)                        | 稠密 FFN 激活全量且粗 MoE 冗余 | 共享+细粒度专家、无辅损均衡与 EP       |
 | [07 Engram 条件记忆](./07-engram/)                                       | 静态实体占用多层推理算力       | 多头质数哈希、上下文门控与 DRAM 预取   |
-| [08 mHC 流形受限超连接](./08-mhc/)                                       | 四流残差引发跨层信号发散       | Birkhoff 双随机、Sinkhorn 与核融合     |
+| [08 mHC 流形受限超连接](./08-mhc/)                                       | 四流残差引发跨层信号发散       | Birkhoff 双随机、Sinkhorn 与算子融合   |
 | [09 多 token 预测与 DSpark 动态推测解码](./09-mtp-and-dspark/)           | 单步 1 token 浪费权重带宽      | 拒绝采样、V3 MTP 与 DSpark 草稿头      |
 | [10 串珠成链：V4.1 单步全链路与双硬件协同](./10-architecture-synthesis/) | 多机制单步协同与双生态落地     | V4.1 全链路张量流与 NVIDIA/昇腾对照    |
 

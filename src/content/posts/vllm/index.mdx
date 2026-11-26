@@ -1,10 +1,10 @@
 ---
-title: 'vLLM 与昇腾推理引擎：调度架构与图执行导览'
-description: '在线推理常受限于显存碎片、主机发射墙与图形状冲突。本系列结合数值推演、PyTorch 脚本与 vLLM/vllm-ascend 双仓源码，拆解分页调度、分段编译、静态图与排障。'
+title: 'vLLM 与 vLLM-Ascend 推理引擎：调度与运行时导览'
+description: '在线推理常受限于显存碎片、跨步等待、DP 负载分化与尾槽越界。本系列对照 vLLM 与 vllm-ascend 源码，拆解分页调度、跨步异步、DP 共识与故障排障。'
 series: { id: vllm, order: 1 }
 pubDate: 2026-10-25
 draft: false
-tags: [vLLM, Ascend, PagedAttention, torch.compile, CUDA Graph, ACLGraph]
+tags: [vLLM, Ascend, PagedAttention, Async, DP, Profiling]
 ---
 
 单卡计算与跨卡通信决定了一套模型的理论算力上限，但把模型真正拉上在线推理服务后，决定端到端吞吐与尾延迟的往往是引擎运行时。线上压测常见一种失衡：单卡理论算力与显存仍有余量，小批量解码吞吐却迟迟上不去，或者启用静态图后出现静默回退、跨卡挂死与输出异常。
@@ -17,11 +17,11 @@ tags: [vLLM, Ascend, PagedAttention, torch.compile, CUDA Graph, ACLGraph]
 
 ## 运行时双阶段架构：启动构图与单步执行
 
-为了避免在线服务期间触发耗时数秒的即时重编译或图录制，现代推理引擎把静态优化全部前移到启动阶段，把动态请求匹配留在每一步的微秒级路径里。整体划分如图 1 所示。
+为了避免在线服务期间触发耗时数秒的即时重新编译或图录制，现代推理引擎把静态优化全部前移到启动阶段，把动态请求匹配留在每一步的微秒级路径里。整体划分如图 1 所示。
 
 ```mermaid caption="图 1：推理引擎启动期构图与运行期单步执行链路"
 flowchart TB
-    subgraph BOOT["启动期：切图编译与分桶捕获"]
+    subgraph BOOT["启动期：分段编译与分桶捕获"]
         direction LR
         B1["无 Guard 整图追踪"] --> B2["按注意力算子切分"]
         B2 --> B3["Inductor 或 npugraph_ex"]
@@ -40,19 +40,17 @@ flowchart TB
 
 进入运行期后，每一步前向先由调度器按统一 token 预算分配物理 KV 块，接着在 **DP（Data Parallelism，数据并行）**各卡之间就图模式与填充尺寸达成一致。随后各卡直接命中对应图桶重放，并借助独立拷贝流把采样结果异步传回主机，让 CPU 有余力提前编排下一轮输入。
 
-## 六章目录与学习路径
+## 四章目录与学习路径
 
-全系列按“显存分页与调度 → 主机发射与异步流 → 分段编译切图 → 静态图硬边界 → 运行时分发与 DP 共识 → 轨迹排障”六章递进展开：
+本系列聚焦推理引擎层的调度、跨步异步与多卡并发问题，与[《推理执行图：CUDA Graph 与 ACL Graph》](../execgraph/)互补分工。底层 `torch.compile`、单卡 `CUDAGraphMode`、CUDA Graph 四边界与昇腾 ACL Graph 源码全部收归执行图系列，本系列专注以下四章：
 
-| 章节                                                                       | 核心机制                         | 解决痛点                 | 双平台对照                           |
-| -------------------------------------------------------------------------- | -------------------------------- | ------------------------ | ------------------------------------ |
-| [01 PagedAttention 与连续批处理调度](./01-paged-attention-and-scheduler/)  | `BlockPool`、统一 `token_budget` | KV 碎片、阶段隔离        | `reshape_and_cache` vs `npu_scatter` |
-| [02 异步执行模型与发射墙](./02-async-execution-and-launch-wall/)           | 异步 FIFO 入队、`AsyncOutput`    | 小批空转、步间阻塞       | CUDA `copy_stream` vs `TaskQueue`    |
-| [03 torch.compile 分段编译与按算子切图](./03-torch-compile-and-piecewise/) | 无 Guard 追踪、`split_graph`     | 算子访存与动态注意力断图 | `TorchInductor` vs `AscendCompiler`  |
-| [04 CUDA Graph 四道硬边界与共享图池](./04-cuda-graph-and-boundaries/)      | 指针锁定、`-1` 填充、共享图池    | 地址漂移、脏写与通信冲突 | `CUDAGraphWrapper` 与对称池隔离      |
-| [05 运行时分发、三层包装与 DP 共识](./05-runtime-dispatch-and-nesting/)    | 三层包装壳、DP 主机模式共识      | 混合批切换与集合死锁     | `CudaGraphManager` 与 DP 对齐        |
-| [06 性能观测与线上故障定位](./06-profiling-and-debugging/)                 | 五类 Trace 指纹、二分隔离树      | 静默回退与尾槽越界       | `nsys` vs `torch_npu.profiler`       |
+| 章节                                                                      | 核心机制                         | 解决痛点             | 双平台对照                                |
+| ------------------------------------------------------------------------- | -------------------------------- | -------------------- | ----------------------------------------- |
+| [01 PagedAttention 与连续批处理调度](./01-paged-attention-and-scheduler/) | `BlockPool`、统一 `token_budget` | KV 碎片、阶段隔离    | `reshape_and_cache` vs `npu_scatter`      |
+| [02 异步执行模型与发射墙](./02-async-execution-and-launch-wall/)          | 跨步异步占位、`AsyncOutput`      | 步间等待与 D2H 阻塞  | CUDA `copy_stream` vs `AscendAsyncOutput` |
+| [03 多卡 DP 共识与运行时协同](./03-runtime-dispatch-and-nesting/)         | DP 集体裁决、双端执行分发        | 混合批切换与集合死锁 | `dispatch_cg_and_sync_dp` 与双端对齐      |
+| [04 性能观测与线上故障定位](./04-profiling-and-debugging/)                | 五类 Trace 指纹、二分隔离树      | 静默回退与尾槽越界   | `nsys` vs `torch_npu.profiler`            |
 
-建议从[第 1 章：PagedAttention 与连续批处理调度](./01-paged-attention-and-scheduler/)开始顺序阅读。如果想深入昇腾算力流、`Event`/`Notify` 原语、ACL Graph 影子流与 `vllm-ascend` 四层调优，可查阅姊妹系列[《执行图与昇腾 ACL Graph》](../aclgraph/)。
+建议从[第 1 章：PagedAttention 与连续批处理调度](./01-paged-attention-and-scheduler/)开始顺序阅读。若想系统补全编译分段、CUDA Graph、`CUDAGraphMode` 与 ACL Graph 底层原理，请读[《推理执行图：CUDA Graph 与 ACL Graph》](../execgraph/)。
 
 需要补充硬件带宽模型、多卡集合通信语义或 DeepSeek 模型算子结构时，可随时对照[《推理与异构硬件基础》](../foundations/)、[《分布式并行与跨卡通信》](../distributed/)与[《DeepSeek 架构演进》](../deepseek/)。

@@ -47,7 +47,7 @@ export default function CollisionAndGatherStage({
             transition={{ duration: 0.34, ease: MANIM_EASE }}
           >
             <span>基准词干：“中国的首”（308）</span>
-            <RichText text={'$h_3 = 2952 \\to [16, 24]$'} />
+            <RichText text={'$g_3 = 2952 \\to [16, 24]$'} />
           </motion.div>
 
           <motion.div
@@ -62,7 +62,7 @@ export default function CollisionAndGatherStage({
             transition={{ duration: challengerIn ? 0.38 : 0.1, ease: MANIM_EASE }}
           >
             <span>对比词干：“新任的首”（729）</span>
-            <RichText text={"$h'_3 = 6397 \\to [18, 24]$"} />
+            <RichText text={'$g_3^{(B)} = 6397 \\to [18, 24]$'} />
           </motion.div>
         </div>
 
@@ -217,7 +217,7 @@ export default function CollisionAndGatherStage({
                 <span>头 {head.headIdx}</span>
                 <span className="engram-tag">{head.ngram}-gram</span>
               </div>
-              <span className="engram-head-card__math">weight[{row}]</span>
+              <span className="engram-head-card__math">E[{row}, :]</span>
               <span className="engram-head-card__slot">
                 <RichText text={`$\\mathbf{e}_{${head.headIdx}} \\in \\mathbb{R}^{d_h}$`} />
               </span>

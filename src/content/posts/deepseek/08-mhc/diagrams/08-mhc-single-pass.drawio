@@ -13,7 +13,7 @@
         <mxCell id="io_split_0" value="Post 读写 9d" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f2fb;strokeColor=#2f5783;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=6;fontFamily=Inter, Noto Sans SC;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
           <mxGeometry x="8" y="32" width="304" height="40" as="geometry" />
         </mxCell>
-        <mxCell id="io_split_1" value="算系数读 4d" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#fbf2df;strokeColor=#7b5518;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=6;fontFamily=Inter, Noto Sans SC;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+        <mxCell id="io_split_1" value="计算系数读 4d" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#fbf2df;strokeColor=#7b5518;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=6;fontFamily=Inter, Noto Sans SC;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
           <mxGeometry x="312" y="32" width="136" height="40" as="geometry" />
         </mxCell>
         <mxCell id="io_split_2" value="Pre 混入 5d" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f2fb;strokeColor=#2f5783;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=6;fontFamily=Inter, Noto Sans SC;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
@@ -22,7 +22,7 @@
         <mxCell id="io_split_3" value="Norm 2d" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#f4f4f2;strokeColor=#5c6067;strokeWidth=1;align=center;verticalAlign=middle;spacing=6;fontFamily=Inter, Noto Sans SC;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
           <mxGeometry x="616" y="32" width="64" height="40" as="geometry" />
         </mxCell>
-        <mxCell id="io_twopass__title" value="2. 标准两遍融合 \((3n+2)d = 14d\)：\(A_l\) 需等全维归约完成，被迫读两遍 \(X_l\)" style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;fontFamily=Inter, Noto Sans SC;fontSize=12;fontStyle=1;fontColor=#1d1d1f;" vertex="1" parent="1">
+        <mxCell id="io_twopass__title" value="2. 标准两遍融合 \((3n+2)d = 14d\)：\(A_{l+1}\) 需等全维归约完成，被迫重读 \(\mathbf{X}_{l+1}\)" style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;fontFamily=Inter, Noto Sans SC;fontSize=12;fontStyle=1;fontColor=#1d1d1f;" vertex="1" parent="1">
           <mxGeometry x="8" y="88" width="528" height="24" as="geometry" />
         </mxCell>
         <mxCell id="io_twopass__tot" value="14d (-30%)" style="text;html=1;whiteSpace=wrap;align=right;verticalAlign=middle;fontFamily=Inter, Noto Sans SC;fontSize=11;fontColor=#5c6067;" vertex="1" parent="1">
@@ -34,16 +34,16 @@
         <mxCell id="io_twopass_1" value="Pass2: 汇聚 Pre + Norm (5d)" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#fbf2df;strokeColor=#7b5518;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=6;fontFamily=Inter, Noto Sans SC;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
           <mxGeometry x="312" y="112" width="168" height="40" as="geometry" />
         </mxCell>
-        <mxCell id="io_mega__title" value="3. V4.1 Single-Pass Mega-mHC \((2n+2)d = 10d\)：改用上层 \(A_{l-1}\)，单遍触及下界" style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;fontFamily=Inter, Noto Sans SC;fontSize=12;fontStyle=1;fontColor=#1d1d1f;" vertex="1" parent="1">
+        <mxCell id="io_mega__title" value="3. V4.1 Single-Pass Mega-mHC \((2n+2)d = 10d\)：改用已就绪 \(A_l\)，单遍触及下界" style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;fontFamily=Inter, Noto Sans SC;fontSize=12;fontStyle=1;fontColor=#1d1d1f;" vertex="1" parent="1">
           <mxGeometry x="8" y="168" width="528" height="24" as="geometry" />
         </mxCell>
         <mxCell id="io_mega__tot" value="10d (-50% 下界)" style="text;html=1;whiteSpace=wrap;align=right;verticalAlign=middle;fontFamily=Inter, Noto Sans SC;fontSize=11;fontColor=#5c6067;" vertex="1" parent="1">
           <mxGeometry x="536" y="168" width="144" height="24" as="geometry" />
         </mxCell>
-        <mxCell id="io_mega_0" value="单遍读 5d (\(y + X_l\))" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f5e9;strokeColor=#2c522d;strokeWidth=2;align=center;verticalAlign=middle;spacing=6;fontFamily=Inter, Noto Sans SC;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+        <mxCell id="io_mega_0" value="单遍读 5d (\(\mathbf{y}_l + \mathbf{X}_l\))" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f5e9;strokeColor=#2c522d;strokeWidth=2;align=center;verticalAlign=middle;spacing=6;fontFamily=Inter, Noto Sans SC;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
           <mxGeometry x="8" y="192" width="168" height="40" as="geometry" />
         </mxCell>
-        <mxCell id="io_mega_1" value="单遍写 5d (\(X_{l+1}\) + Norm)" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f5e9;strokeColor=#2c522d;strokeWidth=2;align=center;verticalAlign=middle;spacing=6;fontFamily=Inter, Noto Sans SC;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+        <mxCell id="io_mega_1" value="单遍写 5d (\(\mathbf{X}_{l+1}\) + Norm)" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f5e9;strokeColor=#2c522d;strokeWidth=2;align=center;verticalAlign=middle;spacing=6;fontFamily=Inter, Noto Sans SC;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
           <mxGeometry x="176" y="192" width="168" height="40" as="geometry" />
         </mxCell>
         <mxCell id="mhc_hw_left" value="NVIDIA GPU (vLLM 99b0b0b0)" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f2fb;strokeColor=#2f5783;strokeWidth=1.25;verticalAlign=top;align=left;spacingLeft=12;spacingTop=8;fontFamily=Inter, Noto Sans SC;fontSize=12;fontStyle=1;fontColor=#2f5783;container=0;" vertex="1" parent="1">
@@ -76,7 +76,7 @@
         <mxCell id="ev_n_s1_n_s2" value="" style="endArrow=classic;startArrow=none;html=1;strokeColor=#1d1d1f;strokeWidth=1.25;edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=6;" edge="1" parent="1" source="n_s1" target="n_s2">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="n_s3" value="每子层尾调 npu_hc_post 写回四流&lt;br&gt;L1 / L14 直接接入 AscendEngram" style="shape=datastore;whiteSpace=wrap;html=1;fillColor=#e9f5e9;strokeColor=#2c522d;strokeWidth=1.25;shadow=0;container=0;align=center;verticalAlign=middle;fontFamily=Inter, Noto Sans SC;fontSize=12;fontColor=#1d1d1f;spacing=6;" vertex="1" parent="1">
+        <mxCell id="n_s3" value="每子层末尾调用 npu_hc_post 写回四流&lt;br&gt;L1 / L14 直接接入 AscendEngram" style="shape=datastore;whiteSpace=wrap;html=1;fillColor=#e9f5e9;strokeColor=#2c522d;strokeWidth=1.25;shadow=0;container=0;align=center;verticalAlign=middle;fontFamily=Inter, Noto Sans SC;fontSize=12;fontColor=#1d1d1f;spacing=6;" vertex="1" parent="1">
           <mxGeometry x="368" y="416" width="304" height="56" as="geometry" />
         </mxCell>
         <mxCell id="ev_n_s2_n_s3" value="" style="endArrow=classic;startArrow=none;html=1;strokeColor=#1d1d1f;strokeWidth=1.25;edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=6;" edge="1" parent="1" source="n_s2" target="n_s3">

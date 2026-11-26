@@ -76,31 +76,31 @@
         <mxCell id="tok_b_9" value="\(t\)" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#f5eef9;strokeColor=#4d335c;strokeWidth=2;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter, Noto Sans SC;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
           <mxGeometry x="568" y="216" width="48" height="32" as="geometry" />
         </mxCell>
-        <mxCell id="tap_0" value="\(w_3 x_{t-9}\)" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#fbf2df;strokeColor=#7b5518;strokeWidth=2;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter, Noto Sans SC;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+        <mxCell id="tap_0" value="\(w_3 u_{t-9}\)" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#fbf2df;strokeColor=#7b5518;strokeWidth=2;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter, Noto Sans SC;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
           <mxGeometry x="56" y="264" width="64" height="32" as="geometry" />
         </mxCell>
         <mxCell id="e_tap_0" value="" style="endArrow=classic;startArrow=none;html=1;strokeColor=#1d1d1f;strokeWidth=1.25;edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=6;" edge="1" parent="1" source="tok_b_0" target="tap_0">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="tap_3" value="\(w_2 x_{t-6}\)" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#fbf2df;strokeColor=#7b5518;strokeWidth=2;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter, Noto Sans SC;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+        <mxCell id="tap_3" value="\(w_2 u_{t-6}\)" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#fbf2df;strokeColor=#7b5518;strokeWidth=2;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter, Noto Sans SC;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
           <mxGeometry x="224" y="264" width="64" height="32" as="geometry" />
         </mxCell>
         <mxCell id="e_tap_3" value="" style="endArrow=classic;startArrow=none;html=1;strokeColor=#1d1d1f;strokeWidth=1.25;edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=6;" edge="1" parent="1" source="tok_b_3" target="tap_3">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="tap_6" value="\(w_1 x_{t-3}\)" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#fbf2df;strokeColor=#7b5518;strokeWidth=2;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter, Noto Sans SC;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+        <mxCell id="tap_6" value="\(w_1 u_{t-3}\)" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#fbf2df;strokeColor=#7b5518;strokeWidth=2;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter, Noto Sans SC;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
           <mxGeometry x="392" y="264" width="64" height="32" as="geometry" />
         </mxCell>
         <mxCell id="e_tap_6" value="" style="endArrow=classic;startArrow=none;html=1;strokeColor=#1d1d1f;strokeWidth=1.25;edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=6;" edge="1" parent="1" source="tok_b_6" target="tap_6">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="tap_9" value="\(w_0 x_t\)" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#f5eef9;strokeColor=#4d335c;strokeWidth=2;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter, Noto Sans SC;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+        <mxCell id="tap_9" value="\(w_0 u_t\)" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#f5eef9;strokeColor=#4d335c;strokeWidth=2;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter, Noto Sans SC;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
           <mxGeometry x="560" y="264" width="64" height="32" as="geometry" />
         </mxCell>
         <mxCell id="e_tap_9" value="" style="endArrow=classic;startArrow=none;html=1;strokeColor=#1d1d1f;strokeWidth=1.25;edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=6;" edge="1" parent="1" source="tok_b_9" target="tap_9">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="dil_eq" value="左补 \(0\) 后位置 \(t\) 累加：\(y_t = w_0 x_t + w_1 x_{t-3} + w_2 x_{t-6} + w_3 x_{t-9}\)" style="text;html=1;whiteSpace=wrap;align=center;verticalAlign=middle;fontFamily=Inter, Noto Sans SC;fontSize=12;fontStyle=1;fontColor=#1d1d1f;" vertex="1" parent="1">
+        <mxCell id="dil_eq" value="左补 \(0\) 后位置 \(t\) 累加：\(y_t = w_0 u_t + w_1 u_{t-3} + w_2 u_{t-6} + w_3 u_{t-9}\)" style="text;html=1;whiteSpace=wrap;align=center;verticalAlign=middle;fontFamily=Inter, Noto Sans SC;fontSize=12;fontStyle=1;fontColor=#1d1d1f;" vertex="1" parent="1">
           <mxGeometry x="16" y="312" width="656" height="32" as="geometry" />
         </mxCell>
         <mxCell id="dw_card_bg2" value="" style="rounded=1;whiteSpace=wrap;html=1;arcSize=12;fillColor=#e9f2fb;strokeColor=#2f5783;strokeWidth=1.25;opacity=35;shadow=0;container=0;spacing=6;" vertex="1" parent="1">
@@ -109,7 +109,7 @@
         <mxCell id="dw_card_bg1" value="" style="rounded=1;whiteSpace=wrap;html=1;arcSize=12;fillColor=#e9f2fb;strokeColor=#2f5783;strokeWidth=1.25;opacity=65;shadow=0;container=0;spacing=6;" vertex="1" parent="1">
           <mxGeometry x="16" y="376" width="320" height="64" as="geometry" />
         </mxCell>
-        <mxCell id="dw_card" value="Depthwise (\(\text{groups}=d\)) 通道分离&lt;br&gt;\(d\) 条独立 \([4]\) 滤波器 · 参数 \(4d^2 \to 4d\)" style="rounded=1;whiteSpace=wrap;html=1;arcSize=12;fillColor=#e9f2fb;strokeColor=#2f5783;strokeWidth=1.25;opacity=100;shadow=0;container=0;align=center;verticalAlign=middle;fontFamily=Inter, Noto Sans SC;fontSize=12;fontColor=#1d1d1f;spacing=6;" vertex="1" parent="1">
+        <mxCell id="dw_card" value="Depthwise (\(\text{groups}=4d\)) 核 \([4d, 1, 4]\)&lt;br&gt;各通道独立滤波 · 单流参数 \(4d^2 \to 4d\)" style="rounded=1;whiteSpace=wrap;html=1;arcSize=12;fillColor=#e9f2fb;strokeColor=#2f5783;strokeWidth=1.25;opacity=100;shadow=0;container=0;align=center;verticalAlign=middle;fontFamily=Inter, Noto Sans SC;fontSize=12;fontColor=#1d1d1f;spacing=6;" vertex="1" parent="1">
           <mxGeometry x="8" y="384" width="320" height="64" as="geometry" />
         </mxCell>
         <mxCell id="v41_card" value="V4.1 移除 ShortConv&lt;br&gt;无 Decode 跨步状态维护，原生支持图内执行" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#f4f4f2;strokeColor=#5c6067;strokeWidth=1;dashed=1;dashPattern=4 4;align=center;verticalAlign=middle;spacing=6;fontFamily=Inter, Noto Sans SC;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">

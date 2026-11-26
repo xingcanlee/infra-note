@@ -101,11 +101,11 @@ flowchart TD
 
 第三段才将尾部仍未闭合的新状态写回环形缓存。第二段必须先于第三段完成，以免并发写回覆盖尚未被读出的前导残差。核心注意力计算完成后，再由 `AscendDSAV41Impl` 对末 64 维执行逆向旋转。
 
-| 核心阶段         | `vLLM` GPU[^vllm-comp41][^vllm-fused] | `vllm-ascend` NPU[^ascend-comp4][^ascend-comp41] |
-| :--------------- | :------------------------------------ | :----------------------------------------------- |
-| 环形尾缓存元数据 | `CompressorStateCache` 托管 FP32 尾态 | `AscendCircularBufferSpec` 构环索引              |
-| 折叠与写回       | 融合折叠归一写回（512 维 CuTe-DSL）   | V4 CANN 算子；V4.1 三段 Triton 核                |
-| 双轨 RoPE 逆旋转 | `build_deepseek_v4_rope` 配逆 RoPE    | 双频复指数 RoPE 与 `inverse=True`                |
+| 核心阶段         | `vLLM` GPU[^vllm-comp41][^vllm-fused]     | `vllm-ascend` NPU[^ascend-comp4][^ascend-comp41] |
+| :--------------- | :---------------------------------------- | :----------------------------------------------- |
+| 环形尾缓存元数据 | `CompressorStateCache` 托管 FP32 尾部状态 | `AscendCircularBufferSpec` 构造环形索引          |
+| 折叠与写回       | 融合折叠归一写回（512 维 CuTe-DSL）       | V4 CANN 算子；V4.1 三段 Triton 算子              |
+| 双轨 RoPE 逆旋转 | `build_deepseek_v4_rope` 配合逆向 RoPE    | 双频复指数 RoPE 与 `inverse=True`                |
 
 ## PyTorch 参考实现与数值核验
 

@@ -37,7 +37,7 @@
         <mxCell id="ev_m_full_m_reidx" value="" style="endArrow=classic;startArrow=none;html=1;strokeColor=#1d1d1f;strokeWidth=1.25;edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=6;" edge="1" parent="1" source="m_full" target="m_reidx">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="m_reuse" value="Reuse Mode (30 层)&lt;br&gt;全复用 · 11 融合核" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f5e9;strokeColor=#2c522d;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=6;fontFamily=Inter, Noto Sans SC;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+        <mxCell id="m_reuse" value="Reuse Mode (30 层)&lt;br&gt;全复用 · 11 个融合算子" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f5e9;strokeColor=#2c522d;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=6;fontFamily=Inter, Noto Sans SC;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
           <mxGeometry x="16" y="304" width="160" height="48" as="geometry" />
         </mxCell>
         <mxCell id="ev_m_reidx_m_reuse" value="" style="endArrow=classic;startArrow=none;html=1;strokeColor=#1d1d1f;strokeWidth=1.25;edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=6;" edge="1" parent="1" source="m_reidx" target="m_reuse">
@@ -70,7 +70,7 @@
         <mxCell id="e_hsi_lbl" value="16,384 池" style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;fontFamily=Inter, Noto Sans SC;fontSize=11;fontColor=#1d1d1f;" vertex="1" parent="1">
           <mxGeometry x="464" y="184" width="80" height="24" as="geometry" />
         </mxCell>
-        <mxCell id="ftr" value="逆 RoPE \(R_{-n}\) 恢复相对偏移 · 后 20 层由 \(H_{L/2}\) 直投全局 KV" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f5e9;strokeColor=#2c522d;strokeWidth=2;align=center;verticalAlign=middle;spacing=6;fontFamily=Inter, Noto Sans SC;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+        <mxCell id="ftr" value="逆 RoPE \(R_{-n}\) 恢复相对偏移 · 后 20 层由 \(H_{L/2}\) 直接投影全局 KV" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f5e9;strokeColor=#2c522d;strokeWidth=2;align=center;verticalAlign=middle;spacing=6;fontFamily=Inter, Noto Sans SC;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
           <mxGeometry x="248" y="296" width="424" height="48" as="geometry" />
         </mxCell>
         <mxCell id="e_ftr" value="" style="endArrow=classic;startArrow=none;html=1;strokeColor=#1d1d1f;strokeWidth=1.25;" edge="1" parent="1" source="h_l2" target="ftr">

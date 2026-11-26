@@ -31,7 +31,7 @@ Full 与 Decoder Reindex 层需要重新选词。512 维潜向量经压缩器与
 
 在第 1、14 层（0-indexed `layers.1` 与 `layers.14`），计算流在上一层 `mhc_post` 之后、本层 `mhc_pre` 与注意力之前并入异步预取的 Engram 静态记忆[^v41-flash][^vllm-synth][^ascend-synth]。因为哈希行索引在第 0 层前已确定，后台流可通过 UVA 或 RDMA 提前把主机表行搬至设备缓存。
 
-计算流等待跨流事件（`cuda.Event` 或 `ExternalEvent`）就绪后，把 1280 维（V4.1-Flash 为 2048 维）向量投影为 4:1 的分支 Key 与共享 Value。随后经有符号开方 `RMSNorm` 门控原位写回 `[T, 4, d]`。GPU 侧需在 1、14 层显式拆开跨子层融合；NPU 侧由于 `npu_hc_post` 已在每子层尾写出四流，可直接原位注入。
+计算流等待跨流事件（`cuda.Event` 或 `ExternalEvent`）就绪后，把 1280 维（V4.1-Flash 为 2048 维）向量投影为 4:1 的分支 Key 与共享 Value。随后经有符号开方 `RMSNorm` 门控原位写回 `[T, 4, d]`。GPU 侧需在 1、14 层显式拆开跨子层融合；NPU 侧由于 `npu_hc_post` 已在每个子层末尾写出四流，可直接原位注入。
 
 随后单流激活进入 DeepSeekMoE，在偏置 `e_score_correction_bias` 引导下选出 Top-K 细粒度路由专家，并与 1 个常驻共享专家并发执行。共享专家趁 `DeepEP` 或 `TokenDispatcherWithMC2` 执行 `Dispatch` 时算完。路由结果经 `Combine` 归位后，再由 mHC Post-Mix 写回 `[T, 4, d]`。
 
@@ -39,14 +39,14 @@ Full 与 Decoder Reindex 层需要重新选词。512 维潜向量经压缩器与
 
 下表对照 NVIDIA SM100 与华为昇腾两套生态在各模块的对应实现映射：
 
-| 执行环节       | NVIDIA SM100（`vllm`）             | 华为昇腾 NPU（`vllm-ascend`）                |
-| -------------- | ---------------------------------- | -------------------------------------------- |
-| 残差混合边界   | `Mega-mHC` / CuTe 延迟融合         | `npu_hc_pre_v3` + `npu_hc_post` 成对边界     |
-| 稀疏注意与逆旋 | `FlashMLAMegaAttn` 融合逆 RoPE     | `AscendDSAV41Impl` + `packed_cache_ops`      |
-| 条件记忆卸载   | `DPSharedEngramStorage` / `DeepEP` | `HostUvaBuffer` $2^{22}$ 分块与 IPC          |
-| MoE 通信分组   | `EPBuffer` + `DeepGEMM`            | `AscendMoERunner` + `TokenDispatcherWithMC2` |
-| 动态推测采样   | `all_to_all_vocab_shards` 请求转置 | `LmheadTPDraftSamplingMixin` 容量对齐        |
-| 静态图同步     | `FULL` CUDA Graph + `cuda.Event`   | `ACLGraphWrapper` + `ExternalEvent`          |
+| 执行环节              | NVIDIA SM100（`vllm`）             | 华为昇腾 NPU（`vllm-ascend`）                |
+| --------------------- | ---------------------------------- | -------------------------------------------- |
+| 残差混合边界          | `Mega-mHC` / CuTe 延迟融合         | `npu_hc_pre_v3` + `npu_hc_post` 成对边界     |
+| 稀疏注意力与逆向 RoPE | `FlashMLAMegaAttn` 融合逆 RoPE     | `AscendDSAV41Impl` + `packed_cache_ops`      |
+| 条件记忆卸载          | `DPSharedEngramStorage` / `DeepEP` | `HostUvaBuffer` $2^{22}$ 分块与 IPC          |
+| MoE 通信分组          | `EPBuffer` + `DeepGEMM`            | `AscendMoERunner` + `TokenDispatcherWithMC2` |
+| 动态推测采样          | `all_to_all_vocab_shards` 请求转置 | `LmheadTPDraftSamplingMixin` 容量对齐        |
+| 静态图同步            | `FULL` CUDA Graph + `cuda.Event`   | `ACLGraphWrapper` + `ExternalEvent`          |
 
 ## 五代演进与整网 KV 字节收敛
 

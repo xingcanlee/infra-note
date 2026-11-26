@@ -25,7 +25,7 @@ import paperFig7 from './images/paper-fig7-gating-viz.svg';
 
 1. **截取后缀**：向回抓取包含当前词元在内的 2 词、3 词和 4 词连续窗口。
 2. **多头查表**：把词元 ID 折算成物理行号，$O(1)$ 读出静态向量并拼接。
-3. **语境门控**：用注意力算出的动态隐状态当裁判，给查出的向量打分放行或抑噪。
+3. **语境门控**：用注意力算出的动态隐状态当裁判，对查出的向量打分，决定放行或抑制噪声。
 4. **回写残差**：把调制后的值向量加回残差流，让 MoE 专注深层组合与推理。
 
 ![Engram 在 DeepSeek-V4.1-Flash 40 层模型中的定位与四步前向流程](./diagrams/11-engram-arch.drawio '图 1：Engram 在 DeepSeek-V4.1-Flash 40 层中的位置（左）与单处四步前向流程（右）')
@@ -38,41 +38,51 @@ import paperFig7 from './images/paper-fig7-gating-viz.svg';
 - **词表写法太碎**：`"Apple"`、`"apple"` 与带空格的 `" apple"` 在 BPE 词表里 ID 不同，会分散命中率。
 - **组合数爆炸**：仅 12.9 万词的 3-gram 精确组合表就高达 $10^{15}$ 行，任何内存都装不下。
 
-为跨过第一堵墙，Engram 在位置 $t$ 截取以当前词元结尾的 **后缀 N-gram（Suffix N-gram）**，也就是连续出现的 $N$ 个词元窗口。例如读到“首”时，2-gram 后缀是“的 首”，3-gram 后缀是“中国 的 首”，从而把多字实体完整包进来。
+为跨过第一堵墙，Engram 在位置 $t$ 截取以当前词元结尾的 **后缀 N-gram（Suffix N-gram）**，也就是连续出现的 $N$ 个词元窗口。例如读到“首”时，2-gram 与 3-gram 后缀分别是“的 首”和“中国 的 首”，从而把多字实体完整包进来。
 
-为跨过第二堵墙，参考实现 `CompressedTokenizer`[^engram-demo] 在离线阶段把词表折叠成一维映射表。它依次执行 NFKC 规范化、NFD 剥离变音符、转小写与空白折叠，让 `"Apple"`、`"apple"` 和 `" apple"` 映射到同一个 **规范 ID（记作 $x'_t$）**。
+为跨过第二堵墙，参考实现 `CompressedTokenizer`[^engram-demo] 在离线阶段构建一维映射表 $\mathcal{P}$。它依次执行 NFKC 规范化、NFD 剥离变音符、转小写与空白折叠，让 `"Apple"`、`"apple"` 和 `" apple"` 映射到同一个 **规范 ID** $c_t = \mathcal{P}(x_t)$。
 
-经过这轮归并，原 `129,280` 个词元被压缩了 23.43%，缩减至压缩词表规模 $V' \approx 9.9\times 10^4$（其中空格与字母 `a` 相关变体分别合并了 163 个与 54 个词元）。推理期遇到原始 ID 时，只需按数组下标查一次表就能拿到 $x'_t$。
+经过这轮归并，原 129,280 个词元被压缩了 23.43%，缩减至压缩词表规模 $V' \approx 9.9\times 10^4$（其中空白与字母 `a` 变体分别合并了 163 个与 54 个词元）。推理期输入原始 ID 张量 $\mathbf{x} \in \{0,\dots,V-1\}^{B\times T}$ 时，按下标直接查表即得规范 ID 张量 $\mathbf{c} \in \{0,\dots,V'-1\}^{B\times T}$，张量形状保持不变。
 
-要跨过第三堵“$10^{15}$ 行存不下”的墙，必须引入 **哈希（Hash，散列）**：用确定性整数函数把海量词组压缩进固定行数的嵌入式大表，将寻址开销固定在 $O(1)$。
+要跨过第三堵“$10^{15}$ 行存不下”的墙，必须引入 **哈希（Hash，散列）**：用确定性整数函数把海量词组压缩进固定行数的嵌入式大表，将寻址开销固定在 $O(1)$。进入正式推导前，先用下表固定全篇的核心符号与张量形状：
+
+| 符号                               | 含义                                 | 张量形状 / 取值域                                                                                            |
+| :--------------------------------- | :----------------------------------- | :----------------------------------------------------------------------------------------------------------- |
+| $B,\; T,\; d$                      | 批大小、序列长、模型隐藏维           | 正整数标量                                                                                                   |
+| $c_t,\; \mathbf{c}$                | 归并后的规范词元 ID 与整批序列       | 标量整数；$\mathbf{c} \in \mathbb{Z}^{B\times T}$                                                            |
+| $m_k,\; g_n(t)$                    | 位置 $k$ 奇乘子、$n$-gram 异或混合值 | 非负 `int64` 标量                                                                                            |
+| $p_{n,j},\; o_{n,j},\; \mathbf{S}$ | 素数桶长、偏移量、多头物理槽位       | $J$ 头；$\mathbf{S} \in \mathbb{Z}^{B\times T\times J}$                                                      |
+| $E,\; \mathbf{e}_t,\; \mathbf{E}$  | 扁平大表、单位置及整批拼接向量       | $E \in \mathbb{R}^{N_{\text{rows}}\times d_h}$；$\mathbf{E} \in \mathbb{R}^{B\times T\times d_{\text{eng}}}$ |
+| $\mathbf{h}_t,\; \mathbf{H}$       | 单流隐状态与 mHC 四流残差            | $\mathbf{h}_t \in \mathbb{R}^d$；$\mathbf{H} \in \mathbb{R}^{B\times T\times 4\times d}$                     |
+| $\mathbf{U},\; \mathbf{Y}$         | 门控增量输出与短卷积输出             | $\mathbf{U},\; \mathbf{Y} \in \mathbb{R}^{B\times T\times 4\times d}$                                        |
 
 ### 为什么拆分多阶与多头哈希
 
 把海量词组压进有限行数的大表后，不同短语难免落进同一个槽位，这就是 **哈希碰撞（Hash Collision）**。理解 Engram 寻址机制的关键，在于分清“多阶”与“多头”各自负责解决什么问题。
 
-**多阶（2/3/4-gram）管“看多长”**。第 2 阶只混合最近 2 个词元，负责捕获常见短搭配；第 3 阶与第 4 阶向回看 3 到 4 个词元，负责锁住长专有名词。各阶独立查表，长短实体都能留下指纹。
+**多阶（$n \in \{2,\dots,N_{\max}\}$）管“看多长”**。第 2 阶只混合最近 2 个词元，负责捕获常见短搭配；第 3 阶与第 4 阶向回看 3 到 4 个词元，负责锁住长专有名词。各阶独立查表，长短实体都能留下指纹。
 
 **多头（每阶 $K$ 个头）管“降碰撞”**。假设某阶总共分配 2048 维输出向量，若做成单头大表，一旦两个短语余数相同撞车，整条 2048 维向量都会被污染。
 
-Engram 转而把 2048 维横向切给 $K$ 个独立哈希头（例如 8 头、每头 256 维），并为每个头配置两两互素的桶长 $p_{n,j}$：
+Engram 转而把该阶输出横向切给 $K$ 个独立哈希头，设总头数为 $J = (N_{\max}-1)K$、单头维度为 $d_h$，并为每个头配置两两互素的桶长 $p_{n,j}$，拼接后总维数为 $d_{\text{eng}} = J d_h$：
 
-- **碰撞伤害切片隔离**：单个头只占输出向量的一小段，头 3 碰撞时，其余 7 个头仍保留原词义。
+- **碰撞伤害切片隔离**：单个头只占输出向量的一小段 $d_h$ 维，某头碰撞时，其余头仍保留原词义。
 - **全头同时碰撞概率极低**：由 **CRT（Chinese Remainder Theorem，中国剩余定理）**，余数组合周期高达 $\prod p_{n,j}$。
 
 中国剩余定理在这里很直观：若模数 5 与 7 互素，一个整数对它们取余得到的余数对，在周期 35 内唯一确定。两段短语想在全部 $K$ 个素数头上同时撞车，它们的哈希差值必须是全部素数乘积的倍数，概率几乎为零。
 
-因此总头数等于“阶数 × 每阶头数”。后文手算示例取 2 阶 × 2 头共 4 个头；而 DeepSeek-V4.1-Flash 取 2/3/4-gram 共 3 阶，每阶 8 头、每头 256 维，拼出完整查表维度为 $3 \times 8 \times 256 = 6144$ 维。
+在 DeepSeek-V4.1-Flash 中，模型取 2/3/4-gram 共 3 阶，每阶 $K=8$ 头（总头数 $J=24$）、单头 $d_h=256$ 维，拼出完整查表维度 $d_{\text{eng}} = 3 \times 8 \times 256 = 6144$ 维。
 
 ### 离线准备：奇乘子与素数桶怎么生成
 
 在真正推理查表之前，Engram 还要完成两项离线准备工作：生成 **哈希奇乘子** 与 **互异素数桶布局**。这两组数值都在初始化期确定，**既不参与反向传播训练，也不存入模型权重文件**。
 
-先看奇乘子 $m_k$ 怎么来。要把后缀里 $n$ 个规范 ID 揉成一个整数，最快的位运算是按位异或（XOR，记作 $\oplus$）。但直接对词元 ID 做异或会立刻出错，因为异或满足交换律，且相同值会互相抵消：
+先看奇乘子 $m_k$ 的定义规则。要把后缀里 $n$ 个规范 ID 揉成一个整数，最快的位运算是按位异或（XOR，记作 $\oplus$）。但直接对词元 ID 做异或会立刻出错，因为异或满足交换律，且相同值会互相抵消：
 
 - 词序会丢失：“上海”和“海上”包含相同两个字，直接异或结果完全相同。
 - 叠词会归零：“谢谢”两个字 ID 相同，直接异或会变成 0，与其它叠词无法区分。
 
-为了锁死词序，Engram 给每个回看相对位置 $k = 0, \dots, N_{\max}-1$（$k=0$ 表示当前词，$k=1$ 表示前 1 个词）分别配上一枚固定乘子 $m_k$，先乘后异或。原始论文[^engram-paper]只把这一步概括为乘加异或哈希，具体乘子与素数去重规则源自官方开源原型与 vLLM 实现[^engram-demo][^vllm-common]。其中乘子按三步确定性生成：
+为了锁死词序，Engram 给每个回看相对位置 $k = 0, \dots, N_{\max}-1$（$k=0$ 为当前词，$k=1$ 为前 1 个词）分配固定乘子 $m_k$，先乘后异或。论文[^engram-paper]仅概括为乘加异或，具体乘子与素数去重规则源自开源原型与 vLLM 实现[^engram-demo][^vllm-common]：
 
 1. **防溢出定上界**：规范 ID 最大不超过 $V'-1$，为防乘积超过有符号 64 位上限 `INT64_MAX` 变负，先取 $M_{\max} = \lfloor (2^{63}-1) / V' \rfloor$。
 2. **留空间转奇数**：因下一步要把随机数 $r_k$ 映射为奇数 $m_k = 2r_k + 1$，抽样上界再减半取 `half_bound = max(1, M_max // 2)`。
@@ -80,76 +90,76 @@ Engram 转而把 2048 维横向切给 $K$ 个独立哈希头（例如 8 头、�
 
 为什么要费心把乘子强制转成奇数？因为偶数二进制末位为 0，ID 乘以偶数相当于左移并抹掉低位区分度；而奇数在 64 位整数环里是一一映射，能无损保留低位信息。在 $V' \approx 9.9\times 10^4$ 时，生成出的真实乘子落在 $10^{13}$ 量级，且不同层之间相互独立。
 
-再看互异素数桶与扁平偏移 `offsets` 怎么生成。如果为每个头单独分配一块二维矩阵，每次查表就得发几十次零散的显存读取。工程上把同一层所有哈希头首尾相接，拼成一张连续的一维扁平大表，再用一次 Gather 指令同时读出全部切片。
+再看互异素数桶与扁平大表 $E \in \mathbb{R}^{N_{\text{rows}}\times d_h}$ 怎么布局。如果为每个头单独分配二维矩阵，每次查表就得发几十次零散读取。工程上把同一层所有 $J$ 个头的行空间首尾相接，拼成一张总行数 $N_{\text{rows}} = \sum_{n,j} p_{n,j}$ 的连续大表 $E$，再用一次 Gather 读出全部切片。
 
-建表初始化阶段，代码[^engram-demo][^vllm-common] 并非为每个头手写不同下界，而是为各阶设定目标容量下界 `vocab_size`（如 V4.1 每头约 1600 万行）。随后调用 `find_next_prime`，从 `vocab_size - 1` 起向上顺延找素数，并靠全局去重集合 `seen` 跳过已被前头或前阶占用的素数。
+建表初始化阶段，代码[^engram-demo][^vllm-common] 为各阶设定目标容量下界 `vocab_size`（如 V4.1 每头约 1600 万行）。随后调用 `find_next_prime`，从 `vocab_size - 1` 起顺延找素数 $p_{n,j}$，并用全局 `seen` 集合跳过已占用的素数。最后对各头桶长求前缀和，即得起始行号 `offsets`（记作 $o_{n,j}$）。
 
-为了方便手算追踪每一步，下面取 2 阶（2-gram、3-gram）× 每阶 2 头的微型配置，令两阶统一从容量下界 4 出发。初始化顺序沿着全局 `seen` 集合展开：
+规则立好后，下面设定一套贯穿后文的 **迷你手算配置**：取 2 阶（2-gram、3-gram）× 每阶 $K=2$ 头共 $J=4$ 个头（头 0 至头 3）。桶长统一从下界 4 出发，并用小奇数 $m_0=3,\; m_1=7,\; m_2=9$ 代替 13 位大乘子：
 
-- **2-gram 顺延**：从 4 向上找得头 0 素数 5、头 1 素数 7，此时集合 `seen` 记录 `{5, 7}`。
-- **3-gram 顺延**：再次从 4 出发，跳过已被占用的 5 和 7，顺延拿到头 2 素数 11 与头 3 素数 13。
+- **2-gram 顺延**：从 4 向上找得头 0 素数 $p_{2,0}=5$、头 1 素数 $p_{2,1}=7$，集合 `seen` 记录 `{5, 7}`。
+- **3-gram 顺延**：再次从 4 出发，跳过已被占用的 5 和 7，顺延拿到头 2 素数 $p_{3,0}=11$ 与头 3 素数 $p_{3,1}=13$。
 
-拿到四枚互异素数 `[[5, 7], [11, 13]]` 后，把四个桶首尾相连排进同一张物理表，并对桶长求前缀和得到各头起始行号 `offsets`：
-
-- 头 0（2-gram）占 5 行，物理区间 `0..4`，起始偏移 `offset = 0`。
-- 头 1（2-gram）占 7 行，紧接区间 `5..11`，起始偏移 `offset = 5`。
-- 头 2（3-gram）占 11 行，紧接区间 `12..22`，起始偏移 `offset = 12`。
-- 头 3（3-gram）占 13 行，紧接区间 `23..35`，起始偏移 `offset = 23`。
-
-至此一张总计 $5+7+11+13 = 36$ 行的扁平表与 `offsets = [0, 5, 12, 23]` 就位，下一节立刻用它推演实际查表。
+拿到四枚互异素数 `[[5, 7], [11, 13]]` 后，求前缀和即得起始偏移 `offsets = [0, 5, 12, 23]`。四个头依次占区间 `0..4`、`5..11`、`12..22` 与 `23..35`。四段拼出扁平嵌入大表 $E \in \mathbb{R}^{36\times d_h}$（总行数 $5+7+11+13=36$），拼接总维 $d_{\text{eng}} = 4d_h$。
 
 ### 在线滚动递推与“中国的首”手算
 
-设模型按 1-indexed 位置 $t = 1 \dots 5$ 读入序列“北京 是 中国 的 首”，经词表归一后的规范 ID 依次为 `14, 9, 308, 12, 88`。为了免去 13 位大数心算，我们在位置 $t = 5$（“首”，$x'_5 = 88$）用缩放后的小奇数 $m_0 = 3,\; m_1 = 7,\; m_2 = 9$ 代表该层的离线奇乘子。
-
-先手算 2-gram 后缀“的 首”（`12, 88`）：当前词（$k=0$）乘 $m_0$ 得 $88 \times 3 = 264$，前 1 个词（$k=1$）乘 $m_1$ 得 $12 \times 7 = 84$，两者按位异或得到 2-gram 混合整数 $h_2(5) = 264 \oplus 84 = 348$。
-
-接着算 3-gram 后缀“中国 的 首”（`308, 12, 88`）。如果从头重算，又要再乘一遍 88 和 12；但因为 $m_0, m_1$ 在各阶之间共用，前两项的异或和已经保存在 $h_2(5) = 348$ 里了。只需把新滑入的“中国”（$k=2$）乘上 $m_2 = 9$ 得 $2772$，再与 $h_2(5)$ 异或一次，便得 $h_3(5) = 348 \oplus 2772 = 2952$。
-
-把这一复用过程写成通用递推形式，就能看清为什么升阶计算的开销只与阶数呈线性关系：
+先立在线寻址的数学定义与张量形状变换。对规范 ID 序列中位置 $t$ 的 $n$-gram 后缀（$n \ge 2$），定义整数哈希混合值 $g_n(t)$，其中 $g_1(t) = c_t \cdot m_0$ 仅作递推初值而不单独查表：
 
 $$
-h_1(t) = x'_t \cdot m_0, \qquad h_n(t) = h_{n-1}(t) \oplus \bigl(x'_{t-(n-1)} \cdot m_{n-1}\bigr) = \bigoplus_{k=0}^{n-1} \bigl(x'_{t-k} \cdot m_k\bigr)
+g_1(t) = c_t \cdot m_0, \qquad g_n(t) = g_{n-1}(t) \oplus \bigl(c_{t-(n-1)} \cdot m_{n-1}\bigr) = \bigoplus_{k=0}^{n-1} \bigl(c_{t-k} \cdot m_k\bigr)
 $$
 
-上式中间是 vLLM Triton 算子采用的滚动递推写法，每升一阶只多做 1 次乘法和 1 次异或；最右端则是等价的展开写法。拿到混合值 $h_n(t)$ 后，各哈希头按自身素数 $p_{n,j}$ 并行取模并叠加起始偏移 $\text{offset}_{n,j}$，直接算出扁平大表的物理行号：
+上式中间是 vLLM Triton 算子采用的滚动递推写法，每升一阶只多做 1 次乘法和 1 次异或；最右端是等价展开式。拿到各阶混合整数 $g_n(t)$ 后，第 $n$ 阶第 $j$ 个哈希头按自身素数 $p_{n,j}$ 与起始偏移 $o_{n,j}$ 并行算出大表物理行号：
 
 $$
-\text{slot}_{n,j}(t) = \bigl(h_n(t) \bmod p_{n,j}\bigr) + \text{offset}_{n,j}
+\text{slot}_{n,j}(t) = \bigl(g_n(t) \bmod p_{n,j}\bigr) + o_{n,j}
 $$
 
-把刚刚算出的 $h_2 = 348$ 与 $h_3 = 2952$ 代入 `offsets = [0, 5, 12, 23]`，一次落定全部 4 个物理行号：
+整批推理时的张量形状变换一路明确：
 
-- **2-gram 头 0**：模 5 偏移 0，$(348 \bmod 5) + 0 = 3 + 0 = 3$。
-- **2-gram 头 1**：模 7 偏移 5，$(348 \bmod 7) + 5 = 5 + 5 = 10$。
-- **3-gram 头 2**：模 11 偏移 12，$(2952 \bmod 11) + 12 = 4 + 12 = 16$。
-- **3-gram 头 3**：模 13 偏移 23，$(2952 \bmod 13) + 23 = 1 + 23 = 24$。
+$$
+\mathbf{c}\,[B, T] \xrightarrow{\text{滚动哈希寻址}} \mathbf{S}\,[B, T, J] \xrightarrow{\text{按行 Gather } E\,[N_{\text{rows}}, d_h]} [B, T, J, d_h] \xrightarrow{\text{尾维展平拼接}} \mathbf{E}\,[B, T, d_{\text{eng}}]
+$$
 
-按 `[3, 10, 16, 24]` 从扁平表一次切片 Gather 并拼接四段单头向量（每头维度记为 $d_h$），就得到静态记忆初值 $\mathbf{e}_t \in \mathbb{R}^{d_{\text{eng}}}$（此处 $d_{\text{eng}} = 4d_h$），全程没有一次矩阵乘。完整流程整理如图 2 所示。
+在单个词元位置 $t$，上述 Gather 与拼接操作把 $J$ 个单头向量 $\mathbf{e}_{t,j} \in \mathbb{R}^{d_h}$ 直接拼成静态记忆初值 $\mathbf{e}_t \in \mathbb{R}^{d_{\text{eng}}}$，全程没有一次矩阵乘。
+
+现在把主贯穿案例代入公式手算。设模型按 1-indexed 位置 $t = 1 \dots 5$ 读入序列“北京 是 中国 的 首”，归并后的规范 ID 为 `14, 9, 308, 12, 88`。在目标位置 $t = 5$（“首”，$c_5 = 88$），沿迷你配置 $m = (3, 7, 9)$ 计算：
+
+- **2-gram（“的 首”，`12, 88`）**：当前词乘 $m_0$ 得 $88 \times 3 = 264$，前 1 词乘 $m_1$ 得 $12 \times 7 = 84$，异或得 $g_2(5) = 264 \oplus 84 = 348$。
+- **3-gram（“中国 的 首”，`308, 12, 88`）**：直接复用 $g_2(5) = 348$，只把新滑入的“中国”（$k=2$）乘 $m_2 = 9$ 得 2772 再异或，得 $g_3(5) = 348 \oplus 2772 = 2952$。
+
+接着把 $g_2(5) = 348$ 与 $g_3(5) = 2952$ 代入槽位公式（`primes = [[5, 7], [11, 13]]`，`offsets = [0, 5, 12, 23]`），一次落定全部 4 个物理行号：
+
+- **头 0（2-gram，模 5 偏移 0）**：$(348 \bmod 5) + 0 = 3 + 0 = 3$。
+- **头 1（2-gram，模 7 偏移 5）**：$(348 \bmod 7) + 5 = 5 + 5 = 10$。
+- **头 2（3-gram，模 11 偏移 12）**：$(2952 \bmod 11) + 12 = 4 + 12 = 16$。
+- **头 3（3-gram，模 13 偏移 23）**：$(2952 \bmod 13) + 23 = 1 + 23 = 24$。
+
+按 `[3, 10, 16, 24]` 从 $E \in \mathbb{R}^{36\times d_h}$ 切片读取 `[4, d_h]` 并展平，即得 $\mathbf{e}_5 \in \mathbb{R}^{4d_h}$。
+
+最后验证前文提到的 **多头局部碰撞隔离**。假设另一段文本出现“新任 的 首”（规范 ID `729, 12, 88`），其 2-gram 混合值仍为 $g_2^{(B)} = 348$，3-gram 混合值为 $g_3^{(B)} = 348 \oplus (729 \times 9) = 6397$。代入头 2 与头 3 公式：头 3 算得 $(6397 \bmod 13) + 23 = 24$，与“中国的首”撞在同一行；但头 2 算得 $(6397 \bmod 11) + 12 = 18$，与前者的第 16 行错开 2 行。完整流程如图 2 所示。
 
 ![素数分桶、前缀偏移与滚动异或防碰撞寻址图解](./diagrams/11-engram-hash.drawio '图 2：从互异素数建桶、奇乘子生成到滚动异或寻址的全流程手算轨迹')
 
 ## 哈希碰撞或一词多义，模型怎么消歧
 
-就算拆成了多头互异素数，单个头上的局部哈希碰撞仍然会发生。设另一段文本出现“新任 的 首”（规范 ID 为 `729, 12, 88`），其 2-gram 后缀仍算得 $h_2 = 348$，而 3-gram 混合值为 $h'_3 = 348 \oplus (729 \times 9) = 6397$。
-
-代入头 2 与头 3 取模加偏移：头 3 计算 $(6397 \bmod 13) + 23 = 1 + 23 = 24$，恰好与“中国的首”落入同一行发生碰撞；好在头 2 计算 $(6397 \bmod 11) + 12 = 6 + 12 = 18$，与前者的第 16 行错开了 2 行。
+即使拆成了多头互异素数，单个头上的局部碰撞（如上节的头 3 行 24）依然会混入无关特征；此外，语言天然存在一词多义，单靠静态查表无法区分“中国 的 首”与“唐诗 的 首”。因此，Engram 用注意力主干算出的动态隐状态向量作为裁判，通过 **上下文门控（Context-Aware Gating）** 决定放行或抑制静态记忆。
 
 ### 上下文门控与保号开方防饱和
 
-局部碰撞混入的噪声，加上语言天然存在的一词多义，单靠静态查表自己无法分辨。Engram 请出注意力主干算出的动态隐状态向量（记为 $\mathbf{h}_t$，与前文整数哈希 $h_2, h_3$ 区分）充当裁判，通过 **上下文门控（Context-Aware Gating）** 决定放行还是抑制，如图 3 所示。
+先看单流主干下的数学定义与张量形状变换。给定单流动态隐状态 $\mathbf{h}_t \in \mathbb{R}^d$ 与拼接查表向量 $\mathbf{e}_t \in \mathbb{R}^{d_{\text{eng}}}$，首先用两个线性投影矩阵 $W_K, W_V \in \mathbb{R}^{d\times d_{\text{eng}}}$ 分别映射出键向量 $\mathbf{k}_t = W_K \mathbf{e}_t \in \mathbb{R}^d$ 与值向量 $\mathbf{v}_t = W_V \mathbf{e}_t \in \mathbb{R}^d$（整批变换为 $[B, T, d_{\text{eng}}] \to [B, T, d]$）。
+
+接着对 $\mathbf{h}_t$ 与 $\mathbf{k}_t$ 分别做 `RMSNorm` 并求缩放点积 $z_t \in \mathbb{R}$。原始论文[^engram-paper]直接把 $z_t$ 送入 Sigmoid，官方原型代码[^engram-demo]则先做一步 **保号开方压缩（Signed-Sqrt Compression）** 防梯度饱和，算出门控标量 $\alpha_t \in (0, 1)$ 后调制值向量并加回残差：
+
+$$
+z_t = \frac{\langle \operatorname{RMSNorm}(\mathbf{h}_t),\; \operatorname{RMSNorm}(\mathbf{k}_t)\rangle}{\sqrt{d}}, \qquad \alpha_t = \sigma\!\Big(\operatorname{sign}(z_t)\sqrt{|z_t|}\Big), \qquad \mathbf{u}_t = \alpha_t \mathbf{v}_t, \qquad \mathbf{h}'_t = \mathbf{h}_t + \mathbf{u}_t
+$$
+
+其中门控增量 $\mathbf{u}_t \in \mathbb{R}^d$ 与更新后隐状态 $\mathbf{h}'_t \in \mathbb{R}^d$ 维度与输入严格一致。为什么要在 Sigmoid 前先做一步保号开方 $\operatorname{sign}(z)\sqrt{|z|}$？对比一组具体数值就能看清效果：当 $z = 9.0$ 时，直接进 Sigmoid 会饱和到 0.9999、梯度几近消失；而开方压缩先把 9.0 压回 3.00，输出拉回 0.9526。同理 $z = -9.0$ 也会从 0.0001 缓和到 0.0474，保证门控投影在长期训练里保留有效梯度。
+
+图 3 总结了“中国的首”与“新任的首”在头 3 同槽碰撞下的门控消歧过程。图 4 的交互推演则按“词表归一与离线建桶 → 后缀滚动查表 → 碰撞与门控消歧”拆成 8 步，并支持切换不同短语语境对比多头落位与门控响应。
 
 ![多头局部碰撞隔离与门控动态消歧](./diagrams/11-engram-gate-disambig.drawio '图 3：同一碰撞槽位在互异素数多头与上下文门控下的动态消歧过程')
-
-具体做法是先用两个线性投影把查表初值 $\mathbf{e}_t$ 分别变为键向量 $\mathbf{k}_t = W_K \mathbf{e}_t$ 与值向量 $\mathbf{v}_t = W_V \mathbf{e}_t$。接着对 $\mathbf{h}_t$ 与 $\mathbf{k}_t$ 做 `RMSNorm` 并求缩放点积 $z_t$。原始论文[^engram-paper]直接把 $z_t$ 送入 Sigmoid，官方原型代码[^engram-demo]则先做一步 **保号开方压缩（Signed-Sqrt Compression）** 防梯度饱和：
-
-$$
-z_t = \frac{\langle \operatorname{RMSNorm}(\mathbf{h}_t),\; \operatorname{RMSNorm}(W_K \mathbf{e}_t)\rangle}{\sqrt{d}}, \qquad \alpha_t = \sigma\!\Big(\operatorname{sign}(z_t)\sqrt{|z_t|}\Big)
-$$
-
-为什么要先做一步保号开方 $\operatorname{sign}(z)\sqrt{|z|}$，再套用 Sigmoid？对比一组数值就能看清它对梯度饱和的缓解：当 $z = 9.0$ 时，直接进 Sigmoid 会饱和到 0.9999、梯度几近消失；而开方压缩先把 9.0 压回 3.00，输出拉回 0.9526。同理 $z = -9.0$ 也会从 0.0001 缓和到 0.0474，保证门控投影在长期训练里始终保留有效梯度。
-
-图 4 的交互推演按“词表归一与离线建桶 → 后缀滚动查表 → 碰撞与门控消歧”拆成 8 步，也支持切换不同短语语境对比多头落位与门控响应。
 
 <EngramHashExplainer
   client:visible
@@ -166,35 +176,54 @@ $$
 
 ### 四路 Key 与共享 Value 的设计
 
-DeepSeek 随后引入了多流残差架构 mHC（Manifold-Constrained Hyper-Connections，流形超连接）。在该结构中，主干并行携带四条残差支流（详见 [08 mHC 流形超连接](../08-mhc/)），因此隐状态张量是四维形状 $[B, T, 4, d]$，即图中的四流状态 $H_t$。
+DeepSeek 随后引入了多流残差架构 mHC（Manifold-Constrained Hyper-Connections，流形超连接）。在该结构中，主干并行携带 4 条残差支流（详见 [08 mHC 流形超连接](../08-mhc/)），因此隐状态变成四维张量 $\mathbf{H} \in \mathbb{R}^{B\times T\times 4\times d}$，其中位置 $t$ 的第 $s \in \{0,1,2,3\}$ 条支流记为 $\mathbf{h}_{t,s} \in \mathbb{R}^d$。
 
-在最初的参考原型[^engram-demo]里，模块分别为 4 条支流声明了 4 个键投影和 1 个值投影。工程实现[^vllm-common]把这五次矩阵乘合并成单个无偏置投影 `wkv`，总输出维度 `5d`：前 `4d` 切分给四条支流各自的键向量 $K_0 \dots K_3$，最后 `1d` 作为四条支流共享的值向量 $V_t$。
+在最初的参考原型[^engram-demo]里，模块为 4 条支流分别声明了 4 个键投影和 1 个值投影。工程实现[^vllm-common]把这五次矩阵乘合并成单个无偏置投影矩阵 $W_{KV} \in \mathbb{R}^{5d\times d_{\text{eng}}}$（代码名 `wkv`），完成如下形状变换与切分：
 
-采用“四路独立 Key + 一路共享 Value”的原因很直接。四条残差流各自关注不同语义侧面，需要独立打分决定吸收多少记忆。而查表得到的静态事实只有一份，共享 $V_t$ 即可省下四分之三的值投影参数与算力。在 DeepSeek-V4.1 中，Engram 挂载在 L1 与 L14 开头，夹在 `mhc_post` 与 `mhc_pre` 之间，如图 6 所示。
+$$
+\mathbf{E}\,[B, T, d_{\text{eng}}] \xrightarrow{\;W_{KV}\;} [B, T, 5d] \xrightarrow{\;\text{split}(4d,\; d)\;} \mathbf{K}\,[B, T, 4, d] \text{ 与共享 } \mathbf{v}\,[B, T, d]
+$$
+
+随后四条支流各自用 $\mathbf{h}_{t,s} \in \mathbb{R}^d$ 与切分出的键向量 $\mathbf{k}_{t,s} \in \mathbb{R}^d$ 独立打分，拼出门控张量 $\boldsymbol{\alpha} \in \mathbb{R}^{B\times T\times 4\times 1}$，再与扩维后的共享值向量 $\mathbf{v}\,[B, T, 1, d]$ 广播相乘并回写残差：
+
+$$
+z_{t,s} = \frac{\langle \operatorname{RMSNorm}(\mathbf{h}_{t,s}),\; \operatorname{RMSNorm}(\mathbf{k}_{t,s})\rangle}{\sqrt{d}}, \qquad \alpha_{t,s} = \sigma\!\Big(\operatorname{sign}(z_{t,s})\sqrt{|z_{t,s}|}\Big), \qquad \mathbf{U} = \boldsymbol{\alpha} \odot \mathbf{v} \in \mathbb{R}^{B\times T\times 4\times d}, \qquad \mathbf{H}' = \mathbf{H} + \mathbf{U}
+$$
+
+采用“四路独立 Key + 一路共享 Value”的原因很直接。四条残差流各自关注不同语义侧面，需要独立打分决定吸收多少记忆。而查表得到的静态事实只有一份，共享 $\mathbf{v}_t$ 即可省下四分之三的值投影参数与算力。在 DeepSeek-V4.1 中，Engram 挂载在 L1 与 L14 开头，夹在 `mhc_post` 与 `mhc_pre` 之间，如图 6 所示。
 
 ![V4.1 层内顺序、4:1 wkv 投影与门控写回](./diagrams/11-engram-layer.drawio '图 6：V4.1 L1/L14 注入时序、wkv 的 4:1 投影比例块与四分支残差更新流程')
 
 ## 论文里的短卷积怎么算，V4.1 为何删掉它
 
-对照原始论文与 `vllm` 源码会发现一个明显演进：论文版本在门控输出 $\alpha_t \odot V_t$ 之后还接了一层 `ShortConv` 短卷积，而 DeepSeek-V4.1-Flash 却把它彻底移除了。
+对照原始论文与 `vllm` 源码会发现一个明显演进：论文版本在门控输出 $\mathbf{U} = \boldsymbol{\alpha} \odot \mathbf{v}$ 之后还接了一层 `ShortConv` 短卷积，而 DeepSeek-V4.1-Flash 却把它彻底移除了。
 
 ### 一维因果空洞卷积手算与参数压缩
 
-文本序列上的 **一维卷积（1D Convolution）** 可以想象成拿着一把带 4 个刻度的固定权重尺子，从左往右滑过序列，把脚钉踩中的元素各自乘权再相加。
+先明确 `ShortConv` 的张量变换链与数学定义。模块接收上一节的四流门控增量 $\mathbf{U} \in \mathbb{R}^{B\times T\times 4\times d}$，先按支流执行 `RMSNorm`，再把支流维 4 与隐藏维 $d$ 合并并转置通道维到中间，得到卷积输入 $\tilde{\mathbf{U}} \in \mathbb{R}^{B\times 4d\times T}$。
 
-把前文“北京 是 中国 的 首”续写为 10 词序列“北京 是 中国 的 首 都 拥有 悠久 的 历史”（0-indexed 位置 0 到 9）。取该序列在某条隐藏通道经门控后的激活值 $x = [1, 2, 4, 3, 1, 2, 4, 0, 2, 5]$，核长 $k = 4$ 的权重为 $[w_0=0.5,\; w_1=0.25,\; w_2=-0.5,\; w_3=1.0]$。这里约定 $w_0$ 乘当前时刻 $x_t$、$w_3$ 乘最远抽头 $x_{t-9}$；若对照 PyTorch 的 `nn.Conv1d`，核权重从左到右排为 $[w_3, w_2, w_1, w_0]$。论文版 `ShortConv`[^engram-demo] 加了三道设计：
+在此输入上，论文版 `ShortConv`[^engram-demo] 采用核长 $k=4$、空洞步幅 $\delta=3$ 的分组一维卷积，包含三道设计：
 
-- **因果左补零**：在序列最左侧补 `(k - 1) * dilation` 个 0 并截断右侧多余长度，防止偷看未来词元。
-- **空洞对齐 3-gram**：设步幅 `dilation = 3` 抽取 $t, t-3, t-6, t-9$，避免相邻 3-gram 窗口重复覆盖。
-- **Depthwise 分组减参**：令分组数等于总通道数 `d * hc_mult`，让各通道独立滤波，参数由 $4d^2$ 降至 $4d$。
+- **Depthwise 分组压缩**：设 `groups = 4d`，使各通道独立滤波；核张量从 $[4d, 4d, k]$ 压到 $[4d, 1, k]$（单流参数由 $4d^2$ 降至 $4d$）。
+- **因果左补零**：在序列左侧补 `(k-1)\delta` 格（$[B, 4d, T] \to [B, 4d, T+(k-1)\delta]$），卷积后截断右侧恢复 $[B, 4d, T]$，防止偷看未来词元。
+- **空洞对齐 3-gram**：设步幅 $\delta = 3$ 抽取 $t, t-3, t-6, t-9$，避免相邻 3-gram 窗口重复覆盖。
 
-代入这组数值，我们在空洞 $\delta = 3$、核长 $k = 4$ 下手算两个时刻。走到早期位置 $t = 2$（“中国”）时，向左退 3 步就已经越界，三个历史抽头全部补 0，因此 $y_2 = 0.5 \times 4 + 0 = 2.00$。
+对单个通道按 0-indexed 位置 $t = 0, \dots, T-1$ 写出一维因果空洞卷积公式，卷积结果再转置还原为 $\mathbf{Y} \in \mathbb{R}^{B\times T\times 4\times d}$ 并经 `SiLU` 激活加回四流残差：
 
-走到末尾位置 $t = 9$（“历史”）时前缀充足，四个刻度恰好落在 $x_9 = 5,\; x_6 = 4,\; x_3 = 3,\; x_0 = 1$，算得 $y_9 = 0.5\times 5 + 0.25\times 4 - 0.5\times 3 + 1.0\times 1 = 3.00$，具体抽头对比见图 7。
+$$
+y_t = \sum_{i=0}^{k-1} w_i\, u_{t - i\delta} \quad (t - i\delta < 0 \text{ 时取 } u_{t-i\delta} = 0), \qquad \mathbf{H}' = \mathbf{H} + \mathbf{U} + \operatorname{SiLU}(\mathbf{Y})
+$$
+
+上式约定 $w_0$ 乘当前时刻 $u_t$、$w_3$ 乘最远抽头 $u_{t-9}$；若对照 PyTorch 的 `nn.Conv1d`，核张量 `[4d, 1, 4]` 在最后一维从左到右存为 $[w_3, w_2, w_1, w_0]$。
+
+现在代入具体数值手算验证。为贴合 1D 卷积习惯，把前文“北京 是 中国 的 首”续写为 10 词序列“北京 是 中国 的 首 都 拥有 悠久 的 历史”，改按 0-indexed 位置 $t = 0\dots 9$ 编号。取该序列在某通道归一化门控后的激活 $u = [1, 2, 4, 3, 1, 2, 4, 0, 2, 5]$，核权 $[w_0=0.5,\; w_1=0.25,\; w_2=-0.5,\; w_3=1.0]$，在 $\delta=3, k=4$ 下手算两个时刻：
+
+- **早期位置 $t = 2$（“中国”）**：向左退 3 步已越界，三个历史抽头全部补 0，因此 $y_2 = 0.5 \times 4 + 0 = 2.00$。
+- **末尾位置 $t = 9$（“历史”）**：前缀充足，四根抽头落在 $u_9 = 5,\; u_6 = 4,\; u_3 = 3,\; u_0 = 1$，算得 $y_9 = 0.5\times 5 + 0.25\times 4 - 0.5\times 3 + 1.0\times 1 = 3.00$。
+
+图 7 对照了标准连续卷积与空洞因果卷积的抽头覆盖差异。图 8 的交互推演用刚性四齿卷积核沿这 10 个词元从左向右逐格扫描，直观展示左补 9 个 0、$\delta=3$ 空洞抽头与 $y_0 \dots y_9$ 逐格生成过程。
 
 ![标准连续卷积 vs Engram 空洞因果卷积对比](./diagrams/11-shortconv-dilation.drawio '图 7：标准连续卷积重叠（上）、δ=3 空洞抽头与左补零计算（中）及 V4.1 工程化舍弃原因（下）')
-
-图 8 的交互推演用刚性四齿卷积核沿这 10 个词元从左向右逐格扫描，直观展示左补 9 个 0、$\delta=3$ 空洞抽头与 $y_0 \dots y_9$ 逐格生成过程。
 
 <ShortConvExplainer
   client:visible
@@ -259,32 +288,32 @@ class EngramReference(nn.Module):
 
     def hash_slots(self, ids: torch.Tensor) -> torch.Tensor:
         T = ids.shape[1]
-        h = ids * self.mults[0]
+        g = ids * self.mults[0]  # [B, T]
         slots, idx = [], 0
         for order in range(2, self.max_n + 1):
             shifted = F.pad(ids, (order - 1, 0), value=self.pad_id)[:, :T]
-            h = h ^ (shifted * self.mults[order - 1])
+            g = g ^ (shifted * self.mults[order - 1])
             for p in self.primes[order - 2]:
-                slots.append(torch.remainder(h, p) + self.offsets[idx])
+                slots.append(torch.remainder(g, p) + self.offsets[idx])
                 idx += 1
-        return torch.stack(slots, dim=-1)
+        return torch.stack(slots, dim=-1)  # [B, T, J]
 
     def forward(self, ids: torch.Tensor, h_state: torch.Tensor) -> torch.Tensor:
         T = ids.shape[1]
-        e_t = self.table(self.hash_slots(ids)).flatten(start_dim=-2)
+        e_t = self.table(self.hash_slots(ids)).flatten(start_dim=-2)  # [B, T, d_eng]
         k_raw, v_shared = self.wkv(e_t).split([self.hc_mult * self.d, self.d], dim=-1)
-        k_t = k_raw.view(*h_state.shape)
+        k_t = k_raw.view(*h_state.shape)  # [B, T, 4, d]
         gates = []
-        for m in range(self.hc_mult):
-            z = (self.norm_h[m](h_state[:, :, m]) * self.norm_k[m](k_t[:, :, m])).sum(-1)
+        for s in range(self.hc_mult):
+            z = (self.norm_h[s](h_state[:, :, s]) * self.norm_k[s](k_t[:, :, s])).sum(-1)
             z = (z / (self.d ** 0.5)).abs().clamp_min(1e-6).sqrt() * z.sign()
             gates.append(z.sigmoid().unsqueeze(-1))
-        val = torch.stack(gates, dim=2) * v_shared.unsqueeze(2)
+        u_t = torch.stack(gates, dim=2) * v_shared.unsqueeze(2)  # [B, T, 4, d]
         if self.conv is None:
-            return h_state + val
-        normed = torch.cat([self.c_norms[m](val[:, :, m]) for m in range(self.hc_mult)], dim=-1)
-        y = self.conv(normed.transpose(1, 2))[..., :T].transpose(1, 2).view_as(val)
-        return h_state + val + F.silu(y)
+            return h_state + u_t
+        u_norm = torch.cat([self.c_norms[s](u_t[:, :, s]) for s in range(self.hc_mult)], dim=-1)
+        y_t = self.conv(u_norm.transpose(1, 2))[..., :T].transpose(1, 2).view_as(u_t)  # [B, T, 4, d]
+        return h_state + u_t + F.silu(y_t)
 
 if __name__ == "__main__":
     mod = EngramReference(use_conv=False)
@@ -339,7 +368,7 @@ if __name__ == "__main__":
 | :----------- | :--------------------------------------------------------------------------------------- |
 | 注入层位     | 0-indexed **L1** 与 **L14** 两处（无 ShortConv，接在 mHC 边界之间）                      |
 | 窗口与分头   | `{2, 3, 4}`-gram 三阶共 24 头（每阶 8 头），每头约 16M 槽，单层约 384M 行                |
-| 维度与总参   | 每阶输出 2048 维（单头 `head_dim = 256`），静态表与投影总参约 196B                       |
+| 维度与参数量 | 每阶输出 2048 维（单头 `head_dim = 256`），静态表与投影总参数约 196B                     |
 | 单机存储占用 | 按每 32 维配 1 字节 `UE8M0` 缩放：FP8 `256B + 8B` 约 200 GB，MXFP4 `128B + 8B` 约 104 GB |
 
 表中的 `UE8M0` 是一种只存 8 位无符号指数、不存尾数的共享缩放格式，用 1 字节记录 $2^e$ 的尺度因子。每头 256 维在 FP8 下占 256 字节、在 4-bit MXFP4 下占 128 字节，按每 32 维配 1 字节缩放因子，每行固定多出 8 字节[^vllm-common]。
@@ -458,7 +487,7 @@ sequenceDiagram
     alt slot 数低于 128 且启用 SymmMem
         Batch->>Emb: Symmetric Memory peer_rows 直读
     else 大批量或跨引擎卸载
-        Batch->>Pool: all_to_all / DeepEP / IBGDA RDMA 拉行
+        Batch->>Pool: all_to_all / DeepEP / IBGDA RDMA 拉取目标行
     end
     Pool-->>Batch: 回填 FP8+Scale 并解包为 MXFP8 激活
     Note over Layer: L1/L14 处拆分 Mega-mHC 延迟融合
@@ -549,7 +578,7 @@ classDiagram
 flowchart TD
     PRE["forward_pre_hook<br/>装载本步 batch 元数据"] --> DUMMY{"query_start_loc 元素数 > 1 ?"}
     DUMMY -->|"否 (DP dummy 空跑)"| SKIP["跳过 Hash 与查表<br/>防 -1 索引触发 GM 越界"]
-    DUMMY -->|"是 (真实样本)"| MODE{"是否满足 FULL 图内产槽位条件 ?"}
+    DUMMY -->|"是 (真实样本)"| MODE{"是否满足 FULL 图内生成槽位条件 ?"}
     MODE -->|"单机局部无跨卡"| IN_G["图内捕获分支：<br/>固定张量驱动 Hash + Gather"]
     MODE -->|"多卡 / Pool 异步"| OUT_G["异步 PREP 副流：<br/>两阶段 Triton Hash 防编译器崩溃"]
     IN_G --> DEC["UVA / VMM / Pool 查表<br/>INT8(ldexp) 或 MXFP8(0xFF 掩码)"]
@@ -562,8 +591,8 @@ flowchart TD
 
 联调过程中暴露出的三类平台陷阱，在图中固化成了三道安全护栏[^ascend-triton][^ascend-emb][^ascend-model]：
 
-- **两段式拆解 Triton Hash**：把请求定界与滚动异或拆成两枚独立 Kernel，绕开单核过长触发 `bishengir` 缓冲释放崩溃。
-- **主机内存显式清零**：引擎加载权重前先跑 `Profiling Run`，分配 `HostUvaBuffer` 后立即清零，防脏数据触发 NaN 门控。
+- **两段式拆解 Triton Hash**：把请求定界与滚动异或拆成两个独立 Kernel，绕开单个 Kernel 过长触发 `bishengir` 缓冲崩溃。
+- **主机内存显式清零**：加载权重前先跑 `Profiling Run`，分配 `HostUvaBuffer` 后立即清零，防止脏数据触发 NaN 门控。
 - **DP 空跑越界防护**：某卡空跑时 `query_start_loc` 仅 1 个元素，反推边界会踩到 `-1` 地址，须检查长度并加掩码。
 
 在模型主干入口处，`AscendDeepseekV41LLMForCausalLM` 依据标志位决定直接在 ACLGraph 图内生成槽位还是走外部准备流[^ascend-model]：
@@ -587,7 +616,7 @@ if (
 
 [^engram-paper]: Cheng et al., _Conditional Memory via Scalable Lookup: A New Axis of Sparsity for Large Language Models_, arXiv:2601.07372 (2026). 本站实验图与表格数值核对自论文 §2–§4 及附录 Table 1–6：U 型曲线见 `10B / 99 routed experts` 消融（1.7248 -> 1.7109），H800 Host 卸载吞吐表见 Table 4。
 
-[^dsv41-paper]: DeepSeek-AI, _DeepSeek-V4.1-Flash Technical Report_, arXiv:2609.19969 (2026), §2.4.2, §2.5 & §3.1.3（L1 与 L14 接入 `{2,3,4}`-gram 8 头记忆表，每阶 2048 维、每头约 16M 槽、总参 196B，工程侧舍弃 ShortConv 以支持无状态执行与异步预取）。
+[^dsv41-paper]: DeepSeek-AI, _DeepSeek-V4.1-Flash Technical Report_, arXiv:2609.19969 (2026), §2.4.2, §2.5 & §3.1.3（L1 与 L14 接入 `{2,3,4}`-gram 8 头记忆表，每阶 2048 维、每头约 16M 槽、总参数约 196B，工程侧舍弃 ShortConv 以支持无状态执行与异步预取）。
 
 [^engram-demo]: 参考原型仓库 `deepseek-ai/Engram`（`fb7f84a2`）`engram_demo_v1.py`：`CompressedTokenizer`（L1–122，NFKC/NFD 压缩率 23.43%）、`ShortConv`（L123–179）、`find_next_prime` 与 `NgramHashMapping`（L180–304）、`MultiHeadEmbedding`（L305–325）及 `Engram`（L326–379）。
 

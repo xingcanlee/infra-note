@@ -94,7 +94,7 @@ flowchart TD
     H -->|是| R["ref_cnt 加一复用块"]
     H -->|否| F{"free_block_queue 非空?"}
     F -->|是| A["弹出物理块分配给请求"]
-    F -->|否| P["抢占低优请求释放块"]
+    F -->|否| P["抢占低优先级请求释放块"]
     P -->|归还空闲队列| F
     PAD["滑窗孔洞或 Padding 槽位"] --> N["block_table 指向 null_block B0"]
     R --> S["生成安全 slot_mapping（无效填 -1）"]
@@ -214,11 +214,11 @@ torch_npu.npu_scatter_pa_kv_cache(
 )
 ```
 
-| 调度与缓存维度 | GPU（`vllm` `bb23c0a8`）         | 昇腾 NPU（`vllm-ascend` `3649b8ff`） |
-| -------------- | -------------------------------- | ------------------------------------ |
-| 统一批配额调度 | `Scheduler.schedule` 单一配额    | 复用上游 V1 调度框架                 |
-| 占位块与负槽位 | `block 0` 占位，尾填 `-1`        | 同协议，Kernel 粒度展开页表          |
-| KV 写入实现    | `reshape_and_cache_flash` 跳负槽 | `npu_scatter_pa_kv_cache` 写分形池   |
+| 调度与缓存维度 | GPU（`vllm` `bb23c0a8`）             | 昇腾 NPU（`vllm-ascend` `3649b8ff`）     |
+| -------------- | ------------------------------------ | ---------------------------------------- |
+| 统一批配额调度 | `Scheduler.schedule` 单一配额        | 复用上游 V1 调度框架                     |
+| 占位块与负槽位 | `block 0` 占位，尾部填充 `-1`        | 同协议，Kernel 粒度展开页表              |
+| KV 写入实现    | `reshape_and_cache_flash` 跳过负槽位 | `npu_scatter_pa_kv_cache` 写入分形缓存池 |
 
 当融合算子物理块大小与调度块大小不同时，`AscendBlockTables` 会在写入设备前按倍率展开管理器块号。同时它还会维护 `int32` 类型的 `slot_mappings`，以对齐 CANN Scatter 写入算子的入参要求[^ascend-block-table]。
 

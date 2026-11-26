@@ -163,7 +163,7 @@
         <mxCell id="mc_3_3" value="" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#fbf2df;strokeColor=#7b5518;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter, Noto Sans SC;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
           <mxGeometry x="328" y="104" width="24" height="24" as="geometry" />
         </mxCell>
-        <mxCell id="mc_lbl" value="C (FP32 累)" style="text;html=1;whiteSpace=wrap;align=center;verticalAlign=middle;fontFamily=Inter, Noto Sans SC;fontSize=11;fontStyle=1;fontColor=#7b5518;" vertex="1" parent="1">
+        <mxCell id="mc_lbl" value="C (FP32 累加)" style="text;html=1;whiteSpace=wrap;align=center;verticalAlign=middle;fontFamily=Inter, Noto Sans SC;fontSize=11;fontStyle=1;fontColor=#7b5518;" vertex="1" parent="1">
           <mxGeometry x="256" y="128" width="96" height="24" as="geometry" />
         </mxCell>
         <mxCell id="op_eq" value="=" style="text;html=1;whiteSpace=wrap;align=center;verticalAlign=middle;fontFamily=Inter, Noto Sans SC;fontSize=18;fontStyle=1;fontColor=#1d1d1f;" vertex="1" parent="1">
@@ -277,7 +277,7 @@
         <mxCell id="nd_b_3_3" value="B3" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#f4f4f2;strokeColor=#5c6067;strokeWidth=1;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter, Noto Sans SC;fontSize=11;fontColor=#1d1d1f;" vertex="1" parent="1">
           <mxGeometry x="88" y="312" width="24" height="24" as="geometry" />
         </mxCell>
-        <mxCell id="nd_b_t" value="行主序 (撞 B0)" style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;fontFamily=Inter, Noto Sans SC;fontSize=12;fontStyle=1;fontColor=#7b5518;" vertex="1" parent="1">
+        <mxCell id="nd_b_t" value="行主序 (Bank 冲突)" style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;fontFamily=Inter, Noto Sans SC;fontSize=12;fontStyle=1;fontColor=#7b5518;" vertex="1" parent="1">
           <mxGeometry x="16" y="216" width="120" height="24" as="geometry" />
         </mxCell>
         <mxCell id="sw_b_0_0" value="B0" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f2fb;strokeColor=#2f5783;strokeWidth=2;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter, Noto Sans SC;fontSize=11;fontColor=#1d1d1f;" vertex="1" parent="1">

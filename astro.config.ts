@@ -10,7 +10,7 @@ export default defineConfig({
       site: {
         title: 'infra-note',
         description:
-          '从零推导的 LLM 推理系统笔记：异构硬件与量化、分布式并行通信、DeepSeek 架构演进、vLLM 推理引擎与执行图 / 昇腾 ACL Graph 全栈。',
+          '从零推导的 LLM 推理系统笔记：异构硬件与量化、分布式并行通信、DeepSeek 架构演进、vLLM 与 vLLM-Ascend 推理引擎、推理执行图（CUDA Graph 与 ACL Graph）。',
         author: 'xingcanlee',
         authorGithub: 'https://github.com/xingcanlee',
         lang: 'zh-CN',

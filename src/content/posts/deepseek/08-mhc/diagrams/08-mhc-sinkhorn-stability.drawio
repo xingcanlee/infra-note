@@ -82,7 +82,7 @@
         <mxCell id="hc_cap" value="左列为行和 · 顶行为列和 · 全序列增益峰值 ~3000×" style="text;html=1;whiteSpace=wrap;align=center;verticalAlign=middle;fontFamily=Inter, Noto Sans SC;fontSize=11;fontStyle=1;fontColor=#984646;" vertex="1" parent="1">
           <mxGeometry x="8" y="200" width="320" height="32" as="geometry" />
         </mxCell>
-        <mxCell id="g_mhc60" value="(b) mHC 60 子层连乘 \(\prod_{i=1}^{60}\mathcal{P}(\mathcal{H}_{61-i}^{\mathrm{res}})\)（27B 实测）" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f5e9;strokeColor=#2c522d;strokeWidth=1.25;verticalAlign=top;align=left;spacingLeft=12;spacingTop=8;fontFamily=Inter, Noto Sans SC;fontSize=12;fontStyle=1;fontColor=#2c522d;container=0;" vertex="1" parent="1">
+        <mxCell id="g_mhc60" value="(b) mHC 60 子层连乘 \(\prod_{i=1}^{60}\mathcal{P}(\tilde{\mathcal{H}}_{61-i}^{\mathrm{res}})\)（27B 实测）" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f5e9;strokeColor=#2c522d;strokeWidth=1.25;verticalAlign=top;align=left;spacingLeft=12;spacingTop=8;fontFamily=Inter, Noto Sans SC;fontSize=12;fontStyle=1;fontColor=#2c522d;container=0;" vertex="1" parent="1">
           <mxGeometry x="352" y="8" width="336" height="240" as="geometry" />
         </mxCell>
         <mxCell id="hm_mhc__cl0" value="列 0.88" style="text;html=1;whiteSpace=wrap;align=center;verticalAlign=middle;fontFamily=Inter, Noto Sans SC;fontSize=11;fontColor=#5c6067;" vertex="1" parent="1">
@@ -157,7 +157,7 @@
         <mxCell id="hm_mhc_3_3" value="0.29" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f5e9;strokeColor=#2c522d;strokeWidth=2;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter, Noto Sans SC;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
           <mxGeometry x="600" y="160" width="64" height="32" as="geometry" />
         </mxCell>
-        <mxCell id="mhc_cap" value="左行和约 1.00 · 顶列和近 1.00 · 全网增益 ≤ 1.6×" style="text;html=1;whiteSpace=wrap;align=center;verticalAlign=middle;fontFamily=Inter, Noto Sans SC;fontSize=11;fontStyle=1;fontColor=#2c522d;" vertex="1" parent="1">
+        <mxCell id="mhc_cap" value="左列为行和 · 顶行为列和 · 增益 ≤ 1.6×" style="text;html=1;whiteSpace=wrap;align=center;verticalAlign=middle;fontFamily=Inter, Noto Sans SC;fontSize=11;fontStyle=1;fontColor=#2c522d;" vertex="1" parent="1">
           <mxGeometry x="360" y="200" width="320" height="32" as="geometry" />
         </mxCell>
         <mxCell id="g_sk" value="(c) Sinkhorn-Knopp 投影四步演算（2×2 示例，工程固定展开 \(t_{\max}=20\) 轮）" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f2fb;strokeColor=#2f5783;strokeWidth=1.25;dashed=1;verticalAlign=top;align=left;spacingLeft=12;spacingTop=8;fontFamily=Inter, Noto Sans SC;fontSize=12;fontStyle=1;fontColor=#2f5783;container=0;" vertex="1" parent="1">

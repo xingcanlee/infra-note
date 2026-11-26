@@ -96,12 +96,12 @@ export const BEAT_SCHEDULES: Record<EngramPhase, readonly BeatSpec[]> = {
   ],
   xor: [
     { at: 0, label: '乘上位置奇乘子' },
-    { at: 750, label: '2-gram 异或得 h₂' },
-    { at: 1600, label: '横向复用 h₂ 结果' },
-    { at: 2450, label: '异或前词得 h₃' },
+    { at: 750, label: '2-gram 异或得 g₂' },
+    { at: 1600, label: '横向复用 g₂ 结果' },
+    { at: 2450, label: '异或前词得 g₃' },
   ],
   lookup: [
-    { at: 0, label: '载入 h₂ 与 h₃' },
+    { at: 0, label: '载入 g₂ 与 g₃' },
     { at: 600, label: '头 0 命中行 3' },
     { at: 1300, label: '头 1 命中行 10' },
     { at: 2000, label: '头 2 命中行 16' },
@@ -295,11 +295,12 @@ export function buildEngramHashSteps(): Step<EngramStepState>[] {
       label: '词表归一',
       duration: 5000,
       caption:
-        "离线阶段用 CompressedTokenizer 把大小写、空白与变音符变体折叠到同一词形，将 129,280 词表压缩 23.43% 至 $V' \\approx 9.9 \\times 10^4$，推理时按原 ID 查表即得规范 ID $x'_t$。",
+        "离线阶段用 CompressedTokenizer 把大小写、空白与变音符变体折叠到同一词形，将 129,280 词表压缩 23.43% 至 $V' \\approx 9.9 \\times 10^4$，推理时按原 ID 查表即得规范 ID $c_t$（形状保持 $[B, T]$）。",
       state: {
         ...base,
         phase: 'normalize',
-        formulaTex: "$V = 129{,}280 \\;\\xrightarrow{-23.43\\%}\\; V' \\approx 9.9 \\times 10^4$",
+        formulaTex:
+          "$V = 129{,}280 \\;\\xrightarrow{-23.43\\%}\\; V' \\approx 9.9 \\times 10^4,\\; \\mathbf{c} \\in \\mathbb{Z}^{B \\times T}$",
         activeTokens: [1, 2, 3, 4, 5],
       },
     },
@@ -307,7 +308,7 @@ export function buildEngramHashSteps(): Step<EngramStepState>[] {
       label: '离线奇乘子',
       duration: 5400,
       caption:
-        "直接异或满足交换律且同词归零；为锁死词序，按相对位置 $k$ 分配离线奇数常量 $m_k = 2r_k + 1$（上界受 $\\lfloor(2^{63}-1)/V'\\rfloor$ 保护，奇数保低位满秩），演示缩放为 $[3, 7, 9]$。",
+        "直接异或满足交换律且同词归零；为锁死词序，按相对位置 $k$ 分配离线奇数常量 $m_k = 2r_k + 1$（上界受 $\\lfloor(2^{63}-1)/V'\\rfloor$ 保护，奇数保证低位满秩），演示缩放为 $[3, 7, 9]$。",
       state: {
         ...base,
         phase: 'multipliers',
@@ -320,12 +321,12 @@ export function buildEngramHashSteps(): Step<EngramStepState>[] {
       label: '素数建桶',
       duration: 5600,
       caption:
-        '两阶统一从下界 $4$ 出发：2-gram 顺延拿到素数 $5, 7$；3-gram 因全局 seen 去重跳过已占用的 $5, 7$，顺延拿到 $11, 13$，求前缀和拼成 $36$ 行一维扁平表。',
+        '两阶统一从下界 $4$ 出发：2-gram 顺延拿到素数 $5, 7$；3-gram 因全局 seen 去重跳过已占用的 $5, 7$，顺延拿到 $11, 13$，求前缀和拼成 $E \\in \\mathbb{R}^{36 \\times d_h}$ 扁平大表。',
       state: {
         ...base,
         phase: 'bucket',
         formulaTex:
-          '$p = [[5, 7], [11, 13]] \\;\\Rightarrow\\; \\text{offsets} = [0, 5, 12, 23],\\; N_{\\text{rows}} = 36$',
+          '$p = [[5, 7], [11, 13]] \\;\\Rightarrow\\; \\text{offsets} = [0, 5, 12, 23],\\; E \\in \\mathbb{R}^{36 \\times d_h}$',
         activeTokens: [3, 4, 5],
       },
     },
@@ -333,7 +334,7 @@ export function buildEngramHashSteps(): Step<EngramStepState>[] {
       label: '后缀窗口',
       duration: 4800,
       caption:
-        '进入在线前向：在位置 $t = 5$（“首”，规范 ID $88$）向回截取 2-gram 后缀 $(12, 88)$ 与 3-gram 后缀 $(308, 12, 88)$；前文“北京”“是”不在当前窗口内。',
+        '进入在线前向：在位置 $t = 5$（“首”，规范 ID $c_5 = 88$）向回截取 2-gram 后缀 $(12, 88)$ 与 3-gram 后缀 $(308, 12, 88)$；前文“北京”“是”不在当前窗口内。',
       state: {
         ...base,
         phase: 'suffix',
@@ -345,12 +346,12 @@ export function buildEngramHashSteps(): Step<EngramStepState>[] {
       label: '滚动递推',
       duration: 5400,
       caption:
-        '先算 2-gram 混合值 $h_2 = (88\\times 3) \\oplus (12\\times 7) = 348$；算 3-gram 时直接横向复用 $h_2$ 异或新词项 $308\\times 9 = 2772$，一次得出 $h_3 = 2952$。',
+        '先算 2-gram 混合值 $g_2 = (88\\times 3) \\oplus (12\\times 7) = 348$；算 3-gram 时直接横向复用 $g_2$ 异或新词项 $308\\times 9 = 2772$，一次得出 $g_3 = 2952$。',
       state: {
         ...base,
         phase: 'xor',
         formulaTex:
-          '$h_2 = 264 \\oplus 84 = 348 \\;\\longrightarrow\\; h_3 = h_2 \\oplus 2772 = 2952$',
+          '$g_2 = 264 \\oplus 84 = 348 \\;\\longrightarrow\\; g_3 = g_2 \\oplus 2772 = 2952$',
         activeTokens: [3, 4, 5],
       },
     },
@@ -358,12 +359,12 @@ export function buildEngramHashSteps(): Step<EngramStepState>[] {
       label: '偏移落位',
       duration: 5600,
       caption:
-        '各哈希头按 $\\text{slot}_{n,j} = (h_n \\bmod p_j) + \\text{offset}_j$ 并行取模偏移，直接命中 36 行一维扁平表的第 $3, 10, 16, 24$ 物理槽位。',
+        '各哈希头按 $\\text{slot}_{n,j} = (g_n \\bmod p_{n,j}) + o_{n,j}$ 并行取模偏移，把 $[B, T]$ 序列映射为槽位张量 $[B, T, 4]$，此处命中第 $3, 10, 16, 24$ 物理行。',
       state: {
         ...base,
         phase: 'lookup',
         formulaTex:
-          '$\\text{slot}_j = (h \\bmod p_j) + \\text{offset}_j \\;\\Rightarrow\\; [3, 10, 16, 24]$',
+          '$\\text{slot}_{n,j} = (g_n \\bmod p_{n,j}) + o_{n,j} \\;\\Rightarrow\\; [3, 10, 16, 24]$',
         activeTokens: [3, 4, 5],
       },
     },
@@ -371,12 +372,12 @@ export function buildEngramHashSteps(): Step<EngramStepState>[] {
       label: '局部碰撞',
       duration: 5000,
       caption:
-        "对比“新任的首”（$h'_3 = 6397$）：头 3 对 $13$ 取模也落在第 $24$ 行发生同槽碰撞；但头 2 对 $11$ 取模落在第 $18$ 行，与“中国的首”的第 $16$ 行错开 $2$ 行。",
+        '对比“新任的首”（$g_3^{(B)} = 6397$）：头 3 对 $13$ 取模也落在第 $24$ 行发生同槽碰撞；但头 2 对 $11$ 取模落在第 $18$ 行，与“中国的首”的第 $16$ 行错开 $2$ 行。',
       state: {
         ...base,
         phase: 'collision',
         formulaTex:
-          "$h'_3 = 6397 \\;\\Rightarrow\\; \\text{头 2 隔离 }(16 \\neq 18),\\; \\text{头 3 碰撞 }(24 = 24)$",
+          '$g_3^{(B)} = 6397 \\;\\Rightarrow\\; \\text{头 2 隔离 }(16 \\neq 18),\\; \\text{头 3 碰撞 }(24 = 24)$',
         activeTokens: [3, 4, 5],
       },
     },
@@ -384,12 +385,12 @@ export function buildEngramHashSteps(): Step<EngramStepState>[] {
       label: '拼接门控',
       duration: 5000,
       caption:
-        '按物理行号直接切片 Gather 并拼接为 $\\mathbf{e}_t \\in \\mathbb{R}^{4d_h}$（全程零矩阵乘），最后交由注意力隐状态 $\\mathbf{h}_t$ 计算门控（下方 $\\alpha_t$ 为语境对比示意值）。',
+        '按行号 Gather 得 $[B, T, 4, d_h]$ 并展平为 $\\mathbf{E} \\in \\mathbb{R}^{B \\times T \\times 4d_h}$（单位置 $\\mathbf{e}_t \\in \\mathbb{R}^{4d_h}$），再交由动态隐状态 $\\mathbf{h}_t \\in \\mathbb{R}^d$ 计算门控。',
       state: {
         ...base,
         phase: 'gather',
         formulaTex:
-          '$\\mathbf{e}_t = [e_3; e_{10}; e_{16}; e_{24}] \\;\\xrightarrow{\\;\\alpha_t(\\mathbf{h}_t, \\mathbf{e}_t)\\;}\\; \\tilde{\\mathbf{e}}_t$',
+          '$[B, T, 4, d_h] \\to \\mathbf{E} \\in \\mathbb{R}^{B \\times T \\times 4d_h} \\;\\xrightarrow{\\;\\alpha_t(\\mathbf{h}_t, \\mathbf{e}_t)\\;}\\; \\mathbf{u}_t \\in \\mathbb{R}^d$',
         activeTokens: [3, 4, 5],
       },
     },

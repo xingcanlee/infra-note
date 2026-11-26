@@ -223,7 +223,7 @@ export function buildPagedSchedulerSteps(): Step<PagedSchedulerState>[] {
         focusBadge: '共享复用 ref=2',
       },
       caption:
-        '第 3 步：Req B 共享相同系统提示，KVCacheManager 直接复指 $B_1$（ref_cnt=2）并跳过其 Prefill，仅需分配 $B_4$ 写入后 2 个新 token。',
+        '第 3 步：Req B 共享相同系统提示，KVCacheManager 直接复用指向 $B_1$（ref_cnt=2）并跳过其 Prefill，仅需分配 $B_4$ 写入后 2 个新 token。',
       focus: ['blk-1', 'blk-4'],
     },
     {

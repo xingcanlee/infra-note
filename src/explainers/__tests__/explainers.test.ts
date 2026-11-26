@@ -74,16 +74,16 @@ import PagedSchedulerExplainer, {
 
 import AclGraphDynamicControlExplainer, {
   buildAclGraphDynamicControlSteps,
-} from '@/content/posts/aclgraph/05-acl-graph-task-update-and-conditional-subgraph/explainers/aclgraph-dynamic-control';
+} from '@/content/posts/execgraph/06-acl-graph-task-update-and-conditional-subgraph/explainers/aclgraph-dynamic-control';
 import AclGraphShadowStreamExplainer, {
   buildAclGraphShadowStreamSteps,
-} from '@/content/posts/aclgraph/04-acl-graph-architecture-and-capture/explainers/aclgraph-shadow-stream';
+} from '@/content/posts/execgraph/05-acl-graph-architecture-and-capture/explainers/aclgraph-shadow-stream';
 import CompileSplitFusionExplainer, {
   buildCompileSplitFusionSteps,
-} from '@/content/posts/aclgraph/02-torch-compile-fundamentals/explainers/compile-split-fusion';
+} from '@/content/posts/execgraph/02-torch-compile-fundamentals/explainers/compile-split-fusion';
 import StreamEventPipelineExplainer, {
   buildStreamEventPipelineSteps,
-} from '@/content/posts/aclgraph/01-heterogeneous-streams-and-events/explainers/stream-event-pipeline';
+} from '@/content/posts/execgraph/01-heterogeneous-streams-and-events/explainers/stream-event-pipeline';
 
 interface ExplainerEntry {
   name: string;

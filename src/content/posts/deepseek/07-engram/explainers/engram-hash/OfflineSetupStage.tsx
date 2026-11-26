@@ -159,7 +159,7 @@ export default function OfflineSetupStage({ state, beat, playToken }: Props) {
           <div className="engram-banks-title">
             <span>
               <RichText
-                text={"推理时按原 ID 查一维表即得规范 ID $x'_t$（以下贯穿示例均采用归并后 ID）"}
+                text={'推理时按原 ID 查一维表即得规范 ID $c_t$（以下贯穿示例均采用归并后 ID）'}
               />
             </span>
           </div>
@@ -178,7 +178,7 @@ export default function OfflineSetupStage({ state, beat, playToken }: Props) {
                   <span className="engram-tok__pos">t = {tok.pos}</span>
                   <span className="engram-tok__word">“{tok.text}”</span>
                   <span className="engram-tok__id">
-                    <RichText text={`$x'_${tok.pos} = ${tok.id}$`} />
+                    <RichText text={`$c_${tok.pos} = ${tok.id}$`} />
                   </span>
                 </motion.div>
               );
@@ -325,7 +325,7 @@ export default function OfflineSetupStage({ state, beat, playToken }: Props) {
           }}
           transition={{ duration: 0.34, ease: MANIM_EASE }}
         >
-          <span className="engram-tok__pos">3. 按层抽样保低位满秩</span>
+          <span className="engram-tok__pos">3. 按层抽样保持低位满秩</span>
           <span className="engram-gen-card__math">
             <RichText text={'$m_k = 2r_k + 1$'} />
           </span>

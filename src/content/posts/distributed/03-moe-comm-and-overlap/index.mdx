@@ -70,7 +70,7 @@ flowchart TD
 
 统一底座靠四项工程折中把双态能力揉入同一接口。底层按节点数切换单机或两级中继 Kernel，并依带宽推算 **SM（Streaming Multiprocessor，流式多处理器）**与网卡 **QP（Queue Pair，队列对）**配额[^deepep-qps]。
 
-在图捕获策略上，非图模式的 Prefill 按实际接收量动态展开激活以节省显存。开启 CUDA Graph 的 Decode 则关闭一切主机同步，并把每卡 token 上限向上取整到 2 的幂，防止长度微调触发 JIT 重编译[^vllm-v2-cg]。由于关闭了主机同步，CPU 发射阶段不知道实际收到的有效 token 数。GPU 侧为此追加一个轻量 Triton Kernel，直接读取设备端前缀和末尾计数，把越界填充或非本地专家索引就地标为 -1[^vllm-v2-triton]。
+在图捕获策略上，非图模式的 Prefill 按实际接收量动态展开激活以节省显存。开启 CUDA Graph 的 Decode 则关闭一切主机同步，并把每卡 token 上限向上取整到 2 的幂，防止长度微调触发 JIT 重新编译[^vllm-v2-cg]。由于关闭了主机同步，CPU 发射阶段不知道实际收到的有效 token 数。GPU 侧为此追加一个轻量 Triton Kernel，直接读取设备端前缀和末尾计数，把越界填充或非本地专家索引就地标为 -1[^vllm-v2-triton]。
 
 同时，分发句柄会缓存目标槽位索引，在 Combine 阶段跳过通知步骤[^deepep-cached]。尾段拷贝启用 PDL（Programmatic Dependent Launch，可编程依赖启动）实现核间尾波重叠，MXFP8 缩放因子也打包进 4 字节整型随 token 一并发送[^vllm-v2-mxfp8]。支撑上述无 CPU 干预直写的是 CUDA 虚拟内存弹性对称显存：通过预留连续虚拟地址并跨进程导出描述符句柄，同机多进程即可直接向对端物理内存写入数据[^deepep-symm]。
 
@@ -116,7 +116,7 @@ MC2（Matmul-Communication Fusion，矩阵乘通信融合）把原本首尾相�
 
 这套单控状态机在部署时受两项工程约束。一方面，`DeepEP` 高吞吐模式在通信流打包与中继时会占用部分 GPU SM。运行前因此需通过 `VLLM_DBO_COMM_SMS` 静态划出通信专用 SM 配额，并等额缩减矩阵乘可用 SM，防止两条流互相抢占[^vllm-dbo-sm]。
 
-另一方面，流切换事件必须完整录进同一份重放图，因此 DBO 与分段捕获互斥，只能绑定全图模式 `CUDAGraphMode.FULL` 生成双微批孪生图[^vllm-dbo-fullcg]。同时引擎设置了 Prefill 与 Decode 的最小 token 阈值，避免在极小批下对半拆分反而拉低矩阵乘效率[^vllm-dbo-thresh]。
+另一方面，流切换事件必须完整录进同一份重放图，因此 DBO 与分段捕获互斥，只能绑定全图模式 `CUDAGraphMode.FULL` 生成双微批孪生图[^vllm-dbo-fullcg]。同时引擎设置了 Prefill 与 Decode 的最小 token 阈值，避免在极小批量下对半拆分反而拉低矩阵乘效率[^vllm-dbo-thresh]。
 
 ### 昇腾栈的共享专家异步重叠路径
 
@@ -207,7 +207,7 @@ EP counts=[2, 4, 2, 0] max_diff=3.33e-16
 Serial=8.50ms (54.1%) | DBO=5.40ms (85.2%)
 ```
 
-仿真结果印证了大载荷与小载荷的策略分叉。在 Prefill 大批载荷下，双微批交错排程能掩盖中间两段通信气泡并显著拉高算力活跃度。在 Decode 小批场景下，把原本很小的矩阵再次拆半反而会损伤计算核分块效率，生产系统因此各自演进出 GPU 侧 IBGDA 低延迟 Kernel 与昇腾侧 Slice 流水及共享专家流。
+仿真结果印证了大载荷与小载荷的策略分叉。在 Prefill 大批量载荷下，双微批交错排程能掩盖中间两段通信气泡并显著拉高算力活跃度。在 Decode 小批量场景下，把原本很小的矩阵再次拆半反而会损伤计算单元分块效率，生产系统因此各自演进出 GPU 侧 IBGDA 低延迟 Kernel 与昇腾侧 Slice 流水及共享专家流。
 
 上线配置时还需权衡两项实际代价。第一，对称内存与静态缓冲区都在用预占显存换取零同步开销，过度拉大缓冲上限会直接挤压并发 KV Cache 空间。第二，通算重叠只能藏住通信耗时，无法消除热点专家的计算木桶效应，负载倾斜仍要靠无辅助损失偏置与冗余专家负载均衡去缓解。
 
@@ -221,7 +221,7 @@ Serial=8.50ms (54.1%) | DBO=5.40ms (85.2%)
 
 [^deepep-epbuffer]: 见 `DeepEP@f6aa38fe`：`README.md` L11–32 及 `deep_ep/buffers/ep.py` L208–906（v2.5 将原 `ElasticBuffer` 拆分为 `EPBuffer` 并移除 v1 `Buffer` 接口，统一 `dispatch` 与 `combine`）。
 
-[^vllm-v2-cg]: 见 `vllm@bb23c0a8`：`vllm/distributed/device_communicators/all2all.py` L1191–1273（`DeepEPV2All2AllManager` 仍绑定 `deep_ep.ElasticBuffer`）与 `vllm/model_executor/layers/fused_moe/prepare_finalize/deepep_v2.py` L73–232（`DeepEPV2PrepareAndFinalize` 在图模式下置 `do_expand=False, do_cpu_sync=False`，并按 `1 << max(n - 1, 0).bit_length()` 对齐 `num_max_tokens_per_rank` 防 `cicc` 重编译）。
+[^vllm-v2-cg]: 见 `vllm@bb23c0a8`：`vllm/distributed/device_communicators/all2all.py` L1191–1273（`DeepEPV2All2AllManager` 仍绑定 `deep_ep.ElasticBuffer`）与 `vllm/model_executor/layers/fused_moe/prepare_finalize/deepep_v2.py` L73–232（`DeepEPV2PrepareAndFinalize` 在图模式下置 `do_expand=False, do_cpu_sync=False`，并按 `1 << max(n - 1, 0).bit_length()` 对齐 `num_max_tokens_per_rank` 防止 `cicc` 重新编译）。
 
 [^deepep-qps]: 见 `DeepEP@f6aa38fe`：`deep_ep/buffers/ep.py` L431–560（`get_theoretical_num_sms` 与 `get_theoretical_num_qps` 根据 `num_scaleout_ranks` 推导 SM 与 QP 配额，混合模式下 `num_qps = num_sms * 16 + 1`）。
 

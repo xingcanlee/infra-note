@@ -11,8 +11,8 @@ const SERIES_EXPECTED = [
   { id: 'foundations', count: 7 },
   { id: 'distributed', count: 4 },
   { id: 'deepseek', count: 11 },
-  { id: 'vllm', count: 7 },
-  { id: 'aclgraph', count: 7 },
+  { id: 'vllm', count: 5 },
+  { id: 'execgraph', count: 8 },
 ] as const;
 
 type SeriesId = (typeof SERIES_EXPECTED)[number]['id'];
@@ -130,10 +130,10 @@ describe('infra-note content integrity', () => {
         Array.from({ length: count }, (_, idx) => ({ id, order: idx + 1 })),
       );
     }
-    expect(allPosts).toHaveLength(36);
+    expect(allPosts).toHaveLength(35);
 
     const topDirs = readdirSync(POSTS).filter((d) => statSync(join(POSTS, d)).isDirectory());
-    expect(topDirs.sort()).toEqual(['aclgraph', 'deepseek', 'distributed', 'foundations', 'vllm']);
+    expect(topDirs.sort()).toEqual(['deepseek', 'distributed', 'execgraph', 'foundations', 'vllm']);
 
     const orderedByUpdated = [...SERIES_EXPECTED]
       .map(({ id }) => ({
@@ -147,7 +147,7 @@ describe('infra-note content integrity', () => {
       'distributed',
       'deepseek',
       'vllm',
-      'aclgraph',
+      'execgraph',
     ]);
   });
 
@@ -173,7 +173,7 @@ describe('infra-note content integrity', () => {
 
   it('removes legacy toy.py scripts and verifies 4-way visual routing + GPU/NPU code coverage', () => {
     const chapterPosts = allPosts.filter((p) => p.series.order >= 2);
-    expect(chapterPosts).toHaveLength(31);
+    expect(chapterPosts).toHaveLength(30);
 
     const aboutText = readFileSync(join(PAGES, 'about.md'), 'utf8');
     expect(aboutText).not.toMatch(/\btoy\.py\b|verify_toys/);

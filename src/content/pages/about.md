@@ -7,15 +7,15 @@ description: '面向工程实践的大模型推理系统笔记：涵盖异构硬
 
 ## 内容结构
 
-全站按“单卡硬件与算子 → 多卡并行与通信 → DeepSeek 模型架构 → 推理引擎运行时 → 执行图与昇腾设备图”的顺序分为 5 个系列，共 36 篇文章（5 篇导览与 31 篇正文）：
+全站按五个系列递进展开：单卡硬件与算子、多卡并行与通信、DeepSeek 模型架构、vLLM 引擎与执行图。全站共 35 篇文章，含 5 篇导览与 30 篇正文：
 
 1. **[推理与异构硬件基础](../posts/foundations/)**：单卡算力与带宽瓶颈、GPU 与昇腾微架构、自注意力、KV 压缩、FlashAttention 与量化。
 2. **[分布式并行与跨卡通信](../posts/distributed/)**：多卡互连拓扑、集合通信开销、混合并行切分、PD 分离与 MoE 通算重叠。
 3. **[DeepSeek 架构演进](../posts/deepseek/)**：从 V2 到 V4.1 的 MLA 与稀疏注意力、细粒度 MoE、Engram、mHC 与 DSpark。
-4. **[vLLM 与昇腾推理引擎](../posts/vllm/)**：分页显存管理、连续批调度、主机异步发射、分段编译、静态图与排障。
-5. **[执行图与昇腾 ACL Graph](../posts/aclgraph/)**：异步算力流、编译上限、CUDA Graph 静态约束与昇腾影子流及生产排障。
+4. **[vLLM 与 vLLM-Ascend 推理引擎](../posts/vllm/)**：分页显存管理、连续批调度、跨步异步调度、多卡 DP 图模式共识与 Profiling 排障。
+5. **[推理执行图：CUDA Graph 与 ACL Graph](../posts/execgraph/)**：异步队列、编译分段、CUDA/ACL Graph 与 vLLM 模式编排。
 
-按上述五个系列顺序阅读最连贯。若你主要关注线上服务调优或昇腾图捕获，也可以直接切入[vLLM 与昇腾推理引擎](../posts/vllm/)或[执行图与昇腾 ACL Graph](../posts/aclgraph/)，遇到算子或通信细节再回查前序基础系列。
+按上述五个系列顺序阅读最连贯。若专注线上调优或静态执行图，也可直接切入[vLLM 与 vLLM-Ascend 推理引擎](../posts/vllm/)或[推理执行图：CUDA Graph 与 ACL Graph](../posts/execgraph/)。遇到算子或通信细节，再按需回查前序基础系列。
 
 ## 代码与源码基准
 
@@ -25,7 +25,7 @@ description: '面向工程实践的大模型推理系统笔记：涵盖异构硬
 
 | 上游仓库                          | 核验提交                | 说明                           |
 | --------------------------------- | ----------------------- | ------------------------------ |
-| `vllm` / `vllm-ascend`            | `bb23c0a8` / `3649b8ff` | GPU 与昇腾推理引擎主仓         |
+| `vllm` / `vllm-ascend`            | `99b0b0b0` / `b776261e` | GPU 与昇腾推理引擎主仓         |
 | `cann/runtime` / `Ascend/pytorch` | `1954820a` / `d09e29e4` | 昇腾图捕获运行时与 `torch_npu` |
 | `DeepSeek-V3` / `FlashMLA`        | `9b4e9788` / `395cb3af` | 模型参考实现与 Hopper/昇腾算子 |
 | `DeepEP` / `Engram`               | `f6aa38fe` / `fb7f84a2` | MoE 跨卡通信与条件记忆参考实现 |

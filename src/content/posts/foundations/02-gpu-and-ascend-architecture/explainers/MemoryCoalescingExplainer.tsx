@@ -77,7 +77,7 @@ export function buildMemoryCoalescingSteps(): Step<MemoryCoalescingState>[] {
         'Warp 内 $32$ 个相邻线程读取相邻的 FP32 元素（字节 $0\\dots 127$），硬件将其合并为 $4$ 次连续的 $32\\;\\text{B}$ 事务，$128\\;\\text{B}$ 传输全部转化为有效计算数据。',
     },
     {
-      label: '首址错位',
+      label: '起始错位',
       duration: 4600,
       state: {
         stepIndex: 1,

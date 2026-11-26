@@ -1,18 +1,18 @@
 # 系列规划与交付总账
 
-本文记录 `infra-note` 全站**五大递进系列**（共 `36` 篇文章：`5` 篇系列导览 + `31` 篇精讲正文章）的设计思路、四选一可视化路由与双硬件源码对照结构。写作细则见 `design/writing-guide.md`。
+本文记录 `infra-note` 全站**五大递进系列**（共 `35` 篇文章：`5` 篇系列导览 + `30` 篇精讲正文章）的设计思路、四选一可视化路由与双硬件源码对照结构。写作细则见 `design/writing-guide.md`。
 
 ## 全站架构：五大递进系列与双硬件主线
 
-站点将通用硬件、算子、分布式通信与执行图底层彻底拆分串联，形成**“异构硬件与量化基础 → 分布式并行与通信 → DeepSeek 模型架构演进 → vLLM 与昇腾运行时引擎 → 执行图与昇腾 ACL Graph”**五步递进路线。
+站点将通用硬件、算子、分布式通信、推理引擎与执行图彻底拆分串联，形成**“异构硬件与量化基础 → 分布式并行与通信 → DeepSeek 模型架构演进 → vLLM 与 vLLM-Ascend 推理引擎 → 推理执行图：CUDA Graph 与 ACL Graph”**五步递进路线。
 
 每篇正文章遵循“问题切入 → 微型数字直觉与可视化 → 机制推导与架构 → Python 参考实现与源码对照 → 自然衔接与过渡”的问题流向，所有前提、硬件限制与演进取舍随上下文自然展开，不设教案八股栏目。
 
-首页 `summarizeSeries` 按系列内最新 `pubDate` 降序排列，时间锚定使首页按学习顺序精确呈现 **`foundations`（1）→ `distributed`（2）→ `deepseek`（3）→ `vllm`（4）→ `aclgraph`（5）**。
+首页 `summarizeSeries` 按系列内最新 `pubDate` 降序排列，时间锚定使首页按学习顺序精确呈现 **`foundations`（1）→ `distributed`（2）→ `deepseek`（3）→ `vllm`（4）→ `execgraph`（5）**。
 
 ## 可复用组件与单源图表（文章就近 `explainers/` + `astro-wisp` + 单源 `.drawio`/`.excalidraw`）
 
-- **交互式讲解架构**：21 枚文章专属 `<Explainer>` 组件已随文章就近存放在各自 `src/content/posts/<series>/<slug>/explainers/` 下，复用 `astro-wisp/explainers` 的新版外壳（顶部阶段标签、重播、自动演示与原生 `<dialog>` 全屏推演），其中 `07-engram`、`08-mhc` 与 `aclgraph` 均采用模块化目录结构、`BeatExplainer` 节拍推演、`motion/react` 渐进推导及逻辑单测；存量共享原语保留在 `src/explainers/kit/` 供其余组件使用，全站 `<= 3` 非 slate 色调，全部基于 `var(--wisp-*)` 语义令牌。
+- **交互式讲解架构**：21 枚文章专属 `<Explainer>` 组件已随文章就近存放在各自 `src/content/posts/<series>/<slug>/explainers/` 下，复用 `astro-wisp/explainers` 的新版外壳（顶部阶段标签、重播、自动演示与原生 `<dialog>` 全屏推演），其中 `07-engram`、`08-mhc` 与 `execgraph` 均采用模块化目录结构、`BeatExplainer` 节拍推演、`motion/react` 渐进推导及逻辑单测；存量共享原语保留在 `src/explainers/kit/` 供其余组件使用，全站 `<= 3` 非 slate 色调，全部基于 `var(--wisp-*)` 语义令牌。
 - **静态图表工作流（`design/diagram-workflow.md`）**：流程、分层、双端对照与状态转换优先采用 Pele（Mermaid）；LLM 论文结构图、矩阵网格与等比时间线直接以未压缩 `.drawio` / `.excalidraw` 为唯一真相源，配合 `wisp diagram lint --fix`、`pnpm diagram build` 与明暗 PNG 目视验收交付。
 
 ---
@@ -60,36 +60,35 @@
 
 ---
 
-## 系列四：vLLM 与昇腾推理引擎（`series.id = vllm`，`order: 1..7`，`pubDate: 2026-10-25..2026-11-01`）
+## 系列四：vLLM 与 vLLM-Ascend 推理引擎（`series.id = vllm`，`order: 1..5`，`pubDate: 2026-10-25..2026-10-29`）
 
-| `order` | 目录 / 篇目                          | 可视化工具组合         | 核心讲解与硬件对照                                               |
-| :-----: | :----------------------------------- | :--------------------- | :--------------------------------------------------------------- |
-|   `1`   | `vllm/index.mdx`                     | Mermaid                | vLLM V1 与 `vllm-ascend` 执行栈六章路线与快照基准                |
-|   `2`   | `01-paged-attention-and-scheduler`   | Explainer + Draw.io    | V1 统一 `token_budget`、Prefix Hash、`null_block` 映射与 PA 算子 |
-|   `3`   | `02-async-execution-and-launch-wall` | Explainer + Draw.io    | CPU 发射队列、`.item()` `op5` 排水与 AsyncOutput/TaskQueue       |
-|   `4`   | `03-torch-compile-and-piecewise`     | Mermaid + Draw.io      | `split_graph` 分段路由、FX 算子融合与 Inductor vs `npugraph_ex`  |
-|   `5`   | `04-cuda-graph-and-boundaries`       | Explainer + Excalidraw | `0x7f00_1000` 固定地址重放、`B_cap` 填充与四象限静态图硬边界     |
-|   `6`   | `05-runtime-dispatch-and-nesting`    | Explainer + Mermaid    | 多 Rank DP 集体决策防死锁与嵌套包装器/退化透传决策流             |
-|   `7`   | `06-profiling-and-debugging`         | Draw.io + Mermaid      | nsys / `torch_npu.profiler` 五类轨迹指纹与二分排障决策树         |
+| `order` | 目录 / 篇目                          | 可视化工具组合      | 核心讲解与硬件对照                                               |
+| :-----: | :----------------------------------- | :------------------ | :--------------------------------------------------------------- |
+|   `1`   | `vllm/index.mdx`                     | Mermaid             | vLLM V1 与 `vllm-ascend` 调度路线、双系列分工与源码快照基准      |
+|   `2`   | `01-paged-attention-and-scheduler`   | Explainer + Draw.io | V1 统一 `token_budget`、Prefix Hash、`null_block` 映射与 PA 算子 |
+|   `3`   | `02-async-execution-and-launch-wall` | Explainer + Draw.io | CPU 发射队列、`.item()` 同步排水与 AsyncOutput/TaskQueue         |
+|   `4`   | `03-runtime-dispatch-and-nesting`    | Mermaid             | 多 Rank DP 集体裁决防死锁与驱动双端执行图协同分发                |
+|   `5`   | `04-profiling-and-debugging`         | Draw.io + Mermaid   | nsys / `torch_npu.profiler` 五类轨迹指纹与二分排障决策树         |
 
 ---
 
-## 系列五：执行图与昇腾 ACL Graph（`series.id = aclgraph`，`order: 1..7`，`pubDate: 2026-10-15..2026-10-21`）
+## 系列五：推理执行图：CUDA Graph 与 ACL Graph（`series.id = execgraph`，`order: 1..8`，`pubDate: 2026-10-15..2026-10-22`）
 
-| `order` | 目录 / 篇目                                         | 可视化工具组合              | 核心讲解与硬件对照                                                                              |
-| :-----: | :-------------------------------------------------- | :-------------------------- | :---------------------------------------------------------------------------------------------- |
-|   `1`   | `aclgraph/index.mdx`                                | Mermaid                     | 异步算力流 → 编译静态化 → 静态执行图三层演进路线与上游源码快照基准                              |
-|   `2`   | `01-heterogeneous-streams-and-events`               | Explainer+Draw.io+Mermaid   | 异步队列、CUDA Pushbuffer vs CANN `SQ/CQ`、单流 FIFO、`Event`/`Notify` 同步                     |
-|   `3`   | `02-torch-compile-fundamentals`                     | Explainer+Draw.io+Merm+PNG  | PyTorch 2 ASPLOS'24、TorchDynamo、`SymInt`、vLLM 博客断图/分段切图、`Inductor` vs `npugraph_ex` |
-|   `4`   | `03-cuda-graph-fundamentals`                        | Draw.io+Excalidraw+Merm+PNG | PyTorch/NVIDIA 官方博客曲线与直图发射、Stream Capture、四道硬边界、`BreakableWrapper`           |
-|   `5`   | `04-acl-graph-architecture-and-capture`             | Explainer+Draw.io+Mermaid   | 影子模型流、`CopyTaskArgsDeviceBuffer`、`EndGraph` `Notify`、多流汇合与状态机                   |
-|   `6`   | `05-acl-graph-task-update-and-conditional-subgraph` | Explainer+Draw.io+Mermaid   | `TaskGrp`/`TaskUpdate`、`ExternalEvent`、`CondHandle`、`UpdatableGraph` 源码                    |
-|   `7`   | `06-acl-graph-fullstack-and-vllm-ascend`            | Draw.io+Mermaid+PNG         | `vllm-ascend` 四层全栈、包装器类图、稀疏分桶/MTP 对齐、错误码 207008 与 507011                  |
+| `order` | 目录 / 篇目                                         | 可视化工具组合             | 核心讲解与硬件对照                                                                         |
+| :-----: | :-------------------------------------------------- | :------------------------- | :----------------------------------------------------------------------------------------- |
+|   `1`   | `execgraph/index.mdx`                               | Mermaid                    | 异步算力流 → 编译静态化 → GPU 与 NPU 对称执行图七章路线与上游源码快照基准                  |
+|   `2`   | `01-heterogeneous-streams-and-events`               | Explainer+Draw.io+Mermaid  | 异步队列、硬件角色术语、`Pushbuffer` vs `SQ/CQ`、单流 FIFO、`Event`/`Notify` 同步          |
+|   `3`   | `02-torch-compile-fundamentals`                     | Explainer+Draw.io+Merm+PNG | PyTorch 2 ASPLOS'24、`PEP 523`、`FX`、`Custom Op`、`SymInt`、分段切图与双端融合编译        |
+|   `4`   | `03-cuda-graph-fundamentals`                        | Draw.io+Excalidraw+Mermaid | PyTorch/NVIDIA 官方实测、Stream Capture、四道硬边界、`global_graph_pool` 与条件节点        |
+|   `5`   | `04-vllm-cudagraph-modes`                           | Mermaid + PNG              | `CUDAGraphMode` 五种模式、`AttentionCGSupport` 自动降级、三层同心包装与 `BreakableWrapper` |
+|   `6`   | `05-acl-graph-architecture-and-capture`             | Explainer+Draw.io+Mermaid  | 影子模型流、`LogicSQ`、`comm.args` D2D 备份、`EndGraph` `Notify`、多流汇合与状态机         |
+|   `7`   | `06-acl-graph-task-update-and-conditional-subgraph` | Explainer+Draw.io+Mermaid  | 变长 `Tiling`、`TaskGrp`/`TaskUpdate`、参数原地更新、`ExternalEvent`、`CondHandle` 与源码  |
+|   `8`   | `07-acl-graph-fullstack-and-vllm-ascend`            | Draw.io+Mermaid+PNG        | `NPUPlatform` 模式限制、昇腾注意力分级、稀疏分桶/MTP 对齐、错误码 207008 与 507011         |
 
 ---
 
 ## 系列质量门与站点校验（`content.test.ts`、`style.test.ts` 与 `explainers.test.ts`）
 
-- **四选一可视化与零遗留**：全站 `36` 篇文章按需组合 `Mermaid`、`Draw.io`、`Excalidraw` 与交互式 `<Explainer>` 组件（共 `21` 枚），所有 `diagrams/` 目录零孤立未引用文件，`pnpm diagram lint --strict` 与 `pnpm diagram build` 零告警通过。
-- **交互组件与风格门禁测试**：`src/explainers/__tests__/explainers.test.ts` 验证全部 21 个交互组件的步骤边界、公式配对与零硬编码 `#hex` SSR 渲染；`src/style.test.ts` 校验全站标题、小标题、句段长度、单段符号密度、直译黑名单与弯引号一致性；全站无外部 `toy.py` 脚本，正文中均附 PyTorch/NumPy/Python 参考实现与 `cann/runtime` / `torch_npu` / `vllm` / `vllm-ascend` 源码对照。
+- **四选一可视化与零遗留**：全站 `35` 篇文章按需组合 `Mermaid`、`Draw.io`、`Excalidraw` 与交互式 `<Explainer>` 组件，所有 `diagrams/` 目录零孤立未引用文件，`pnpm diagram lint --strict` 与 `pnpm diagram build` 零告警通过。
+- **交互组件与风格门禁测试**：`src/explainers/__tests__/explainers.test.ts` 验证全部交互组件的步骤边界、公式配对与零硬编码 `#hex` SSR 渲染；`src/style.test.ts` 校验全站标题、小标题、句段长度、单段符号密度、直译黑名单与弯引号一致性；全站无外部 `toy.py` 脚本，正文中均附 PyTorch/NumPy/Python 参考实现与 `cann/runtime` / `torch_npu` / `vllm` / `vllm-ascend` 源码对照。
 - **写作与构建门禁**：`check_post.py --all --strict` 返回 `0 error / 0 warning`；`pnpm format:check`、`pnpm check` 与 `pnpm build` 全部通过。

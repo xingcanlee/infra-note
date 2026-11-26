@@ -210,7 +210,7 @@ function ConvScanCanvas({
               fontWeight={600}
               fill="var(--wisp-fg)"
             >
-              x={tok.xVal}
+              u={tok.xVal}
             </text>
           </g>
         );
@@ -299,7 +299,7 @@ function ConvScanCanvas({
           anchor="start"
           text={
             combVisible
-              ? `卷积核落位：$t=${focusPos}$（“${res.tokenText}”，$x_${focusPos}=${res.xAtPos}$）`
+              ? `卷积核落位：$t=${focusPos}$（“${res.tokenText}”，$u_${focusPos}=${res.xAtPos}$）`
               : '卷积核等待落位'
           }
         />
@@ -332,7 +332,7 @@ function ConvScanCanvas({
           text={
             combVisible
               ? `$y_${focusPos} = ${formatDotTex(res.taps)}$`
-              : '$y_t = \\sum_{i=0}^{3} w_i \\cdot x_{t - i\\delta}$'
+              : '$y_t = \\sum_{i=0}^{3} w_i \\cdot u_{t - i\\delta}$'
           }
         />
         <SvgRichLabel
@@ -708,7 +708,7 @@ export default function ShortConvExplainer({ title }: ShortConvExplainerProps) {
                       text={
                         siluDone
                           ? `$5 + \\operatorname{SiLU}(3.00) = 5 + ${res.siluY.toFixed(2)} = ${res.out.toFixed(2)}$`
-                          : `$x_${scanPos} + \\operatorname{SiLU}(y_${scanPos})$`
+                          : `$u_${scanPos} + \\operatorname{SiLU}(y_${scanPos})$`
                       }
                     />
                   </span>
@@ -772,7 +772,7 @@ export default function ShortConvExplainer({ title }: ShortConvExplainerProps) {
                 <p className="sc-info-card__body">
                   <RichText
                     text={
-                      '训练期配合 Depthwise 分组将参数量由 $4d^2$ 压到 $4d$，整条序列一次并行扫完。'
+                      '训练期输入 $[B, 4d, T]$ 配合 $[4d, 1, 4]$ 核把单流参数量由 $4d^2$ 压到 $4d$，整条序列并行扫完。'
                     }
                   />
                 </p>

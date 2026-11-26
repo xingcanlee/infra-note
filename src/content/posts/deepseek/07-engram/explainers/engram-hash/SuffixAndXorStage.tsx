@@ -374,7 +374,7 @@ export default function SuffixAndXorStage({ state, beat, playToken }: Props) {
           <header className="engram-panel__head">
             <span>2-gram 混合</span>
             <span className="engram-tag wisp-kit-tone" data-tone={h2Active ? 'active' : 'slate'}>
-              <RichText text={'$h_2$'} />
+              <RichText text={'$g_2$'} />
             </span>
           </header>
 
@@ -424,7 +424,7 @@ export default function SuffixAndXorStage({ state, beat, playToken }: Props) {
               scale: h2Active ? [0.95, 1.04, 1] : 0.98,
             }}
           >
-            <RichText text={'$h_2 = 264 \\oplus 84$'} />
+            <RichText text={'$g_2 = 264 \\oplus 84$'} />
             <span className="engram-mul-card__val">{h2Active ? state.h2 : '…'}</span>
           </motion.div>
         </section>
@@ -437,7 +437,7 @@ export default function SuffixAndXorStage({ state, beat, playToken }: Props) {
             initial={false}
             animate={{ opacity: reuseActive ? 1 : 0.24 }}
           >
-            <RichText text={'复用 $h_2$'} />
+            <RichText text={'复用 $g_2$'} />
           </motion.span>
           <svg className="engram-relay-svg" viewBox="0 0 64 28">
             <motion.path
@@ -486,7 +486,7 @@ export default function SuffixAndXorStage({ state, beat, playToken }: Props) {
           <header className="engram-panel__head">
             <span>3-gram 滚动递推</span>
             <span className="engram-tag wisp-kit-tone" data-tone={h3Active ? 'done' : 'slate'}>
-              <RichText text={'$h_3$'} />
+              <RichText text={'$g_3$'} />
             </span>
           </header>
 
@@ -503,7 +503,7 @@ export default function SuffixAndXorStage({ state, beat, playToken }: Props) {
             >
               <span className="engram-tok__pos">接力上阶结果</span>
               <span className="engram-mul-card__val">
-                <RichText text={`$h_2 = ${state.h2}$`} />
+                <RichText text={`$g_2 = ${state.h2}$`} />
               </span>
             </motion.div>
             <motion.div
@@ -538,7 +538,7 @@ export default function SuffixAndXorStage({ state, beat, playToken }: Props) {
               scale: h3Active ? [0.95, 1.04, 1] : 0.98,
             }}
           >
-            <RichText text={'$h_3 = h_2 \\oplus 2772$'} />
+            <RichText text={'$g_3 = g_2 \\oplus 2772$'} />
             <span className="engram-mul-card__val">{h3Active ? state.h3 : '…'}</span>
           </motion.div>
         </motion.section>
@@ -554,7 +554,7 @@ export default function SuffixAndXorStage({ state, beat, playToken }: Props) {
       >
         <span>通用滚动递推式（每升一阶只多做 1 次乘 + 1 次异或）</span>
         <span>
-          <RichText text={"$h_n(t) = h_{n-1}(t) \\oplus (x'_{t-(n-1)} \\cdot m_{n-1})$"} />
+          <RichText text={'$g_n(t) = g_{n-1}(t) \\oplus (c_{t-(n-1)} \\cdot m_{n-1})$'} />
         </span>
       </motion.div>
     </div>

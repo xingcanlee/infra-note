@@ -128,9 +128,9 @@ export const BEAT_SCHEDULES: Record<ShortConvPhase, readonly BeatSpec[]> = {
   ],
   tradeoff: [
     { at: 0, label: '任意位置滑动核验' },
-    { at: 750, label: 'Depthwise 分组减参' },
+    { at: 750, label: 'Depthwise 分组压缩参数' },
     { at: 1550, label: 'Decode 须存跨步滑窗' },
-    { at: 2400, label: 'V4.1 删卷积保无状态' },
+    { at: 2400, label: 'V4.1 移除卷积保持无状态' },
   ],
 };
 
@@ -156,7 +156,7 @@ export function buildShortConvSteps(): Step<ShortConvStepState>[] {
       label: '空洞拉伸',
       duration: 5000,
       caption:
-        '连续核（$\\delta=1$）四齿紧邻，相邻窗口高度重叠；把步幅拉成 $\\delta=3$ 后齿距 3 格，刚好对齐 3-gram 边界。手算 $w_0$ 乘 $x_t$，PyTorch 核张量从左到右存为 $[w_3, w_2, w_1, w_0]$。',
+        '连续核（$\\delta=1$）四齿紧邻，相邻窗口高度重叠；把步幅拉成 $\\delta=3$ 后齿距 3 格，刚好对齐 3-gram 边界。手算 $w_0$ 乘 $u_t$，PyTorch 核张量 $[4d, 1, 4]$ 从左到右存为 $[w_3, w_2, w_1, w_0]$。',
       state: {
         phase: 'dilation',
         formulaTex:
@@ -179,7 +179,7 @@ export function buildShortConvSteps(): Step<ShortConvStepState>[] {
       label: '扫至句尾',
       duration: 5400,
       caption:
-        '继续向右逐格扫过 $t=5 \\to 9$，到 $t=9$（“历史”）时四根齿针全部落入实词 $x_9, x_6, x_3, x_0$，算出 $y_9 = 3.00$；经 SiLU 激活（$\\approx 2.86$）加回输入残差得 $7.86$。',
+        '继续向右逐格扫过 $t=5 \\to 9$，到 $t=9$（“历史”）时四根齿针全部落入实词 $u_9, u_6, u_3, u_0$，算出 $y_9 = 3.00$；经 SiLU 激活（$\\approx 2.86$）加回门控残差得 $7.86$。',
       state: {
         phase: 'full',
         formulaTex: '$y_9 = 2.5 + 1.0 - 1.5 + 1.0 = 3.00 \\;\\xrightarrow{\\text{SiLU}}\\; 2.86$',
@@ -190,10 +190,11 @@ export function buildShortConvSteps(): Step<ShortConvStepState>[] {
       label: '自由滑窗与取舍',
       duration: 5000,
       caption:
-        '可切换 $t=0..9$ 任意位置让刚性卷积核滑窗核验输出。训练端靠 Depthwise 把参数压到 $4d$，但推理端 Decode 须为每条请求维护跨步滑窗状态，V4.1 因此移除 ShortConv 实现无状态化。',
+        '可切换 $t=0..9$ 任意位置让刚性卷积核滑窗核验输出。训练端输入 $[B, 4d, T]$ 配合 $[4d, 1, 4]$ 核把单流参数压到 $4d$，但推理端须维护跨步滑窗状态，V4.1 因此移除短卷积。',
       state: {
         phase: 'tradeoff',
-        formulaTex: '$\\text{params}: 4d^2 \\to 4d,\\quad \\text{V4.1: 无状态移除}$',
+        formulaTex:
+          '$[B, 4d, T] \\xrightarrow{[4d, 1, 4]} [B, 4d, T],\\quad \\text{V4.1: 无状态移除}$',
         focusPos: 9,
       },
     },

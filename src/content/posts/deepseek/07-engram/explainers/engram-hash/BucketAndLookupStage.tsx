@@ -148,7 +148,7 @@ export default function BucketAndLookupStage({ state, beat, playToken }: Props) 
             initial={false}
             animate={{ opacity: spotlightIdx !== null && spotlightIdx > 1 ? 0.36 : 1 }}
           >
-            <RichText text={`$h_2 = ${state.h2}$`} />
+            <RichText text={`$g_2 = ${state.h2}$`} />
             <span className="engram-tok__pos">2-gram 头 0 / 1</span>
           </motion.div>
           <motion.div
@@ -159,7 +159,7 @@ export default function BucketAndLookupStage({ state, beat, playToken }: Props) 
             initial={false}
             animate={{ opacity: spotlightIdx !== null && spotlightIdx < 2 ? 0.36 : 1 }}
           >
-            <RichText text={`$h_3 = ${state.h3}$`} />
+            <RichText text={`$g_3 = ${state.h3}$`} />
             <span className="engram-tok__pos">3-gram 头 2 / 3</span>
           </motion.div>
         </div>
@@ -302,7 +302,7 @@ export default function BucketAndLookupStage({ state, beat, playToken }: Props) 
         <div className="engram-banks-title">
           <span>
             <RichText
-              text={`连续一维扁平物理大表 weight[0..${TOTAL_ROWS - 1}]（$5 + 7 + 11 + 13 = ${TOTAL_ROWS}$ 行）`}
+              text={`连续一维扁平大表 $E \\in \\mathbb{R}^{${TOTAL_ROWS} \\times d_h}$（$5 + 7 + 11 + 13 = ${TOTAL_ROWS}$ 行）`}
             />
           </span>
           <span className="engram-tok__pos">
@@ -340,7 +340,7 @@ export default function BucketAndLookupStage({ state, beat, playToken }: Props) 
                 <div className="engram-strip-seg__ruler">
                   <span>off={head.offset}</span>
                   <span>
-                    H{head.headIdx}（{head.prime}）
+                    头 {head.headIdx}（{head.prime}）
                   </span>
                 </div>
                 <div className="engram-slots">

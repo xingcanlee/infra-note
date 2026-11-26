@@ -291,7 +291,7 @@ export function buildRooflineSteps(): Step<RooflineState>[] {
         cvLanes: serialLanes,
         syncEvents: serialSync,
         totalTime: 27,
-        regimeLabel: '大批 $M=256$ (拐点分化)',
+        regimeLabel: '大批量 $M=256$ (拐点分化)',
         aiValue: '$238.7\\;\\text{FLOP/B}$',
         h800Perf: '$799.5\\;\\text{TF}$ ($80.8\\%$)',
         npuPerf: '$320.0\\;\\text{TF}$ (已封顶)',

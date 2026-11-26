@@ -21,7 +21,7 @@ $$
 
 其中 $t_{\text{cpu}, i}$ 为第 $i$ 个算子在主机侧的解析与提交耗时，$t_{\text{dev}, i}$ 为硬件执行耗时。在微缩算术比例下取 $5$ 个算子、$t_{\text{cpu}} = 0.8\text{ ms}$、$t_{\text{dev}} = 0.6\text{ ms}$，同步串行总耗时达到 $5 \times (0.8 + 0.6) = 7.00\text{ ms}$，设备利用率只有 $3.0 / 7.0 = 42.9\%$。
 
-PyTorch 默认采用**异步 FIFO（First-In First-Out，先进先出）队列**来打破逐个等待。Python 线程把 Kernel 描述符压入 **CUDA Stream（计算流）**或昇腾 CANN **TaskQueue（任务队列）**后立刻返回继续解析下一行，设备则按入队顺序从队头消费。
+PyTorch 默认采用**异步 FIFO（First-In First-Out，先进先出）队列**打破逐个等待，硬件通道底层机制见[异构算力流](../../execgraph/01-heterogeneous-streams-and-events/)。Python 线程把任务描述符压入 **CUDA Stream（计算流）**或昇腾 **TaskQueue（任务队列）**后立刻返回，设备则从队头消费。
 
 设第 $i$ 个算子由主机完成提交的时刻为 $t_{\text{cpu}}^{(i)}$，在设备完成执行的时刻为 $t_{\text{dev}}^{(i)}$（初始 $t_{\text{cpu}}^{(0)} = t_{\text{dev}}^{(0)} = 0$），异步流时序满足如下递推关系：
 
@@ -36,7 +36,7 @@ $$
 
 队列提前积攒出排队库存，把除首算子外的启动延迟完全掩盖，设备利用率升至 $87.0\%$（扩展到 $60$ 个算子时达 $98.8\%$）。但只要代码在结尾处调用一次 `.item()`、`.cpu()` 或 `torch.nonzero()`，主机就必须阻塞 $1.60\text{ ms}$ 等整条队列排空，已攒出的异步缓冲随之清零。
 
-第二种情况则是 **Launch-bound（发射主导，$t_{\text{cpu}} > t_{\text{dev}}$）**，这正是小批量解码的真实处境。取 $t_{\text{cpu}} = 0.8\text{ ms} > t_{\text{dev}} = 0.6\text{ ms}$（对应实机 5–15 μs 下发耗时对比 2–3 μs 小批算子），设备在 $1.40\text{ ms}$ 算完第 1 个算子时，CPU 要等到 $1.60\text{ ms}$ 才提交完第 2 个算子。
+第二种情况则是 **Launch-bound（发射主导，$t_{\text{cpu}} > t_{\text{dev}}$）**，这正是小批量解码的真实处境。取 $t_{\text{cpu}} = 0.8\text{ ms} > t_{\text{dev}} = 0.6\text{ ms}$（对应实机 5–15 μs 下发耗时对比 2–3 μs 小批量算子），设备在 $1.40\text{ ms}$ 算完第 1 个算子时，CPU 要等到 $1.60\text{ ms}$ 才提交完第 2 个算子。
 
 由于每个算子恒有 $t_{\text{cpu}}^{(i)} > t_{\text{dev}}^{(i-1)}$，FIFO 队列里永远攒不出库存，硬件在每两个算子之间都要空等 $(t_{\text{cpu}} - t_{\text{dev}})$。对于连续 $N$ 个同类发射受限算子，总耗时化简为：
 
@@ -186,7 +186,7 @@ class AscendAsyncOutput(AsyncModelRunnerOutput):
 | 异步 D2H 拷贝路径 | 独立 `copy_stream` + 锁页内存非阻塞拷贝     | 继承 `copy_stream` 锁页回传与 CANN `TaskQueue` |
 | 延迟同步与检查    | `get_output` 调用 `copy_event.synchronize`  | 同步并裁剪后触发采样检错，拦截主线程隐式同步   |
 
-跨步异步调度藏起了步间编排与 D2H 拷贝延迟，但只要单步 `model.forward()` 仍由 CPU 逐一穿过数百个分散算子，发射受限区间的设备空转就依然无解。要从根上压低几百次 Kernel 发射调用，第一步必须借助编译融合合并零碎张量算子。下一章[第 3 章：torch.compile 分段编译与按算子切图](../03-torch-compile-and-piecewise/)将拆解 vLLM 如何用无 Guard 追踪与按算子切图跨过动态注意力的编译障碍。
+跨步异步调度藏起了步间编排与 D2H 拷贝延迟，但单步 `model.forward()` 的主机发射墙仍需由下层 `torch.compile` 与静态图抹平（详见[推理执行图编译与静态图两章](../../execgraph/02-torch-compile-fundamentals/)）。多批形态变化与多卡接入运行时之后，[第 3 章：多卡 DP 共识与运行时协同](../03-runtime-dispatch-and-nesting/)将拆解 DP 共识如何驱动双端执行图。
 
 [^vllm-async-core]: `vllm`（commit `bb23c0a8`），`vllm/v1/engine/core.py:750-871`（`EngineCore.step_with_batch_queue` 维护在途批队列并重叠下轮调度与输出等待）。
 

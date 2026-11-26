@@ -224,11 +224,11 @@ if out_dtype is None:
 return torch.ops.vllm.npu_rotary_embedding(*rope_args, out_dtype=out_dtype)
 ```
 
-| 维度     | `vLLM` GPU（`bb23c0a8`）   | `vllm-ascend`（`3649b8ff`）   | 关键工程差异             |
-| :------- | :------------------------- | :---------------------------- | :----------------------- |
-| 算子派发 | 预缓存表直调 CUDA 融合算子 | 交错表按能力选融合或 Triton   | NPU 区分图缓冲与查表算子 |
-| 交错适配 | 传入 `interleaved` 原位算  | 转置 `(d//2, 2)` 走 NeoX 通路 | 避开交错 3D 视图片上开销 |
-| 片上分块 | 依赖寄存器与 SMEM          | 按 192 KB UB 估算最大头数块   | 防止 FP32 中间态触发溢出 |
+| 维度     | `vLLM` GPU（`bb23c0a8`）    | `vllm-ascend`（`3649b8ff`）   | 关键工程差异             |
+| :------- | :-------------------------- | :---------------------------- | :----------------------- |
+| 算子派发 | 预缓存表直调 CUDA 融合算子  | 交错表按能力选融合或 Triton   | NPU 区分图缓冲与查表算子 |
+| 交错适配 | 传入 `interleaved` 原地计算 | 转置 `(d//2, 2)` 走 NeoX 通路 | 避开交错 3D 视图片上开销 |
+| 片上分块 | 依赖寄存器与 SMEM           | 按 192 KB UB 估算最大头数块   | 防止 FP32 中间态触发溢出 |
 
 围绕[第 02 章](../02-gpu-and-ascend-architecture/)拆解的硬件约束，`vllm-ascend` 做了两处关键适配。第一处面向 GPT-J 交错布局，因为昇腾底层的 `npu_rotary_embedding` 偏好连续半段读取。遇到 `is_neox_style=False` 时，`AscendDeepseekScalingRotaryEmbedding` 先重塑为 `(d//2, 2)` 并转置成连续半段，再走高速通路完成旋转[^ascend_rope]。
 

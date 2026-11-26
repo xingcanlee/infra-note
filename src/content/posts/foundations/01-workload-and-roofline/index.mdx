@@ -20,7 +20,7 @@ import RooflineExplainer from './explainers/RooflineExplainer';
 
 | 计算类型             | 单层代表算子                                        | 算术强度规律              | 核心优化方向                 |
 | :------------------- | :-------------------------------------------------- | :------------------------ | :--------------------------- |
-| **A · 稠密矩阵乘**   | $W_Q/W_K/W_V$、$W_O$、SwiGLU                        | $I \propto M$（随批迁移） | 批量复用权重或量化降搬运     |
+| **A · 稠密矩阵乘**   | $W_Q/W_K/W_V$、$W_O$、SwiGLU                        | $I \propto M$（随批迁移） | 批量复用权重或量化减少搬运   |
 | **B · 向量与逐元素** | $\text{RMSNorm}_{1/2}$、$\text{SiLU}$、$\odot$、$+$ | $I = O(1)$（恒低）        | 算子融合减少 HBM 写回        |
 | **C · 序列交互**     | 因果 $QK^\top$、Softmax、$PV$                       | 随上下文 $S$ 与 $g$ 变化  | GQA 共享、片上融合与 KV 量化 |
 
@@ -83,7 +83,7 @@ $$
 
 进入长提示词 Prefill（$M = 4096$）后，算术强度跃至 1893.85 FLOP/B，双方全部进入水平算力平台期。此时若昇腾 AI Core 启用异步 Cube/Vector 双流水重叠，还能把 Vector 门控归约掩盖在下一块 Cube 矩阵乘背后。整个重叠区因此压缩到 18 拍，相对串行执行获得 1.50 倍提速[^ascend-prefill]。
 
-上式假设硬件总线一直保持满载大块传输。实际服务端若由 Python 主线程逐个提交小算子，CPU 发射间隙会在设备端留下微秒级空泡。因此生产引擎在解码路径上广泛依赖静态图：GPU 侧用 `CUDA Graph`，昇腾侧用 `ACL Graph`（Ascend Computing Language，昇腾设备端执行图）。一次录制后整图下发即可消减发射空泡，详情见[《执行图与昇腾 ACL Graph》](../../aclgraph/)。
+上式假设硬件总线一直保持满载大块传输。实际服务端若由 Python 主线程逐个提交小算子，CPU 发射间隙会在设备端留下微秒级空泡。因此生产引擎在解码路径上广泛依赖静态图：GPU 侧用 `CUDA Graph`，昇腾侧用 `ACL Graph`（Ascend Computing Language，昇腾设备端执行图）。一次录制后整图下发即可消减发射空泡，详情见[《推理执行图：CUDA Graph 与 ACL Graph》](../../execgraph/)。
 
 ## 生产尺度 NumPy 定量校验
 
