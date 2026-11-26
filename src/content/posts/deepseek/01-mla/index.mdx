@@ -21,8 +21,10 @@ toc: true
 MLA 首先对注意力的输入隐藏状态 $h_t \in \mathbb{R}^d$ 做双向低秩投影，同时得到 KV 联合潜向量与 Query 潜向量：
 
 $$
-c_t^{KV} = W_{DKV} h_t \in \mathbb{R}^{d_c}, \qquad
-c_t^Q = W_{DQ} h_t \in \mathbb{R}^{d_c'}
+\begin{aligned}
+c_t^{KV} &= W_{DKV} h_t \in \mathbb{R}^{d_c} \\
+c_t^Q &= W_{DQ} h_t \in \mathbb{R}^{d_c'}
+\end{aligned}
 $$
 
 在 DeepSeek-V3 中，$d = 7168$、KV 潜维 $d_c = 512$、Query 潜维 $d_c' = 1536$。推理阶段直接消费 Query 潜向量 $c_t^Q$，不把它写入跨步缓存。

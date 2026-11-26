@@ -30,7 +30,8 @@ import RooflineExplainer from './explainers/RooflineExplainer';
 
 $$
 \begin{aligned}
-g &= \text{SiLU}(\hat{x}_{\text{mid}} W_{\text{gate}}), \qquad u = \hat{x}_{\text{mid}} W_{\text{up}} \\
+g &= \text{SiLU}(\hat{x}_{\text{mid}} W_{\text{gate}}) \\
+u &= \hat{x}_{\text{mid}} W_{\text{up}} \\
 h &= g \odot u \in \mathbb{R}^{D_{\text{ff}}}
 \end{aligned}
 $$
@@ -51,7 +52,8 @@ $$
 
 $$
 \begin{aligned}
-I &= \frac{\text{FLOPs}}{\text{Bytes}} \quad (\text{单位：FLOPs / Byte}), \qquad I^* = \frac{P_{\text{peak}}}{BW_{\text{HBM}}} \\
+I &= \frac{\text{FLOPs}}{\text{Bytes}} \quad (\text{单位：FLOPs / Byte}) \\
+I^* &= \frac{P_{\text{peak}}}{BW_{\text{HBM}}} \\
 P_{\text{attained}} &= \min\!\left(P_{\text{peak}},\ I \cdot BW_{\text{HBM}}\right)
 \end{aligned}
 $$

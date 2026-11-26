@@ -48,7 +48,13 @@ DeepSeek 提出的 **mHC（Manifold-Constrained Hyper-Connections，流形受限
 顺着图 1 与图 2，第 $l$ 个 mHC 子层输入四流状态 $\mathbf{X}_l \in \mathbb{R}^{4\times d}$，先分别完成主干混合与旁路计算，再逐元素相加更新为 $\mathbf{X}_{l+1} \in \mathbb{R}^{4\times d}$：
 
 $$
-\mathbf{h}_l^{\mathrm{in}} = \mathcal{H}_l^{\mathrm{pre}}\mathbf{X}_l, \qquad \mathbf{y}_l = \mathcal{F}_l(\mathbf{h}_l^{\mathrm{in}}), \qquad \mathbf{H}_l^{\mathrm{res}} = \mathcal{H}_l^{\mathrm{res}}\mathbf{X}_l, \qquad \mathbf{H}_l^{\mathrm{post}} = \mathcal{H}_l^{\mathrm{post}\,\top}\mathbf{y}_l, \qquad \mathbf{X}_{l+1} = \mathbf{H}_l^{\mathrm{res}} + \mathbf{H}_l^{\mathrm{post}}
+\begin{aligned}
+\mathbf{h}_l^{\mathrm{in}} &= \mathcal{H}_l^{\mathrm{pre}}\mathbf{X}_l \\
+\mathbf{y}_l &= \mathcal{F}_l(\mathbf{h}_l^{\mathrm{in}}) \\
+\mathbf{H}_l^{\mathrm{res}} &= \mathcal{H}_l^{\mathrm{res}}\mathbf{X}_l \\
+\mathbf{H}_l^{\mathrm{post}} &= \mathcal{H}_l^{\mathrm{post}\,\top}\mathbf{y}_l \\
+\mathbf{X}_{l+1} &= \mathbf{H}_l^{\mathrm{res}} + \mathbf{H}_l^{\mathrm{post}}
+\end{aligned}
 $$
 
 四步变换前后的张量形状一一对应：
@@ -119,17 +125,24 @@ $$
 设网络根据 $\mathbf{X}_l$ 预测出无约束实数打分 $\tilde{\mathcal{H}}_l^{\mathrm{pre}}, \tilde{\mathcal{H}}_l^{\mathrm{post}} \in \mathbb{R}^{1\times n}$ 与 $\tilde{\mathcal{H}}_l^{\mathrm{res}} \in \mathbb{R}^{n\times n}$。mHC 先用 Sigmoid 约束输入聚合与输出写回，再通过 Sinkhorn-Knopp 迭代把 $\tilde{\mathcal{H}}_l^{\mathrm{res}}$ 压进双随机流形[^mhc-paper]：
 
 $$
-\mathcal{H}_l^{\mathrm{pre}} = \sigma(\tilde{\mathcal{H}}_l^{\mathrm{pre}}), \qquad \mathcal{H}_l^{\mathrm{post}} = 2\sigma(\tilde{\mathcal{H}}_l^{\mathrm{post}}), \qquad \mathbf{M}^{(0)} = \exp(\tilde{\mathcal{H}}_l^{\mathrm{res}}), \qquad \mathbf{M}^{(k)} = \mathcal{T}_r\!\Big(\mathcal{T}_c(\mathbf{M}^{(k-1)})\Big)
+\begin{aligned}
+\mathcal{H}_l^{\mathrm{pre}} &= \sigma(\tilde{\mathcal{H}}_l^{\mathrm{pre}}) \\
+\mathcal{H}_l^{\mathrm{post}} &= 2\sigma(\tilde{\mathcal{H}}_l^{\mathrm{post}}) \\
+\mathbf{M}^{(0)} &= \exp(\tilde{\mathcal{H}}_l^{\mathrm{res}}) \\
+\mathbf{M}^{(k)} &= \mathcal{T}_r\!\Big(\mathcal{T}_c(\mathbf{M}^{(k-1)})\Big)
+\end{aligned}
 $$
 
 其中列归一 $\mathcal{T}_c(\mathbf{M})_{ij} = M_{ij} / \sum_a M_{aj}$ 与行归一 $\mathcal{T}_r(\mathbf{M})_{ij} = M_{ij} / \sum_b M_{ib}$ 交替执行，全程保持 $[n, n]$ 矩阵形状不变。拿一个 $2 \times 2$ 正矩阵 $\mathbf{M}^{(0)}$ 手算 1 轮即可看清收敛过程：
 
 $$
+\begin{aligned}
 \mathbf{M}^{(0)} = \begin{bmatrix} 1 & 3 \\ 1 & 1 \end{bmatrix}
-\xrightarrow{\text{除列和 } [2,\,4]}
-\begin{bmatrix} 0.50 & 0.75 \\ 0.50 & 0.25 \end{bmatrix}
-\xrightarrow{\text{除行和 } [1.25,\,0.75]}
+&\xrightarrow{\text{除列和 } [2,\,4]}
+\begin{bmatrix} 0.50 & 0.75 \\ 0.50 & 0.25 \end{bmatrix} \\
+&\xrightarrow{\text{除行和 } [1.25,\,0.75]}
 \begin{bmatrix} 0.40 & 0.60 \\ 0.67 & 0.33 \end{bmatrix}
+\end{aligned}
 $$
 
 除完列和后，列和立刻对齐为 $[1.00, 1.00]$、行和变为 $[1.25, 0.75]$；再除行和后，行和对齐为 $[1.00, 1.00]$，列和迅速收拢到 $[1.07, 0.93]$。mHC 在论文与工程中固定展开 $t_{\max} = 20$ 轮迭代输出 $\mathcal{H}_l^{\mathrm{res}} = \mathbf{M}^{(20)}$，行列偏差几乎收敛为零。
@@ -175,7 +188,8 @@ $$
 
 $$
 \begin{aligned}
-\mathbf{x}^{\mathrm{flat}}_l &= \operatorname{flatten}(\mathbf{X}_l) \in \mathbb{R}^{1 \times 4d}, \qquad r_l = \frac{\|\mathbf{x}^{\mathrm{flat}}_l\|_2}{\sqrt{4d}} \in \mathbb{R}^+ \\
+\mathbf{x}^{\mathrm{flat}}_l &= \operatorname{flatten}(\mathbf{X}_l) \in \mathbb{R}^{1 \times 4d} \\
+r_l &= \frac{\|\mathbf{x}^{\mathrm{flat}}_l\|_2}{\sqrt{4d}} \in \mathbb{R}^+ \\
 [\tilde{\mathcal{H}}^{\mathrm{pre}}_l,\, \tilde{\mathcal{H}}^{\mathrm{post}}_l,\, \operatorname{vec}(\tilde{\mathcal{H}}^{\mathrm{res}}_l)] &= \frac{1}{r_l}\Big(\boldsymbol{\alpha}_l \odot (\mathbf{x}^{\mathrm{flat}}_l \varphi_l)\Big) + \mathbf{b}_l \in \mathbb{R}^{1 \times 24}
 \end{aligned}
 $$
@@ -203,7 +217,10 @@ $$
 将错位时移写进一般子层 $l$ 的更新方程，就能看清数据依赖是如何解开的[^v41-flash]：
 
 $$
-\mathbf{X}_{l+1} = B_l \mathbf{X}_l + C_l \,\mathcal{F}_l(A_{l-1} \mathbf{X}_l), \qquad (A_l, B_l, C_l) = \mathcal{H}(\mathbf{X}_l)
+\begin{aligned}
+\mathbf{X}_{l+1} &= B_l \mathbf{X}_l + C_l \,\mathcal{F}_l(A_{l-1} \mathbf{X}_l) \\
+(A_l, B_l, C_l) &= \mathcal{H}(\mathbf{X}_l)
+\end{aligned}
 $$
 
 解除等待后，在边界处只需从 HBM 读一遍 $\mathbf{y}_l\,[1, d] + \mathbf{X}_l\,[4, d]$（共 $5d$），在寄存器内同步算出 $\mathbf{X}_{l+1}\,[4, d]$、下一层系数 $(A_{l+1}, B_{l+1}, C_{l+1})$、聚合单流 $A_l\mathbf{X}_{l+1}\,[1, d]$ 与 `RMSNorm`。随后一遍写出 $\mathbf{X}_{l+1}\,[4, d]$ 与归一化单流 $[1, d]$（共 $5d$），总计 $(2n+2)d = 10d$。首子层固定 $A_{-1} = [1, 0, 0, 0]$ 起步，整网末端则用最后多算出的 `ffn_pre` 将四流归并回单流 `[T, d]`。
@@ -363,10 +380,10 @@ classDiagram
     }
 
     DeepseekV4DecoderLayer --> mhc_shifted_post_pre : normal layers
-    DeepseekV4DecoderLayer --> MHCPreDelayedOp : L0 & L1/L14 after Engram
-    mhc_shifted_post_pre --> MhcBoundaryKernel : SM100 decode + boundary_weight
+    DeepseekV4DecoderLayer --> MHCPreDelayedOp : L0 & L1/L14
+    mhc_shifted_post_pre --> MhcBoundaryKernel : SM100 decode
     mhc_shifted_post_pre --> mega_mhc : SM100 DeepGEMM
-    mhc_shifted_post_pre --> AllReduceMHC : FULL graph + tokens <= max
+    mhc_shifted_post_pre --> AllReduceMHC : FULL graph
     mhc_shifted_post_pre --> MHCFusedPostPreOp : TileLang fallback
 ```
 
@@ -381,21 +398,21 @@ classDiagram
 
 ```mermaid caption="图 12：vllm@99b0b0b0 中 GPU 跨子层延迟融合与 L1/L14 Engram 边界拆分控制时序"
 sequenceDiagram
-    participant Prev as 上一子层输出 (x, residual, A/B/C)
-    participant Layer as DeepseekV4DecoderLayer
-    participant Eng as Engram (仅 L1 / L14)
-    participant Fuse as mhc_shifted_post_pre
-    participant Attn as Attention / MoE
+    participant Prev as 上一子层输出<br/>(x, res, A/B/C)
+    participant Layer as DeepseekV4<br/>DecoderLayer
+    participant Eng as Engram<br/>(L1 / L14)
+    participant Fuse as mhc_shifted<br/>_post_pre
+    participant Attn as Attention<br/>/ MoE
 
     alt 常规层 (无 Engram)
-        Prev->>Fuse: 透传增量与上层系数
-        Note over Fuse: 合并上层 Post + 本层 Pre + RMSNorm (10d)
-        Fuse-->>Attn: 输出归一化单流 + 下层系数
+        Prev->>Fuse: 透传增量与<br/>上层系数
+        Note over Fuse: 合并上层 Post + 本层 Pre<br/>+ RMSNorm (10d)
+        Fuse-->>Attn: 输出归一化单流<br/>+ 下层系数
     else L1 或 L14 (含 Engram 注入)
-        Prev->>Layer: 显式调用 mhc_post_tilelang
-        Layer->>Eng: 交出完整 [T, 4, d] 原位更新
+        Prev->>Layer: 显式调用<br/>mhc_post_tilelang
+        Layer->>Eng: 交出 [T, 4, d]<br/>原位更新
         Eng-->>Layer: 返回记忆增强四流
-        Layer->>Attn: 显式调用 mhc_pre 聚合进注意力
+        Layer->>Attn: 显式调用 mhc_pre<br/>聚合进注意力
     end
 ```
 

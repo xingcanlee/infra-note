@@ -81,12 +81,12 @@ sequenceDiagram
 
 跨流协调先后关系，不能动辄调用卡死 CPU 线程的 `aclrtSynchronizeStream`，而要选用设备控制面的轻量原语[^event-doc][^notify-doc][^torch-streams]。其中 **`Event`** 面向通用跨流依赖与主机等待，而 **`Notify`** 是昇腾片上更轻量的核间硬件信号字，专供静态图收尾和条件子图唤醒：
 
-| 原语类型      | 核心 API（CANN / PyTorch）                  | 单卡上限（A2 / 950） | 作用与同步阻断行为       |
-| :------------ | :------------------------------------------ | :------------------- | :----------------------- |
-| Stream Sync   | `aclrtSynchronizeStream` / `.synchronize()` | 随 Stream 生命周期   | 阻塞 CPU 线程等 CQ 返回  |
-| Event         | `aclrtRecordEvent` / `aclrtStreamWaitEvent` | 65536                | 跨流依赖，仅阻断目标流   |
-| Notify        | `aclrtRecordNotify` / `WaitAndResetNotify`  | 8192 / 65535         | 纯设备级轻量任务握手信号 |
-| ExternalEvent | `torch_npu.npu.ExternalEvent`               | 捕获绑定后复用       | 跨静态图与外部更新流等待 |
+| 原语          | 核心 API                                    | 单卡上限           | 同步阻断行为             |
+| :------------ | :------------------------------------------ | :----------------- | :----------------------- |
+| Stream Sync   | `aclrtSynchronizeStream` / `.synchronize()` | 随 Stream 生命周期 | 阻塞 CPU 线程等 CQ 返回  |
+| Event         | `aclrtRecordEvent` / `aclrtStreamWaitEvent` | 65536              | 跨流依赖，仅阻断目标流   |
+| Notify        | `aclrtRecordNotify` / `WaitAndResetNotify`  | 8192 / 65535       | 纯设备级轻量任务握手信号 |
+| ExternalEvent | `torch_npu.npu.ExternalEvent`               | 捕获绑定后复用     | 跨静态图与外部更新流等待 |
 
 图 3 按 5 步推演了异步入队、单流保序、双流并发竞态以及发射气泡，支持在第 3 步切换“无屏障”与“加 Event 屏障”对照时序差异。
 
@@ -118,7 +118,10 @@ Horace He 在性能综述[^horace-brrr]中把深度学习耗时拆成三类约�
 对包含 $K$ 个算子的顺序单流，单步端到端耗时与硬件有效占空比满足：
 
 $$
-T_{\text{step}} \approx T_{\text{launch}} + (K - 1)\max(T_{\text{launch}},\, T_{\text{kernel}}) + T_{\text{kernel}}, \qquad \eta_{\text{active}} = \frac{K \cdot T_{\text{kernel}}}{T_{\text{step}}}
+\begin{aligned}
+T_{\text{step}} &\approx T_{\text{launch}} + (K - 1)\max(T_{\text{launch}},\, T_{\text{kernel}}) + T_{\text{kernel}} \\
+\eta_{\text{active}} &= \frac{K \cdot T_{\text{kernel}}}{T_{\text{step}}}
+\end{aligned}
 $$
 
 只要 $T_{\text{launch}} > T_{\text{kernel}}$，硬件跑完一个算子就只能暴露出空闲气泡等下一条指令。放大到 40 层 DeepSeek-V4.1-Flash 单步，整网约 1120 次发射按每次 $10\,\mu\text{s}$ 算，CPU 发射总耗时高达 11.2 毫秒，直接把 4.7 毫秒设备计算淹没在气泡里。

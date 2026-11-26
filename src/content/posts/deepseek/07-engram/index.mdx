@@ -106,7 +106,10 @@ Engram 转而把该阶输出横向切给 $K$ 个独立哈希头，设总头数�
 先立在线寻址的数学定义与张量形状变换。对规范 ID 序列中位置 $t$ 的 $n$-gram 后缀（$n \ge 2$），定义整数哈希混合值 $g_n(t)$，其中 $g_1(t) = c_t \cdot m_0$ 仅作递推初值而不单独查表：
 
 $$
-g_1(t) = c_t \cdot m_0, \qquad g_n(t) = g_{n-1}(t) \oplus \bigl(c_{t-(n-1)} \cdot m_{n-1}\bigr) = \bigoplus_{k=0}^{n-1} \bigl(c_{t-k} \cdot m_k\bigr)
+\begin{aligned}
+g_1(t) &= c_t \cdot m_0 \\
+g_n(t) &= g_{n-1}(t) \oplus \bigl(c_{t-(n-1)} \cdot m_{n-1}\bigr) = \bigoplus_{k=0}^{n-1} \bigl(c_{t-k} \cdot m_k\bigr)
+\end{aligned}
 $$
 
 上式中间是 vLLM Triton 算子采用的滚动递推写法，每升一阶只多做 1 次乘法和 1 次异或；最右端是等价展开式。拿到各阶混合整数 $g_n(t)$ 后，第 $n$ 阶第 $j$ 个哈希头按自身素数 $p_{n,j}$ 与起始偏移 $o_{n,j}$ 并行算出大表物理行号：
@@ -118,7 +121,10 @@ $$
 整批推理时的张量形状变换一路明确：
 
 $$
-\mathbf{c}\,[B, T] \xrightarrow{\text{滚动哈希寻址}} \mathbf{S}\,[B, T, J] \xrightarrow{\text{按行 Gather } E\,[N_{\text{rows}}, d_h]} [B, T, J, d_h] \xrightarrow{\text{尾维展平拼接}} \mathbf{E}\,[B, T, d_{\text{eng}}]
+\begin{aligned}
+\mathbf{c}\,[B, T] &\xrightarrow{\text{滚动哈希寻址}} \mathbf{S}\,[B, T, J] \\
+&\xrightarrow{\text{按行 Gather } E\,[N_{\text{rows}}, d_h]} [B, T, J, d_h] \xrightarrow{\text{尾维展平拼接}} \mathbf{E}\,[B, T, d_{\text{eng}}]
+\end{aligned}
 $$
 
 在单个词元位置 $t$，上述 Gather 与拼接操作把 $J$ 个单头向量 $\mathbf{e}_{t,j} \in \mathbb{R}^{d_h}$ 直接拼成静态记忆初值 $\mathbf{e}_t \in \mathbb{R}^{d_{\text{eng}}}$，全程没有一次矩阵乘。
@@ -152,7 +158,12 @@ $$
 接着对 $\mathbf{h}_t$ 与 $\mathbf{k}_t$ 分别做 `RMSNorm` 并求缩放点积 $z_t \in \mathbb{R}$。原始论文[^engram-paper]直接把 $z_t$ 送入 Sigmoid，官方原型代码[^engram-demo]则先做一步 **保号开方压缩（Signed-Sqrt Compression）** 防梯度饱和，算出门控标量 $\alpha_t \in (0, 1)$ 后调制值向量并加回残差：
 
 $$
-z_t = \frac{\langle \operatorname{RMSNorm}(\mathbf{h}_t),\; \operatorname{RMSNorm}(\mathbf{k}_t)\rangle}{\sqrt{d}}, \qquad \alpha_t = \sigma\!\Big(\operatorname{sign}(z_t)\sqrt{|z_t|}\Big), \qquad \mathbf{u}_t = \alpha_t \mathbf{v}_t, \qquad \mathbf{h}'_t = \mathbf{h}_t + \mathbf{u}_t
+\begin{aligned}
+z_t &= \frac{\langle \operatorname{RMSNorm}(\mathbf{h}_t),\; \operatorname{RMSNorm}(\mathbf{k}_t)\rangle}{\sqrt{d}} \\
+\alpha_t &= \sigma\!\Big(\operatorname{sign}(z_t)\sqrt{|z_t|}\Big) \\
+\mathbf{u}_t &= \alpha_t \mathbf{v}_t \\
+\mathbf{h}'_t &= \mathbf{h}_t + \mathbf{u}_t
+\end{aligned}
 $$
 
 其中门控增量 $\mathbf{u}_t \in \mathbb{R}^d$ 与更新后隐状态 $\mathbf{h}'_t \in \mathbb{R}^d$ 维度与输入严格一致。为什么要在 Sigmoid 前先做一步保号开方 $\operatorname{sign}(z)\sqrt{|z|}$？对比一组具体数值就能看清效果：当 $z = 9.0$ 时，直接进 Sigmoid 会饱和到 0.9999、梯度几近消失；而开方压缩先把 9.0 压回 3.00，输出拉回 0.9526。同理 $z = -9.0$ 也会从 0.0001 缓和到 0.0474，保证门控投影在长期训练里保留有效梯度。
@@ -187,7 +198,12 @@ $$
 随后四条支流各自用 $\mathbf{h}_{t,s} \in \mathbb{R}^d$ 与切分出的键向量 $\mathbf{k}_{t,s} \in \mathbb{R}^d$ 独立打分，拼出门控张量 $\boldsymbol{\alpha} \in \mathbb{R}^{B\times T\times 4\times 1}$，再与扩维后的共享值向量 $\mathbf{v}\,[B, T, 1, d]$ 广播相乘并回写残差：
 
 $$
-z_{t,s} = \frac{\langle \operatorname{RMSNorm}(\mathbf{h}_{t,s}),\; \operatorname{RMSNorm}(\mathbf{k}_{t,s})\rangle}{\sqrt{d}}, \qquad \alpha_{t,s} = \sigma\!\Big(\operatorname{sign}(z_{t,s})\sqrt{|z_{t,s}|}\Big), \qquad \mathbf{U} = \boldsymbol{\alpha} \odot \mathbf{v} \in \mathbb{R}^{B\times T\times 4\times d}, \qquad \mathbf{H}' = \mathbf{H} + \mathbf{U}
+\begin{aligned}
+z_{t,s} &= \frac{\langle \operatorname{RMSNorm}(\mathbf{h}_{t,s}),\; \operatorname{RMSNorm}(\mathbf{k}_{t,s})\rangle}{\sqrt{d}} \\
+\alpha_{t,s} &= \sigma\!\Big(\operatorname{sign}(z_{t,s})\sqrt{|z_{t,s}|}\Big) \\
+\mathbf{U} &= \boldsymbol{\alpha} \odot \mathbf{v} \in \mathbb{R}^{B\times T\times 4\times d} \\
+\mathbf{H}' &= \mathbf{H} + \mathbf{U}
+\end{aligned}
 $$
 
 采用“四路独立 Key + 一路共享 Value”的原因很直接。四条残差流各自关注不同语义侧面，需要独立打分决定吸收多少记忆。而查表得到的静态事实只有一份，共享 $\mathbf{v}_t$ 即可省下四分之三的值投影参数与算力。在 DeepSeek-V4.1 中，Engram 挂载在 L1 与 L14 开头，夹在 `mhc_post` 与 `mhc_pre` 之间，如图 6 所示。
@@ -211,7 +227,10 @@ $$
 对单个通道按 0-indexed 位置 $t = 0, \dots, T-1$ 写出一维因果空洞卷积公式，卷积结果再转置还原为 $\mathbf{Y} \in \mathbb{R}^{B\times T\times 4\times d}$ 并经 `SiLU` 激活加回四流残差：
 
 $$
-y_t = \sum_{i=0}^{k-1} w_i\, u_{t - i\delta} \quad (t - i\delta < 0 \text{ 时取 } u_{t-i\delta} = 0), \qquad \mathbf{H}' = \mathbf{H} + \mathbf{U} + \operatorname{SiLU}(\mathbf{Y})
+\begin{aligned}
+y_t &= \sum_{i=0}^{k-1} w_i\, u_{t - i\delta} \quad (t - i\delta < 0 \text{ 时取 } u_{t-i\delta} = 0) \\
+\mathbf{H}' &= \mathbf{H} + \mathbf{U} + \operatorname{SiLU}(\mathbf{Y})
+\end{aligned}
 $$
 
 上式约定 $w_0$ 乘当前时刻 $u_t$、$w_3$ 乘最远抽头 $u_{t-9}$；若对照 PyTorch 的 `nn.Conv1d`，核张量 `[4d, 1, 4]` 在最后一维从左到右存为 $[w_3, w_2, w_1, w_0]$。
@@ -475,26 +494,26 @@ classDiagram
 
 ```mermaid caption="图 14：vllm@99b0b0b0 一次前向推理的 Engram 状态流转与分布式调度链路"
 sequenceDiagram
-    participant Runner as DeepseekV41ModelState
-    participant Hash as NgramHashState
+    participant Runner as DeepseekV41<br/>ModelState
+    participant Hash as NgramHash<br/>State
     participant Batch as EngramBatch
-    participant Emb as ParallelEngramEmbedding
-    participant Pool as EngramPool / Prefetch
-    participant Layer as L1/L14 DecoderLayer
+    participant Emb as ParallelEngram<br/>Embedding
+    participant Pool as EngramPool<br/>/ Prefetch
+    participant Layer as L1/L14<br/>DecoderLayer
 
-    Runner->>Hash: 填充 lookback_token_ids 并过滤 DEAD_ID
+    Runner->>Hash: 填充 lookback_token_ids<br/>并过滤 DEAD_ID
     Hash-->>Batch: 产出无状态多头槽位矩阵
     alt slot 数低于 128 且启用 SymmMem
-        Batch->>Emb: Symmetric Memory peer_rows 直读
+        Batch->>Emb: Symmetric Memory<br/>peer_rows 直读
     else 大批量或跨引擎卸载
-        Batch->>Pool: all_to_all / DeepEP / IBGDA RDMA 拉取目标行
+        Batch->>Pool: all_to_all / DeepEP<br/>/ IBGDA RDMA 拉取目标行
     end
-    Pool-->>Batch: 回填 FP8+Scale 并解包为 MXFP8 激活
-    Note over Layer: L1/L14 处拆分 Mega-mHC 延迟融合
-    Layer->>Layer: 显式执行 mhc_post 后转入 Engram
-    Layer->>Batch: 消费 $$e_t$$ 并执行 fused wkv + post gate
-    Layer->>Pool: Decode 走 EngramPrefetch 侧流接力 WKV
-    Layer->>Layer: 回写 $$H_t$$ 后接 mhc_pre 进入 Attn
+    Pool-->>Batch: 回填 FP8+Scale<br/>并解包为 MXFP8 激活
+    Note over Layer: L1/L14 处拆分<br/>Mega-mHC 延迟融合
+    Layer->>Layer: 显式执行 mhc_post<br/>后转入 Engram
+    Layer->>Batch: 消费 $$e_t$$ 并执行<br/>fused wkv + post gate
+    Layer->>Pool: Decode 走 EngramPrefetch<br/>侧流接力 WKV
+    Layer->>Layer: 回写 $$H_t$$ 后接<br/>mhc_pre 进入 Attn
 ```
 
 在层边界处，常规层会把上一层的 `mhc_post` 与本层的 `mhc_pre` 融合成一个 `Mega-mHC` 算子省掉四流写回。而 L1 与 L14 必须在两者之间把完整的四分支状态交给 Engram 原位更新[^vllm-model]，并在 Decode 阶段接 `EngramPrefetch`[^vllm-prefetch] 在侧流投影，真实控制流如下：
