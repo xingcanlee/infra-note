@@ -8,7 +8,6 @@ minimumReleaseAgeExclude:
   - astro-wisp
 
 overrides:
-  '@astrojs/react>@vitejs/plugin-react': 6.1.1
   '@napi-rs/wasm-runtime@1.2.4>@emnapi/runtime': 1.11.3
   '@napi-rs/wasm-runtime@1.2.4>@emnapi/core': 1.11.3
   '@typescript-eslint/scope-manager': 8.72.1

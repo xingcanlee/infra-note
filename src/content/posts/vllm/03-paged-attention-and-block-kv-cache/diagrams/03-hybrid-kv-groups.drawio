@@ -1,0 +1,118 @@
+<mxfile host="wisp-diagram">
+  <diagram id="vllm-03-hybrid-kv-groups" name="03-hybrid-kv-groups">
+    <mxGraphModel dx="800" dy="600" grid="1" gridSize="8" guides="1" page="0" math="1" shadow="0">
+      <root>
+        <mxCell id="0"/>
+        <mxCell id="1" parent="0"/>
+        <mxCell id="grp_hash" value="V1 链式前缀哈希（仅缓存满块，\(B_s = 4\)，上界 \(\text{prompt\_length} - 1\)）" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#f4f4f2;strokeColor=#5c6067;strokeWidth=1.25;verticalAlign=top;align=left;spacingLeft=12;spacingTop=8;fontFamily=Inter, Noto Sans SC;fontSize=12;fontStyle=1;fontColor=#5c6067;container=0;" vertex="1" parent="1">
+          <mxGeometry x="0" y="8" width="704" height="128" as="geometry"/>
+        </mxCell>
+        <mxCell id="h_seed" value="NONE_HASH&lt;br&gt;（初始锚点）" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#f4f4f2;strokeColor=#1d1d1f;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter, Noto Sans SC;fontSize=11;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="16" y="40" width="96" height="48" as="geometry"/>
+        </mxCell>
+        <mxCell id="h_b0" value="块 0（tok 0–3）&lt;br&gt;+ cache_salt / LoRA" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f2fb;strokeColor=#2f5783;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter, Noto Sans SC;fontSize=11;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="136" y="40" width="152" height="48" as="geometry"/>
+        </mxCell>
+        <mxCell id="h_b1" value="块 1（tok 4–7）&lt;br&gt;+ mm_hash 偏移" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f2fb;strokeColor=#2f5783;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter, Noto Sans SC;fontSize=11;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="312" y="40" width="144" height="48" as="geometry"/>
+        </mxCell>
+        <mxCell id="h_b2" value="块 2（tok 8–11）&lt;br&gt;sha256 链式指纹" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f2fb;strokeColor=#2f5783;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter, Noto Sans SC;fontSize=11;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="480" y="40" width="128" height="48" as="geometry"/>
+        </mxCell>
+        <mxCell id="h_tail" value="末 token&lt;br&gt;重算 Logits" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#fbf2df;strokeColor=#7b5518;strokeWidth=1.5;dashed=1;dashPattern=4 4;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter, Noto Sans SC;fontSize=11;fontStyle=1;fontColor=#7b5518;" vertex="1" parent="1">
+          <mxGeometry x="624" y="40" width="64" height="48" as="geometry"/>
+        </mxCell>
+        <mxCell id="h_note" value="键空间：(block_hash, group_id) → Block · 同哈希键在不同分组独立缓存；Append-Only 页表允许短暂重复块至释放合并" style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;fontFamily=Inter, Noto Sans SC;fontSize=11;fontColor=#5c6067;" vertex="1" parent="1">
+          <mxGeometry x="16" y="96" width="672" height="24" as="geometry"/>
+        </mxCell>
+        <mxCell id="eh0" value="" style="endArrow=classic;startArrow=none;html=1;strokeColor=#2f5783;strokeWidth=1.25;edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=10;" edge="1" parent="1" source="h_seed" target="h_b0">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="eh1" value="" style="endArrow=classic;startArrow=none;html=1;strokeColor=#2f5783;strokeWidth=1.25;edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=10;" edge="1" parent="1" source="h_b0" target="h_b1">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="eh2" value="" style="endArrow=classic;startArrow=none;html=1;strokeColor=#2f5783;strokeWidth=1.25;edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=10;" edge="1" parent="1" source="h_b1" target="h_b2">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="grp_lru" value="嵌入式双向链表 free_block_queue（未缓存块放队头复用 · 已缓存块逆序挂队尾先驱逐深层块）" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#f4f4f2;strokeColor=#5c6067;strokeWidth=1.25;verticalAlign=top;align=left;spacingLeft=12;spacingTop=8;fontFamily=Inter, Noto Sans SC;fontSize=12;fontStyle=1;fontColor=#5c6067;container=0;" vertex="1" parent="1">
+          <mxGeometry x="0" y="152" width="704" height="104" as="geometry"/>
+        </mxCell>
+        <mxCell id="q_head" value="HEAD（先出队）" style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;fontFamily=Inter, Noto Sans SC;fontSize=11;fontStyle=1;fontColor=#7b5518;" vertex="1" parent="1">
+          <mxGeometry x="16" y="184" width="96" height="32" as="geometry"/>
+        </mxCell>
+        <mxCell id="q_unc" value="B5（未缓存）" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#fbf2df;strokeColor=#7b5518;strokeWidth=1.5;align=center;verticalAlign=middle;spacing=2;fontFamily=Inter, Noto Sans SC;fontSize=11;fontStyle=1;fontColor=#7b5518;" vertex="1" parent="1">
+          <mxGeometry x="112" y="184" width="88" height="32" as="geometry"/>
+        </mxCell>
+        <mxCell id="q_idle" value="B9–B15（空闲）" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#f4f4f2;strokeColor=#5c6067;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=2;fontFamily=Inter, Noto Sans SC;fontSize=11;fontColor=#5c6067;" vertex="1" parent="1">
+          <mxGeometry x="216" y="184" width="112" height="32" as="geometry"/>
+        </mxCell>
+        <mxCell id="q_b4" value="B4（深）" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f2fb;strokeColor=#2f5783;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=2;fontFamily=Inter, Noto Sans SC;fontSize=11;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="344" y="184" width="64" height="32" as="geometry"/>
+        </mxCell>
+        <mxCell id="q_b3" value="B3" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f2fb;strokeColor=#2f5783;strokeWidth=1.5;dashed=1;dashPattern=4 4;align=center;verticalAlign=middle;spacing=2;fontFamily=Inter, Noto Sans SC;fontSize=11;fontColor=#2f5783;" vertex="1" parent="1">
+          <mxGeometry x="424" y="184" width="48" height="32" as="geometry"/>
+        </mxCell>
+        <mxCell id="q_b2" value="B2" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f2fb;strokeColor=#2f5783;strokeWidth=1.5;dashed=1;dashPattern=4 4;align=center;verticalAlign=middle;spacing=2;fontFamily=Inter, Noto Sans SC;fontSize=11;fontColor=#2f5783;" vertex="1" parent="1">
+          <mxGeometry x="488" y="184" width="48" height="32" as="geometry"/>
+        </mxCell>
+        <mxCell id="q_b1" value="B1（浅）" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f2fb;strokeColor=#2f5783;strokeWidth=1.5;dashed=1;dashPattern=4 4;align=center;verticalAlign=middle;spacing=2;fontFamily=Inter, Noto Sans SC;fontSize=11;fontColor=#2f5783;" vertex="1" parent="1">
+          <mxGeometry x="552" y="184" width="56" height="32" as="geometry"/>
+        </mxCell>
+        <mxCell id="q_tail" value="TAIL（后驱）" style="text;html=1;whiteSpace=wrap;align=right;verticalAlign=middle;fontFamily=Inter, Noto Sans SC;fontSize=11;fontStyle=1;fontColor=#2f5783;" vertex="1" parent="1">
+          <mxGeometry x="616" y="184" width="72" height="32" as="geometry"/>
+        </mxCell>
+        <mxCell id="q_touch_lbl" value="touch() 命中 [B1, B2, B3] 时从链表 \(O(1)\) 摘除并置 ref_cnt = 1；仅在 alloc() 弹出头节点时才触发 evict()" style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;fontFamily=Inter, Noto Sans SC;fontSize=11;fontColor=#5c6067;" vertex="1" parent="1">
+          <mxGeometry x="16" y="224" width="672" height="24" as="geometry"/>
+        </mxCell>
+        <mxCell id="eq0" value="" style="endArrow=classic;startArrow=classic;html=1;strokeColor=#5c6067;strokeWidth=1.25;edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=6;" edge="1" parent="1" source="q_unc" target="q_idle">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="eq1" value="" style="endArrow=classic;startArrow=classic;html=1;strokeColor=#5c6067;strokeWidth=1.25;edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=6;" edge="1" parent="1" source="q_idle" target="q_b4">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="eq2" value="" style="endArrow=classic;startArrow=classic;html=1;strokeColor=#2f5783;strokeWidth=1.25;edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=6;" edge="1" parent="1" source="q_b4" target="q_b3">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="eq3" value="" style="endArrow=classic;startArrow=classic;html=1;strokeColor=#2f5783;strokeWidth=1.25;edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=6;" edge="1" parent="1" source="q_b3" target="q_b2">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="eq4" value="" style="endArrow=classic;startArrow=classic;html=1;strokeColor=#2f5783;strokeWidth=1.25;edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=6;" edge="1" parent="1" source="q_b2" target="q_b1">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="grp_mix" value="混合 KV 分组：同物理 page_size 共享单池" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#f4f4f2;strokeColor=#5c6067;strokeWidth=1.25;verticalAlign=top;align=left;spacingLeft=12;spacingTop=8;fontFamily=Inter, Noto Sans SC;fontSize=12;fontStyle=1;fontColor=#5c6067;container=0;" vertex="1" parent="1">
+          <mxGeometry x="0" y="272" width="344" height="248" as="geometry"/>
+        </mxCell>
+        <mxCell id="g0_box" value="KVCacheGroup 0 · Full（10 层）&lt;br&gt;全序列保留块，共用整组 block_ids" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f2fb;strokeColor=#2f5783;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter, Noto Sans SC;fontSize=11;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="16" y="304" width="312" height="48" as="geometry"/>
+        </mxCell>
+        <mxCell id="g1_box" value="KVCacheGroup 1 · SWA（10 层）&lt;br&gt;窗口外逻辑槽填 null_block（B0），仅留近期块" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f5e9;strokeColor=#2c522d;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter, Noto Sans SC;fontSize=11;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="16" y="360" width="312" height="48" as="geometry"/>
+        </mxCell>
+        <mxCell id="g2_box" value="KVCacheGroup 2 · SWA（10 层）&lt;br&gt;不规则层数（如 52:10）按最小层数分并补齐" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f5e9;strokeColor=#2c522d;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter, Noto Sans SC;fontSize=11;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="16" y="416" width="312" height="48" as="geometry"/>
+        </mxCell>
+        <mxCell id="page_eq" value="统一页大小：\(10 \times \text{block\_size} \times \text{kv\_hidden\_size}\)" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#fbf2df;strokeColor=#7b5518;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter, Noto Sans SC;fontSize=11;fontStyle=1;fontColor=#7b5518;" vertex="1" parent="1">
+          <mxGeometry x="16" y="472" width="312" height="32" as="geometry"/>
+        </mxCell>
+        <mxCell id="grp_int" value="HybridKVCacheCoordinator 双向扫描交集" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#f4f4f2;strokeColor=#5c6067;strokeWidth=1.25;verticalAlign=top;align=left;spacingLeft=12;spacingTop=8;fontFamily=Inter, Noto Sans SC;fontSize=12;fontStyle=1;fontColor=#5c6067;container=0;" vertex="1" parent="1">
+          <mxGeometry x="360" y="272" width="344" height="248" as="geometry"/>
+        </mxCell>
+        <mxCell id="s1_full" value="1. FullAttentionManager 从左向右扫描&lt;br&gt;遇 Miss 即停 → 得上界 \(L_{\text{full}} = 12\)（块 0, 1, 2）" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f2fb;strokeColor=#2f5783;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter, Noto Sans SC;fontSize=11;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="376" y="304" width="312" height="48" as="geometry"/>
+        </mxCell>
+        <mxCell id="s2_swa" value="2. SlidingWindowManager 在 \([0, L_{\text{full}})\) 右向左扫&lt;br&gt;凑够 \(\lceil (W-1)/B_s \rceil\) 连续块即早退（块 2, 1）" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f5e9;strokeColor=#2c522d;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter, Noto Sans SC;fontSize=11;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="376" y="368" width="312" height="48" as="geometry"/>
+        </mxCell>
+        <mxCell id="s3_res" value="3. 交集输出：hit_len = 12（裁剪 Full 尾部至一致边界）&lt;br&gt;full = [1, 2, 3] · swa = [0(null), 6, 7]" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#fbf2df;strokeColor=#7b5518;strokeWidth=1.5;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter, Noto Sans SC;fontSize=11;fontStyle=1;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="376" y="440" width="312" height="64" as="geometry"/>
+        </mxCell>
+        <mxCell id="ei1" value="" style="endArrow=classic;startArrow=none;html=1;strokeColor=#2f5783;strokeWidth=1.25;edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=6;" edge="1" parent="1" source="s1_full" target="s2_swa">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="ei2" value="" style="endArrow=classic;startArrow=none;html=1;strokeColor=#2c522d;strokeWidth=1.25;edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=6;" edge="1" parent="1" source="s2_swa" target="s3_res">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

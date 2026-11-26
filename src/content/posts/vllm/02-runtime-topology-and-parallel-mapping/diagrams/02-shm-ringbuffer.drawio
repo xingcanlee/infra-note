@@ -1,0 +1,88 @@
+<mxfile host="wisp-diagram">
+  <diagram id="vllm-02-shm-ringbuffer" name="shm-ringbuffer-ipc">
+    <mxGraphModel dx="800" dy="600" grid="1" gridSize="8" guides="1" page="0" math="0" shadow="0">
+      <root>
+        <mxCell id="0"/>
+        <mxCell id="1" parent="0"/>
+        <mxCell id="ipc_bg" value="三层进程通信栈（由主机跨进程逐级下沉到设备集合通信）" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#f4f4f2;strokeColor=#5c6067;strokeWidth=1.25;dashed=1;verticalAlign=top;align=left;spacingLeft=12;spacingTop=8;fontFamily=Inter, Noto Sans SC;fontSize=12;fontStyle=1;fontColor=#5c6067;container=0;" vertex="1" parent="1">
+          <mxGeometry x="8" y="8" width="680" height="168" as="geometry"/>
+        </mxCell>
+        <mxCell id="l_api" value="API Server&lt;br&gt;HTTP · 分词&lt;br&gt;DPLBAsyncMPClient" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f2fb;strokeColor=#2f5783;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=6;fontFamily=Inter, Noto Sans SC;fontSize=12;fontColor=#1d1d1f;container=0;" vertex="1" parent="1">
+          <mxGeometry x="24" y="48" width="128" height="80" as="geometry"/>
+        </mxCell>
+        <mxCell id="l_ec" value="EngineCore&lt;br&gt;Scheduler 调度&lt;br&gt;MultiprocExecutor" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f2fb;strokeColor=#2f5783;strokeWidth=1.5;align=center;verticalAlign=middle;spacing=6;fontFamily=Inter, Noto Sans SC;fontSize=12;fontStyle=1;fontColor=#1d1d1f;container=0;" vertex="1" parent="1">
+          <mxGeometry x="200" y="48" width="128" height="80" as="geometry"/>
+        </mxCell>
+        <mxCell id="l_wk" value="Worker 进程组&lt;br&gt;ModelRunner&lt;br&gt;worker_busy_loop" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f5e9;strokeColor=#2c522d;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=6;fontFamily=Inter, Noto Sans SC;fontSize=12;fontColor=#1d1d1f;container=0;" vertex="1" parent="1">
+          <mxGeometry x="376" y="48" width="128" height="80" as="geometry"/>
+        </mxCell>
+        <mxCell id="l_dev" value="GPU / NPU 设备&lt;br&gt;AllReduce · P2P&lt;br&gt;All-to-All" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#fbf2df;strokeColor=#7b5518;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=6;fontFamily=Inter, Noto Sans SC;fontSize=12;fontColor=#1d1d1f;container=0;" vertex="1" parent="1">
+          <mxGeometry x="552" y="48" width="120" height="80" as="geometry"/>
+        </mxCell>
+        <mxCell id="e_l1" value="" style="endArrow=classic;startArrow=classic;html=1;strokeColor=#2f5783;strokeWidth=1.25;edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=10;" edge="1" parent="1" source="l_api" target="l_ec">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e_l2" value="" style="endArrow=classic;startArrow=classic;html=1;strokeColor=#2c522d;strokeWidth=1.5;edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=10;" edge="1" parent="1" source="l_ec" target="l_wk">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e_l3" value="" style="endArrow=classic;startArrow=classic;html=1;strokeColor=#7b5518;strokeWidth=1.25;edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=10;" edge="1" parent="1" source="l_wk" target="l_dev">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="lbl_l1" value="ZMQ + Msgpack&lt;br&gt;请求与流式输出" style="text;html=1;whiteSpace=wrap;align=center;verticalAlign=middle;fontFamily=Inter, Noto Sans SC;fontSize=11;fontColor=#2f5783;" vertex="1" parent="1">
+          <mxGeometry x="128" y="136" width="96" height="32" as="geometry"/>
+        </mxCell>
+        <mxCell id="lbl_l2" value="shm_broadcast&lt;br&gt;SHM 环 + XPUB" style="text;html=1;whiteSpace=wrap;align=center;verticalAlign=middle;fontFamily=Inter, Noto Sans SC;fontSize=11;fontColor=#2c522d;" vertex="1" parent="1">
+          <mxGeometry x="304" y="136" width="96" height="32" as="geometry"/>
+        </mxCell>
+        <mxCell id="lbl_l3" value="NCCL / HCCL&lt;br&gt;跨卡张量通信" style="text;html=1;whiteSpace=wrap;align=center;verticalAlign=middle;fontFamily=Inter, Noto Sans SC;fontSize=11;fontColor=#7b5518;" vertex="1" parent="1">
+          <mxGeometry x="480" y="136" width="96" height="32" as="geometry"/>
+        </mxCell>
+        <mxCell id="ring_bg" value="ShmRingBuffer 无锁共享内存环布局与原子状态协议（max_chunks = 4，n_reader = 2）" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#f4f4f2;strokeColor=#5c6067;strokeWidth=1.25;dashed=1;verticalAlign=top;align=left;spacingLeft=12;spacingTop=8;fontFamily=Inter, Noto Sans SC;fontSize=12;fontStyle=1;fontColor=#5c6067;container=0;" vertex="1" parent="1">
+          <mxGeometry x="8" y="192" width="680" height="272" as="geometry"/>
+        </mxCell>
+        <mxCell id="hdr_data" value="Data 区（max_chunks × max_chunk_bytes）" style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;fontFamily=Inter, Noto Sans SC;fontSize=11;fontStyle=1;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="24" y="224" width="384" height="20" as="geometry"/>
+        </mxCell>
+        <mxCell id="hdr_meta" value="Metadata 区（1 + n_reader 字节/槽）" style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;fontFamily=Inter, Noto Sans SC;fontSize=11;fontStyle=1;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="424" y="224" width="248" height="20" as="geometry"/>
+        </mxCell>
+        <mxCell id="chk0" value="chunk 0&lt;br&gt;已读空闲" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#5c6067;strokeWidth=1;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter, Noto Sans SC;fontSize=11;fontColor=#5c6067;container=0;" vertex="1" parent="1">
+          <mxGeometry x="24" y="248" width="96" height="48" as="geometry"/>
+        </mxCell>
+        <mxCell id="chk1" value="chunk 1&lt;br&gt;已写入待读" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f2fb;strokeColor=#2f5783;strokeWidth=2;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter, Noto Sans SC;fontSize=11;fontStyle=1;fontColor=#1d1d1f;container=0;" vertex="1" parent="1">
+          <mxGeometry x="120" y="248" width="96" height="48" as="geometry"/>
+        </mxCell>
+        <mxCell id="chk2" value="chunk 2&lt;br&gt;Writer 写入中" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#fbf2df;strokeColor=#7b5518;strokeWidth=1.5;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter, Noto Sans SC;fontSize=11;fontColor=#1d1d1f;container=0;" vertex="1" parent="1">
+          <mxGeometry x="216" y="248" width="96" height="48" as="geometry"/>
+        </mxCell>
+        <mxCell id="chk3" value="chunk 3&lt;br&gt;空闲槽位" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#5c6067;strokeWidth=1;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter, Noto Sans SC;fontSize=11;fontColor=#5c6067;container=0;" vertex="1" parent="1">
+          <mxGeometry x="312" y="248" width="96" height="48" as="geometry"/>
+        </mxCell>
+        <mxCell id="mt0" value="槽 0&lt;br&gt;0 | 1 | 1" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#5c6067;strokeWidth=1;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter, Noto Sans SC;fontSize=11;fontColor=#5c6067;container=0;" vertex="1" parent="1">
+          <mxGeometry x="424" y="248" width="60" height="48" as="geometry"/>
+        </mxCell>
+        <mxCell id="mt1" value="槽 1&lt;br&gt;1 | 1 | 0" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f2fb;strokeColor=#2f5783;strokeWidth=2;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter, Noto Sans SC;fontSize=11;fontStyle=1;fontColor=#1d1d1f;container=0;" vertex="1" parent="1">
+          <mxGeometry x="488" y="248" width="60" height="48" as="geometry"/>
+        </mxCell>
+        <mxCell id="mt2" value="槽 2&lt;br&gt;0 | 0 | 0" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#fbf2df;strokeColor=#7b5518;strokeWidth=1.5;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter, Noto Sans SC;fontSize=11;fontColor=#1d1d1f;container=0;" vertex="1" parent="1">
+          <mxGeometry x="552" y="248" width="60" height="48" as="geometry"/>
+        </mxCell>
+        <mxCell id="mt3" value="槽 3&lt;br&gt;0 | 0 | 0" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#5c6067;strokeWidth=1;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter, Noto Sans SC;fontSize=11;fontColor=#5c6067;container=0;" vertex="1" parent="1">
+          <mxGeometry x="616" y="248" width="60" height="48" as="geometry"/>
+        </mxCell>
+        <mxCell id="meta_legend" value="字节含义：[written_flag | reader0_flag | reader1_flag] · 仅当 written=0 或所有 reader_flag=1 时允许覆写" style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;fontFamily=Inter, Noto Sans SC;fontSize=11;fontColor=#5c6067;" vertex="1" parent="1">
+          <mxGeometry x="24" y="304" width="648" height="20" as="geometry"/>
+        </mxCell>
+        <mxCell id="card_w" value="Writer（EngineCore）&lt;br&gt;1. 写入 data chunk 与缓冲区&lt;br&gt;2. 先把 reader_flags 清零&lt;br&gt;3. memory_fence() 后置 written=1" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f2fb;strokeColor=#2f5783;strokeWidth=1.25;align=left;verticalAlign=middle;spacingLeft=10;spacingRight=8;spacingTop=6;spacingBottom=6;fontFamily=Inter, Noto Sans SC;fontSize=11;fontColor=#1d1d1f;container=0;" vertex="1" parent="1">
+          <mxGeometry x="24" y="336" width="216" height="112" as="geometry"/>
+        </mxCell>
+        <mxCell id="card_r" value="Reader（各 Worker）&lt;br&gt;1. SpinCondition 短自旋或休眠等通知&lt;br&gt;2. memory_fence() 后读 data 槽位&lt;br&gt;3. 置位 reader_i=1 并推进 current_idx" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f5e9;strokeColor=#2c522d;strokeWidth=1.25;align=left;verticalAlign=middle;spacingLeft=10;spacingRight=8;spacingTop=6;spacingBottom=6;fontFamily=Inter, Noto Sans SC;fontSize=11;fontColor=#1d1d1f;container=0;" vertex="1" parent="1">
+          <mxGeometry x="248" y="336" width="216" height="112" as="geometry"/>
+        </mxCell>
+        <mxCell id="card_ov" value="溢出与背压控制&lt;br&gt;1. 载荷大于等于 24 MiB 写 overflow=1&lt;br&gt;   改由 ZMQ XPUB 通道直传&lt;br&gt;2. 环满未读完时 Writer 让出调度" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#fbf2df;strokeColor=#7b5518;strokeWidth=1.25;align=left;verticalAlign=middle;spacingLeft=10;spacingRight=8;spacingTop=6;spacingBottom=6;fontFamily=Inter, Noto Sans SC;fontSize=11;fontColor=#1d1d1f;container=0;" vertex="1" parent="1">
+          <mxGeometry x="472" y="336" width="200" height="112" as="geometry"/>
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

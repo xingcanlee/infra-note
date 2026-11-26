@@ -1,0 +1,145 @@
+<mxfile host="wisp-diagram">
+  <diagram id="vllm-ascend-04-moe-comm-and-eplb" name="moe-comm-and-eplb">
+    <mxGraphModel dx="760" dy="700" grid="1" gridSize="8" guides="1" page="0" math="0" shadow="0">
+      <root>
+        <mxCell id="0"/>
+        <mxCell id="1" parent="0"/>
+        <mxCell id="top_bg" value="四种 MoE 通信路径时序对照（Dispatch → 计算 → Combine）" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#f4f4f2;strokeColor=#e2e2dd;strokeWidth=1;align=left;verticalAlign=top;spacingTop=8;spacingLeft=12;fontFamily=Inter, Noto Sans SC;fontSize=12;fontStyle=1;fontColor=#1d1d1f;container=0;" vertex="1" parent="1">
+          <mxGeometry x="0" y="0" width="696" height="312" as="geometry"/>
+        </mxCell>
+        <mxCell id="lbl_ag" value="AllGather&#xa;（默认/小 EP）" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#8b9098;strokeWidth=1;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter, Noto Sans SC;fontSize=11;fontStyle=1;fontColor=#1d1d1f;container=0;" vertex="1" parent="1">
+          <mxGeometry x="16" y="40" width="112" height="56" as="geometry"/>
+        </mxCell>
+        <mxCell id="ag_1" value="AllGather 全集结&#xa;放大至 EP × B tokens" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#f4f4f2;strokeColor=#8b9098;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter, Noto Sans SC;fontSize=11;fontColor=#1d1d1f;container=0;" vertex="1" parent="1">
+          <mxGeometry x="144" y="40" width="168" height="56" as="geometry"/>
+        </mxCell>
+        <mxCell id="ag_2" value="init_routing_v2 过滤&#xa;+ 本地 Grouped GEMM" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#f4f4f2;strokeColor=#8b9098;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter, Noto Sans SC;fontSize=11;fontColor=#1d1d1f;container=0;" vertex="1" parent="1">
+          <mxGeometry x="328" y="40" width="176" height="56" as="geometry"/>
+        </mxCell>
+        <mxCell id="ag_3" value="unpermute +&#xa;ReduceScatter" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#f4f4f2;strokeColor=#8b9098;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter, Noto Sans SC;fontSize=11;fontColor=#1d1d1f;container=0;" vertex="1" parent="1">
+          <mxGeometry x="520" y="40" width="160" height="56" as="geometry"/>
+        </mxCell>
+        <mxCell id="e_ag_1" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=6;html=1;strokeColor=#5c6067;strokeWidth=1.25;endArrow=classic;endFill=1;" edge="1" parent="1" source="ag_1" target="ag_2">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e_ag_2" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=6;html=1;strokeColor=#5c6067;strokeWidth=1.25;endArrow=classic;endFill=1;" edge="1" parent="1" source="ag_2" target="ag_3">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="lbl_a2a" value="AllToAllV&#xa;（大批量 / LoRA）" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#7b5518;strokeWidth=1;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter, Noto Sans SC;fontSize=11;fontStyle=1;fontColor=#7b5518;container=0;" vertex="1" parent="1">
+          <mxGeometry x="16" y="112" width="112" height="56" as="geometry"/>
+        </mxCell>
+        <mxCell id="a2a_1" value="固定缓冲拷入 split&#xa;+ async_all_to_all" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#fbf2df;strokeColor=#7b5518;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter, Noto Sans SC;fontSize=11;fontColor=#1d1d1f;container=0;" vertex="1" parent="1">
+          <mxGeometry x="144" y="112" width="168" height="56" as="geometry"/>
+        </mxCell>
+        <mxCell id="a2a_2" value="wait 后立即 resize_(0)&#xa;释放显存 + Grouped GEMM" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#fbf2df;strokeColor=#7b5518;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter, Noto Sans SC;fontSize=11;fontColor=#1d1d1f;container=0;" vertex="1" parent="1">
+          <mxGeometry x="328" y="112" width="176" height="56" as="geometry"/>
+        </mxCell>
+        <mxCell id="a2a_3" value="async_all_to_all&#xa;+ resize_(0) 归还" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#fbf2df;strokeColor=#7b5518;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter, Noto Sans SC;fontSize=11;fontColor=#1d1d1f;container=0;" vertex="1" parent="1">
+          <mxGeometry x="520" y="112" width="160" height="56" as="geometry"/>
+        </mxCell>
+        <mxCell id="e_a2a_1" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=6;html=1;strokeColor=#7b5518;strokeWidth=1.25;endArrow=classic;endFill=1;" edge="1" parent="1" source="a2a_1" target="a2a_2">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e_a2a_2" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=6;html=1;strokeColor=#7b5518;strokeWidth=1.25;endArrow=classic;endFill=1;" edge="1" parent="1" source="a2a_2" target="a2a_3">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="lbl_mc2" value="MC2&#xa;（通算重叠）" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#2f5783;strokeWidth=1;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter, Noto Sans SC;fontSize=11;fontStyle=1;fontColor=#2f5783;container=0;" vertex="1" parent="1">
+          <mxGeometry x="16" y="184" width="112" height="56" as="geometry"/>
+        </mxCell>
+        <mxCell id="mc2_1" value="distribute_dispatch_v2&#xa;基于 HCCL_BUFFSIZE 通信" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f2fb;strokeColor=#2f5783;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter, Noto Sans SC;fontSize=11;fontColor=#1d1d1f;container=0;" vertex="1" parent="1">
+          <mxGeometry x="144" y="184" width="184" height="56" as="geometry"/>
+        </mxCell>
+        <mxCell id="mc2_2" value="Grouped GEMM&#xa;（≤ 512 tokens/rank）" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f2fb;strokeColor=#2f5783;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter, Noto Sans SC;fontSize=11;fontColor=#1d1d1f;container=0;" vertex="1" parent="1">
+          <mxGeometry x="344" y="184" width="152" height="56" as="geometry"/>
+        </mxCell>
+        <mxCell id="mc2_3" value="distribute_combine_v2&#xa;加权归还与聚合" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f2fb;strokeColor=#2f5783;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter, Noto Sans SC;fontSize=11;fontColor=#1d1d1f;container=0;" vertex="1" parent="1">
+          <mxGeometry x="512" y="184" width="168" height="56" as="geometry"/>
+        </mxCell>
+        <mxCell id="e_mc2_1" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=6;html=1;strokeColor=#2f5783;strokeWidth=1.25;endArrow=classic;endFill=1;" edge="1" parent="1" source="mc2_1" target="mc2_2">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e_mc2_2" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=6;html=1;strokeColor=#2f5783;strokeWidth=1.25;endArrow=classic;endFill=1;" edge="1" parent="1" source="mc2_2" target="mc2_3">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="lbl_fmc2" value="FusedMC2&#xa;（MegaMoe）" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#2c522d;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter, Noto Sans SC;fontSize=11;fontStyle=1;fontColor=#2c522d;container=0;" vertex="1" parent="1">
+          <mxGeometry x="16" y="256" width="112" height="40" as="geometry"/>
+        </mxCell>
+        <mxCell id="fmc2_1" value="单算子融合：dispatch_ffn_combine 或 CANN MegaMoe（全局对称缓冲 + 可选共享专家内联）" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f5e9;strokeColor=#2c522d;strokeWidth=1.5;align=center;verticalAlign=middle;spacing=6;fontFamily=Inter, Noto Sans SC;fontSize=11;fontStyle=1;fontColor=#1d1d1f;container=0;" vertex="1" parent="1">
+          <mxGeometry x="144" y="256" width="536" height="40" as="geometry"/>
+        </mxCell>
+        <mxCell id="bot_bg" value="动态 EPLB 异步重排与主线程原子提交时序（隔离前向集合通信）" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#f4f4f2;strokeColor=#e2e2dd;strokeWidth=1;align=left;verticalAlign=top;spacingTop=8;spacingLeft=12;fontFamily=Inter, Noto Sans SC;fontSize=12;fontStyle=1;fontColor=#1d1d1f;container=0;" vertex="1" parent="1">
+          <mxGeometry x="0" y="328" width="696" height="312" as="geometry"/>
+        </mxCell>
+        <mxCell id="main_lane" value="主推理线程（Model Runner V2 + MC2 / EP 前向流）" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#2f5783;strokeWidth=1;align=left;verticalAlign=top;spacingTop=8;spacingLeft=10;fontFamily=Inter, Noto Sans SC;fontSize=11;fontStyle=1;fontColor=#2f5783;container=0;" vertex="1" parent="1">
+          <mxGeometry x="16" y="368" width="664" height="104" as="geometry"/>
+        </mxCell>
+        <mxCell id="m_1" value="Step t：物理路由查表&#xa;+ record_load 记数" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f2fb;strokeColor=#2f5783;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter, Noto Sans SC;fontSize=11;fontColor=#1d1d1f;container=0;" vertex="1" parent="1">
+          <mxGeometry x="24" y="400" width="152" height="56" as="geometry"/>
+        </mxCell>
+        <mxCell id="m_2" value="Step t+1：正常前向&#xa;（无权重搬运阻塞）" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f2fb;strokeColor=#2f5783;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter, Noto Sans SC;fontSize=11;fontColor=#1d1d1f;container=0;" vertex="1" parent="1">
+          <mxGeometry x="192" y="400" width="152" height="56" as="geometry"/>
+        </mxCell>
+        <mxCell id="m_3" value="Step 间隙：原子提交&#xa;搬入权重 + 原地刷新路由表" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f5e9;strokeColor=#2c522d;strokeWidth=1.5;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter, Noto Sans SC;fontSize=11;fontStyle=1;fontColor=#1d1d1f;container=0;" vertex="1" parent="1">
+          <mxGeometry x="360" y="400" width="168" height="56" as="geometry"/>
+        </mxCell>
+        <mxCell id="m_4" value="Step t+2：命中新映射&#xa;ACL Graph 无需重捕获" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f2fb;strokeColor=#2f5783;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter, Noto Sans SC;fontSize=11;fontColor=#1d1d1f;container=0;" vertex="1" parent="1">
+          <mxGeometry x="544" y="400" width="128" height="56" as="geometry"/>
+        </mxCell>
+        <mxCell id="e_m_1" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=6;html=1;strokeColor=#2f5783;strokeWidth=1.25;endArrow=classic;endFill=1;" edge="1" parent="1" source="m_1" target="m_2">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e_m_2" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=6;html=1;strokeColor=#2c522d;strokeWidth=1.25;endArrow=classic;endFill=1;" edge="1" parent="1" source="m_2" target="m_3">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e_m_3" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=6;html=1;strokeColor=#2f5783;strokeWidth=1.25;endArrow=classic;endFill=1;" edge="1" parent="1" source="m_3" target="m_4">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="bg_lane" value="后台异步线程" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#7b5518;strokeWidth=1;align=left;verticalAlign=top;spacingTop=8;spacingLeft=10;fontFamily=Inter, Noto Sans SC;fontSize=11;fontStyle=1;fontColor=#7b5518;container=0;" vertex="1" parent="1">
+          <mxGeometry x="16" y="512" width="664" height="112" as="geometry"/>
+        </mxCell>
+        <mxCell id="bg_lane_sub" value="独立 HIXL / Gloo 暂存（不占前向 EP）" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;fontFamily=Inter, Noto Sans SC;fontSize=11;fontColor=#7b5518;" vertex="1" parent="1">
+          <mxGeometry x="160" y="512" width="232" height="24" as="geometry"/>
+        </mxCell>
+        <mxCell id="b_1" value="物理 load 映回逻辑空间&#xa;STAIR 策略计算新放置" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#fbf2df;strokeColor=#7b5518;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter, Noto Sans SC;fontSize=11;fontColor=#1d1d1f;container=0;" vertex="1" parent="1">
+          <mxGeometry x="24" y="544" width="152" height="64" as="geometry"/>
+        </mxCell>
+        <mxCell id="b_2" value="stage_explicit_layer_transfer&#xa;拉取跨卡权重入接收缓冲" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#fbf2df;strokeColor=#7b5518;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter, Noto Sans SC;fontSize=11;fontColor=#1d1d1f;container=0;" vertex="1" parent="1">
+          <mxGeometry x="192" y="544" width="152" height="64" as="geometry"/>
+        </mxCell>
+        <mxCell id="b_3" value="发布 pending_result&#xa;阻塞等待 consumed_event" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#fbf2df;strokeColor=#7b5518;strokeWidth=1.25;dashed=1;dashPattern=4 4;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter, Noto Sans SC;fontSize=11;fontColor=#1d1d1f;container=0;" vertex="1" parent="1">
+          <mxGeometry x="360" y="544" width="168" height="64" as="geometry"/>
+        </mxCell>
+        <mxCell id="b_4" value="收到确认后复用缓冲&#xa;继续下一变更层迁移" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f5e9;strokeColor=#2c522d;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter, Noto Sans SC;fontSize=11;fontColor=#1d1d1f;container=0;" vertex="1" parent="1">
+          <mxGeometry x="544" y="544" width="128" height="64" as="geometry"/>
+        </mxCell>
+        <mxCell id="e_b_1" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=6;html=1;strokeColor=#7b5518;strokeWidth=1.25;endArrow=classic;endFill=1;" edge="1" parent="1" source="b_1" target="b_2">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e_b_2" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=6;html=1;strokeColor=#7b5518;strokeWidth=1.25;endArrow=classic;endFill=1;" edge="1" parent="1" source="b_2" target="b_3">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e_b_3" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=6;html=1;strokeColor=#2c522d;strokeWidth=1.25;endArrow=classic;endFill=1;" edge="1" parent="1" source="b_3" target="b_4">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e_load" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=6;html=1;strokeColor=#7b5518;strokeWidth=1.25;dashed=1;dashPattern=4 4;endArrow=classic;endFill=1;exitX=0.8;exitY=1;entryX=0.8;entryY=0;" edge="1" parent="1" source="m_1" target="b_1">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="lbl_load" value="窗口聚合触发重排" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;fontFamily=Inter, Noto Sans SC;fontSize=11;fontColor=#7b5518;" vertex="1" parent="1">
+          <mxGeometry x="152" y="480" width="104" height="24" as="geometry"/>
+        </mxCell>
+        <mxCell id="e_ready" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=6;html=1;strokeColor=#2c522d;strokeWidth=1.5;endArrow=classic;endFill=1;exitX=0.25;exitY=0;entryX=0.25;entryY=1;" edge="1" parent="1" source="b_3" target="m_3">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="lbl_ready" value="全卡就绪" style="text;html=1;strokeColor=none;fillColor=none;align=right;verticalAlign=middle;fontFamily=Inter, Noto Sans SC;fontSize=11;fontStyle=1;fontColor=#2c522d;" vertex="1" parent="1">
+          <mxGeometry x="320" y="480" width="72" height="24" as="geometry"/>
+        </mxCell>
+        <mxCell id="e_ack" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=6;html=1;strokeColor=#2c522d;strokeWidth=1.5;dashed=1;dashPattern=4 4;endArrow=classic;endFill=1;exitX=0.75;exitY=1;entryX=0.75;entryY=0;" edge="1" parent="1" source="m_3" target="b_3">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="lbl_ack" value="延迟 flush 释放缓冲" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;fontFamily=Inter, Noto Sans SC;fontSize=11;fontStyle=1;fontColor=#2c522d;" vertex="1" parent="1">
+          <mxGeometry x="496" y="480" width="120" height="24" as="geometry"/>
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

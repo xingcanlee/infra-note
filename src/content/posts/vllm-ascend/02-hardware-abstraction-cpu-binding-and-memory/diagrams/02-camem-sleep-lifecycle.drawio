@@ -1,0 +1,88 @@
+<mxfile host="wisp-diagram">
+  <diagram id="vllm-ascend-02-camem-sleep-lifecycle" name="camem-sleep-lifecycle">
+    <mxGraphModel dx="800" dy="600" grid="1" gridSize="8" guides="1" page="0" math="0" shadow="0">
+      <root>
+        <mxCell id="0"/>
+        <mxCell id="1" parent="0"/>
+        <mxCell id="hbm_box" value="HBM 启动显存预算：先预留 MC2 HCCL 缓冲，再探测峰值计算 KV 池" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#f4f4f2;strokeColor=#5c6067;strokeWidth=1.25;dashed=1;verticalAlign=top;align=left;spacingLeft=12;spacingTop=8;fontFamily=Inter, Noto Sans SC;fontSize=12;fontStyle=1;fontColor=#5c6067;container=0;" vertex="1" parent="1">
+          <mxGeometry x="8" y="8" width="688" height="240" as="geometry"/>
+        </mxCell>
+        <mxCell id="st1" value="1. load_model()&lt;br&gt;权重加载入 CaMem (tag=weights)" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f2fb;strokeColor=#2f5783;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=6;fontFamily=Inter, Noto Sans SC;fontSize=11;fontColor=#1d1d1f;container=0;" vertex="1" parent="1">
+          <mxGeometry x="24" y="48" width="192" height="56" as="geometry"/>
+        </mxCell>
+        <mxCell id="st2" value="2. MC2 额外空跑预热&lt;br&gt;_dummy_run(mc2_tokens_capacity)" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#fbf2df;strokeColor=#7b5518;strokeWidth=1.5;align=center;verticalAlign=middle;spacing=6;fontFamily=Inter, Noto Sans SC;fontSize=11;fontStyle=1;fontColor=#1d1d1f;container=0;" vertex="1" parent="1">
+          <mxGeometry x="248" y="48" width="208" height="56" as="geometry"/>
+        </mxCell>
+        <mxCell id="st3" value="3. 标准 profile_run()&lt;br&gt;测量激活峰值，核算 KV 池预算" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f5e9;strokeColor=#2c522d;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=6;fontFamily=Inter, Noto Sans SC;fontSize=11;fontColor=#1d1d1f;container=0;" vertex="1" parent="1">
+          <mxGeometry x="488" y="48" width="192" height="56" as="geometry"/>
+        </mxCell>
+        <mxCell id="e_st12" value="" style="endArrow=classic;startArrow=none;html=1;strokeColor=#5c6067;strokeWidth=1.25;edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=10;" edge="1" parent="1" source="st1" target="st2">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e_st23" value="" style="endArrow=classic;startArrow=none;html=1;strokeColor=#5c6067;strokeWidth=1.25;edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=10;" edge="1" parent="1" source="st2" target="st3">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="lbl_bar" value="requested_memory = total_hbm × utilization 的最终切分结果（跳过第 2 步会导致推理触发 MC2 时 OOM）" style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;fontFamily=Inter, Noto Sans SC;fontSize=11;fontColor=#7b5518;" vertex="1" parent="1">
+          <mxGeometry x="24" y="120" width="656" height="24" as="geometry"/>
+        </mxCell>
+        <mxCell id="hbm_w" value="模型权重&lt;br&gt;weights_memory" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f2fb;strokeColor=#2f5783;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=6;fontFamily=Inter, Noto Sans SC;fontSize=11;fontColor=#1d1d1f;container=0;" vertex="1" parent="1">
+          <mxGeometry x="24" y="160" width="168" height="64" as="geometry"/>
+        </mxCell>
+        <mxCell id="hbm_mc2" value="MC2 HCCL 缓冲&lt;br&gt;non_torch_increase" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#fbf2df;strokeColor=#7b5518;strokeWidth=1.5;align=center;verticalAlign=middle;spacing=6;fontFamily=Inter, Noto Sans SC;fontSize=11;fontStyle=1;fontColor=#1d1d1f;container=0;" vertex="1" parent="1">
+          <mxGeometry x="200" y="160" width="144" height="64" as="geometry"/>
+        </mxCell>
+        <mxCell id="hbm_act" value="激活峰值与图池&lt;br&gt;peak_act + graph" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#fbf2df;strokeColor=#7b5518;strokeWidth=1;dashed=1;dashPattern=4 4;align=center;verticalAlign=middle;spacing=6;fontFamily=Inter, Noto Sans SC;fontSize=11;fontColor=#1d1d1f;container=0;" vertex="1" parent="1">
+          <mxGeometry x="352" y="160" width="128" height="64" as="geometry"/>
+        </mxCell>
+        <mxCell id="hbm_kv" value="可用 KV 缓存池&lt;br&gt;CaMem (tag=kv_cache)" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f5e9;strokeColor=#2c522d;strokeWidth=2;align=center;verticalAlign=middle;spacing=6;fontFamily=Inter, Noto Sans SC;fontSize=12;fontStyle=1;fontColor=#1d1d1f;container=0;" vertex="1" parent="1">
+          <mxGeometry x="488" y="160" width="192" height="64" as="geometry"/>
+        </mxCell>
+        <mxCell id="sleep_box" value="CaMemAllocator 睡眠唤醒周期（aclrtMallocPhysical + aclrtMapMem / aclrtUnmapMem）" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#f4f4f2;strokeColor=#5c6067;strokeWidth=1.25;dashed=1;verticalAlign=top;align=left;spacingLeft=12;spacingTop=8;fontFamily=Inter, Noto Sans SC;fontSize=12;fontStyle=1;fontColor=#5c6067;container=0;" vertex="1" parent="1">
+          <mxGeometry x="8" y="272" width="688" height="296" as="geometry"/>
+        </mxCell>
+        <mxCell id="col_run" value="运行态 (Running)" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#2f5783;strokeWidth=1;dashed=1;dashPattern=4 4;verticalAlign=top;align=center;spacingTop=6;fontFamily=Inter, Noto Sans SC;fontSize=12;fontStyle=1;fontColor=#2f5783;container=0;" vertex="1" parent="1">
+          <mxGeometry x="24" y="312" width="192" height="240" as="geometry"/>
+        </mxCell>
+        <mxCell id="run_w" value="weights 物理页&lt;br&gt;HBM 映射就绪" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f2fb;strokeColor=#2f5783;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=6;fontFamily=Inter, Noto Sans SC;fontSize=11;fontColor=#1d1d1f;container=0;" vertex="1" parent="1">
+          <mxGeometry x="40" y="344" width="160" height="56" as="geometry"/>
+        </mxCell>
+        <mxCell id="run_kv" value="kv_cache 物理页&lt;br&gt;HBM 映射就绪" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f5e9;strokeColor=#2c522d;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=6;fontFamily=Inter, Noto Sans SC;fontSize=11;fontColor=#1d1d1f;container=0;" vertex="1" parent="1">
+          <mxGeometry x="40" y="416" width="160" height="56" as="geometry"/>
+        </mxCell>
+        <mxCell id="run_hccl" value="HCCL 通信组与 ACL 图" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#fbf2df;strokeColor=#7b5518;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=6;fontFamily=Inter, Noto Sans SC;fontSize=11;fontColor=#1d1d1f;container=0;" vertex="1" parent="1">
+          <mxGeometry x="40" y="488" width="160" height="48" as="geometry"/>
+        </mxCell>
+        <mxCell id="col_slp" value="休眠态 (sleep level=1/2)" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#7b5518;strokeWidth=1;dashed=1;dashPattern=4 4;verticalAlign=top;align=center;spacingTop=6;fontFamily=Inter, Noto Sans SC;fontSize=12;fontStyle=1;fontColor=#7b5518;container=0;" vertex="1" parent="1">
+          <mxGeometry x="256" y="312" width="192" height="240" as="geometry"/>
+        </mxCell>
+        <mxCell id="slp_w" value="L1：D2H 拷贝至 CPU 锁页&lt;br&gt;L2：Unmap 后直接释放" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f2fb;strokeColor=#2f5783;strokeWidth=1.25;dashed=1;dashPattern=4 4;align=center;verticalAlign=middle;spacing=6;fontFamily=Inter, Noto Sans SC;fontSize=11;fontColor=#1d1d1f;container=0;" vertex="1" parent="1">
+          <mxGeometry x="272" y="344" width="160" height="56" as="geometry"/>
+        </mxCell>
+        <mxCell id="slp_kv" value="aclrtUnmapMem + Free&lt;br&gt;释放 HBM（虚拟地址保留）" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f5e9;strokeColor=#2c522d;strokeWidth=1.25;dashed=1;dashPattern=4 4;align=center;verticalAlign=middle;spacing=6;fontFamily=Inter, Noto Sans SC;fontSize=11;fontColor=#1d1d1f;container=0;" vertex="1" parent="1">
+          <mxGeometry x="272" y="416" width="160" height="56" as="geometry"/>
+        </mxCell>
+        <mxCell id="slp_hccl" value="extra_cleanup：销毁 HCCL&lt;br&gt;仅保留生命周期锚点组" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#fbf2df;strokeColor=#7b5518;strokeWidth=1.25;dashed=1;dashPattern=4 4;align=center;verticalAlign=middle;spacing=6;fontFamily=Inter, Noto Sans SC;fontSize=11;fontColor=#1d1d1f;container=0;" vertex="1" parent="1">
+          <mxGeometry x="272" y="488" width="160" height="48" as="geometry"/>
+        </mxCell>
+        <mxCell id="col_wk" value="唤醒态 (wake_up tags)" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#2c522d;strokeWidth=1;dashed=1;dashPattern=4 4;verticalAlign=top;align=center;spacingTop=6;fontFamily=Inter, Noto Sans SC;fontSize=12;fontStyle=1;fontColor=#2c522d;container=0;" vertex="1" parent="1">
+          <mxGeometry x="488" y="312" width="192" height="240" as="geometry"/>
+        </mxCell>
+        <mxCell id="wk_w" value="1. tags=[weights]&lt;br&gt;aclrtMapMem + H2D/重载" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f2fb;strokeColor=#2f5783;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=6;fontFamily=Inter, Noto Sans SC;fontSize=11;fontColor=#1d1d1f;container=0;" vertex="1" parent="1">
+          <mxGeometry x="504" y="344" width="160" height="56" as="geometry"/>
+        </mxCell>
+        <mxCell id="wk_kv" value="2. tags=[kv_cache]&lt;br&gt;重新映射空 KV 物理页" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f5e9;strokeColor=#2c522d;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=6;fontFamily=Inter, Noto Sans SC;fontSize=11;fontColor=#1d1d1f;container=0;" vertex="1" parent="1">
+          <mxGeometry x="504" y="416" width="160" height="56" as="geometry"/>
+        </mxCell>
+        <mxCell id="wk_hccl" value="恢复 HCCL · 重捕获 ACL 图&lt;br&gt;最后释放生命周期锚点" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#fbf2df;strokeColor=#7b5518;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=6;fontFamily=Inter, Noto Sans SC;fontSize=11;fontColor=#1d1d1f;container=0;" vertex="1" parent="1">
+          <mxGeometry x="504" y="488" width="160" height="48" as="geometry"/>
+        </mxCell>
+        <mxCell id="e_r_s" value="" style="endArrow=classic;startArrow=none;html=1;strokeColor=#7b5518;strokeWidth=1.25;edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=10;" edge="1" parent="1" source="col_run" target="col_slp">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e_s_w" value="" style="endArrow=classic;startArrow=none;html=1;strokeColor=#2c522d;strokeWidth=1.25;edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=10;" edge="1" parent="1" source="col_slp" target="col_wk">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

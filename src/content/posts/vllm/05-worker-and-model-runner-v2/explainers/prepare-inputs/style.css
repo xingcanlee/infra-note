@@ -1,0 +1,318 @@
+/* ModelRunner V2 永久行与输入元数据组装推演局部布局样式（色调与横幅由 @/explainers/kit/kit.css 提供）。 */
+@layer utilities {
+  .pi-stage {
+    display: flex;
+    flex-direction: column;
+    gap: 0.625rem;
+    min-width: 0;
+  }
+
+  .wisp-explainer__inner[data-expanded] .pi-stage {
+    gap: 0.4375rem;
+  }
+
+  .wisp-explainer__inner[data-expanded] .pi-panel {
+    padding: 0.5rem 0.6875rem;
+    gap: 0.375rem;
+  }
+
+  .pi-compare-relay {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 4.5rem minmax(0, 1fr);
+    gap: 0.375rem;
+    align-items: center;
+  }
+
+  .pi-bridge {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .pi-bridge-svg {
+    display: block;
+    width: 4.5rem;
+    height: auto;
+    overflow: visible;
+  }
+
+  .pi-vbridge {
+    display: flex;
+    justify-content: center;
+    margin-block: -0.25rem;
+  }
+
+  .pi-vbridge-svg {
+    display: block;
+    width: 16.25rem;
+    height: 1.625rem;
+    overflow: visible;
+  }
+
+  .pi-panel {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    min-width: 0;
+    padding: 0.625rem 0.75rem;
+    border: 1px solid var(--wisp-border);
+    border-radius: 4px;
+    background: var(--wisp-bg);
+  }
+
+  .pi-panel__head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.375rem;
+    font-size: 0.8125rem;
+    font-weight: 600;
+    color: var(--wisp-fg);
+  }
+
+  .pi-note-inline {
+    font-size: 0.75rem;
+    font-weight: 500;
+    color: var(--wisp-muted);
+  }
+
+  .pi-summary-bar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+  }
+
+  .pi-tag {
+    display: inline-flex;
+    align-items: center;
+    padding: 0.1875rem 0.5rem;
+    border: 1px solid var(--wisp-border);
+    border-radius: 3px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .pi-matrix {
+    display: flex;
+    flex-direction: column;
+    gap: 0.375rem;
+  }
+
+  .pi-matrix--compact {
+    gap: 0.3125rem;
+  }
+
+  .pi-matrix__row {
+    display: grid;
+    grid-template-columns: 3.25rem minmax(0, 1fr);
+    gap: 0.4375rem;
+    align-items: center;
+  }
+
+  .pi-row-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    height: 1.75rem;
+    border: 1px solid var(--wisp-border);
+    border-radius: 3px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .pi-cells-12 {
+    display: grid;
+    grid-template-columns: repeat(12, minmax(0, 1fr));
+    gap: 0.25rem;
+  }
+
+  .pi-cells-6 {
+    display: grid;
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+    gap: 0.25rem;
+  }
+
+  .pi-cell {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    height: 1.75rem;
+    padding-inline: 0.125rem;
+    border: 1px solid var(--wisp-border);
+    border-radius: 3px;
+    font-family: var(--wisp-font-mono);
+    font-size: 0.6875rem;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+    overflow: hidden;
+  }
+
+  .pi-cell--wide {
+    font-size: 0.75rem;
+  }
+
+  .pi-cell[data-dimmed='true'] {
+    opacity: 0.38;
+    font-weight: 400;
+  }
+
+  .pi-token-table {
+    display: flex;
+    flex-direction: column;
+    gap: 0.3125rem;
+    overflow-x: auto;
+  }
+
+  .pi-token-row {
+    display: grid;
+    grid-template-columns: 5.5rem repeat(10, minmax(2rem, 1fr));
+    gap: 0.25rem;
+    align-items: center;
+  }
+
+  .pi-token-row--5 {
+    grid-template-columns: 5.5rem repeat(5, minmax(4.25rem, 1fr));
+  }
+
+  .pi-token-label {
+    font-family: var(--wisp-font-mono);
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: var(--wisp-muted);
+    white-space: nowrap;
+  }
+
+  .pi-chip {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 1.625rem;
+    padding-inline: 0.25rem;
+    border: 1px solid var(--wisp-border);
+    border-radius: 3px;
+    font-family: var(--wisp-font-mono);
+    font-size: 0.6875rem;
+    font-variant-numeric: tabular-nums;
+    text-align: center;
+    white-space: nowrap;
+  }
+
+  .pi-chip--muted {
+    background: var(--wisp-surface);
+    color: var(--wisp-muted);
+  }
+
+  .pi-chip--strong {
+    font-weight: 700;
+  }
+
+  .pi-meta-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 0.5rem;
+  }
+
+  .pi-meta-card {
+    display: flex;
+    flex-direction: column;
+    gap: 0.1875rem;
+    padding: 0.5rem 0.625rem;
+    border: 1px solid var(--wisp-border);
+    border-radius: 4px;
+  }
+
+  .pi-meta-card__k {
+    font-family: var(--wisp-font-mono);
+    font-size: 0.75rem;
+    color: var(--wisp-muted);
+  }
+
+  .pi-meta-card__v {
+    font-family: var(--wisp-font-mono);
+    font-size: 0.8125rem;
+    font-weight: 700;
+    color: var(--wisp-fg);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .pi-compare-cols {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.625rem;
+  }
+
+  .pi-diff-list,
+  .pi-pipe-stack {
+    display: flex;
+    flex-direction: column;
+    gap: 0.4375rem;
+  }
+
+  .pi-diff-card,
+  .pi-pipe-box {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    padding: 0.5rem 0.625rem;
+    border: 1px solid var(--wisp-border);
+    border-radius: 4px;
+  }
+
+  .pi-diff-card__top,
+  .pi-pipe-box__title {
+    font-family: var(--wisp-font-mono);
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: var(--wisp-fg);
+  }
+
+  .pi-diff-card__note,
+  .pi-pipe-box__desc {
+    font-size: 0.75rem;
+    color: var(--wisp-muted);
+    line-height: 1.45;
+  }
+
+  .pi-pack-bar {
+    padding: 0.4375rem 0.625rem;
+    border: 1px solid var(--wisp-border);
+    border-radius: 3px;
+    font-family: var(--wisp-font-mono);
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: var(--wisp-fg);
+  }
+
+  .pi-stage-note {
+    margin: 0;
+    padding: 0.375rem 0.5rem;
+    border: 1px solid var(--wisp-border);
+    border-radius: 3px;
+    background: var(--wisp-surface);
+    color: var(--wisp-muted);
+    font-size: 0.75rem;
+    line-height: 1.45;
+  }
+
+  @media (max-width: 44rem) {
+    .pi-meta-grid,
+    .pi-compare-cols,
+    .pi-compare-relay {
+      grid-template-columns: 1fr;
+    }
+
+    .pi-bridge-svg {
+      transform: rotate(90deg);
+    }
+
+    .pi-cells-12 {
+      grid-template-columns: repeat(6, minmax(0, 1fr));
+    }
+  }
+}

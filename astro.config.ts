@@ -10,7 +10,7 @@ export default defineConfig({
       site: {
         title: 'infra-note',
         description:
-          '从零推导的 LLM 推理系统笔记：异构硬件与量化、分布式并行通信、DeepSeek 架构演进、vLLM 与 vLLM-Ascend 推理引擎、推理执行图（CUDA Graph 与 ACL Graph）。',
+          '从零推导的 LLM 推理系统笔记：异构硬件与量化、分布式并行通信、DeepSeek 架构演进、vLLM 推理引擎、vLLM-Ascend 昇腾拓展、推理执行图（CUDA Graph 与 ACL Graph）。',
         author: 'xingcanlee',
         authorGithub: 'https://github.com/xingcanlee',
         lang: 'zh-CN',
@@ -21,7 +21,7 @@ export default defineConfig({
         { label: '关于', href: '/about/' },
       ],
       social: [{ kind: 'rss', href: '/rss.xml' }],
-      home: { featuredCount: 5, pageSize: 10 },
+      home: { featuredCount: 6, pageSize: 10 },
       features: {
         codeCopy: true,
         lineNumbers: true,

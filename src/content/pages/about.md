@@ -7,15 +7,16 @@ description: '面向工程实践的大模型推理系统笔记：涵盖异构硬
 
 ## 内容结构
 
-全站按五个系列递进展开：单卡硬件与算子、多卡并行与通信、DeepSeek 模型架构、vLLM 引擎与执行图。全站共 35 篇文章，含 5 篇导览与 30 篇正文：
+全站按六个系列递进展开：单卡硬件与算子、多卡并行与通信、DeepSeek 模型架构、vLLM 推理引擎、vLLM-Ascend 昇腾拓展与推理执行图。全站共 46 篇文章，含 6 篇导览与 40 篇正文：
 
 1. **[推理与异构硬件基础](../posts/foundations/)**：单卡算力与带宽瓶颈、GPU 与昇腾微架构、自注意力、KV 压缩、FlashAttention 与量化。
 2. **[分布式并行与跨卡通信](../posts/distributed/)**：多卡互连拓扑、集合通信开销、混合并行切分、PD 分离与 MoE 通算重叠。
 3. **[DeepSeek 架构演进](../posts/deepseek/)**：从 V2 到 V4.1 的 MLA 与稀疏注意力、细粒度 MoE、Engram、mHC 与 DSpark。
-4. **[vLLM 与 vLLM-Ascend 推理引擎](../posts/vllm/)**：分页显存管理、连续批调度、跨步异步调度、多卡 DP 图模式共识与 Profiling 排障。
-5. **[推理执行图：CUDA Graph 与 ACL Graph](../posts/execgraph/)**：异步队列、编译分段、CUDA/ACL Graph 与 vLLM 模式编排。
+4. **[vLLM 推理引擎：架构与核心组件](../posts/vllm/)**：V1 进程架构、并行拓扑、PagedAttention、连续批调度、ModelRunner V2 与 PD 协议。
+5. **[vLLM-Ascend 昇腾插件与硬件拓展](../posts/vllm-ascend/)**：OOT 插件、ARM 绑核、`PA_NZ`、KVPP、MC2、Mooncake 与自定义算子。
+6. **[推理执行图：CUDA Graph 与 ACL Graph](../posts/execgraph/)**：异步队列、编译分段、CUDA/ACL Graph 与 vLLM 模式编排。
 
-按上述五个系列顺序阅读最连贯。若专注线上调优或静态执行图，也可直接切入[vLLM 与 vLLM-Ascend 推理引擎](../posts/vllm/)或[推理执行图：CUDA Graph 与 ACL Graph](../posts/execgraph/)。遇到算子或通信细节，再按需回查前序基础系列。
+按上述六个系列顺序阅读最连贯。若专注推理引擎或硬件插件，也可直接切入[vLLM 推理引擎](../posts/vllm/)、[vLLM-Ascend 昇腾插件](../posts/vllm-ascend/)或[推理执行图：CUDA Graph 与 ACL Graph](../posts/execgraph/)。遇到算子或通信细节，再按需回查前序基础系列。
 
 ## 代码与源码基准
 

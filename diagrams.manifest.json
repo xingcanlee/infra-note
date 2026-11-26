@@ -560,25 +560,205 @@
         "Outlier Channel Trap and SQNR Recovery"
       ]
     },
-    "src/content/posts/vllm/02-async-execution-and-launch-wall/diagrams/02-async-launch-timeline.drawio": {
-      "source": "sha256-4f429d9062fab784fbc35f2488e3dfd894953908756f605abe10ffb5db399e39",
+    "src/content/posts/vllm-ascend/01-oot-plugin-and-patch-architecture/diagrams/01-oot-plugin-hooks.drawio": {
+      "source": "sha256-380d4213652ad048adf52c7f8c3183040c773dc9f1a0582825b4cf3ba6aa0a57",
       "style": "clean",
       "exporter": "drawio-cli",
       "embedFonts": false,
       "outputs": {
-        "src/content/posts/vllm/02-async-execution-and-launch-wall/diagrams/02-async-launch-timeline.wisp.svg": "sha256-fb2baf6164ed01cc44787aeabba0dbeb37ee4a1643fa6536938052766c2e66f2"
+        "src/content/posts/vllm-ascend/01-oot-plugin-and-patch-architecture/diagrams/01-oot-plugin-hooks.wisp.svg": "sha256-eff2b963a421fb659703e0b51f9dd875f7350ba71eedb8384be1dc95e2ee529d"
+      },
+      "pages": [
+        "01-oot-plugin-hooks"
+      ]
+    },
+    "src/content/posts/vllm-ascend/02-hardware-abstraction-cpu-binding-and-memory/diagrams/02-arm-cpu-binding.drawio": {
+      "source": "sha256-61ba3d6393cf1e3f819e3260c8a6a5ba646ef12cf01d0644b491550b34a40060",
+      "style": "clean",
+      "exporter": "drawio-cli",
+      "embedFonts": false,
+      "outputs": {
+        "src/content/posts/vllm-ascend/02-hardware-abstraction-cpu-binding-and-memory/diagrams/02-arm-cpu-binding.wisp.svg": "sha256-78e43e0b288b3ddb694138ba7ed875ece9ff4c0646599c238d7f45b1d122d140"
+      },
+      "pages": [
+        "arm-cpu-binding"
+      ]
+    },
+    "src/content/posts/vllm-ascend/02-hardware-abstraction-cpu-binding-and-memory/diagrams/02-camem-sleep-lifecycle.drawio": {
+      "source": "sha256-bb32cd5ffc2201189dc0c6de17976438857fedf2cb628d406e219067f4730503",
+      "style": "clean",
+      "exporter": "drawio-cli",
+      "embedFonts": false,
+      "outputs": {
+        "src/content/posts/vllm-ascend/02-hardware-abstraction-cpu-binding-and-memory/diagrams/02-camem-sleep-lifecycle.wisp.svg": "sha256-e53e151aa01453e1df983492b894c317955b42d892e61ceced141235a562c04d"
+      },
+      "pages": [
+        "camem-sleep-lifecycle"
+      ]
+    },
+    "src/content/posts/vllm-ascend/03-npu-worker-runner-and-kv-layout/diagrams/03-panz-and-kvpp.drawio": {
+      "source": "sha256-4393b4e6d0cfa9b8e2ed721cbdd8daf35d485fa0087e5c06ad349ad35f8d6d93",
+      "style": "clean",
+      "exporter": "drawio-cli",
+      "embedFonts": false,
+      "outputs": {
+        "src/content/posts/vllm-ascend/03-npu-worker-runner-and-kv-layout/diagrams/03-panz-and-kvpp.wisp.svg": "sha256-afff6b2601d569fb45a91ec07cf664990860d73ede51db657509895f8b8da878"
+      },
+      "pages": [
+        "panz-and-kvpp"
+      ]
+    },
+    "src/content/posts/vllm-ascend/04-hccl-mc2-and-dynamic-eplb/diagrams/04-ascend-moe-comm-and-eplb.drawio": {
+      "source": "sha256-ea6cbcca0368129a2c8351598d217287fdcaea0829ca6d3f0af6664ffc00b2fa",
+      "style": "clean",
+      "exporter": "drawio-cli",
+      "embedFonts": false,
+      "outputs": {
+        "src/content/posts/vllm-ascend/04-hccl-mc2-and-dynamic-eplb/diagrams/04-ascend-moe-comm-and-eplb.wisp.svg": "sha256-99fb8104a8d77d8a84c9cca431b07e0725f25dd105fd5be7a353ecd921a1e569"
+      },
+      "pages": [
+        "moe-comm-and-eplb"
+      ]
+    },
+    "src/content/posts/vllm-ascend/05-mooncake-pd-and-kv-pool/diagrams/05-ascend-kv-hierarchy.drawio": {
+      "source": "sha256-c182a28a93c0bd871d253814b5f8208f60652962c4842024ae75857a3644e558",
+      "style": "clean",
+      "exporter": "drawio-cli",
+      "embedFonts": false,
+      "outputs": {
+        "src/content/posts/vllm-ascend/05-mooncake-pd-and-kv-pool/diagrams/05-ascend-kv-hierarchy.wisp.svg": "sha256-b8906ed64e87d5cc858e380d7dae892c042e3d351a4abe2bf55f117b6b0737aa"
+      },
+      "pages": [
+        "ascend-kv-hierarchy"
+      ]
+    },
+    "src/content/posts/vllm-ascend/06-quantization-custom-ops-and-tuning/diagrams/06-custom-op-and-quant-pipeline.drawio": {
+      "source": "sha256-35aad5de916a73465231c7296926ceaccc0cb5dc4ad3144b7bf2eb678f0848f4",
+      "style": "clean",
+      "exporter": "drawio-cli",
+      "embedFonts": false,
+      "outputs": {
+        "src/content/posts/vllm-ascend/06-quantization-custom-ops-and-tuning/diagrams/06-custom-op-and-quant-pipeline.wisp.svg": "sha256-20384213bee606325dfafa9e74704b3498511679cd37bc54d93e18a40efd6680"
+      },
+      "pages": [
+        "custom-op-and-quant-pipeline"
+      ]
+    },
+    "src/content/posts/vllm/01-vllm-v1-architecture/diagrams/01-vllm-v1-arch.drawio": {
+      "source": "sha256-935918d1daccaa1f4fce81ddd2515076b6fc6399def0c6f150766c39a338bbc5",
+      "style": "clean",
+      "exporter": "drawio-cli",
+      "embedFonts": false,
+      "outputs": {
+        "src/content/posts/vllm/01-vllm-v1-architecture/diagrams/01-vllm-v1-arch.wisp.svg": "sha256-ce59eecc7911939762dc335b1d5844cba52f7852626934d95149748d1fd4a9a4"
+      },
+      "pages": [
+        "vllm-v1-arch"
+      ]
+    },
+    "src/content/posts/vllm/02-runtime-topology-and-parallel-mapping/diagrams/02-process-topology-grid.drawio": {
+      "source": "sha256-401287a266010355b4115da775b1fca0064bb1311794d8d24418a902f060cc6a",
+      "style": "clean",
+      "exporter": "drawio-cli",
+      "embedFonts": false,
+      "outputs": {
+        "src/content/posts/vllm/02-runtime-topology-and-parallel-mapping/diagrams/02-process-topology-grid.wisp.svg": "sha256-0dd6653361624e5c8744b9c977a23ad3b06c9dd90416dd452377577dab5b79a7"
+      },
+      "pages": [
+        "process-topology-grid"
+      ]
+    },
+    "src/content/posts/vllm/02-runtime-topology-and-parallel-mapping/diagrams/02-shm-ringbuffer.drawio": {
+      "source": "sha256-a9f8d94f88d96f86368caaa7c4233394ed180ba88974956d92368728b2ce8f31",
+      "style": "clean",
+      "exporter": "drawio-cli",
+      "embedFonts": false,
+      "outputs": {
+        "src/content/posts/vllm/02-runtime-topology-and-parallel-mapping/diagrams/02-shm-ringbuffer.wisp.svg": "sha256-3e7acbd395e44896467a2fe9e8912669115eac666af95e5d70d05c097c5ef03a"
+      },
+      "pages": [
+        "shm-ringbuffer-ipc"
+      ]
+    },
+    "src/content/posts/vllm/03-paged-attention-and-block-kv-cache/diagrams/03-hybrid-kv-groups.drawio": {
+      "source": "sha256-178da45b7fcc45e553f409c01c6c83bb28db8ca579e7a3e96966c14c50ce256e",
+      "style": "clean",
+      "exporter": "drawio-cli",
+      "embedFonts": false,
+      "outputs": {
+        "src/content/posts/vllm/03-paged-attention-and-block-kv-cache/diagrams/03-hybrid-kv-groups.wisp.svg": "sha256-61ffb1d319d2c17b4add5c528c51e2594e6486cf1ce0c3d8613790fd77ee2b5a"
+      },
+      "pages": [
+        "03-hybrid-kv-groups"
+      ]
+    },
+    "src/content/posts/vllm/03-paged-attention-and-block-kv-cache/diagrams/03-paged-kv-layout.drawio": {
+      "source": "sha256-31ec0c0db6c0be78ecee88114eeb93a3762e57c086fd41d33b9dcf8f852d4c13",
+      "style": "clean",
+      "exporter": "drawio-cli",
+      "embedFonts": false,
+      "outputs": {
+        "src/content/posts/vllm/03-paged-attention-and-block-kv-cache/diagrams/03-paged-kv-layout.wisp.svg": "sha256-0fb5e9c894ec3bbc2e6a4fcdaeff3f5a1a6af9045cf431703794f0119a03848d"
+      },
+      "pages": [
+        "03-paged-kv-layout"
+      ]
+    },
+    "src/content/posts/vllm/04-continuous-batching-and-scheduler/diagrams/04-batching-evolution.drawio": {
+      "source": "sha256-def6b79bbe62df97c3b956155b7ac76585bd33f135bdcb8d24863e749e2fa0cd",
+      "style": "clean",
+      "exporter": "drawio-cli",
+      "embedFonts": false,
+      "outputs": {
+        "src/content/posts/vllm/04-continuous-batching-and-scheduler/diagrams/04-batching-evolution.wisp.svg": "sha256-47c8e949b280d78eabdb870ab5c61d0b3efb6e954fd226fd6f00a3be7b057eef"
+      },
+      "pages": [
+        "batching-evolution"
+      ]
+    },
+    "src/content/posts/vllm/05-worker-and-model-runner-v2/diagrams/05-worker-startup-and-mrv2.drawio": {
+      "source": "sha256-41161ab9f4cdf5373f5fe2d5d61b540728e83c96d04da87aa3927e64a57f2c7e",
+      "style": "clean",
+      "exporter": "drawio-cli",
+      "embedFonts": false,
+      "outputs": {
+        "src/content/posts/vllm/05-worker-and-model-runner-v2/diagrams/05-worker-startup-and-mrv2.wisp.svg": "sha256-8fafe2f96c80cd76f715c0afad3028306b227d02da8cc64e819d804c58d14cea"
+      },
+      "pages": [
+        "worker-startup-and-mrv2"
+      ]
+    },
+    "src/content/posts/vllm/06-async-execution-and-launch-wall/diagrams/06-async-launch-timeline.drawio": {
+      "source": "sha256-ef20566cc9939d33c77a965e0d1ccb68718d369c1b83efd8d03a4df43ad91522",
+      "style": "clean",
+      "exporter": "drawio-cli",
+      "embedFonts": false,
+      "outputs": {
+        "src/content/posts/vllm/06-async-execution-and-launch-wall/diagrams/06-async-launch-timeline.wisp.svg": "sha256-0758f7c348f4bc6a5cc98ec9a98d3431e922c5b9f652abafee2b710832ba5d18"
       },
       "pages": [
         "Async FIFO Launch Wall and AsyncOutput"
       ]
     },
-    "src/content/posts/vllm/04-profiling-and-debugging/diagrams/06-profiler-five-signatures.drawio": {
-      "source": "sha256-8826be9db1105634ca7833092e8608f0277d3e6dc1c278384942e59d95e21f73",
+    "src/content/posts/vllm/07-dp-coordination-and-kv-transfer/diagrams/07-kv-connector-protocol.drawio": {
+      "source": "sha256-248f87b7d495119b22eaa33a02d0aa506eb905c51be70d9d92b21be27c8bf3a1",
       "style": "clean",
       "exporter": "drawio-cli",
       "embedFonts": false,
       "outputs": {
-        "src/content/posts/vllm/04-profiling-and-debugging/diagrams/06-profiler-five-signatures.wisp.svg": "sha256-33cb8be7788fd70121dd49240b23e6ff66aa7111a7658ef66ff1829ef6939498"
+        "src/content/posts/vllm/07-dp-coordination-and-kv-transfer/diagrams/07-kv-connector-protocol.wisp.svg": "sha256-2be9fd98eb569a219929cb0a3bd5f385ffe547cda317c05bd303e301e687a615"
+      },
+      "pages": [
+        "KVConnectorBase_V1 Dual Role and Pull vs Push Timeline"
+      ]
+    },
+    "src/content/posts/vllm/11-profiling-and-debugging/diagrams/08-profiler-five-signatures.drawio": {
+      "source": "sha256-eaabd4c5fe7cf20f01aaa1dd34d64fba9d948d78556a83fbf8c85ce8235f1eb7",
+      "style": "clean",
+      "exporter": "drawio-cli",
+      "embedFonts": false,
+      "outputs": {
+        "src/content/posts/vllm/11-profiling-and-debugging/diagrams/08-profiler-five-signatures.wisp.svg": "sha256-62c130a0b551081cf55b8485925ee14a2d30e0acd2656fa093d8ab70e67fc8ea"
       },
       "pages": [
         "Five Profiler Timeline Signatures"

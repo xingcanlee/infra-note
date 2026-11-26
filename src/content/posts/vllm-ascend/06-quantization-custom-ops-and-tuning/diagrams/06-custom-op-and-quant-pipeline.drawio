@@ -1,0 +1,124 @@
+<mxfile host="wisp-diagram">
+  <diagram id="vllm-ascend-06-custom-op-quant" name="custom-op-and-quant-pipeline">
+    <mxGraphModel dx="760" dy="700" grid="1" gridSize="8" guides="1" page="0" math="0" shadow="0">
+      <root>
+        <mxCell id="0"/>
+        <mxCell id="1" parent="0"/>
+        <mxCell id="top_bg" value="昇腾三条自定义算子开发路径（接图与调度入口）" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#f4f4f2;strokeColor=#e2e2dd;strokeWidth=1;align=left;verticalAlign=top;spacingTop=8;spacingLeft=12;fontFamily=Inter, Noto Sans SC;fontSize=12;fontStyle=1;fontColor=#1d1d1f;container=0;" vertex="1" parent="1">
+          <mxGeometry x="0" y="0" width="696" height="336" as="geometry"/>
+        </mxCell>
+        <mxCell id="p1_hdr" value="路径 1：torch_npu 封装&#xa;CustomOp.register_oot" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f2fb;strokeColor=#2f5783;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=6;fontFamily=Inter, Noto Sans SC;fontSize=12;fontStyle=1;fontColor=#1d1d1f;container=0;" vertex="1" parent="1">
+          <mxGeometry x="16" y="40" width="208" height="48" as="geometry"/>
+        </mxCell>
+        <mxCell id="p1_body" value="direct_register_custom_op&#xa;绑定 dispatch_key=PrivateUse1&#xa;提供 fake_impl 形状推导" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#e2e2dd;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=6;fontFamily=Inter, Noto Sans SC;fontSize=11;fontColor=#1d1d1f;container=0;" vertex="1" parent="1">
+          <mxGeometry x="16" y="104" width="208" height="80" as="geometry"/>
+        </mxCell>
+        <mxCell id="p1_eg" value="调用 npu_rms_norm / npu_swiglu&#xa;直接接入 torch.compile" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f2fb;strokeColor=#2f5783;strokeWidth=1.25;dashed=1;dashPattern=4 4;align=center;verticalAlign=middle;spacing=6;fontFamily=Inter, Noto Sans SC;fontSize=11;fontColor=#1d1d1f;container=0;" vertex="1" parent="1">
+          <mxGeometry x="16" y="200" width="208" height="48" as="geometry"/>
+        </mxCell>
+        <mxCell id="p2_hdr" value="路径 2：Triton-Ascend&#xa;bishengir 编译至 Cube/Vector" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f5e9;strokeColor=#2c522d;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=6;fontFamily=Inter, Noto Sans SC;fontSize=12;fontStyle=1;fontColor=#1d1d1f;container=0;" vertex="1" parent="1">
+          <mxGeometry x="240" y="40" width="208" height="48" as="geometry"/>
+        </mxCell>
+        <mxCell id="p2_body" value="AscendTritonJitKernel 预编译&#xa;按 UB 容量计算 BLOCK_M 变体&#xa;kernel_warmup() 消除在线抖动" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#e2e2dd;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=6;fontFamily=Inter, Noto Sans SC;fontSize=11;fontColor=#1d1d1f;container=0;" vertex="1" parent="1">
+          <mxGeometry x="240" y="104" width="208" height="80" as="geometry"/>
+        </mxCell>
+        <mxCell id="p2_eg" value="含 triton_kernel_wrapper&#xa;跳过 npugraph_ex 磁盘缓存" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f5e9;strokeColor=#2c522d;strokeWidth=1.25;dashed=1;dashPattern=4 4;align=center;verticalAlign=middle;spacing=6;fontFamily=Inter, Noto Sans SC;fontSize=11;fontColor=#1d1d1f;container=0;" vertex="1" parent="1">
+          <mxGeometry x="240" y="200" width="208" height="48" as="geometry"/>
+        </mxCell>
+        <mxCell id="p3_hdr" value="路径 3：AscendC / ACLNN&#xa;csrc/ 编译为 vllm_ascend_C" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#fbf2df;strokeColor=#7b5518;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=6;fontFamily=Inter, Noto Sans SC;fontSize=12;fontStyle=1;fontColor=#1d1d1f;container=0;" vertex="1" parent="1">
+          <mxGeometry x="464" y="40" width="208" height="48" as="geometry"/>
+        </mxCell>
+        <mxCell id="p3_body" value="TORCH_LIBRARY 绑定 _C_ascend&#xa;torch_binding_meta.cpp 注册 Meta&#xa;enable_custom_op() 延迟初始化" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#e2e2dd;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=6;fontFamily=Inter, Noto Sans SC;fontSize=11;fontColor=#1d1d1f;container=0;" vertex="1" parent="1">
+          <mxGeometry x="464" y="104" width="208" height="80" as="geometry"/>
+        </mxCell>
+        <mxCell id="p3_eg" value="前置 ASCEND_CUSTOM_OPP_PATH&#xa;与 libcust_opapi.so 路径" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#fbf2df;strokeColor=#7b5518;strokeWidth=1.25;dashed=1;dashPattern=4 4;align=center;verticalAlign=middle;spacing=6;fontFamily=Inter, Noto Sans SC;fontSize=11;fontColor=#1d1d1f;container=0;" vertex="1" parent="1">
+          <mxGeometry x="464" y="200" width="208" height="48" as="geometry"/>
+        </mxCell>
+        <mxCell id="top_dispatch" value="PyTorch PrivateUse1 分发与 ACLGraph 静态图捕获（需 Fake/Meta 实现，避免未声明主机同步）" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#2f5783;strokeWidth=1.5;align=center;verticalAlign=middle;spacing=6;fontFamily=Inter, Noto Sans SC;fontSize=12;fontStyle=1;fontColor=#1d1d1f;container=0;" vertex="1" parent="1">
+          <mxGeometry x="16" y="272" width="656" height="48" as="geometry"/>
+        </mxCell>
+        <mxCell id="e_p1_1" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=6;html=1;strokeColor=#5c6067;strokeWidth=1.25;endArrow=classic;endFill=1;" edge="1" parent="1" source="p1_hdr" target="p1_body">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e_p1_2" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=6;html=1;strokeColor=#5c6067;strokeWidth=1.25;endArrow=classic;endFill=1;" edge="1" parent="1" source="p1_body" target="p1_eg">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e_p1_3" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=10;html=1;strokeColor=#2f5783;strokeWidth=1.25;endArrow=classic;endFill=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.16;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="p1_eg" target="top_dispatch">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e_p2_1" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=6;html=1;strokeColor=#5c6067;strokeWidth=1.25;endArrow=classic;endFill=1;" edge="1" parent="1" source="p2_hdr" target="p2_body">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e_p2_2" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=6;html=1;strokeColor=#5c6067;strokeWidth=1.25;endArrow=classic;endFill=1;" edge="1" parent="1" source="p2_body" target="p2_eg">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e_p2_3" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=10;html=1;strokeColor=#2c522d;strokeWidth=1.25;endArrow=classic;endFill=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="p2_eg" target="top_dispatch">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e_p3_1" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=6;html=1;strokeColor=#5c6067;strokeWidth=1.25;endArrow=classic;endFill=1;" edge="1" parent="1" source="p3_hdr" target="p3_body">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e_p3_2" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=6;html=1;strokeColor=#5c6067;strokeWidth=1.25;endArrow=classic;endFill=1;" edge="1" parent="1" source="p3_body" target="p3_eg">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e_p3_3" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=10;html=1;strokeColor=#7b5518;strokeWidth=1.25;endArrow=classic;endFill=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.84;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="p3_eg" target="top_dispatch">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="bot_bg" value="ModelSlim 量化配置路由（AscendModelSlimConfig.get_quant_method）" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#f4f4f2;strokeColor=#e2e2dd;strokeWidth=1;align=left;verticalAlign=top;spacingTop=8;spacingLeft=12;fontFamily=Inter, Noto Sans SC;fontSize=12;fontStyle=1;fontColor=#1d1d1f;container=0;" vertex="1" parent="1">
+          <mxGeometry x="0" y="352" width="696" height="320" as="geometry"/>
+        </mxCell>
+        <mxCell id="q_json" value="quant_model_description.json&#xa;按权重键声明量化类型与尺度" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#e2e2dd;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=6;fontFamily=Inter, Noto Sans SC;fontSize=11;fontColor=#1d1d1f;container=0;" vertex="1" parent="1">
+          <mxGeometry x="16" y="400" width="200" height="64" as="geometry"/>
+        </mxCell>
+        <mxCell id="q_map" value="前缀映射与融合分片校验&#xa;apply_vllm_mapper · packed 映射&#xa;校验 qkv_proj / experts 同构" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#e2e2dd;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=6;fontFamily=Inter, Noto Sans SC;fontSize=11;fontColor=#1d1d1f;container=0;" vertex="1" parent="1">
+          <mxGeometry x="16" y="488" width="200" height="80" as="geometry"/>
+        </mxCell>
+        <mxCell id="q_float" value="标记为 FLOAT 时返回 None&#xa;回落浮点未量化路径" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#8b9098;strokeWidth=1.25;dashed=1;dashPattern=4 4;align=center;verticalAlign=middle;spacing=6;fontFamily=Inter, Noto Sans SC;fontSize=11;fontColor=#1d1d1f;container=0;" vertex="1" parent="1">
+          <mxGeometry x="16" y="592" width="200" height="56" as="geometry"/>
+        </mxCell>
+        <mxCell id="l_linear" value="LinearBase / Embedding&#xa;AscendLinearMethod" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f2fb;strokeColor=#2f5783;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=6;fontFamily=Inter, Noto Sans SC;fontSize=11;fontStyle=1;fontColor=#1d1d1f;container=0;" vertex="1" parent="1">
+          <mxGeometry x="232" y="400" width="176" height="56" as="geometry"/>
+        </mxCell>
+        <mxCell id="l_moe" value="is_fused_moe_layer&#xa;AscendFusedMoEMethod&#xa;注入 ModelSlim 加载器" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f5e9;strokeColor=#2c522d;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=6;fontFamily=Inter, Noto Sans SC;fontSize=11;fontStyle=1;fontColor=#1d1d1f;container=0;" vertex="1" parent="1">
+          <mxGeometry x="232" y="480" width="176" height="64" as="geometry"/>
+        </mxCell>
+        <mxCell id="l_attn" value="AttentionLayerBase&#xa;AscendKVCacheMethod&#xa;FA / Indexer / C8-MXFP 量化" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#fbf2df;strokeColor=#7b5518;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=6;fontFamily=Inter, Noto Sans SC;fontSize=11;fontStyle=1;fontColor=#1d1d1f;container=0;" vertex="1" parent="1">
+          <mxGeometry x="232" y="568" width="176" height="72" as="geometry"/>
+        </mxCell>
+        <mxCell id="s_w8a8" value="W8A8（静态）/ W8A8_DYNAMIC&#xa;Per-Channel 权重与静态或逐 token 激活" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f2fb;strokeColor=#2f5783;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=6;fontFamily=Inter, Noto Sans SC;fontSize=11;fontColor=#1d1d1f;container=0;" vertex="1" parent="1">
+          <mxGeometry x="432" y="400" width="240" height="56" as="geometry"/>
+        </mxCell>
+        <mxCell id="s_mix" value="W8A8_MIX（PD 分离混合量化）&#xa;Prefill 走动态量化 · Decode 走静态复用" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f5e9;strokeColor=#2c522d;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=6;fontFamily=Inter, Noto Sans SC;fontSize=11;fontColor=#1d1d1f;container=0;" vertex="1" parent="1">
+          <mxGeometry x="432" y="480" width="240" height="64" as="geometry"/>
+        </mxCell>
+        <mxCell id="s_mxfp" value="A5 微缩放 MXFP8 / MXFP4&#xa;每 32 元素共享 E8M0 块尺度&#xa;require_mx_weight_format 校验芯片" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#fbf2df;strokeColor=#7b5518;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=6;fontFamily=Inter, Noto Sans SC;fontSize=11;fontColor=#1d1d1f;container=0;" vertex="1" parent="1">
+          <mxGeometry x="432" y="568" width="240" height="72" as="geometry"/>
+        </mxCell>
+        <mxCell id="e_q1" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=10;html=1;strokeColor=#5c6067;strokeWidth=1.25;endArrow=classic;endFill=1;" edge="1" parent="1" source="q_json" target="q_map">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e_q2" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=10;html=1;strokeColor=#5c6067;strokeWidth=1.25;endArrow=classic;endFill=1;" edge="1" parent="1" source="q_map" target="q_float">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e_ql" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=6;html=1;strokeColor=#2f5783;strokeWidth=1.25;endArrow=classic;endFill=1;exitX=1;exitY=0.25;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="q_map" target="l_linear">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e_qm" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=6;html=1;strokeColor=#2c522d;strokeWidth=1.25;endArrow=classic;endFill=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="q_map" target="l_moe">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e_qa" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=6;html=1;strokeColor=#7b5518;strokeWidth=1.25;endArrow=classic;endFill=1;exitX=1;exitY=0.75;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="q_map" target="l_attn">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e_ls1" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=10;html=1;strokeColor=#2f5783;strokeWidth=1.25;endArrow=classic;endFill=1;" edge="1" parent="1" source="l_linear" target="s_w8a8">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e_ls2" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=10;html=1;strokeColor=#2c522d;strokeWidth=1.25;endArrow=classic;endFill=1;" edge="1" parent="1" source="l_moe" target="s_mix">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e_ls3" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=10;html=1;strokeColor=#7b5518;strokeWidth=1.25;endArrow=classic;endFill=1;" edge="1" parent="1" source="l_attn" target="s_mxfp">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

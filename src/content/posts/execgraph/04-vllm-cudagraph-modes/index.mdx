@@ -161,7 +161,7 @@ print("[Trace Mixed batch]", run_three_layer("FULL_AND_PIECEWISE", is_uniform=Fa
 [Trace Mixed batch] ['outer_full(bypass)', 'inner_pw(replay_submod_0)', 'attn(eager)', 'inner_pw(replay_submod_2)']
 ```
 
-在多卡数据并行服务中，各张计算卡的负载可能不同，单卡模式必须先在集群主机端达成一致再交由本篇机制查表，完整多卡协同流程见[vLLM 第 3 章：多卡 DP 共识与运行时协同](../../vllm/03-runtime-dispatch-and-nesting/)。
+在多卡数据并行服务中，各张计算卡的负载可能不同，单卡模式必须先在集群主机端达成一致再交由本篇机制查表，完整多卡协同流程见[vLLM 第 7 章：多卡 DP 协同与 PD 分离 KV 传输](../../vllm/07-dp-coordination-and-kv-transfer/)。
 
 把视角转向华为昇腾 NPU：在沿用同一套 `CUDAGraphMode` 上层编排的前提下，昇腾底层如何构造影子模型流并解决主机侧变长分块问题？[第 5 章：ACL Graph 录制架构：影子流与参数备份](../05-acl-graph-architecture-and-capture/)至[第 7 章：vLLM-Ascend 执行图：NPU 适配与排障](../07-acl-graph-fullstack-and-vllm-ascend/)将逐步展开。
 

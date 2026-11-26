@@ -1,0 +1,101 @@
+/* Mooncake PD 三模式时序推演局部样式（通用横幅与语义色调由 @/explainers/kit/kit.css 提供）。 */
+@layer utilities {
+  .pd-flow-stage {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    min-width: 0;
+  }
+
+  .wisp-explainer__inner[data-expanded] .pd-flow-stage {
+    flex: 1 1 0;
+    min-height: 0;
+    height: 100%;
+  }
+
+  .pd-flow-metrics {
+    flex: none;
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 0.5rem;
+  }
+
+  .pd-metric-card {
+    display: flex;
+    flex-direction: column;
+    gap: 0.125rem;
+    min-width: 0;
+    padding: 0.375rem 0.5rem;
+    border: 1px solid var(--wisp-border);
+    border-radius: 4px;
+    background: var(--wisp-surface);
+  }
+
+  .pd-metric-card__label {
+    font-size: 0.6875rem;
+    color: var(--wisp-muted);
+    line-height: 1.25;
+  }
+
+  .pd-metric-card__val {
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: var(--wisp-fg);
+    font-variant-numeric: tabular-nums;
+    line-height: 1.3;
+    overflow-wrap: anywhere;
+  }
+
+  .pd-flow-canvas-wrap {
+    border: 1px solid var(--wisp-border);
+    border-radius: 4px;
+    background: var(--wisp-surface);
+    padding: 0.375rem;
+    overflow-x: auto;
+  }
+
+  .pd-flow-svg {
+    display: block;
+    width: 100%;
+    min-width: 34rem;
+    height: auto;
+  }
+
+  .wisp-explainer__inner[data-expanded] .pd-flow-svg {
+    min-width: 0;
+  }
+
+  .pd-flow-legend {
+    flex: none;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.625rem 1rem;
+    padding: 0.3125rem 0.625rem;
+    border: 1px solid var(--wisp-border);
+    border-radius: 3px;
+    background: var(--wisp-surface);
+    font-size: 0.75rem;
+    color: var(--wisp-muted);
+  }
+
+  .pd-legend-item {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.375rem;
+  }
+
+  .pd-legend-swatch {
+    display: inline-block;
+    width: 0.75rem;
+    height: 0.75rem;
+    border: 1.5px solid var(--wisp-border);
+    border-radius: 3px;
+  }
+
+  @media (max-width: 44rem) {
+    .pd-flow-metrics {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+  }
+}

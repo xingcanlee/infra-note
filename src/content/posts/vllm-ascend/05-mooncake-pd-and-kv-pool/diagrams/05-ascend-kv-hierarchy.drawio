@@ -1,0 +1,121 @@
+<mxfile host="wisp-diagram">
+  <diagram id="vllm-ascend-05-ascend-kv-hierarchy" name="ascend-kv-hierarchy">
+    <mxGraphModel dx="760" dy="680" grid="1" gridSize="8" guides="1" page="0" math="1" shadow="0">
+      <root>
+        <mxCell id="0"/>
+        <mxCell id="1" parent="0"/>
+        <mxCell id="top_bg" value="非对称 TP 切分路由（\(P_{\text{tp}} = 8 \to D_{\text{tp}} = 4\)）与传输引擎协议" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#f4f4f2;strokeColor=#e2e2dd;strokeWidth=1;align=left;verticalAlign=top;spacingTop=8;spacingLeft=12;fontFamily=Inter, Noto Sans SC;fontSize=12;fontStyle=1;fontColor=#1d1d1f;container=0;" vertex="1" parent="1">
+          <mxGeometry x="0" y="0" width="696" height="288" as="geometry"/>
+        </mxCell>
+        <mxCell id="p_panel" value="Prefill 侧 8 卡源分片（P0 至 P7）" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#e2e2dd;strokeWidth=1;align=left;verticalAlign=top;spacingTop=8;spacingLeft=10;fontFamily=Inter, Noto Sans SC;fontSize=11;fontStyle=1;fontColor=#1d1d1f;container=0;" vertex="1" parent="1">
+          <mxGeometry x="16" y="40" width="208" height="232" as="geometry"/>
+        </mxCell>
+        <mxCell id="p_g0" value="P0 / P1：头 0-1 · 副本 0-1" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f2fb;strokeColor=#2f5783;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=6;fontFamily=Inter, Noto Sans SC;fontSize=11;fontColor=#1d1d1f;container=0;" vertex="1" parent="1">
+          <mxGeometry x="24" y="72" width="192" height="40" as="geometry"/>
+        </mxCell>
+        <mxCell id="p_g1" value="P2 / P3：头 2-3 · 副本 2-3" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f2fb;strokeColor=#2f5783;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=6;fontFamily=Inter, Noto Sans SC;fontSize=11;fontColor=#1d1d1f;container=0;" vertex="1" parent="1">
+          <mxGeometry x="24" y="120" width="192" height="40" as="geometry"/>
+        </mxCell>
+        <mxCell id="p_g2" value="P4 / P5：头 4-5 · 副本 4-5" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f2fb;strokeColor=#2f5783;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=6;fontFamily=Inter, Noto Sans SC;fontSize=11;fontColor=#1d1d1f;container=0;" vertex="1" parent="1">
+          <mxGeometry x="24" y="168" width="192" height="40" as="geometry"/>
+        </mxCell>
+        <mxCell id="p_g3" value="P6 / P7：头 6-7 · 副本 6-7" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f2fb;strokeColor=#2f5783;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=6;fontFamily=Inter, Noto Sans SC;fontSize=11;fontColor=#1d1d1f;container=0;" vertex="1" parent="1">
+          <mxGeometry x="24" y="216" width="192" height="40" as="geometry"/>
+        </mxCell>
+        <mxCell id="map_panel" value="切分比例与字节偏移路由" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#e2e2dd;strokeWidth=1;align=left;verticalAlign=top;spacingTop=8;spacingLeft=10;fontFamily=Inter, Noto Sans SC;fontSize=11;fontStyle=1;fontColor=#1d1d1f;container=0;" vertex="1" parent="1">
+          <mxGeometry x="240" y="40" width="224" height="232" as="geometry"/>
+        </mxCell>
+        <mxCell id="map_gqa" value="GQA（\(H_{\text{kv}} = 8\)，无冗余副本）&#xa;\(\text{pd\_head\_ratio} = 8 / 4 = 2\)&#xa;D Rank \(i\) 合并 P \([2i, 2i+1]\) 切片&#xa;偏移：\(\text{block\_len} \times (\text{tp} \bmod 2)\)" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#fbf2df;strokeColor=#7b5518;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=6;fontFamily=Inter, Noto Sans SC;fontSize=11;fontColor=#1d1d1f;container=0;" vertex="1" parent="1">
+          <mxGeometry x="248" y="72" width="208" height="88" as="geometry"/>
+        </mxCell>
+        <mxCell id="map_mla" value="MLA（\(H_{\text{kv}} = 1\)，P 持 8 份副本）&#xa;按请求哈希抽样选 4 个源 P Rank&#xa;\(\text{tp\_num\_need\_pulls} = 1\)&#xa;每张 D 卡仅拉 1 份副本避免冗余" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f5e9;strokeColor=#2c522d;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=6;fontFamily=Inter, Noto Sans SC;fontSize=11;fontColor=#1d1d1f;container=0;" vertex="1" parent="1">
+          <mxGeometry x="248" y="168" width="208" height="88" as="geometry"/>
+        </mxCell>
+        <mxCell id="d_panel" value="Decode 4 卡目标槽与传输引擎" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#e2e2dd;strokeWidth=1;align=left;verticalAlign=top;spacingTop=8;spacingLeft=10;fontFamily=Inter, Noto Sans SC;fontSize=11;fontStyle=1;fontColor=#1d1d1f;container=0;" vertex="1" parent="1">
+          <mxGeometry x="480" y="40" width="200" height="232" as="geometry"/>
+        </mxCell>
+        <mxCell id="d_ranks" value="Decode 4 卡目标槽（D0 至 D3）&#xa;D0 汇合头 0-1 · D1 汇合头 2-3&#xa;D2 汇合头 4-5 · D3 汇合头 6-7" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f5e9;strokeColor=#2c522d;strokeWidth=1.5;align=center;verticalAlign=middle;spacing=6;fontFamily=Inter, Noto Sans SC;fontSize=11;fontColor=#1d1d1f;container=0;" vertex="1" parent="1">
+          <mxGeometry x="488" y="72" width="184" height="80" as="geometry"/>
+        </mxCell>
+        <mxCell id="te_box" value="底层传输引擎双路径&#xa;Mooncake：HCCS / RDMA 读写&#xa;MemFabric：A3 走 SDMA/RDMA&#xa;950PR/950DT 走 device_urma" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f2fb;strokeColor=#2f5783;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=6;fontFamily=Inter, Noto Sans SC;fontSize=11;fontColor=#1d1d1f;container=0;" vertex="1" parent="1">
+          <mxGeometry x="488" y="176" width="184" height="80" as="geometry"/>
+        </mxCell>
+        <mxCell id="e_pg0" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=6;html=1;strokeColor=#5c6067;strokeWidth=1.25;endArrow=classic;endFill=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.25;entryDx=0;entryDy=0;" edge="1" parent="1" source="p_g0" target="map_gqa">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e_pg1" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=6;html=1;strokeColor=#5c6067;strokeWidth=1.25;endArrow=classic;endFill=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.75;entryDx=0;entryDy=0;" edge="1" parent="1" source="p_g1" target="map_gqa">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e_pg2" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=6;html=1;strokeColor=#5c6067;strokeWidth=1.25;endArrow=classic;endFill=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.25;entryDx=0;entryDy=0;" edge="1" parent="1" source="p_g2" target="map_mla">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e_pg3" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=6;html=1;strokeColor=#5c6067;strokeWidth=1.25;endArrow=classic;endFill=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.75;entryDx=0;entryDy=0;" edge="1" parent="1" source="p_g3" target="map_mla">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e_gqa_d" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=6;html=1;strokeColor=#7b5518;strokeWidth=1.5;endArrow=classic;endFill=1;" edge="1" parent="1" source="map_gqa" target="d_ranks">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e_mla_te" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=6;html=1;strokeColor=#2c522d;strokeWidth=1.5;endArrow=classic;endFill=1;" edge="1" parent="1" source="map_mla" target="te_box">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e_te_d" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=6;html=1;strokeColor=#2f5783;strokeWidth=1.25;endArrow=classic;endFill=1;" edge="1" parent="1" source="te_box" target="d_ranks">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="bot_bg" value="昇腾三层分层 KV 缓存池：AscendStore、PreemptOffload 与稀疏卸载路径" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#f4f4f2;strokeColor=#e2e2dd;strokeWidth=1;align=left;verticalAlign=top;spacingTop=8;spacingLeft=12;fontFamily=Inter, Noto Sans SC;fontSize=12;fontStyle=1;fontColor=#1d1d1f;container=0;" vertex="1" parent="1">
+          <mxGeometry x="0" y="304" width="696" height="336" as="geometry"/>
+        </mxCell>
+        <mxCell id="tier_hbm" value="Tier 1&#xa;NPU HBM&#xa;高频热缓冲" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f2fb;strokeColor=#2f5783;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=6;fontFamily=Inter, Noto Sans SC;fontSize=11;fontStyle=1;fontColor=#1d1d1f;container=0;" vertex="1" parent="1">
+          <mxGeometry x="16" y="344" width="112" height="80" as="geometry"/>
+        </mxCell>
+        <mxCell id="tier_dram" value="Tier 2&#xa;Host DRAM&#xa;2 MiB 大页固定内存" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#fbf2df;strokeColor=#7b5518;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=6;fontFamily=Inter, Noto Sans SC;fontSize=11;fontStyle=1;fontColor=#1d1d1f;container=0;" vertex="1" parent="1">
+          <mxGeometry x="16" y="440" width="112" height="88" as="geometry"/>
+        </mxCell>
+        <mxCell id="tier_pool" value="Tier 3&#xa;远端池 / SSD&#xa;分布式前缀共享" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f5e9;strokeColor=#2c522d;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=6;fontFamily=Inter, Noto Sans SC;fontSize=11;fontStyle=1;fontColor=#1d1d1f;container=0;" vertex="1" parent="1">
+          <mxGeometry x="16" y="544" width="112" height="80" as="geometry"/>
+        </mxCell>
+        <mxCell id="as_hbm" value="AscendStore 逐层缓冲&#xa;\(I + \min(B, R)\) 共享页&#xa;多逻辑层按槽位轮转复用" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#2f5783;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=6;fontFamily=Inter, Noto Sans SC;fontSize=11;fontColor=#1d1d1f;container=0;" vertex="1" parent="1">
+          <mxGeometry x="144" y="344" width="168" height="80" as="geometry"/>
+        </mxCell>
+        <mxCell id="as_dram" value="GVA / BlockKey 数据面&#xa;预填充边算边存与预取&#xa;与远端 D2H 共用复用门控" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#fbf2df;strokeColor=#7b5518;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=6;fontFamily=Inter, Noto Sans SC;fontSize=11;fontColor=#1d1d1f;container=0;" vertex="1" parent="1">
+          <mxGeometry x="144" y="440" width="168" height="88" as="geometry"/>
+        </mxCell>
+        <mxCell id="as_pool" value="AscendStore 外部存储池&#xa;Memcache / MooncakeStore&#xa;跨实例全局前缀命中" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f5e9;strokeColor=#2c522d;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=6;fontFamily=Inter, Noto Sans SC;fontSize=11;fontColor=#1d1d1f;container=0;" vertex="1" parent="1">
+          <mxGeometry x="144" y="544" width="168" height="80" as="geometry"/>
+        </mxCell>
+        <mxCell id="po_hbm" value="PreemptOffload 截留&#xa;请求抢占释放物理块前&#xa;发起异步批量卸载" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#2f5783;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=6;fontFamily=Inter, Noto Sans SC;fontSize=11;fontColor=#1d1d1f;container=0;" vertex="1" parent="1">
+          <mxGeometry x="328" y="344" width="168" height="80" as="geometry"/>
+        </mxCell>
+        <mxCell id="po_dram" value="本机 CPU 块配额池&#xa;按卡划定主机内存上限&#xa;可选开启卸载前缀复用" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#fbf2df;strokeColor=#7b5518;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=6;fontFamily=Inter, Noto Sans SC;fontSize=11;fontColor=#1d1d1f;container=0;" vertex="1" parent="1">
+          <mxGeometry x="328" y="440" width="168" height="88" as="geometry"/>
+        </mxCell>
+        <mxCell id="po_note" value="恢复调度时直接回迁 HBM&#xa;免除长提示词重算开销&#xa;仅驻留本机不写远端存储" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#8b9098;strokeWidth=1;dashed=1;dashPattern=4 4;align=center;verticalAlign=middle;spacing=6;fontFamily=Inter, Noto Sans SC;fontSize=11;fontColor=#5c6067;container=0;" vertex="1" parent="1">
+          <mxGeometry x="328" y="544" width="168" height="80" as="geometry"/>
+        </mxCell>
+        <mxCell id="sp_hbm" value="SparseKVOffload 驻留区&#xa;LIM C8 索引常驻 NPU&#xa;每层热 Top-k 槽位缓冲" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#2f5783;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=6;fontFamily=Inter, Noto Sans SC;fontSize=11;fontColor=#1d1d1f;container=0;" vertex="1" parent="1">
+          <mxGeometry x="512" y="344" width="168" height="80" as="geometry"/>
+        </mxCell>
+        <mxCell id="sp_dram" value="全量主 KV Host 共享池&#xa;MemFabric 注册视图&#xa;Copy-SFA 仅回填未命中行" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#fbf2df;strokeColor=#7b5518;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=6;fontFamily=Inter, Noto Sans SC;fontSize=11;fontColor=#1d1d1f;container=0;" vertex="1" parent="1">
+          <mxGeometry x="512" y="440" width="168" height="88" as="geometry"/>
+        </mxCell>
+        <mxCell id="sp_pool" value="SfaRemoteD2H 协同&#xa;P 写 D 主 KV + 索引切片&#xa;暂不支持 950PR/950DT" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f5e9;strokeColor=#2c522d;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=6;fontFamily=Inter, Noto Sans SC;fontSize=11;fontColor=#1d1d1f;container=0;" vertex="1" parent="1">
+          <mxGeometry x="512" y="544" width="168" height="80" as="geometry"/>
+        </mxCell>
+        <mxCell id="e_as_1" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=6;html=1;strokeColor=#5c6067;strokeWidth=1.25;startArrow=classic;startFill=1;endArrow=classic;endFill=1;" edge="1" parent="1" source="as_hbm" target="as_dram">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e_as_2" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=6;html=1;strokeColor=#5c6067;strokeWidth=1.25;startArrow=classic;startFill=1;endArrow=classic;endFill=1;" edge="1" parent="1" source="as_dram" target="as_pool">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e_po_1" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=6;html=1;strokeColor=#5c6067;strokeWidth=1.25;startArrow=classic;startFill=1;endArrow=classic;endFill=1;" edge="1" parent="1" source="po_hbm" target="po_dram">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e_sp_1" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=6;html=1;strokeColor=#5c6067;strokeWidth=1.25;startArrow=classic;startFill=1;endArrow=classic;endFill=1;" edge="1" parent="1" source="sp_hbm" target="sp_dram">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e_sp_2" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=6;html=1;strokeColor=#5c6067;strokeWidth=1.25;startArrow=classic;startFill=1;endArrow=classic;endFill=1;" edge="1" parent="1" source="sp_dram" target="sp_pool">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

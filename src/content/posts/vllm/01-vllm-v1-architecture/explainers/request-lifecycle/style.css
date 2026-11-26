@@ -1,0 +1,208 @@
+@layer utilities {
+  .vllm-lc-stage {
+    display: flex;
+    flex-direction: column;
+    gap: 0.625rem;
+    min-width: 0;
+  }
+
+  .wisp-explainer__inner[data-expanded] .vllm-lc-stage {
+    flex: 1 1 0;
+    min-height: 0;
+    height: 100%;
+    gap: 0.5rem;
+  }
+
+  .vllm-lc-svg {
+    display: block;
+    width: 100%;
+    height: auto;
+    overflow: visible;
+  }
+
+  .vllm-lc-mini-text {
+    font-family: var(--wisp-font-mono);
+    font-size: 10.5px;
+  }
+
+  .vllm-lc-group-title {
+    fill: var(--wisp-muted);
+    font-family: var(--wisp-font-sans);
+    font-size: 11px;
+    font-weight: 600;
+  }
+
+  .vllm-lc-node-title {
+    fill: var(--wisp-fg);
+    font-family: var(--wisp-font-mono);
+    font-size: 11.5px;
+    font-weight: 600;
+    text-anchor: middle;
+  }
+
+  .vllm-lc-node-sub {
+    fill: var(--wisp-muted);
+    font-family: var(--wisp-font-sans);
+    font-size: 10.5px;
+    text-anchor: middle;
+  }
+
+  .vllm-lc-mono-sm {
+    fill: var(--wisp-fg);
+    font-family: var(--wisp-font-mono);
+    font-size: 10px;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .vllm-lc-note-svg {
+    fill: var(--wisp-muted);
+    font-family: var(--wisp-font-sans);
+    font-size: 10px;
+  }
+
+  .vllm-lc-strip-label {
+    fill: var(--wisp-fg);
+    font-family: var(--wisp-font-sans);
+    font-size: 11px;
+    font-weight: 600;
+  }
+
+  .vllm-lc-tok-text {
+    fill: var(--wisp-fg);
+    font-family: var(--wisp-font-sans);
+    font-size: 11.5px;
+    font-weight: 600;
+    text-anchor: middle;
+  }
+
+  .vllm-lc-tok-id {
+    fill: var(--wisp-muted);
+    font-family: var(--wisp-font-mono);
+    font-size: 10.5px;
+    text-anchor: middle;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .vllm-lc-strip-meta {
+    fill: var(--wisp-muted);
+    font-family: var(--wisp-font-mono);
+    font-size: 10.5px;
+  }
+
+  .vllm-lc-footer {
+    flex: none;
+    display: flex;
+    flex-direction: column;
+    gap: 0.4375rem;
+    padding: 0.5rem 0.6875rem;
+    border: 1px solid var(--wisp-border);
+    border-radius: 4px;
+    background: var(--wisp-surface);
+  }
+
+  .vllm-lc-mode-bar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+  }
+
+  .vllm-lc-mode-group {
+    display: inline-flex;
+    flex-wrap: wrap;
+    gap: 0.375rem;
+  }
+
+  .vllm-lc-mode-btn {
+    min-height: 2rem;
+    padding: 0.25rem 0.625rem;
+    border: 1px solid var(--wisp-border);
+    border-radius: 3px;
+    background: var(--wisp-bg);
+    color: var(--wisp-muted);
+    font: inherit;
+    font-size: 0.8125rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition:
+      background-color 150ms,
+      border-color 150ms,
+      color 150ms;
+  }
+
+  .vllm-lc-mode-btn:hover {
+    color: var(--wisp-fg);
+    border-color: var(--wisp-muted);
+  }
+
+  .vllm-lc-mode-btn[aria-pressed='true'] {
+    border-color: var(--wisp-accent);
+    color: var(--wisp-fg);
+    font-weight: 600;
+  }
+
+  .vllm-lc-mode-eq {
+    font-size: 0.8125rem;
+    color: var(--wisp-fg);
+  }
+
+  .vllm-lc-bar-track {
+    border: 1px solid var(--wisp-border);
+    border-radius: 3px;
+    background: var(--wisp-bg);
+    padding: 0.25rem;
+  }
+
+  .vllm-lc-bar-row {
+    display: flex;
+    gap: 0.25rem;
+    width: 100%;
+  }
+
+  .vllm-lc-bar-seg {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 1.5rem;
+    padding-inline: 0.375rem;
+    border-radius: 3px;
+    font-size: 0.75rem;
+    font-weight: 500;
+    color: var(--wisp-fg);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .vllm-lc-bar-seg--done {
+    border: 1px solid var(--wisp-sem-done);
+    background: var(--wisp-sem-done-fill);
+  }
+
+  .vllm-lc-bar-seg--active {
+    border: 1px solid var(--wisp-sem-active);
+    background: var(--wisp-sem-active-fill);
+  }
+
+  .vllm-lc-bar-seg--highlight {
+    border: 1px solid var(--wisp-sem-highlight);
+    background: var(--wisp-sem-highlight-fill);
+  }
+
+  .vllm-lc-note {
+    margin: 0;
+    font-size: 0.8125rem;
+    color: var(--wisp-muted);
+    line-height: 1.5;
+  }
+
+  @media (max-width: 44rem) {
+    .vllm-lc-bar-row {
+      flex-direction: column;
+    }
+    .vllm-lc-bar-seg {
+      width: 100% !important;
+    }
+  }
+}

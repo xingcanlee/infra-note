@@ -1,56 +1,67 @@
 ---
-title: 'vLLM 与 vLLM-Ascend 推理引擎：调度与运行时导览'
-description: '在线推理常受限于显存碎片、跨步等待、DP 负载分化与尾槽越界。本系列对照 vLLM 与 vllm-ascend 源码，拆解分页调度、跨步异步、DP 共识与故障排障。'
+title: 'vLLM 推理引擎：架构与核心组件导览'
+description: '从请求入口到性能观测，自顶向下拆解 vLLM V1 架构：进程拓扑与并行映射、PagedAttention 分块缓存、连续批调度、ModelRunner V2 与 PD 分离传输协议。'
 series: { id: vllm, order: 1 }
 pubDate: 2026-10-25
 draft: false
-tags: [vLLM, Ascend, PagedAttention, Async, DP, Profiling]
+tags: [vLLM, Architecture, PagedAttention, Scheduler, ModelRunner, Profiling]
+category: AI Infra
+toc: true
 ---
 
-单卡计算与跨卡通信决定了一套模型的理论算力上限，但把模型真正拉上在线推理服务后，决定端到端吞吐与尾延迟的往往是引擎运行时。线上压测常见一种失衡：单卡理论算力与显存仍有余量，小批量解码吞吐却迟迟上不去，或者启用静态图后出现静默回退、跨卡挂死与输出异常。
+单卡计算与跨卡通信决定了一套模型的理论算力上限，但把模型真正拉上在线推理服务后，决定端到端吞吐与尾延迟的往往是引擎运行时。线上压测常见一种失衡：硬件理论算力与显存仍有余量，小批量解码吞吐却迟迟上不去，或者启用静态图后出现静默回退、跨卡挂死与输出异常。
 
-在线推理运行时的吞吐与尾延迟由三项系统级资源决策共同支配。在显存侧，并发请求的提示词与生成长度持续变动，运行时需要在物理块粒度上按需映射 **KV Cache（Key-Value Cache，键值缓存）**、复用共享前缀，并在显存打满时有序抢占。
+要看清这些现象的根因，必须自顶向下理清推理引擎的三道结构边界：控制面如何把请求拆成不阻塞计算的进程流水，调度面如何把变长序列映射进统一物理显存池，以及执行面如何把动态调度单装填进静态张量与通信图。本系列以锁定提交的 `vLLM` V1 架构与 Model Runner V2[^vllm-repo]为基准，面向零基础推理开发者从头推演。
 
-在执行侧，小批量解码时许多算子在计算单元上只跑几微秒，短于 Python 解析与驱动下发耗时，一旦发生主机等待或队列断流就会露出空闲气泡。在编译与图执行侧，算子融合与硬件静态图要求张量地址与输入形状保持冻结，而线上流量每一步进入模型的请求数与长度都在实时变动。
+## 自顶向下的三层引擎边界
 
-本系列对照两个锁定提交的代码仓：上游 `vLLM` V1 调度架构（含 Model Runner V2 执行器，提交 `bb23c0a8`）与华为昇腾插件 `vllm-ascend`（提交 `3649b8ff`）。后者运行在昇腾 **CANN（Compute Architecture for Neural Networks，异构计算架构）**之上。它在请求调度与分页结构上复用上游设计，并在算子融合、图捕获与异步事件同步上适配了 NPU 硬件约束。
+为了避免在在线服务期间触发高开销的同步阻塞或实时重新编译，vLLM V1 在进程、显存与执行流三个层面做了清晰切分。整体分层与数据流如图 1 所示。
 
-## 运行时双阶段架构：启动构图与单步执行
-
-为了避免在线服务期间触发耗时数秒的即时重新编译或图录制，现代推理引擎把静态优化全部前移到启动阶段，把动态请求匹配留在每一步的微秒级路径里。整体划分如图 1 所示。
-
-```mermaid caption="图 1：推理引擎启动期构图与运行期单步执行链路"
+```mermaid caption="图 1：vLLM V1 自顶向下三层架构与请求流向"
 flowchart TB
-    subgraph BOOT["启动期：分段编译与分桶捕获"]
+    subgraph FE["前端服务层（API Server / AsyncLLM）"]
         direction LR
-        B1["无 Guard 整图追踪"] --> B2["按注意力算子切分"]
-        B2 --> B3["Inductor 或 npugraph_ex"]
-        B3 --> B4["分桶捕获三层包装"]
+        F1["InputProcessor 分词"] --> F2["ZMQ IPC 客户端"]
+        F2 --> F3["OutputProcessor 增量解码"]
     end
-    subgraph STEP["运行期：单步调度与设备重放"]
+    subgraph EC["调度与缓存层（EngineCoreProc）"]
         direction LR
-        R1["统一配额与 KV 块表"] --> R2["跨卡 DP 共识分派"]
-        R2 --> R3["静态图重放或分段执行"]
-        R3 --> R4["异步流回传与采样重叠"]
+        E1["Scheduler 统一配额"] --> E2["BlockPool 物理块表"]
+        E2 --> E3["shm_broadcast 无锁环"]
     end
-    B4 --> R3
+    subgraph WK["执行与硬件层（Executor / Worker）"]
+        direction LR
+        W1["ModelRunner V2 差量组装"] --> W2["前向与静态图重放"]
+        W2 --> W3["AsyncOutput 异步回传"]
+    end
+    FE -->|"EngineCoreRequest"| EC
+    EC -->|"SchedulerOutput"| WK
+    WK -->|"ModelRunnerOutput"| EC
+    EC -->|"EngineCoreOutputs"| FE
 ```
 
-在启动期，引擎先通过无 Guard 追踪一次捕获完整计算图，再沿注意力节点把模型拆成可静态编译的纯张量段与直调手写算子的隔离段，最后按预设批量桶捕获内外两层静态图并保留产物。
+在控制面，前端进程独立承担 HTTP 接流、分词与增量文本还原，不再把 Python **GIL（Global Interpreter Lock，全局解释器锁）**和字符串处理混入模型前向线程。调度进程只负责用统一配额编排批计划并维护分页块表，再通过无锁共享内存环把调度指令广播给各张卡上的 Worker 进程。
 
-进入运行期后，每一步前向先由调度器按统一 token 预算分配物理 KV 块，接着在 **DP（Data Parallelism，数据并行）**各卡之间就图模式与填充尺寸达成一致。随后各卡直接命中对应图桶重放，并借助独立拷贝流把采样结果异步传回主机，让 CPU 有余力提前编排下一轮输入。
+在执行面，Model Runner V2 把跨步不变的请求状态常驻在设备显存中，仅传递增量变化与槽位映射，再配合独立拷贝流把采样结果异步回传主机。
 
-## 四章目录与学习路径
+## 十一章路线与系列分工
 
-本系列聚焦推理引擎层的调度、跨步异步与多卡并发问题，与[《推理执行图：CUDA Graph 与 ACL Graph》](../execgraph/)互补分工。底层 `torch.compile`、单卡 `CUDAGraphMode`、CUDA Graph 四边界与昇腾 ACL Graph 源码全部收归执行图系列，本系列专注以下四章：
+本系列专注通用推理引擎的进程架构、显存虚拟化、批调度、执行器、集群协同以及投机与配置排障。昇腾硬件插件、多代 NPU 适配与自定义算子开发独立收归[《vLLM-Ascend 昇腾插件与硬件拓展》](../vllm-ascend/)。底层 `torch.compile`、CUDA Graph 与 ACL Graph 录制机制收归[《推理执行图：CUDA Graph 与 ACL Graph》](../execgraph/)。本系列按以下十一章自顶向下推进：
 
-| 章节                                                                      | 核心机制                         | 解决痛点             | 双平台对照                                |
-| ------------------------------------------------------------------------- | -------------------------------- | -------------------- | ----------------------------------------- |
-| [01 PagedAttention 与连续批处理调度](./01-paged-attention-and-scheduler/) | `BlockPool`、统一 `token_budget` | KV 碎片、阶段隔离    | `reshape_and_cache` vs `npu_scatter`      |
-| [02 异步执行模型与发射墙](./02-async-execution-and-launch-wall/)          | 跨步异步占位、`AsyncOutput`      | 步间等待与 D2H 阻塞  | CUDA `copy_stream` vs `AscendAsyncOutput` |
-| [03 多卡 DP 共识与运行时协同](./03-runtime-dispatch-and-nesting/)         | DP 集体裁决、双端执行分发        | 混合批切换与集合死锁 | `dispatch_cg_and_sync_dp` 与双端对齐      |
-| [04 性能观测与线上故障定位](./04-profiling-and-debugging/)                | 五类 Trace 指纹、二分隔离树      | 静默回退与尾槽越界   | `nsys` vs `torch_npu.profiler`            |
+| 章节                                                                             | 核心机制                            | 解决痛点                 |
+| :------------------------------------------------------------------------------- | :---------------------------------- | :----------------------- |
+| [01 vLLM V1 总体架构与请求生命周期](./01-vllm-v1-architecture/)                  | 三层进程边界、`VllmConfig` 切分     | 分词阻塞与加载爆显存     |
+| [02 运行拓扑、并行映射与进程通信](./02-runtime-topology-and-parallel-mapping/)   | 5D 并行拓扑映射、`shm_broadcast` 环 | 进程拓扑与通信组混乱     |
+| [03 PagedAttention 与分块 KV 缓存池](./03-paged-attention-and-block-kv-cache/)   | 页表寻址、链式 APC、混合 KV 分组    | 显存碎片与重复前缀计算   |
+| [04 连续批处理、分块预填充与统一调度器](./04-continuous-batching-and-scheduler/) | 步级插队、统一 `token_budget`       | 阶段隔离毛刺与抢占恢复   |
+| [05 Worker 启动与 ModelRunner V2](./05-worker-and-model-runner-v2/)              | 显存峰值探测、永久行、`StagedWrite` | 状态复制开销与输入组装   |
+| [06 异步执行模型与发射墙](./06-async-execution-and-launch-wall/)                 | 跨步乐观占位、`AsyncOutput` 回传    | 步间等待与 D2H 阻塞      |
+| [07 多卡 DP 协同与 PD 分离 KV 传输](./07-dp-coordination-and-kv-transfer/)       | DP 图模式共识、`KVConnectorBase`    | 多卡阻塞与 PD 状态交接   |
+| [08 投机解码引擎、拒绝采样与异步回退](./08-speculative-decoding-engine/)         | 五大 Draft 家族、融合图与占位回退   | 单步权重带宽利用不足     |
+| [09 结构化输出、采样管线与工具解析](./09-structured-outputs-and-parsing/)        | 异步 FSM、`Bitmask` 与有序采样管线  | Agent 语法越界与流式解析 |
+| [10 生产启动配置、关键参数与调优](./10-launch-config-and-tuning/)                | CLI 映射、显存与批预算耦合模板      | 启动报错与参数相互冲突   |
+| [11 性能观测与线上故障定位](./11-profiling-and-debugging/)                       | 五类 Trace 指纹、二分隔离排障树     | 静默回退与尾槽越界污染   |
 
-建议从[第 1 章：PagedAttention 与连续批处理调度](./01-paged-attention-and-scheduler/)开始顺序阅读。若想系统补全编译分段、CUDA Graph、`CUDAGraphMode` 与 ACL Graph 底层原理，请读[《推理执行图：CUDA Graph 与 ACL Graph》](../execgraph/)。
+建议从[01 vLLM V1 总体架构与请求生命周期](./01-vllm-v1-architecture/)起步顺序阅读。若需补充芯片带宽模型、多卡集合通信语义或 DeepSeek 模型算子结构，可随时对照[《推理与异构硬件基础》](../foundations/)、[《分布式并行与跨卡通信》](../distributed/)与[《DeepSeek 架构演进》](../deepseek/)。
 
-需要补充硬件带宽模型、多卡集合通信语义或 DeepSeek 模型算子结构时，可随时对照[《推理与异构硬件基础》](../foundations/)、[《分布式并行与跨卡通信》](../distributed/)与[《DeepSeek 架构演进》](../deepseek/)。
+[^vllm-repo]: 上游推理引擎仓库 `vllm-project/vllm`，本文系列主要对照提交 `99b0b0b0`（Apache-2.0 协议）及 [vLLM 官方文档](https://docs.vllm.ai/)。

@@ -1,0 +1,103 @@
+<mxfile host="wisp-diagram">
+  <diagram id="vllm-05-worker-startup-and-mrv2" name="worker-startup-and-mrv2">
+    <mxGraphModel dx="800" dy="680" grid="1" gridSize="8" guides="1" page="0" math="1" shadow="0">
+      <root>
+        <mxCell id="0"/>
+        <mxCell id="1" parent="0"/>
+        <mxCell id="top_bg" value="Worker 冷启动四步流与显存占用切分（gpu_worker.py）" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#f4f4f2;strokeColor=#e2e2dd;strokeWidth=1;align=left;verticalAlign=top;spacingTop=8;spacingLeft=12;fontFamily=Inter, Noto Sans SC;fontSize=12;fontStyle=1;fontColor=#1d1d1f;container=0;" vertex="1" parent="1">
+          <mxGeometry x="0" y="0" width="696" height="272" as="geometry"/>
+        </mxCell>
+        <mxCell id="s1_box" value="1. init_device&#xa;分布式 + cuBLAS 基线&#xa;记录 init_snapshot" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#e2e2dd;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=6;fontFamily=Inter, Noto Sans SC;fontSize=11;fontColor=#1d1d1f;container=0;" vertex="1" parent="1">
+          <mxGeometry x="16" y="40" width="136" height="64" as="geometry"/>
+        </mxCell>
+        <mxCell id="s2_box" value="2. load_model&#xa;构造即分片加载权重&#xa;记录 model_memory" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f2fb;strokeColor=#2f5783;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=6;fontFamily=Inter, Noto Sans SC;fontSize=11;fontColor=#1d1d1f;container=0;" vertex="1" parent="1">
+          <mxGeometry x="168" y="40" width="136" height="64" as="geometry"/>
+        </mxCell>
+        <mxCell id="s3_box" value="3. determine_available_memory&#xa;profile_run 峰值探测 + 图预估&#xa;反推 KV 可用字节与块数" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#fbf2df;strokeColor=#7b5518;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=6;fontFamily=Inter, Noto Sans SC;fontSize=11;fontColor=#1d1d1f;container=0;" vertex="1" parent="1">
+          <mxGeometry x="320" y="40" width="192" height="64" as="geometry"/>
+        </mxCell>
+        <mxCell id="s4_box" value="4. init_from_config&#xa;分配物理 KV 缓存池&#xa;编译与静态图捕获" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f5e9;strokeColor=#2c522d;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=6;fontFamily=Inter, Noto Sans SC;fontSize=11;fontColor=#1d1d1f;container=0;" vertex="1" parent="1">
+          <mxGeometry x="528" y="40" width="152" height="64" as="geometry"/>
+        </mxCell>
+        <mxCell id="e_s1_s2" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=6;html=1;strokeColor=#5c6067;strokeWidth=1.25;endArrow=classic;endFill=1;" edge="1" parent="1" source="s1_box" target="s2_box">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e_s2_s3" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=6;html=1;strokeColor=#5c6067;strokeWidth=1.25;endArrow=classic;endFill=1;" edge="1" parent="1" source="s2_box" target="s3_box">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e_s3_s4" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=6;html=1;strokeColor=#5c6067;strokeWidth=1.25;endArrow=classic;endFill=1;" edge="1" parent="1" source="s3_box" target="s4_box">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="bar_lbl" value="显存预算上限 requested_memory = total_memory × gpu_memory_utilization（例如 0.90 × 80 GiB = 72 GiB）" style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;fontFamily=Inter, Noto Sans SC;fontSize=11;fontStyle=1;fontColor=#1d1d1f;container=0;" vertex="1" parent="1">
+          <mxGeometry x="16" y="120" width="600" height="24" as="geometry"/>
+        </mxCell>
+        <mxCell id="mem_frame" value="" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#5c6067;strokeWidth=1.5;container=0;" vertex="1" parent="1">
+          <mxGeometry x="16" y="152" width="600" height="48" as="geometry"/>
+        </mxCell>
+        <mxCell id="mem_base" value="外部+基线&#xa;NCCL/cuBLAS" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#e2e2dd;strokeColor=#8b9098;strokeWidth=1;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter, Noto Sans SC;fontSize=11;fontColor=#1d1d1f;container=0;" vertex="1" parent="1">
+          <mxGeometry x="16" y="152" width="88" height="48" as="geometry"/>
+        </mxCell>
+        <mxCell id="mem_weights" value="分片模型权重&#xa;Weights" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#e9f2fb;strokeColor=#2f5783;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter, Noto Sans SC;fontSize=11;fontColor=#1d1d1f;container=0;" vertex="1" parent="1">
+          <mxGeometry x="104" y="152" width="168" height="48" as="geometry"/>
+        </mxCell>
+        <mxCell id="mem_peak" value="激活峰值差量&#xa;transient_peak" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#fbf2df;strokeColor=#7b5518;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter, Noto Sans SC;fontSize=11;fontColor=#1d1d1f;container=0;" vertex="1" parent="1">
+          <mxGeometry x="272" y="152" width="104" height="48" as="geometry"/>
+        </mxCell>
+        <mxCell id="mem_cg" value="静态图预估&#xa;CUDAGraph" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#fbf2df;strokeColor=#7b5518;strokeWidth=1.25;dashed=1;dashPattern=4 4;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter, Noto Sans SC;fontSize=11;fontColor=#1d1d1f;container=0;" vertex="1" parent="1">
+          <mxGeometry x="376" y="152" width="72" height="48" as="geometry"/>
+        </mxCell>
+        <mxCell id="mem_kv" value="剩余全部划入 KV Cache 池&#xa;Free KV Pool" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#e9f5e9;strokeColor=#2c522d;strokeWidth=1.5;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter, Noto Sans SC;fontSize=11;fontStyle=1;fontColor=#1d1d1f;container=0;" vertex="1" parent="1">
+          <mxGeometry x="448" y="152" width="168" height="48" as="geometry"/>
+        </mxCell>
+        <mxCell id="mem_headroom" value="未用余量&#xa;10%" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#f4f4f2;strokeColor=#8b9098;strokeWidth=1;dashed=1;dashPattern=4 4;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter, Noto Sans SC;fontSize=11;fontColor=#5c6067;container=0;" vertex="1" parent="1">
+          <mxGeometry x="624" y="152" width="56" height="48" as="geometry"/>
+        </mxCell>
+        <mxCell id="mem_eq" value="\( M_{\text{kv}} = M_{\text{req}} - \bigl(M_{\text{consumed}} + M_{\text{peak\_headroom}} + M_{\text{cg\_est}}\bigr),\quad N_{\text{blocks}} = \lfloor M_{\text{kv}} / B_{\text{block}} \rfloor \)" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#e2e2dd;strokeWidth=1;align=center;verticalAlign=middle;spacing=6;fontFamily=Inter, Noto Sans SC;fontSize=11;fontColor=#1d1d1f;container=0;" vertex="1" parent="1">
+          <mxGeometry x="16" y="216" width="664" height="40" as="geometry"/>
+        </mxCell>
+        <mxCell id="bot_bg" value="ModelRunner V1 痛点与 ModelRunner V2 解耦设计对照（model_runner_v2.md）" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#f4f4f2;strokeColor=#e2e2dd;strokeWidth=1;align=left;verticalAlign=top;spacingTop=8;spacingLeft=12;fontFamily=Inter, Noto Sans SC;fontSize=12;fontStyle=1;fontColor=#1d1d1f;container=0;" vertex="1" parent="1">
+          <mxGeometry x="0" y="288" width="696" height="312" as="geometry"/>
+        </mxCell>
+        <mxCell id="v1_bg" value="V1 旧耦合架构（高 CPU 维护代价 + 异步锁）" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#e2e2dd;strokeWidth=1;align=left;verticalAlign=top;spacingTop=8;spacingLeft=10;fontFamily=Inter, Noto Sans SC;fontSize=11;fontStyle=1;fontColor=#7b5518;container=0;" vertex="1" parent="1">
+          <mxGeometry x="16" y="328" width="248" height="256" as="geometry"/>
+        </mxCell>
+        <mxCell id="v1_state" value="持久批张量直接作为模型输入&#xa;请求退出或插队需整张量重排&#xa;额外维护 CachedRequestState 备份" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#fbf2df;strokeColor=#7b5518;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=6;fontFamily=Inter, Noto Sans SC;fontSize=11;fontColor=#1d1d1f;container=0;" vertex="1" parent="1">
+          <mxGeometry x="32" y="368" width="216" height="64" as="geometry"/>
+        </mxCell>
+        <mxCell id="v1_barrier" value="共享固定锁页 CPU 缓冲&#xa;Async Barrier 临界区阻塞锁&#xa;限制 CPU-GPU 流水重叠" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#fbf2df;strokeColor=#7b5518;strokeWidth=1.25;dashed=1;dashPattern=4 4;align=center;verticalAlign=middle;spacing=6;fontFamily=Inter, Noto Sans SC;fontSize=11;fontColor=#1d1d1f;container=0;" vertex="1" parent="1">
+          <mxGeometry x="32" y="448" width="216" height="64" as="geometry"/>
+        </mxCell>
+        <mxCell id="v1_misc" value="Python 拼元数据 + 隐式 dummy_run" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#f4f4f2;strokeColor=#8b9098;strokeWidth=1;align=center;verticalAlign=middle;spacing=6;fontFamily=Inter, Noto Sans SC;fontSize=11;fontColor=#5c6067;container=0;" vertex="1" parent="1">
+          <mxGeometry x="32" y="528" width="216" height="40" as="geometry"/>
+        </mxCell>
+        <mxCell id="v2_bg" value="MRV2 解耦架构（永久行常驻 + 稀疏差量 + 零锁异步）" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#2c522d;strokeWidth=1.25;align=left;verticalAlign=top;spacingTop=8;spacingLeft=10;fontFamily=Inter, Noto Sans SC;fontSize=11;fontStyle=1;fontColor=#2c522d;container=0;" vertex="1" parent="1">
+          <mxGeometry x="280" y="328" width="400" height="256" as="geometry"/>
+        </mxCell>
+        <mxCell id="v2_perm" value="1. 永久行常驻状态（GPU / UVA）&#xa;固定 [max_num_reqs, ...] 行槽位&#xa;抢占视同完成，零整表重排" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f2fb;strokeColor=#2f5783;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=6;fontFamily=Inter, Noto Sans SC;fontSize=11;fontColor=#1d1d1f;container=0;" vertex="1" parent="1">
+          <mxGeometry x="296" y="368" width="184" height="64" as="geometry"/>
+        </mxCell>
+        <mxCell id="v2_staged" value="2. StagedWriteTensor&#xa;CPU 暂存稀疏块号 diff&#xa;单次 H2D + apply Kernel" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#fbf2df;strokeColor=#7b5518;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=6;fontFamily=Inter, Noto Sans SC;fontSize=11;fontColor=#1d1d1f;container=0;" vertex="1" parent="1">
+          <mxGeometry x="496" y="368" width="168" height="64" as="geometry"/>
+        </mxCell>
+        <mxCell id="v2_pin" value="3. 临时锁页副本消除竞争&#xa;非锁页 states -&gt; .pin_memory()&#xa;零显式锁，放开跨步重叠" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f5e9;strokeColor=#2c522d;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=6;fontFamily=Inter, Noto Sans SC;fontSize=11;fontColor=#1d1d1f;container=0;" vertex="1" parent="1">
+          <mxGeometry x="296" y="448" width="208" height="64" as="geometry"/>
+        </mxCell>
+        <mxCell id="v2_triton" value="4. Triton 组装与采样&#xa;按 idx_mapping Gather&#xa;Gumbel-max 无状态采样" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f2fb;strokeColor=#2f5783;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=6;fontFamily=Inter, Noto Sans SC;fontSize=11;fontColor=#1d1d1f;container=0;" vertex="1" parent="1">
+          <mxGeometry x="520" y="448" width="144" height="64" as="geometry"/>
+        </mxCell>
+        <mxCell id="v2_cg" value="5. CudaGraphManager 显式管图 + 融合多步 Draft 解码图" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f5e9;strokeColor=#2c522d;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=6;fontFamily=Inter, Noto Sans SC;fontSize=11;fontColor=#1d1d1f;container=0;" vertex="1" parent="1">
+          <mxGeometry x="296" y="528" width="368" height="40" as="geometry"/>
+        </mxCell>
+        <mxCell id="e_v2_p_s" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=6;html=1;strokeColor=#5c6067;strokeWidth=1.25;endArrow=classic;endFill=1;" edge="1" parent="1" source="v2_perm" target="v2_staged">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e_v2_pin_t" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=6;html=1;strokeColor=#2c522d;strokeWidth=1.25;endArrow=classic;endFill=1;" edge="1" parent="1" source="v2_pin" target="v2_triton">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e_v2_s_t" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=6;html=1;strokeColor=#2f5783;strokeWidth=1.25;endArrow=classic;endFill=1;" edge="1" parent="1" source="v2_staged" target="v2_triton">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

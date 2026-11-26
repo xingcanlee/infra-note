@@ -70,7 +70,17 @@ import SpecDecVerifyExplainer, {
 
 import PagedSchedulerExplainer, {
   buildPagedSchedulerSteps,
-} from '@/content/posts/vllm/01-paged-attention-and-scheduler/explainers/PagedSchedulerExplainer';
+} from '@/content/posts/vllm/04-continuous-batching-and-scheduler/explainers/PagedSchedulerExplainer';
+import PrepareInputsExplainer, {
+  buildPrepareInputsSteps,
+} from '@/content/posts/vllm/05-worker-and-model-runner-v2/explainers/prepare-inputs';
+import RequestLifecycleExplainer, {
+  buildRequestLifecycleSteps,
+} from '@/content/posts/vllm/01-vllm-v1-architecture/explainers/request-lifecycle';
+
+import MooncakePdFlowExplainer, {
+  buildMooncakePdFlowSteps,
+} from '@/content/posts/vllm-ascend/05-mooncake-pd-and-kv-pool/explainers/mooncake-pd-flow';
 
 import AclGraphDynamicControlExplainer, {
   buildAclGraphDynamicControlSteps,
@@ -133,9 +143,24 @@ const ALL_EXPLAINERS: ExplainerEntry[] = [
   { name: 'MegaMhcPass', Component: MegaMhcPassExplainer, buildSteps: buildMegaMhcPassSteps },
   { name: 'SpecDecVerify', Component: SpecDecVerifyExplainer, buildSteps: buildSpecDecVerifySteps },
   {
+    name: 'RequestLifecycle',
+    Component: RequestLifecycleExplainer,
+    buildSteps: buildRequestLifecycleSteps,
+  },
+  {
     name: 'PagedScheduler',
     Component: PagedSchedulerExplainer,
     buildSteps: buildPagedSchedulerSteps,
+  },
+  {
+    name: 'PrepareInputs',
+    Component: PrepareInputsExplainer,
+    buildSteps: buildPrepareInputsSteps,
+  },
+  {
+    name: 'MooncakePdFlow',
+    Component: MooncakePdFlowExplainer,
+    buildSteps: buildMooncakePdFlowSteps,
   },
   {
     name: 'StreamEventPipeline',
@@ -159,9 +184,9 @@ const ALL_EXPLAINERS: ExplainerEntry[] = [
   },
 ];
 
-describe('all 21 interactive SVG explainers', () => {
-  it('covers exact 21 explainers across all 5 series', () => {
-    expect(ALL_EXPLAINERS).toHaveLength(21);
+describe('all 24 interactive SVG explainers', () => {
+  it('covers exact 24 explainers across all 6 series', () => {
+    expect(ALL_EXPLAINERS).toHaveLength(24);
   });
 
   it.each(ALL_EXPLAINERS)(

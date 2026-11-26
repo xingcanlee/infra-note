@@ -1,0 +1,90 @@
+<mxfile host="wisp-diagram">
+  <diagram id="vllm-ascend-02-arm-cpu-binding" name="arm-cpu-binding">
+    <mxGraphModel dx="800" dy="600" grid="1" gridSize="8" guides="1" page="0" math="0" shadow="0">
+      <root>
+        <mxCell id="0"/>
+        <mxCell id="1" parent="0"/>
+        <mxCell id="a3_box" value="Atlas A3 global_slice：640 核全局切片与单卡 4 角色拆分" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#f4f4f2;strokeColor=#5c6067;strokeWidth=1.25;dashed=1;verticalAlign=top;align=left;spacingLeft=12;spacingTop=8;fontFamily=Inter, Noto Sans SC;fontSize=12;fontStyle=1;fontColor=#5c6067;container=0;" vertex="1" parent="1">
+          <mxGeometry x="8" y="8" width="688" height="240" as="geometry"/>
+        </mxCell>
+        <mxCell id="a3_npu0" value="NPU 0&lt;br&gt;CPU 0–39 (40 核)" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f2fb;strokeColor=#2f5783;strokeWidth=1.5;align=center;verticalAlign=middle;spacing=6;fontFamily=Inter, Noto Sans SC;fontSize=12;fontStyle=1;fontColor=#1d1d1f;container=0;" vertex="1" parent="1">
+          <mxGeometry x="24" y="48" width="128" height="56" as="geometry"/>
+        </mxCell>
+        <mxCell id="a3_npu1" value="NPU 1&lt;br&gt;CPU 40–79 (40 核)" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f2fb;strokeColor=#2f5783;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=6;fontFamily=Inter, Noto Sans SC;fontSize=12;fontColor=#1d1d1f;container=0;" vertex="1" parent="1">
+          <mxGeometry x="160" y="48" width="128" height="56" as="geometry"/>
+        </mxCell>
+        <mxCell id="a3_dots" value="NPU 2..13&lt;br&gt;CPU 80–559" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#5c6067;strokeWidth=1;dashed=1;dashPattern=4 4;align=center;verticalAlign=middle;spacing=6;fontFamily=Inter, Noto Sans SC;fontSize=11;fontColor=#5c6067;container=0;" vertex="1" parent="1">
+          <mxGeometry x="296" y="48" width="96" height="56" as="geometry"/>
+        </mxCell>
+        <mxCell id="a3_npu14" value="NPU 14&lt;br&gt;CPU 560–599 (40 核)" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f2fb;strokeColor=#2f5783;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=6;fontFamily=Inter, Noto Sans SC;fontSize=12;fontColor=#1d1d1f;container=0;" vertex="1" parent="1">
+          <mxGeometry x="400" y="48" width="136" height="56" as="geometry"/>
+        </mxCell>
+        <mxCell id="a3_npu15" value="NPU 15&lt;br&gt;CPU 600–639 (40 核)" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f2fb;strokeColor=#2f5783;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=6;fontFamily=Inter, Noto Sans SC;fontSize=12;fontColor=#1d1d1f;container=0;" vertex="1" parent="1">
+          <mxGeometry x="544" y="48" width="136" height="56" as="geometry"/>
+        </mxCell>
+        <mxCell id="lbl_role" value="单卡 40 核角色切分（以 NPU 0 为例：pool = [0..39]，最低门槛 5 核）" style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;fontFamily=Inter, Noto Sans SC;fontSize=11;fontStyle=1;fontColor=#2f5783;" vertex="1" parent="1">
+          <mxGeometry x="168" y="120" width="440" height="24" as="geometry"/>
+        </mxCell>
+        <mxCell id="e_zoom" value="" style="endArrow=classic;startArrow=none;html=1;strokeColor=#2f5783;strokeWidth=1.25;dashed=1;dashPattern=4 4;edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=10;" edge="1" parent="1" source="a3_npu0" target="role_irq">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="role_irq" value="SQ/CQ IRQ (2)&lt;br&gt;c0–c1 (/proc/irq)" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#fbf2df;strokeColor=#7b5518;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=6;fontFamily=Inter, Noto Sans SC;fontSize=11;fontColor=#1d1d1f;container=0;" vertex="1" parent="1">
+          <mxGeometry x="24" y="160" width="120" height="64" as="geometry"/>
+        </mxCell>
+        <mxCell id="role_main" value="Main Worker 与子线程 (36)&lt;br&gt;c2–c37 (taskset -acp · migratepages)" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f5e9;strokeColor=#2c522d;strokeWidth=1.5;align=center;verticalAlign=middle;spacing=6;fontFamily=Inter, Noto Sans SC;fontSize=12;fontStyle=1;fontColor=#1d1d1f;container=0;" vertex="1" parent="1">
+          <mxGeometry x="152" y="160" width="304" height="64" as="geometry"/>
+        </mxCell>
+        <mxCell id="role_acl" value="acl_thread (1)&lt;br&gt;c38" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f2fb;strokeColor=#2f5783;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=6;fontFamily=Inter, Noto Sans SC;fontSize=11;fontColor=#1d1d1f;container=0;" vertex="1" parent="1">
+          <mxGeometry x="464" y="160" width="104" height="64" as="geometry"/>
+        </mxCell>
+        <mxCell id="role_rel" value="release_thread (1)&lt;br&gt;c39" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f2fb;strokeColor=#2f5783;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=6;fontFamily=Inter, Noto Sans SC;fontSize=11;fontColor=#1d1d1f;container=0;" vertex="1" parent="1">
+          <mxGeometry x="576" y="160" width="104" height="64" as="geometry"/>
+        </mxCell>
+        <mxCell id="a2_box" value="Atlas A2 topo_affinity：纳入隐藏同亲和卡防止双单卡进程重叠" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#f4f4f2;strokeColor=#5c6067;strokeWidth=1.25;dashed=1;verticalAlign=top;align=left;spacingLeft=12;spacingTop=8;fontFamily=Inter, Noto Sans SC;fontSize=12;fontStyle=1;fontColor=#5c6067;container=0;" vertex="1" parent="1">
+          <mxGeometry x="8" y="272" width="688" height="272" as="geometry"/>
+        </mxCell>
+        <mxCell id="topo_card" value="npu-smi info -t topo&lt;br&gt;NPU0 / NPU2 亲和：144–167" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f2fb;strokeColor=#2f5783;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=6;fontFamily=Inter, Noto Sans SC;fontSize=12;fontColor=#1d1d1f;container=0;" vertex="1" parent="1">
+          <mxGeometry x="24" y="320" width="192" height="64" as="geometry"/>
+        </mxCell>
+        <mxCell id="numa_ext" value="extend_numa 单 NUMA 扩展&lt;br&gt;共享 CPU 池：[144..191] (48 核)" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#fbf2df;strokeColor=#7b5518;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=6;fontFamily=Inter, Noto Sans SC;fontSize=12;fontColor=#1d1d1f;container=0;" vertex="1" parent="1">
+          <mxGeometry x="24" y="432" width="192" height="64" as="geometry"/>
+        </mxCell>
+        <mxCell id="e_topo_ext" value="" style="endArrow=classic;startArrow=none;html=1;strokeColor=#5c6067;strokeWidth=1.25;edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=10;" edge="1" parent="1" source="topo_card" target="numa_ext">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="pa_box" value="进程 A（可见 NPU0 · 含隐藏候选 NPU2）" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#2f5783;strokeWidth=1;dashed=1;dashPattern=4 4;verticalAlign=top;align=left;spacingLeft=12;spacingTop=6;fontFamily=Inter, Noto Sans SC;fontSize=11;fontStyle=1;fontColor=#2f5783;container=0;" vertex="1" parent="1">
+          <mxGeometry x="296" y="312" width="384" height="96" as="geometry"/>
+        </mxCell>
+        <mxCell id="pa_n0" value="NPU0 专属 CPU 集合&lt;br&gt;144–167 (24 核)" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f5e9;strokeColor=#2c522d;strokeWidth=2;align=center;verticalAlign=middle;spacing=6;fontFamily=Inter, Noto Sans SC;fontSize=12;fontStyle=1;fontColor=#1d1d1f;container=0;" vertex="1" parent="1">
+          <mxGeometry x="312" y="344" width="168" height="48" as="geometry"/>
+        </mxCell>
+        <mxCell id="pa_n2" value="NPU2 占位后丢弃&lt;br&gt;168–191" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#f4f4f2;strokeColor=#5c6067;strokeWidth=1;dashed=1;dashPattern=4 4;align=center;verticalAlign=middle;spacing=6;fontFamily=Inter, Noto Sans SC;fontSize=11;fontColor=#5c6067;container=0;" vertex="1" parent="1">
+          <mxGeometry x="496" y="344" width="168" height="48" as="geometry"/>
+        </mxCell>
+        <mxCell id="pb_box" value="进程 B（可见 NPU2 · 含隐藏候选 NPU0）" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#2f5783;strokeWidth=1;dashed=1;dashPattern=4 4;verticalAlign=top;align=left;spacingLeft=12;spacingTop=6;fontFamily=Inter, Noto Sans SC;fontSize=11;fontStyle=1;fontColor=#2f5783;container=0;" vertex="1" parent="1">
+          <mxGeometry x="296" y="424" width="384" height="96" as="geometry"/>
+        </mxCell>
+        <mxCell id="pb_n0" value="NPU0 占位后丢弃&lt;br&gt;144–167" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#f4f4f2;strokeColor=#5c6067;strokeWidth=1;dashed=1;dashPattern=4 4;align=center;verticalAlign=middle;spacing=6;fontFamily=Inter, Noto Sans SC;fontSize=11;fontColor=#5c6067;container=0;" vertex="1" parent="1">
+          <mxGeometry x="312" y="456" width="168" height="48" as="geometry"/>
+        </mxCell>
+        <mxCell id="pb_n2" value="NPU2 专属 CPU 集合&lt;br&gt;168–191 (24 核)" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f5e9;strokeColor=#2c522d;strokeWidth=2;align=center;verticalAlign=middle;spacing=6;fontFamily=Inter, Noto Sans SC;fontSize=12;fontStyle=1;fontColor=#1d1d1f;container=0;" vertex="1" parent="1">
+          <mxGeometry x="496" y="456" width="168" height="48" as="geometry"/>
+        </mxCell>
+        <mxCell id="e_ext_pa" value="" style="endArrow=classic;startArrow=none;html=1;strokeColor=#7b5518;strokeWidth=1.25;edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=10;" edge="1" parent="1" source="numa_ext" target="pa_box">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="232" y="464"/>
+              <mxPoint x="232" y="360"/>
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e_ext_pb" value="" style="endArrow=classic;startArrow=none;html=1;strokeColor=#7b5518;strokeWidth=1.25;edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=10;" edge="1" parent="1" source="numa_ext" target="pb_box">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="lbl_avg" value="同组均分" style="text;html=1;whiteSpace=wrap;align=center;verticalAlign=middle;fontFamily=Inter, Noto Sans SC;fontSize=11;fontStyle=1;fontColor=#7b5518;" vertex="1" parent="1">
+          <mxGeometry x="232" y="400" width="64" height="24" as="geometry"/>
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

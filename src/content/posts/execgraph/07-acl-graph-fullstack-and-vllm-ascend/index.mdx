@@ -210,7 +210,7 @@ print(f"[UAF Bug] {trk.check_replay([sinks_ptr, work_ptr])}")
 [UAF Bug] 507011 ACL_ERROR_RT_MODEL_EXECUTE (UAF on ['0x12004000'])
 ```
 
-至此，本系列贯通了异步队列、`torch.compile`、CUDA Graph、影子流与 `vllm-ascend` 全栈排障。想了解上层调度与 Profiling 实战，可读[vLLM 与昇腾推理引擎](../../vllm/)及[性能观测与线上故障定位](../../vllm/04-profiling-and-debugging/)。
+至此，本系列贯通了异步队列、`torch.compile`、CUDA Graph、影子流与 `vllm-ascend` 全栈排障。想了解上层调度与 Profiling 实战，可读[《vLLM 推理引擎》](../../vllm/)、[《vLLM-Ascend 昇腾插件与硬件拓展》](../../vllm-ascend/)与[性能观测与线上故障定位](../../vllm/11-profiling-and-debugging/)。
 
 [^vllm-ascend-acl]: 参阅 `vllm-ascend`（提交 `b776261e`）设计文档 `docs/source/developer_guide/Design_Documents/ACL_Graph.md`。
 
