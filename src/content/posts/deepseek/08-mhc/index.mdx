@@ -1,6 +1,6 @@
 ---
-title: '08 mHC 流形受限超连接：双随机投影与单遍融合'
-description: '无约束超连接在 60 子层连乘后会出现约 3000 倍信号发散与多倍访存放大。本文拆解 mHC 的 Sinkhorn 双随机投影与单遍 Mega-mHC 时移融合，并对照 vLLM 和昇腾实现。'
+title: '08 mHC 流形超连接：给四流残差装上稳压器'
+description: '残差流扩宽四倍在 60 子层连乘后会产生约 3000 倍增益发散与多倍访存。本文拆解 mHC 双随机投影与单遍时移融合，并对照 vLLM 和昇腾源码。'
 series: { id: deepseek, order: 9 }
 pubDate: 2026-11-11
 tags: [DeepSeek, mHC, Transformer, Roofline, vLLM, Ascend]
@@ -8,29 +8,43 @@ category: AI Infra
 toc: true
 ---
 
-在 [07 Engram 条件记忆](../07-engram/) 的层间接口里，我们见到了 `mhc_post` 与 `mhc_pre` 两个算子，以及它们维护的四分支残差张量 `[T, 4, d]`。这里 $T$ 是 token 数量，$d$（mHC 原论文记作 $C$）是隐藏维，中间的通道维 $4$ 用来在算子外侧扩宽残差容量。
+import Figure from 'astro-wisp/components/Figure.astro';
+import MhcSinkhornExplainer from './explainers/mhc-sinkhorn';
+import MegaMhcPassExplainer from './explainers/mega-mhc-pass';
+import paperFig4 from './images/paper-fig4-dualpipe.png';
+import paperFig5 from './images/paper-fig5-loss-grad.svg';
+import paperFig6 from './images/paper-fig6-scaling.svg';
+import paperFig8 from './images/paper-fig8-heatmap.png';
 
-在经典 ResNet 与 Transformer 中，各层通过单流 Residual Connection（残差连接）串联，即 $\mathbf{x}_{l+1} = \mathbf{x}_l + \mathcal{F}(\mathbf{x}_l, \mathcal{W}_l)$。想在不丢信息的前提下扩大层间特征容量，最直接的做法是把隐藏维 $C$ 扩大 $n$ 倍，但注意力与 FFN 的矩阵乘法计算量随宽度平方增长——宽度扩至 4 倍，FLOPs 会增至 16 倍。
+在上一篇 [07 Engram 条件记忆](../07-engram/) 的层间接口里，我们见到 `mhc_post` 与 `mhc_pre` 两个算子维护着四分支残差张量 `[T, 4, d]`。其中 $T$ 是词元数量，$d$（mHC 原论文记作 $C$）是隐藏维，中间的维度 $4$ 用于在算子外侧扩宽残差流。
 
-**HC（Hyper-Connections，超连接）**改走另一条路：保持算子 $\mathcal{F}$ 内部宽度 $C$ 不变，只把层间传递的隐藏状态扩宽为 $n = 4$ 条并行流 $\mathbf{x}_l \in \mathbb{R}^{4 \times C}$[^mhc-paper]。但无约束线性映射破坏了标准残差的恒等映射性质。
+经典 ResNet 与 Transformer 采用单流 Residual Connection（残差连接），形式为 $\mathbf{x}_{l+1} = \mathbf{x}_l + \mathcal{F}(\mathbf{x}_l, \mathcal{W}_l)$。若为了增加层间信息容量而直接把隐藏维 $C$ 扩宽 $n$ 倍，Attention 与 FFN 的矩阵乘法计算量会按宽度平方膨胀，宽度翻至四倍时计算量就变成十六倍。
 
-跨 60 个子层连乘后，27B 训练出现了约 3000 倍的信号增益发散与损失尖峰，且显存读写随 $n$ 倍放大。DeepSeek 提出的 **mHC（Manifold-Constrained Hyper-Connections，流形受限超连接）**[^mhc-paper]用流形约束稳住深层信号。随后的 V4.1 单遍 `Mega-mHC`[^v41-flash]则靠算子时移压低访存。
+**HC（Hyper-Connections，超连接）**选择了另一条路：保持算子 $\mathcal{F}$ 内部宽度 $C$ 不变，只把层间传递的状态扩宽成 $n = 4$ 条并行流 $\mathbf{x}_l \in \mathbb{R}^{4 \times C}$[^hc-paper][^mhc-paper]。但无约束线性混合破坏了标准残差的恒等直连性质，27B 模型跨越 60 个子层连乘后出现了约 3000 倍信号发散与损失尖峰。
 
-## 三组映射架构与四流单层数值推演
-
-对照图 1 自左向右观察三代残差连接的单层拓扑差异[^mhc-paper]。最左侧（a）为经典单流残差，$\mathbf{x}_l \in \mathbb{R}^{1 \times C}$ 直接恒等直连到加法节点，旁路经算子 $\mathcal{F}$ 后加回。中间（b）为无约束 HC：输入展成 $n$ 条并行流 $\mathbf{x}_l \in \mathbb{R}^{n \times C}$，主干经 `Res` 映射 $\mathcal{H}_l^{\mathrm{res}}$ 混合跨流特征，旁路先用 `Pre` 映射压成单流再写回。
-
-具体来看，旁路先经 `Pre` 映射 $\mathcal{H}_l^{\mathrm{pre}} \in \mathbb{R}^{1 \times n}$ 聚合成 $\mathbf{h}_l^{\mathrm{in}} \in \mathbb{R}^{1 \times C}$ 送入 $\mathcal{F}$，再经 `Post` 映射 $\mathcal{H}_l^{\mathrm{post}\,\top} \in \mathbb{R}^{n \times 1}$ 写回 4 条流。右侧（c）mHC 的拓扑与 HC 相同，但对三组映射分别施加流形投影 $\mathcal{P}_{\mathcal{M}^{\mathrm{pre}}}$、$\mathcal{P}_{\mathcal{M}^{\mathrm{res}}}$、$\mathcal{P}_{\mathcal{M}^{\mathrm{post}}}$，把系数约束在守恒多面体内。
+DeepSeek 提出的 **mHC（Manifold-Constrained Hyper-Connections，流形受限超连接）**[^mhc-paper] 用流形投影稳住深层信号。随后的 DeepSeek-V4.1 单遍 `Mega-mHC`[^v41-flash] 则用系数时移把单子层显存读写压到信息论下界。三代残差结构对照如图 1 所示。
 
 ![三代残差连接单层结构对照：标准残差仅维护单流恒等直连，HC 引入 Res/Pre/Post 三组无约束线性映射但破坏守恒律，mHC 将映射矩阵投影回受限流形以兼顾多流容量与跨层稳定](./diagrams/08-mhc-arch-comp.drawio '图 1：标准残差连接、HC 与 mHC 单层架构对照（对应原论文 Fig. 1）')
 
-实际 Transformer 中，Attention 和 MoE（或 FFN）各做一次残差更新，因此 1 个 Transformer 层对应 2 个 mHC 子层（图 2 左栏）[^dsv4-paper]。一个 30 层模型就会连续穿过 60 个 `Res Mixing` 节点。顺着图 2 右栏，取 4 条流第 0 维初值 $\mathbf{x}_l = [10.0, 20.0, 30.0, 40.0]^\top$（均值 25.0），就能手算一遍单子层前向传播。
+## 残差流扩宽四倍，为什么深层会炸
+
+顺着图 1 从左往右看，标准残差只有一条恒等直连支路。而 HC 与 mHC 把状态扩宽成 4 条并行的支流，每一层由三组轻量映射协同工作：
+
+- **主干混合 `Res`（$\mathcal{H}_l^{\mathrm{res}} \in \mathbb{R}^{4 \times 4}$）**：让四条残差流原地交换彼此的信息，维持跨层记忆与多路表征。
+- **输入聚合 `Pre`（$\mathcal{H}_l^{\mathrm{pre}} \in \mathbb{R}^{1 \times 4}$）**：把 4 条流加权压回 1 条单流 $\mathbf{h}_l^{\mathrm{in}} \in \mathbb{R}^{1 \times C}$，送入 Attention 或 FFN。
+- **输出写回 `Post`（$\mathcal{H}_l^{\mathrm{post}\,\top} \in \mathbb{R}^{4 \times 1}$）**：把算子算出的单流增量重新分配回 4 条残差流，与主干输出相加。
+
+### 单子层四步手算与旁路归一化边界
+
+在 Transformer 结构中，Attention 与 MoE（或 FFN）各完成一次残差更新，因此 1 个 Transformer 层对应 2 个连续的 mHC 子层，如图 2 左栏所示[^dsv4-paper]。一个 30 层的模型就会连续穿过 60 个 `Res Mixing` 混合节点。
+
+为了把抽象映射落到具体数字，我们取 4 条流第 0 维初值 $\mathbf{x}_l = [10.0, 20.0, 30.0, 40.0]^\top$（总和 100.0、均值 25.0），沿图 2 右栏手算一遍单子层前向传播。
 
 ![左栏按 DeepSeek-V4 结构将 1 个 Transformer 层展开为 Attention 与 MoE/FFN 两个连续 mHC 子层；右栏用 [10, 20, 30, 40] 首维示例逐项推演单子层的 Res 混合、Pre 聚合、F 计算与 Post 写回流程](./diagrams/08-mhc-block-trace.drawio '图 2：Transformer 双子层展开与 n=4 单子层数值推演')
 
-首先由旁路聚合权重 $\mathcal{H}_l^{\mathrm{pre}} = [0.5, 0.2, 0.2, 0.1]$ 加权求和，把 `[4, C]` 压回算子所需的单流宽度 `[1, C]`，算出 $h_l^{\mathrm{in}} = 0.5 \times 10 + 0.2 \times 20 + 0.2 \times 30 + 0.1 \times 40 = 19.0$。经过 `RMSNorm` 与 $\mathcal{F}$ 算得单流增量 4.0 后，算子内部维度仍为 $C$，计算量没有膨胀。
+首先看旁路计算。聚合权重 $\mathcal{H}_l^{\mathrm{pre}} = [0.5, 0.2, 0.2, 0.1]$ 把 4 个分支加权求和，压成算子所需的单流输入 $h_l^{\mathrm{in}} = 0.5\times 10 + 0.2\times 20 + 0.2\times 30 + 0.1\times 40 = 19.0$。经过 `RMSNorm` 与 $\mathcal{F}$ 算出增量 $+4.0$ 后，算子内部维度仍然是 $C$，计算量完全没有膨胀。
 
-与此同时，主干侧 4 条流直接左乘双随机矩阵 $\mathcal{H}_l^{\mathrm{res}}$ 原地交换跨流信息：
+与此同时，主干侧 4 条流直接左乘混合矩阵 $\mathcal{H}_l^{\mathrm{res}}$ 原地交换特征：
 
 $$
 \begin{aligned}
@@ -39,21 +53,51 @@ $$
 \end{aligned}
 $$
 
-所得 $\mathbf{h}_l^{\mathrm{res}} = [19.0, 24.0, 26.0, 31.0]^\top$ 融合了其他分支的特征，而元素总和依然为 100.0，均值仍保持 25.0。最后旁路写回映射 $\mathcal{H}_l^{\mathrm{post}\,\top} = [1.2, 0.8, 0.5, 1.5]^\top$ 将算子增量 4.0 分配回 4 个分支得到 $[4.8, 3.2, 2.0, 6.0]^\top$，与 $\mathbf{h}_l^{\mathrm{res}}$ 相加输出 $\mathbf{x}_{l+1} = [23.8, 27.2, 28.0, 37.0]^\top$。
+所得 $\mathbf{h}_l^{\mathrm{res}} = [19.0, 24.0, 26.0, 31.0]^\top$ 既吸收了其他支路的特征，又把四流总和稳稳守在 100.0、均值守在 25.0。最后旁路写回映射 $\mathcal{H}_l^{\mathrm{post}\,\top} = [1.2, 0.8, 0.5, 1.5]^\top$ 将增量 4.0 分配回四条流得 $[4.8, 3.2, 2.0, 6.0]^\top$，相加即输出 $\mathbf{x}_{l+1} = [23.8, 27.2, 28.0, 37.0]^\top$。
 
-### 旁路归一化边界与双随机守恒
+观察图 1 与图 2 可以看清 `RMSNorm` 的位置边界：它只位于右侧旁路 $\mathcal{F}$ 内部，管不到左侧 `Res` 直连主干。若硬往主干直连路径上插入归一化层，就会切断恒等导数通路，深层反向传播照样会梯度消失。
 
-从图 1 和图 2 可以看出 `RMSNorm` 与残差主干的边界：`RMSNorm` 只位于右侧算子分支 $\mathcal{F}$ 内部，无法约束左侧 `Res` 直连主干。若往直连通道中也插入 `RMSNorm`，就会切断恒等导数路径，深层反向传播同样会出现梯度消失。
+同样地，我们也不能图省事把 $\mathcal{H}_l^{\mathrm{res}}$ 固定成单位阵 $\mathbf{I}_4$ 让四条流互不来往。下表来自 mHC 原论文表 1 组件消融[^mhc-paper]，放开可学习的 $\mathcal{H}_l^{\mathrm{res}}$ 单独一项就带来 0.022 到 0.027（超过八成）的损失降幅：
 
-而若为了稳定把 $\mathcal{H}_l^{\mathrm{res}}$ 固定为单位阵 $\mathbf{I}_4$（四流互不混合），原论文表 1 的消融已经给出对比结论[^mhc-paper]。仅开 `Pre` 和 `Post` 而固定 $\mathcal{H}_l^{\mathrm{res}} = \mathbf{I}$ 时收益有限；放开可学习的 $\mathcal{H}_l^{\mathrm{res}}$ 单独一项就带来 -0.022 / -0.027（超过八成）的损失降幅，可见跨流混合才是超连接表达力的主要来源。
+| $\mathcal{H}_l^{\mathrm{res}}$（主干混合） | $\mathcal{H}_l^{\mathrm{pre}}$（输入聚合） | $\mathcal{H}_l^{\mathrm{post}}$（输出写回） | 相对全固定基线的损失差 |
+| :----------------------------------------: | :----------------------------------------: | :-----------------------------------------: | :--------------------: |
+|                   固定 I                   |                  固定 1/n                  |                   固定 1                    |         0.000          |
+|                   可学习                   |                  固定 1/n                  |                   固定 1                    |         -0.022         |
+|                   可学习                   |                   可学习                   |                   固定 1                    |         -0.025         |
+|                   可学习                   |                   可学习                   |                   可学习                    |       **-0.027**       |
 
-要同时保住跨流混合与深层信号守恒，mHC 把 $\mathcal{H}_l^{\mathrm{res}}$ 约束在 **Doubly Stochastic Matrix（双随机矩阵）**流形上，它满足三条性质：
+### 六十个子层连乘：为何飙出三千倍增益
 
-- 矩阵元素全为非负（$\mathcal{H}_{ij} \ge 0$），避免无约束 HC 中正负权重（如 -5.58 与 +6.77）互相抵消放大；
-- 每行之和为 1（$\mathcal{H}_l^{\mathrm{res}}\mathbf{1}_4 = \mathbf{1}_4$），使输出成为 4 条流的凸组合，幅值夹在旧极值之间；
-- 每列之和也为 1（$\mathbf{1}_4^\top\mathcal{H}_l^{\mathrm{res}} = \mathbf{1}_4^\top$），既守恒前向总和，又因转置即反向雅可比矩阵，一并防止梯度爆炸。
+把单子层方程从浅层 $l$ 递归展开到深层 $L$，就能看到深层训练失稳的真正病根[^mhc-paper]：
 
-将神经网络预测的无约束实数打分 $\tilde{\mathcal{H}}_l^{\mathrm{res}}$ 投影到双随机流形，mHC 采用经典的 Sinkhorn-Knopp 算法[^mhc-paper]：先逐元素取指数 $\mathbf{M}^{(0)} = \exp(\tilde{\mathcal{H}}_l^{\mathrm{res}}) > 0$，随后交替执行列归一化 $\mathcal{T}_c$ 与行归一化 $\mathcal{T}_r$。用一个简单的 $2 \times 2$ 正矩阵手算 1 轮可见收敛速度：
+$$
+\begin{aligned}
+\mathbf{x}_{L} &= \left(\prod_{i=1}^{L-l}\mathcal{H}_{L-i}^{\mathrm{res}}\right)\mathbf{x}_{l} \\
+&\quad + \sum_{i=l}^{L-1}\left(\prod_{j=1}^{L-1-i}\mathcal{H}_{L-j}^{\mathrm{res}}\right)\mathcal{H}_{i}^{\mathrm{post}\,\top}\mathcal{F}(\mathcal{H}_{i}^{\mathrm{pre}}\mathbf{x}_{i},\mathcal{W}_{i})
+\end{aligned}
+$$
+
+式子第一项是跨越 $L-l$ 个子层的混合矩阵连乘。论文以复合矩阵的最大绝对行和度量前向信号增益，以最大绝对列和度量反向梯度增益。
+
+在无约束 HC 中，神经网络学出的 $\mathcal{H}_l^{\mathrm{res}}$ 允许同时出现较大的正负权重（例如 $-5.58$ 与 $+6.77$）。单层行和虽然看似只在 1 附近波动，连乘 60 个子层后却会呈指数级滚雪球，在 27B MoE 训练的第 12k 步处飙出约 3000 倍复合增益并引发损失尖峰[^mhc-paper]。
+
+## 双随机投影：把混合矩阵关进守恒笼子
+
+要同时保住“跨流自由混合”和“连乘 60 层不发散”，问题转化为：给 $4 \times 4$ 矩阵 $\mathcal{H}_l^{\mathrm{res}}$ 套上什么样的几何约束，才能让它既能灵活调配权重，又永远不会把信号乘爆？
+
+### Birkhoff 多面体与交替归一
+
+答案是把 $\mathcal{H}_l^{\mathrm{res}}$ 投影到 **Doubly Stochastic Matrix（双随机矩阵）**构成的 **Birkhoff 多面体** $\mathcal{M}^{\mathrm{res}}$ 上。任意双随机矩阵必须同时满足三条守恒律：
+
+1. **元素全非负**：所有元素 $\mathcal{H}_{ij} \ge 0$，从源头杜绝正负大权重互相抵消放大。
+2. **每行之和为 1**：满足 $\mathcal{H}_l^{\mathrm{res}}\mathbf{1}_4 = \mathbf{1}_4$，输出是输入四流的凸组合，幅值夹在原有极值之间。
+3. **每列之和也为 1**：满足 $\mathbf{1}_4^\top\mathcal{H}_l^{\mathrm{res}} = \mathbf{1}_4^\top$，不仅守恒前向总和，还因转置矩阵就是反向雅可比矩阵，顺带锁住了反向梯度范数。
+
+一个常见的疑问是：为什么不用普通的 `Softmax` 按行归一？因为 `Softmax` 只保证每行和为 1，不管列和。只要某一列权重集中偏大，反向梯度连乘 60 层依旧会失衡。
+
+双随机流形则具备两条强大的代数性质。作为所有置换矩阵的凸包，它的谱范数非膨胀（$\|\mathcal{H}_l^{\mathrm{res}}\|_2 \le 1$），且**对矩阵乘法封闭**：两个双随机矩阵相乘依然是双随机矩阵，因此叠加上百层也不会爆炸。
+
+为了把网络预测的无约束实数打分 $\tilde{\mathcal{H}}_l^{\mathrm{res}}$ 压进双随机流形，mHC 采用经典的 Sinkhorn-Knopp 算法[^mhc-paper]：先逐元素取指数 $\mathbf{M}^{(0)} = \exp(\tilde{\mathcal{H}}_l^{\mathrm{res}}) > 0$，再交替除以列和（$\mathcal{T}_c$）与行和（$\mathcal{T}_r$）。拿一个 $2 \times 2$ 正矩阵手算 1 轮即可看清收敛过程：
 
 $$
 \mathbf{M}^{(0)} = \begin{bmatrix} 1 & 3 \\ 1 & 1 \end{bmatrix}
@@ -63,50 +107,46 @@ $$
 \begin{bmatrix} 0.40 & 0.60 \\ 0.67 & 0.33 \end{bmatrix}
 $$
 
-第 1 步每列除以列和后，列和对齐为 $[1.00, 1.00]$、行和为 $[1.25, 0.75]$；第 2 步每行除以行和后，行和对齐为 $[1.00, 1.00]$、列和收敛到 $[1.07, 0.93]$。论文固定迭代 $t_{\max} = 20$ 轮，偏差几乎收敛为零。
+除完列和后，列和立刻对齐为 $[1.00, 1.00]$、行和变为 $[1.25, 0.75]$；再除行和后，行和对齐为 $[1.00, 1.00]$，列和迅速收拢到 $[1.07, 0.93]$。mHC 在论文与工程中固定展开 $t_{\max} = 20$ 轮迭代，行列偏差几乎收敛为零。
 
-## Birkhoff 投影与 27B 实证
+### 符号统一与零初值退化设计
 
-阅读 mHC 原论文、DeepSeek-V4 技术报告与推理引擎源码时，常会碰到三套等价变量名。下表统一了各组映射符号及其流形约束[^mhc-paper][^dsv4-paper][^mhc-vllm][^mhc-ascend]：
+对照 mHC 原论文、DeepSeek-V4 技术报告与推理引擎源码时，三套资料使用的变量记号略有不同，下表将它们与各自流形约束统一对齐[^mhc-paper][^dsv4-paper][^mhc-vllm][^mhc-ascend]：
 
-| 角色     | 论文 / V4 记号 | 源码变量与形状             | 流形约束与含义                               |
-| :------- | :------------- | :------------------------- | :------------------------------------------- |
-| 输入聚合 | $A_l$ / Pre    | `pre_mix` `[T, 1, 4]`      | $\sigma(\cdot)$ 非负加权汇聚 4 流至 `[1, d]` |
-| 主干混合 | $B_l$ / Res    | `comb_res_mix` `[T, 4, 4]` | Sinkhorn 投影至 Birkhoff 流形 $\mathcal{M}$  |
-| 输出写回 | $C_l$ / Post   | `post_mix` `[T, 4, 1]`     | $2\sigma(\cdot)\in[0,2]$，零初值对齐单位写回 |
+| 映射角色 | 论文 / V4 记号 | 源码变量与形状             | 流形约束与初始化设计                               |
+| :------- | :------------- | :------------------------- | :------------------------------------------------- |
+| 输入聚合 | $A_l$ / Pre    | `pre_mix` `[T, 1, 4]`      | $\sigma(\cdot)$，偏置 $-\ln(n-1)$ 对齐 $1/n$       |
+| 主干混合 | $B_l$ / Res    | `comb_res_mix` `[T, 4, 4]` | 20 轮 Sinkhorn 投影至 $\mathcal{M}^{\mathrm{res}}$ |
+| 输出写回 | $C_l$ / Post   | `post_mix` `[T, 4, 1]`     | $2\sigma(\cdot)\in[0,2]$，零偏置对齐 $1.0$         |
 
-写回映射 $\mathcal{H}_l^{\mathrm{post}} = 2\sigma(\tilde{\mathcal{H}}_l^{\mathrm{post}})$ 乘上系数 2，使线性层零初始化时 $\sigma(0) \times 2 = 1.0$ 对齐标准残差的单位写回权重，同时保留向上放大学习特征至 2.0 的余量。
+表中有三处初值细节关系到训练起步稳定性。第一，写回映射乘上系数 2，使线性层零初始化时 $2\sigma(0) = 1.0$ 精确退化为标准残差的单位写回，同时留出向上放大到 $2.0$ 的学习余量。
 
-### 跨层连乘稳定性与 27B 评测
+第二，输入聚合偏置设为 $-\ln(n-1)$（$n=4$ 时为 $-\ln 3$），使 $\sigma(-\ln 3) = 1/4$ 对齐四流均等聚合。第三，主干偏置取对角矩阵 `diag_bias` $\cdot \mathbf{I}_n$，让训练初期各分支优先沿各自轨道恒等前传，再逐步学出跨流协作。
 
-把单层方程从浅层 $l$ 递归展开到深层 $L$，得到多流跨层传播公式[^mhc-paper]：
+图 3 按 6 步推演把四流前向手算、2×2 Sinkhorn 交替归一以及 60 子层连乘复合矩阵的对比串在一起，可切换不同方案对照稳定与发散的边界。
 
-$$
-\begin{aligned}
-\mathbf{x}_{L} &= \left(\prod_{i=1}^{L-l}\mathcal{H}_{L-i}^{\mathrm{res}}\right)\mathbf{x}_{l} \\
-&\quad + \sum_{i=l}^{L-1}\left(\prod_{j=1}^{L-1-i}\mathcal{H}_{L-j}^{\mathrm{res}}\right)\mathcal{H}_{i}^{\mathrm{post}\,\top}\mathcal{F}(\mathcal{H}_{i}^{\mathrm{pre}}\mathbf{x}_{i},\mathcal{W}_{i})
-\end{aligned}
-$$
+<MhcSinkhornExplainer
+  client:visible
+  title="图 3：从四流单子层手算、Sinkhorn 交替投影到 60 子层增益对比的 6 步推演"
+/>
 
-在无约束 HC 中，主干直连项是 60 个自由矩阵的连乘积。论文以复合矩阵的最大绝对行和度量前向信号增益、最大绝对列和度量反向梯度增益。在 27B MoE 实验里，无约束 HC 单层行和虽在 1 附近波动，连乘 60 子层后却在 12k 步处飙升至约 3000 倍复合增益并引发损失尖峰[^mhc-paper]。
+图 4 对照了 27B 模型第 60 子层连乘矩阵的数值形态与 2×2 Sinkhorn 迭代轨迹，图 5 给出原论文图 8 的完整层间矩阵热力图[^mhc-paper]。左侧无约束 HC 复合矩阵出现 $+142.3$ 与 $-139.3$ 剧烈震荡，复合行和高达 $+509.1$；右侧 mHC 元素平缓分布在 $0.21$–$0.29$ 之间，行和稳在 $1.00$–$1.01$，全网增益压在 $1.6\times$ 以内。
 
-![图 3 上半部分还原原论文 Fig. 8 27B 模型第 60 子层连乘复合矩阵，对比 HC 发散出 ±260 极值（~3000× 峰值）与 mHC 保持行和约 1.00、列和接近 1.00（≤1.6×）；下半部分展示 2×2 Sinkhorn-Knopp 投影四步收敛流程](./diagrams/08-mhc-sinkhorn-stability.drawio '图 3：27B 60 子层连乘复合矩阵对比与 Sinkhorn-Knopp 投影演算（对应原论文 Fig. 8）')
+![图 4 上半部分还原原论文 Fig. 8 27B 模型第 60 子层连乘复合矩阵，对比 HC 发散出 ±260 极值（~3000× 峰值）与 mHC 保持行和约 1.00、列和接近 1.00（≤1.6×）；下半部分展示 2×2 Sinkhorn-Knopp 投影四步收敛流程](./diagrams/08-mhc-sinkhorn-stability.drawio '图 4：27B 60 子层连乘复合矩阵数值对比与 Sinkhorn-Knopp 四步投影演算')
 
-图 3 上半部分还原了原论文 Fig. 8 的 27B 60 子层复合矩阵[^mhc-paper]。左侧 HC 连乘矩阵出现 +142.3 与 -139.3 的剧烈震荡，复合行和达到 +509.1，全序列峰值接近 3000 倍。右侧 mHC 矩阵元素则平稳落在 0.21–0.29 之间，60 子层连乘行和仍保持在 1.00–1.01。
+<Figure
+  src={paperFig8}
+  alt="论文图 8：27B 模型下 HC（上行）与 mHC（下行）第 1、30、60 层单层映射矩阵与多子层连乘复合矩阵热力图，y 轴标注前向行和，x 轴标注反向列和"
+  caption="图 5：27B 模型单层与跨层复合映射矩阵实测热力图对照（mHC 论文图 8）"
+/>
 
-这种长期稳定性源于 **Birkhoff 多面体**（双随机流形）$\mathcal{M}^{\mathrm{res}}$ 的代数结构。作为所有置换矩阵构成的凸包，双随机矩阵谱范数非膨胀（$\|\mathcal{H}_l^{\mathrm{res}}\|_2 \le 1$），单步不会放大任何方向的特征。更重要的是它对**矩阵乘法封闭**：两个双随机矩阵相乘仍是双随机矩阵，堆叠上百个子层也不会发散。
+## 算子重写与时移：把访存压到理论下界
 
-下表汇总原论文 27B 同算力基准（262B tokens、$t_{\max} = 20$ 步 Sinkhorn、训练端到端耗时仅增加 6.7%）的评测结果[^mhc-paper]：
+信号稳住之后，四流残差暴露出的第二堵墙是 **HBM（High Bandwidth Memory，高带宽显存）** 带宽。因为层间状态体积扩大了 4 倍，若按公式拆成零散算子读写，解码阶段吞吐会直接被显存带宽拖垮。
 
-| 方案（27B / 262B） | 训练稳定性     |   BBH    |   DROP   |  GSM8K   |   MMLU   | 复合增益 |
-| :----------------- | :------------- | :------: | :------: | :------: | :------: | :------: |
-| Baseline 单流      | 基准曲线       |   43.8   |   47.0   |   46.7   |   59.0   |   1.0×   |
-| HC 无约束 4 流     | 12k 步尖峰     |   48.9   |   51.6   |   53.2   |   63.0   |  ~3000×  |
-| mHC 双随机 4 流    | 稳定（-0.021） | **51.0** | **53.9** | **53.8** | **63.4** |  ≤1.6×   |
+### RMSNorm 除法后置与训练侧重计算
 
-### 动态参数化与 RMSNorm 除法后置重排
-
-为了既随输入 token 动态调节三组映射矩阵，又省去多读写一遍高维归一化张量的显存带宽，mHC 把 `RMSNorm` 与线性投影合并重排[^mhc-paper]：
+为了随当前词元动态调节三组映射矩阵，同时省去多读写一遍 $4C$ 维归一化张量的开销，mHC 利用线性齐次性重排计算顺序[^mhc-paper]：
 
 $$
 \begin{aligned}
@@ -116,108 +156,68 @@ r &= \frac{\|\mathbf{x}^{\mathrm{flat}}_l\|_2}{\sqrt{4C}} \\
 \end{aligned}
 $$
 
-其中 $\varphi_l \in \mathbb{R}^{4C \times 24}$ 合并算出 `Pre`（4）、`Post`（4）和 `Res`（16）共 24 个动态打分并吸收 `RMSNorm` 权重，门控初值 $\alpha_l$ 设为 0.01。利用齐次性 $(\mathbf{x}^{\mathrm{flat}}_l / r)\varphi_l = (\mathbf{x}^{\mathrm{flat}}_l \varphi_l)/r$，计算核把除以 $r$ 挪到矩阵乘之后：只需把 $\mathbf{x}_l$ 从 HBM 读进片上寄存器一遍并同时累加点积与平方和，最后对 24 个标量除以 $r$ 即可，免去反复读写中间张量。
+其中融合权重 $\varphi_l \in \mathbb{R}^{4C \times 24}$ 合并生成 `Pre`（4）、`Post`（4）与 `Res`（16）共 24 个打分并吸收缩放权重，门控初值 $\alpha_l$ 设为 $0.01$。利用 $(\mathbf{x}^{\mathrm{flat}}_l / r)\varphi_l = (\mathbf{x}^{\mathrm{flat}}_l \varphi_l)/r$ 的齐次性，计算 Kernel 只把 $\mathbf{x}_l$ 从 HBM 读进片上寄存器一遍，同时累加点积和平方和，最后仅对 24 个标量除以 $r$ 即可。
 
-## 从多遍融合到 V4.1 单遍 Mega-mHC
+在训练阶段，若分立发射 Kernel，每子层需要读 $(5n+1)C$ 并写 $(3n+1)C$（$n=4$ 时为 $21C$ 读与 $13C$ 写）。原论文采用三条协同手段：用 TileLang 融合算子、按最优阶段长度 $L_r^* \approx \sqrt{nL/(n+2)}$ 选择性丢弃中间激活并重计算，并在 `DualPipe` 中重叠流水通信与重计算[^mhc-paper]。
 
-数值稳定后，工程上面临的主要瓶颈转向显存带宽墙。按元素计算，若按公式分立发射 Kernel，每层仅残差维护就要读 $(5n + 1)C$、写 $(3n + 1)C$（$n = 4$ 时为 $21C$ 读 + $13C$ 写）[^mhc-paper]。原论文在训练侧通过 TileLang 融合算子、按分段长度 $L_r^* \approx \sqrt{nL/(n+2)}$ 选择性重计算以及在 `DualPipe` 中重叠通信与旁路混合计算，把 27B 训练总耗时增幅压在 6.7%。
+如图 6 所示，为了避免 `DualPipe` 阶段边界阻塞通信，MLP 层的 $\mathcal{F}_{\mathrm{post,res}}$ 算子运行在专用高优先级算力流上，注意力层则放弃超长持久化算子以允许抢占[^mhc-paper]。全套系统优化使 $n=4$ 扩宽带来的训练端到端耗时增幅仅 6.7%。
 
-在单批延迟受限于 HBM 带宽的推理解码侧，DeepSeek-V4.1 进一步将每子层边界访存压到信息论下界 $(2n + 2)d = 10d$，演进过程如图 4 上半区所示[^v41-flash]。若朴素分立发射上层 `Post + Res` 更新、系数计算、`Pre` 聚合与 `RMSNorm` 四个 Kernel，每子层共搬运 $(4n + 4)d = 20d$。
+<Figure
+  src={paperFig4}
+  alt="论文图 4：扩展 DualPipe 流水线在常规计算流、通信流与高优先级算力流间重叠 mHC 混合算子、阶段重计算与 PP/EP 通信"
+  caption="图 6：mHC 扩展 DualPipe 三流计算与通信重叠调度时序（mHC 论文图 4）"
+/>
 
-如果把更新与归约做成两遍融合，分母 $r$ 与本层系数 $A_l$ 必须等整条 $4d$ 维度归约完毕才就绪。因此 Pass 1（读写 $9d$）无法同时完成 $A_l X_l$ 聚合，只能再开 Pass 2 重读 $X_l$ 并做完 `RMSNorm`（$5d$），总访存为 $(3n + 2)d = 14d$。
+### 单遍融合：错位一步如何减半访存
 
-![mHC 每子层 HBM 访存从 20d 降至 14d 再触及 10d 理论下界，下半区对照 NVIDIA vLLM 跨子层延迟融合与华为昇腾 vllm-ascend 子层成对写回调度](./diagrams/08-mhc-single-pass.drawio '图 4：mHC 每子层 HBM 访存演进（20d → 14d → 10d）与双硬件执行栈对照')
+落到推理解码阶段，单批延迟几乎完全受限于 HBM 读写字节数。DeepSeek-V4.1 围绕单子层边界把访存一路从 $20d$ 压到信息论下界 $10d$[^v41-flash]：
 
-V4.1 的单遍 `Mega-mHC` 把输入聚合权重错位时移一步，改用上一子层早已算出的 $A_{l-1}$[^v41-flash]：
+1. **朴素分立 4 个 Kernel（$20d$）**：依次执行 `Post+Res`（$9d$）、算系数（$4d$）、`Pre`（$5d$）与 `RMSNorm`（$2d$），共 $(4n+4)d = 20d$。
+2. **两遍融合的依赖死锁（$14d$）**：Pass 1 合并写回与投影（$9d$），但 $A_l$ 需等分母 $r$ 归约完，被迫由 Pass 2 重读四流（$5d$）。
+3. **V4.1 时移单遍融合（$10d$）**：错位改用上一子层早已就绪的聚合系数 $A_{l-1}$，当场切断对本层 $r$ 的等待依赖。
+
+将错位时移写进更新方程，就能看清数据依赖是如何解开的[^v41-flash]：
 
 $$
 X_{l+1} = B_l X_l + C_l \,\mathcal{F}_l(A_{l-1} X_l), \qquad (A_l, B_l, C_l) = \mathcal{H}(X_l)
 $$
 
-解除数据依赖后，Tile 扫描能在单遍读 $5d$（$y_{l-1} + X_l$）与单遍写 $5d$（$X_{l+1} + \operatorname{Norm}(A_{l-1}X_l)$）、合计 $10d$ 内一次完成。首子层固定 $A_{-1} = [1, 0, 0, 0]$ 起步，整网末尾再用多算出的 `ffn_pre` 完成向单流 `[T, d]` 的归并。
+解除等待后，计算单元只需从 HBM 读一遍 $y_{l-1} + X_l$（共 $5d$），在寄存器内同步完成 `Post+Res` 更新、下一层系数投影、$A_{l-1}X_l$ 聚合与 `RMSNorm`，再一遍写出 $X_{l+1}$ 与归一化输入（共 $5d$），总计 $(2n+2)d = 10d$。首子层固定 $A_{-1} = [1, 0, 0, 0]$ 起步，整网末端则用最后多算出的 `ffn_pre` 将四流归并回单流 `[T, d]`。
 
-观察图 4 下半区与图 5 的控制流，两套硬件做出了不同切分[^mhc-vllm][^mhc-ascend]。NVIDIA GPU 采用跨子层延迟合并，只在第 1、14 层遇到 `Engram` 注入时显式拆开边界，先调 `mhc_post` 写出 `[T, 4, d]` 再进入 `Engram`。
+图 7 用 5 个步进拆解了访存从 $20d$ 降至 $14d$ 再触及 $10d$ 下界的字节变化，并支持切换层位模式对照常规层与 Engram 注入层的切界差异。图 8 则汇总了字节比例条与 GPU/NPU 双端调度路径。
 
-昇腾 NPU 则在每个子层末尾都调用 `npu_hc_post` 写出四流张量。常规层直接衔接下一层 `npu_hc_pre_v3`；遇到第 1、14 层时无需调整子层控制流，直接执行 `AscendEngram` 后再归并进注意力。
+<MegaMhcPassExplainer
+  client:visible
+  title="图 7：mHC 每子层 HBM 访存从 20d 降至 14d 再触及 10d 单遍下界的 5 步推演"
+/>
 
-```mermaid caption="图 5：V4.1 单遍延迟融合与第 1、14 层 Engram 边界控制流"
-flowchart TD
-  PREV["上一子层输出"] --> CHECK{"硬件路径与层位"}
-  CHECK -->|"常规层 GPU"| SHIFT["GPU 单遍 Shifted 融合"]
-  CHECK -->|"L1/L14 GPU"| POST["显式执行 mhc_post"]
-  POST --> ENG["Engram 原位注入"]
-  ENG --> PRE["显式执行 mhc_pre"]
-  CHECK -->|"NPU 层尾"| NPU["npu_hc_post 已写出四流"]
-  NPU -->|"常规层"| NPUPRE["npu_hc_pre_v3 聚合单流"]
-  NPU -->|"L1/L14"| NPUENG["直接接入 AscendEngram"]
-  NPUENG --> NPUPRE
-  SHIFT --> NEXT["进入 Attn 或 MoE 计算"]
-  PRE --> NEXT
-  NPUPRE --> NEXT
-```
+![mHC 每子层 HBM 访存从 20d 降至 14d 再触及 10d 理论下界，下半区对照 NVIDIA vLLM 跨子层延迟融合与华为昇腾 vllm-ascend 子层成对写回调度](./diagrams/08-mhc-single-pass.drawio '图 8：mHC 每子层 HBM 访存演进（20d → 14d → 10d）与双硬件执行栈对照')
 
-## PyTorch 参考实现：HC 与 mHC
+### 实证评测与 PyTorch 参考实现
 
-下面先给出标准无约束 HC 的可运行参考实现，再仅替换归一化投影、流形激活、logit 空间偏置与首尾接口四处设计，落地带有不变量校验的 `ManifoldHyperConnection`。
+在 27B MoE 同算力（262B tokens、$t_{\max}=20$ 轮 Sinkhorn）基准上，mHC 消除了无约束 HC 的 12k 步训练尖峰，最终训练损失相比单流基线降低 0.021（图 9）。全套 8 项下游推理与常识评测结果见表 4[^mhc-paper]：
 
-### 无约束 HC 实现与张量映射
+| 方案（27B）   |   BBH    |   DROP   |  GSM8K   | HellaSwag |   MATH   |   MMLU   |   PIQA   | TriviaQA |
+| :------------ | :------: | :------: | :------: | :-------: | :------: | :------: | :------: | :------: |
+| Baseline 单流 |   43.8   |   47.0   |   46.7   |   73.7    |   22.0   |   59.0   |   78.5   |   54.3   |
+| HC 无约束     |   48.9   |   51.6   |   53.2   |   74.3    | **26.4** |   63.0   |   79.9   |   56.3   |
+| mHC 双随机    | **51.0** | **53.9** | **53.8** | **74.7**  |   26.0   | **63.4** | **80.5** | **57.6** |
 
-以下 `HyperConnection` 模块支持任意保持隐藏维 `dim` 不变的子层 `f`[^hc-paper][^mhc-paper]。对多流状态 $H \in \mathbb{R}^{n \times d}$，前向先对每条流独立做 RMSNorm，再经零初始化动态权重 $\Theta$ 与 `tanh` 门控生成三组映射系数。
+<Figure
+  src={paperFig5}
+  alt="论文图 5：(a) 27B 模型 mHC 与 HC 相对基线的绝对训练损失差值，(b) 梯度范数曲线显示 mHC 消除 12k 步尖峰"
+  caption="图 9：27B 模型训练损失差值曲线与梯度范数稳定性对比（mHC 论文图 5）"
+/>
 
-因为初始步动态项归零，仅剩静态基线 $\beta_{\mathrm{pre}} = \frac{1}{n}\mathbf{1}$、$\beta_{\mathrm{res}} = \mathbf{I}_n$ 与 $\beta_{\mathrm{post}} = \mathbf{1}$，各流初值相同时第 0 步正好退化为普通残差 $h + f(h)$。外部展平张量 `[..., n * dim]` 通过 `unflatten` 与 `flatten` 即可接入。
+从 3B、9B 到 27B 的算力缩放曲线以及 3B 模型的 1T token 缩放轨迹进一步表明（图 10），mHC 相比单流基线的损失优势在更大参数量与长程训练下仅有微弱衰减[^mhc-paper]。
 
-```python
-import torch
-import torch.nn as nn
-import torch.nn.functional as F
+<Figure
+  src={paperFig6}
+  alt="论文图 6：(a) 3B、9B、27B 等算力缩放曲线显示性能优势稳健保持，(b) 3B 模型 1T token 训练轨迹"
+  caption="图 10：算力缩放曲线（a）与 3B 1T token 训练缩放轨迹（b）（mHC 论文图 6）"
+/>
 
-
-class HyperConnection(nn.Module):
-    """n 条并行残差流的无约束超连接（Hyper-Connection）。"""
-
-    def __init__(self, f: nn.Module, n: int = 4, dim: int = 4096, eps: float = 1e-6):
-        super().__init__()
-        self.f, self.n, self.dim, self.eps = f, n, dim, eps
-        self.alpha_pre = nn.Parameter(torch.full((1,), 0.01))
-        self.alpha_res = nn.Parameter(torch.full((1,), 0.01))
-        self.alpha_post = nn.Parameter(torch.full((1,), 0.01))
-        # 静态基线：Pre 取 1/n 均值，Res 为单位阵，Post 全为 1
-        self.beta_pre = nn.Parameter(torch.full((1, n), 1.0 / n))
-        self.beta_res = nn.Parameter(torch.eye(n))
-        self.beta_post = nn.Parameter(torch.ones(1, n))
-        # 动态投影零初始化，使初始步 tanh(linear(...)) == 0
-        self.theta_pre = nn.Parameter(torch.zeros(1, dim))
-        self.theta_res = nn.Parameter(torch.zeros(n, dim))
-        self.theta_post = nn.Parameter(torch.zeros(1, dim))
-
-    def _rms_norm(self, x: torch.Tensor) -> torch.Tensor:
-        dtype = x.dtype
-        xf = x.float()
-        return (xf * torch.rsqrt(xf.square().mean(dim=-1, keepdim=True) + self.eps)).to(dtype)
-
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        x_norm = self._rms_norm(x)
-        pre_map = self.alpha_pre * torch.tanh(F.linear(x_norm, self.theta_pre)).transpose(-1, -2) + self.beta_pre
-        res_map = self.alpha_res * torch.tanh(F.linear(x_norm, self.theta_res)) + self.beta_res
-        post_map = self.alpha_post * torch.tanh(F.linear(x_norm, self.theta_post)).transpose(-1, -2) + self.beta_post
-        block_output = self.f((pre_map @ x).squeeze(-2))
-        residual = res_map @ x
-        injection = post_map.transpose(-1, -2) * block_output.unsqueeze(-2)
-        return residual + injection
-```
-
-### 流形受限 mHC 实现与不变式校验
-
-从无约束 HC 升级到工程可稳健训练的 mHC，拓扑骨架保持不变，改动集中在以下四项对照：
-
-| 改动维度     | `HyperConnection`（HC）   | `ManifoldHyperConnection`（mHC）           |
-| :----------- | :------------------------ | :----------------------------------------- |
-| 归一化与投影 | 逐流 `RMSNorm` 配共享投影 | 展平 `[..., n * d]` 合并投影 $\varphi$     |
-| 激活与约束   | `tanh` 加静态偏置，无守恒 | $\sigma$、$2\sigma$ 与 20 轮 FP32 Sinkhorn |
-| 静态偏置空间 | 落在最终权重空间          | logit 空间：$-\ln(n-1)$、$0$、$\gamma I_n$ |
-| 首尾流接口   | `unflatten` / `flatten`   | `expand_streams` 复制与 `collapse_streams` |
-
-以下实现将除法后置重排与 FP32 流形投影落地为 `ManifoldHyperConnection`。脚本末尾的断言会同时验证零初值残差等价性与 20 轮 Sinkhorn 的双随机行和、列和收敛性。
+下面的 PyTorch 参考实现无须 GPU 即可在 CPU 上直接跑通验证。代码将无约束 HC 与带除法后置重排、FP32 Sinkhorn 及可选时移的 `ManifoldHyperConnection` 写在一起，并校验零初值等价性与双随机行列和收敛：
 
 ```python
 import math
@@ -225,124 +225,187 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-
 def expand_streams(x: torch.Tensor, n: int = 4) -> torch.Tensor:
     return x.unsqueeze(-2).expand(*x.shape[:-1], n, x.shape[-1]).contiguous()
 
+class HyperConnection(nn.Module):
+    def __init__(self, f: nn.Module, n: int = 4, dim: int = 64):
+        super().__init__()
+        self.f, self.n = f, n
+        self.alpha = nn.Parameter(torch.full((3,), 0.01))
+        self.beta_pre = nn.Parameter(torch.full((1, n), 1.0 / n))
+        self.beta_res = nn.Parameter(torch.eye(n))
+        self.beta_post = nn.Parameter(torch.ones(1, n))
+        self.theta_pre = nn.Parameter(torch.zeros(1, dim))
+        self.theta_res = nn.Parameter(torch.zeros(n, dim))
+        self.theta_post = nn.Parameter(torch.zeros(1, dim))
 
-def collapse_streams(x: torch.Tensor, pre_map: torch.Tensor | None = None) -> torch.Tensor:
-    if pre_map is None:
-        return x.mean(dim=-2)
-    return (pre_map @ x.float()).squeeze(-2).to(x.dtype)
-
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        xf = x.float()
+        xn = xf * torch.rsqrt(xf.square().mean(dim=-1, keepdim=True) + 1e-6)
+        pre = self.alpha[0] * torch.tanh(F.linear(xn, self.theta_pre)).transpose(-1, -2) + self.beta_pre
+        res = self.alpha[1] * torch.tanh(F.linear(xn, self.theta_res)) + self.beta_res
+        post = self.alpha[2] * torch.tanh(F.linear(xn, self.theta_post)).transpose(-1, -2) + self.beta_post
+        y = self.f((pre @ xf).squeeze(-2).to(x.dtype)).float()
+        return (res @ xf + post.transpose(-1, -2) * y.unsqueeze(-2)).to(x.dtype)
 
 class ManifoldHyperConnection(nn.Module):
-    """流形受限超连接（mHC）：分工映射 + 除法后置重排 + FP32 Sinkhorn 投影。"""
-
-    def __init__(
-        self, f: nn.Module, n: int = 4, dim: int = 4096,
-        sinkhorn_iters: int = 20, diag_bias: float = 8.0, eps: float = 1e-6, sinkhorn_eps: float = 1e-12,
-    ):
+    def __init__(self, f: nn.Module, n: int = 4, dim: int = 64, iters: int = 20, diag_bias: float = 8.0):
         super().__init__()
-        self.f, self.n, self.dim = f, n, dim
-        self.sinkhorn_iters, self.eps, self.sinkhorn_eps = sinkhorn_iters, eps, sinkhorn_eps
-        # 合并线性投影 phi（Pre(n) + Post(n) + Res(n^2)，零初始化）
+        self.f, self.n, self.iters = f, n, iters
         self.phi = nn.Parameter(torch.zeros(n * n + 2 * n, n * dim))
         self.alpha = nn.Parameter(torch.full((3,), 0.01))
-        # Logit 空间静态偏置：step-0 对齐 sigmoid(b_pre)=1/n, 2*sigmoid(0)=1
-        pre_init = -math.log(n - 1) if n > 1 else 8.0
-        self.b_pre = nn.Parameter(torch.full((1, n), pre_init))
+        self.b_pre = nn.Parameter(torch.full((1, n), -math.log(n - 1) if n > 1 else 8.0))
         self.b_post = nn.Parameter(torch.zeros(1, n))
         self.b_res = nn.Parameter(torch.eye(n) * diag_bias)
 
-    def _sinkhorn_knopp(self, logits: torch.Tensor) -> torch.Tensor:
-        shifted = logits - logits.amax(dim=(-2, -1), keepdim=True)
-        m = torch.exp(shifted)
-        for _ in range(self.sinkhorn_iters):
-            m = m / (m.sum(dim=-2, keepdim=True) + self.sinkhorn_eps)
-            m = m / (m.sum(dim=-1, keepdim=True) + self.sinkhorn_eps)
+    def sinkhorn(self, logits: torch.Tensor) -> torch.Tensor:
+        m = torch.exp(logits - logits.amax(dim=(-2, -1), keepdim=True))
+        for _ in range(self.iters):
+            m = m / (m.sum(dim=-2, keepdim=True) + 1e-12)
+            m = m / (m.sum(dim=-1, keepdim=True) + 1e-12)
         return m
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        orig_dtype = x.dtype
-        x_fp32 = x.float()
-        x_flat = x_fp32.flatten(-2)
-        # RMSNorm 除法后置重排：(x_flat / r) @ phi^T == (x_flat @ phi^T) * (1 / r)
-        inv_rms = torch.rsqrt(x_flat.square().mean(dim=-1, keepdim=True) + self.eps)
+    def forward(self, x: torch.Tensor, prev_pre: torch.Tensor | None = None):
+        xf = x.float()
+        x_flat = xf.flatten(-2)
+        # 除法后置重排：(x_flat / r) @ phi^T == (x_flat @ phi^T) * (1 / r)
+        inv_rms = torch.rsqrt(x_flat.square().mean(dim=-1, keepdim=True) + 1e-6)
         raw = F.linear(x_flat, self.phi.float()) * inv_rms
-        raw_pre, raw_post, raw_res = raw.split([self.n, self.n, self.n * self.n], dim=-1)
-
-        pre_map = torch.sigmoid(self.alpha[0] * raw_pre.unsqueeze(-2) + self.b_pre)
-        post_map = 2.0 * torch.sigmoid(self.alpha[1] * raw_post.unsqueeze(-2) + self.b_post)
-        res_map = self._sinkhorn_knopp(self.alpha[2] * raw_res.unflatten(-1, (self.n, self.n)) + self.b_res)
-
-        block_input = (pre_map @ x_fp32).squeeze(-2).to(orig_dtype)
-        block_output = self.f(block_input)
-        residual = res_map @ x_fp32
-        injection = post_map.transpose(-1, -2) * block_output.float().unsqueeze(-2)
-        return (residual + injection).to(orig_dtype)
-
+        r_pre, r_post, r_res = raw.split([self.n, self.n, self.n * self.n], dim=-1)
+        pre_map = torch.sigmoid(self.alpha[0] * r_pre.unsqueeze(-2) + self.b_pre)
+        post_map = 2.0 * torch.sigmoid(self.alpha[1] * r_post.unsqueeze(-2) + self.b_post)
+        res_map = self.sinkhorn(self.alpha[2] * r_res.unflatten(-1, (self.n, self.n)) + self.b_res)
+        mix_for_f = pre_map if prev_pre is None else prev_pre
+        y = self.f((mix_for_f @ xf).squeeze(-2).to(x.dtype)).float()
+        out = (res_map @ xf + post_map.transpose(-1, -2) * y.unsqueeze(-2)).to(x.dtype)
+        return out, pre_map
 
 if __name__ == "__main__":
     torch.manual_seed(8)
     with torch.no_grad():
         B, T, n, dim = 2, 8, 4, 64
-        f = nn.Linear(dim, dim)
-        h = torch.randn(B, T, dim)
+        f, h = nn.Linear(dim, dim), torch.randn(B, T, dim)
         x_eq, expected = expand_streams(h, n), expand_streams(h + f(h), n)
         hc, mhc = HyperConnection(f, n=n, dim=dim), ManifoldHyperConnection(f, n=n, dim=dim)
         assert torch.allclose(hc(x_eq), expected, atol=1e-5)
-        assert torch.allclose(mhc(x_eq), expected, atol=1e-5)
-        assert collapse_streams(mhc(x_eq)).shape == h.shape
-        mat = mhc._sinkhorn_knopp(torch.randn(B, n, n) * 1.5)
+        out, _ = mhc(x_eq)
+        assert torch.allclose(out, expected, atol=1e-5)
+        a0 = torch.tensor([1.0, 0.0, 0.0, 0.0]).view(1, 1, 1, n)
+        out_shift, _ = mhc(x_eq, prev_pre=a0)
+        assert torch.allclose(out_shift, expected, atol=1e-5)
+        mat = mhc.sinkhorn(torch.randn(B, n, n) * 1.5)
         assert torch.allclose(mat.sum(dim=-1), torch.ones(B, n), atol=1e-3)
         assert torch.allclose(mat.sum(dim=-2), torch.ones(B, n), atol=1e-3)
 ```
 
-在初始步 $\varphi = 0$ 时，logit 空间静态偏置同样把首步锁回标准残差：`pre_map` 通过 $\sigma(-\ln(n-1)) = 1/n$ 求均值，`post_map` 通过 $2\sigma(0) = 1.0$ 等权写回。同时任何双随机矩阵作用在 `expand_streams` 构造的等值流上都有 $P_{\mathrm{res}}H = H$，配合对角偏置 `diag_bias` 让不同分支在训练早期依然接近恒等矩阵。
+## 推理引擎落地：vLLM 多后端分发
 
-## NVIDIA GPU 与昇腾 NPU 源码对照
+将单遍时移落地到现代推理引擎时，不同 GPU 架构与批大小对融合算子提出了截然不同的硬件约束。在 `vllm@99b0b0b0` 中，框架同时维护了通用的 `CustomOp` 分发层与针对 DeepSeek-V4.1 的专用时移融合调度层[^mhc-vllm-layers][^mhc-vllm]。
 
-把单遍时移落地到两大异构硬件栈时，`vLLM` 与 `vllm-ascend` 在“跨子层延迟融合”还是“子层尾立即展开四流”上做出了不同的架构选择。
+### 分级后端分发与核心类结构
 
-### NVIDIA GPU 跨子层延迟融合路径
+通用抽象层位于 `vllm/model_executor/layers/mhc.py`，注册了 `MHCPreOp`、`MHCPreDelayedOp`、`MHCPostOp` 等算子[^mhc-vllm-layers]。这些算子按平台自动路由到 TileLang、Triton、FlashInfer Mega、ROCm AITER 或原生 PyTorch[^mhc-vllm-fi]。
 
-在 `vLLM` 的 DeepSeek-V4.1 模型中[^mhc-vllm]，`DeepseekV4DecoderLayer` 将上一子层未写回的增量和系数透传给下一子层入口。这些张量 `(x, residual, post_mix, res_mix, ffn_pre)` 由 `mhc_shifted_post_pre` 统一接收。
+面向 DeepSeek-V4.1 的低延迟路径落在 `DeepseekV4DecoderLayer` 与 `mhc_shifted_post_pre`，协作关系如图 11 所示[^mhc-vllm]。
 
-该入口再按批大小与硬件能力分发：SM100 上小批解码走 CuTe DSL `MhcBoundaryKernel`，大批走 DeepGEMM `mega_mhc`。开启 `FULL` 图且 token 数不超过 16 时，系统会把 CuTe Lamport `AllReduceMHC` 直接融进写回核并用副流预计算系数，否则回落 TileLang 延迟融合核。
+```mermaid caption="图 11：vllm@99b0b0b0 中 mHC 通用算子层与 DeepSeek-V4.1 专用时移融合调度类关系"
+classDiagram
+    class DeepseekV4DecoderLayer {
+        +hc_attn_boundary_weight
+        +hc_ffn_boundary_weight
+        +mhc_stream
+        +forward()
+    }
+    class mhc_shifted_post_pre {
+        +dispatch_by_arch_and_tokens()
+    }
+    class MhcBoundaryKernel {
+        +tile_16cta_cluster
+        +cute_dsl_bf16_mma()
+    }
+    class mega_mhc {
+        +mhc_shifted_post_pre_deep_gemm()
+    }
+    class AllReduceMHC {
+        +finalize()
+        +lamport_fused_ar()
+    }
+    class MHCPreDelayedOp {
+        +TileLang / AITER / Torch
+    }
+    class MHCFusedPostPreOp {
+        +FlashInfer Mega / TileLang
+    }
 
-这套跨子层合并路径只在 `layers.1` 和 `layers.14` 遇到 `Engram` 时显式拆开。引擎先调 `mhc_post_tilelang` 写出完整四流喂给 `Engram`，随后再调 `mhc_pre` 聚合进注意力。
-
-```python
-# vllm/models/deepseek_v41/nvidia/ops/mega_mhc.py:47-64 (vllm@bb23c0a8)
-def mhc_shifted_post_pre_deep_gemm(
-    x: torch.Tensor,
-    residual: torch.Tensor,
-    shifted_prev_mix: torch.Tensor,  # 上一子层传来的 A_{l-1}
-    post_mix: torch.Tensor,
-    comb_res_mix: torch.Tensor,
-    fn: torch.Tensor,
-    ...,
-    rmsnorm_weight: torch.Tensor,
-    rmsnorm_eps: float,
-) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
-    """Run DSV4.1 shifted post, next pre, and BF16 RMSNorm with Mega mHC."""
+    DeepseekV4DecoderLayer --> mhc_shifted_post_pre : normal layers
+    DeepseekV4DecoderLayer --> MHCPreDelayedOp : L0 & L1/L14 after Engram
+    mhc_shifted_post_pre --> MhcBoundaryKernel : SM100 decode + boundary_weight
+    mhc_shifted_post_pre --> mega_mhc : SM100 DeepGEMM
+    mhc_shifted_post_pre --> AllReduceMHC : FULL graph + tokens <= max
+    mhc_shifted_post_pre --> MHCFusedPostPreOp : TileLang fallback
 ```
 
-### 华为昇腾 NPU 子层成对写回路径
+### 四道工程边界与层位拆界控制流
 
-与 GPU 的跨子层延迟合并相对，`vllm-ascend` 中的 `DeepseekV41DecoderLayer` 将 `Pre` 与 `Post` 固化为子层首尾成对算子[^mhc-ascend]。
+细读 `mhc_shifted_post_pre` 与 `DeepseekV4DecoderLayer.forward`（如图 12 时序所示），可以看出生产引擎针对四道硬件边界做的精密路由[^mhc-vllm]：
 
-进入子层时，`hc_pre` 调用 `npu_hc_pre_v3` 消费上一子层算好的 `pre_mix`，完成四流聚合与 20 轮 Sinkhorn 迭代，同时产出本子层写回系数与下一子层的 `pre_mix`。Attention 之后再经 `rms_norm_cast` 同步生成 BF16 激活与 FP32 MoE 路由输入。
+1. **按架构与批大小选核**：SM100 小批走 CuTe DSL，大批走 DeepGEMM `mega_mhc`，余下回退 TileLang。
+2. **小批全图融通信**：全图且批大小不超限时，用 `AllReduceMHC` 融合张量并行 `AllReduce`，副流并行预计算系数。
+3. **L1 与 L14 显式拆界**：这两层的 `Engram` 需要对完整四流原位注入[^engram-post]，模型先调 `mhc_post_tilelang`，注入后再调 `mhc_pre`。
+4. **精度红线与跨卡带宽**：投影权重与 20 轮 Sinkhorn 锁在 FP32 精度；流水线并行跨卡与送入 DSpark 时按 $4d$ 规划带宽。
 
-在 Attention 与 MoE 子层结尾，模型立即调用 `npu_hc_post` 写出完整 `[T, 4, hidden_size]` 四流。因为层间残差始终处于展开状态，第 1、14 层无需拆开控制流即可直接原位读写 `AscendEngram`，整网末端由 `hc_collapse` 归并。
+```mermaid caption="图 12：vllm@99b0b0b0 中 GPU 跨子层延迟融合与 L1/L14 Engram 拆界控制时序"
+sequenceDiagram
+    participant Prev as 上一子层输出 (x, residual, A/B/C)
+    participant Layer as DeepseekV4DecoderLayer
+    participant Eng as Engram (仅 L1 / L14)
+    participant Fuse as mhc_shifted_post_pre
+    participant Attn as Attention / MoE
+
+    alt 常规层 (无 Engram)
+        Prev->>Fuse: 透传增量与上层系数
+        Note over Fuse: 合并上层 Post + 本层 Pre + RMSNorm (10d)
+        Fuse-->>Attn: 输出归一化单流 + 下层系数
+    else L1 或 L14 (含 Engram 注入)
+        Prev->>Layer: 显式调用 mhc_post_tilelang
+        Layer->>Eng: 交出完整 [T, 4, d] 原位更新
+        Eng-->>Layer: 返回记忆增强四流
+        Layer->>Attn: 显式调用 mhc_pre 聚合进注意力
+    end
+```
+
+下面是 `vllm@99b0b0b0` 在 L1/L14 拆界分支与常规层延迟融合入口处的真实控制流摘录[^mhc-vllm]：
 
 ```python
-# vllm_ascend/models/deepseek_v41/model.py:860-875 (vllm-ascend@3649b8ff)
-@staticmethod
-def hc_collapse(x, pre_mix):
-    return (pre_mix.unsqueeze(-1) * x.float()).sum(-2).to(x.dtype)
+# vllm/models/deepseek_v41/nvidia/model.py:680-720 (vllm@99b0b0b0)
+elif self.engram is not None and engram_hashes is not None:
+    if self.fuse_mhc_all_reduce:
+        x = boundary_all_reduce(x)
+    previous_post = mhc_post_tilelang(x, residual, post_mix, res_mix)
+    residual = self.engram(previous_post, engram_hashes[:, self.engram.layer_hash_index], engram_mask)
+    post_mix, res_mix, x, attn_pre = mhc_pre(
+        residual, self.hc_attn_fn, self.hc_attn_scale, self.hc_attn_base, ...,
+        pre_mix=pre_mix, norm_weight=self.attn_norm.weight, norm_eps=self.attn_norm.variance_epsilon,
+    )
+else:
+    residual, post_mix, res_mix, x, attn_pre, aux = mhc_shifted_post_pre(
+        x, residual, post_mix, res_mix, self.hc_attn_fn, ...,
+        pre_mix=pre_mix, norm_weight=self.attn_norm.weight, stream=mhc_stream,
+        boundary_weight=self.hc_attn_boundary_weight,
+    )
+```
 
+## 昇腾 NPU 上的代码与协同实现
+
+转向华为昇腾 NPU 栈，`vllm-ascend`（提交 `b776261e`）中的 `DeepseekV41DecoderLayer` 走了一条不同路径[^mhc-ascend]。它没有把相邻两层的 `Post` 与 `Pre` 跨层拼成单个算子，而是把两者固化为子层首尾成对算子。
+
+### 子层成对写回与序列并行协同
+
+从下面核实后的昇腾源码可以看到，子层入口先调 `npu_hc_pre_v3` 完成四流聚合并同步算出 20 轮 Sinkhorn 与下层 `pre_mix`[^mhc-ascend]。子层末尾再调 `npu_hc_post` 把四流张量 `[T, 4, hidden_size]` 写回显存：
+
+```python
+# vllm_ascend/models/deepseek_v41/model.py:1058-1137 (vllm-ascend@b776261e)
 def hc_pre(self, x, hc_fn, hc_scale, hc_base, pre_mix=None):
     return torch.ops._C_ascend.npu_hc_pre_v3(
         x, hc_fn, hc_scale, hc_base, pre_mix,
@@ -352,25 +415,50 @@ def hc_pre(self, x, hc_fn, hc_scale, hc_base, pre_mix=None):
 
 def hc_post(self, x, residual, post, comb):
     return torch.ops._C_ascend.npu_hc_post(
-        x.unsqueeze(0), residual.unsqueeze(0),
-        post.unsqueeze(0), comb.unsqueeze(0),
+        x.unsqueeze(0), residual.unsqueeze(0), post.unsqueeze(0), comb.unsqueeze(0),
     ).squeeze(0)
+
+# forward 片段：mHC 与 MoE 保持序列并行分片，仅 Attention 区间临时 AllGather
+x, attn_post, attn_comb, attn_pre = self.hc_pre(hidden_states, self.hc_attn_fn, ...)
+x = self.input_layernorm(x)
+if use_sequence_parallel:
+    x = sp_all_gather(x)[: positions.shape[0]]
+x = self.self_attn(positions, x, llama_4_scaling)
+if use_sequence_parallel:
+    x = sp_reduce_scatter(x)
+hidden_states = self.hc_post(x, residual, attn_post, attn_comb)
 ```
 
-两套生态的核心架构差异浓缩在下表中：
+昇腾之所以坚持子层成对写回，有两个直接的系统收益。第一，层间残差始终处于展开状态，无需拆开子层内部控制流。模型在第 1、14 层只需对查表输出做一次 `sp_shard` 切分，即可直接把 `AscendEngram` 原位写进四流状态。
 
-| 对比维度     | NVIDIA GPU 延迟融合栈      | 华为昇腾 NPU 子层成对栈       |
-| :----------- | :------------------------- | :---------------------------- |
-| 融合边界组织 | 跨子层合并上层写回         | 子层首尾各自成对归并          |
-| Norm 协同    | 融进写回聚合边界尾声       | 独立调用 `rms_norm_cast` 产出 |
-| Engram 衔接  | 第 1/14 层显式拆开边界     | 层间已展开可直接原位读写      |
-| 通信协同     | 小批融进 Lamport AllReduce | 前后衔接序列并行集合通信      |
+第二，Attention 出口的张量并行局部和延迟到 `sp_reduce_scatter` 时才规约切分。这让 $4d$ 体积的四流残差、mHC 混合计算与 MoE 全程按 **SP（Sequence Parallelism，序列并行）** 保持单卡分片，省下数倍激活显存，流转如图 13 所示。
 
-即使单子层访存已被 `Mega-mHC` 压到 $10d$，仍有两笔成本无法绕开。层间驻留的 `[T, 4, d]` 残差体积始终是单流的 4 倍，流水线并行跨卡传输或向 DSpark 传入展平隐藏态时都必须按 $4d$ 规划带宽与显存[^mhc-paper][^mhc-ascend]。
+```mermaid caption="图 13：vllm-ascend@b776261e 昇腾子层成对写回、SP 分片区间与 Engram 衔接路径"
+flowchart TD
+    IN["层入口：4 流 [T/SP, 4, d] + 上层 pre_mix"] --> CHK{"当前是否 L1 或 L14?"}
+    CHK -->|"是"| ENG["lookup 经 sp_shard 切分<br/>直接原位读写 AscendEngram"]
+    CHK -->|"否"| PRE["npu_hc_pre_v3 + input_layernorm<br/>Sinkhorn + 聚合至 [T/SP, d]"]
+    ENG --> PRE
+    PRE --> SP1["sp_all_gather 还原全长<br/>执行 Self-Attention → sp_reduce_scatter"]
+    SP1 --> POST1["npu_hc_post 写回四流 [T/SP, 4, d]"]
+    POST1 --> FFN["npu_hc_pre_v3 → MoE (保持 SP 分片) → npu_hc_post"]
+    FFN --> END{"是否整网末层?"}
+    END -->|"否"| NEXT["透传四流与 ffn_pre 进入下一层"]
+    END -->|"是"| COL["hc_collapse 归并回单流 [T, d]"]
+```
 
-同时两套栈对投影权重、门控尺度与 20 轮 Sinkhorn 迭代均强制留在 FP32 精度；降低精度或缩减迭代步数留下的微小列和偏差，在 60 个子层连乘后依然会放大成数值漂移。
+两套异构生态围绕单遍时移与四流状态做出的核心权衡如下表所示：
 
-到这里，我们已经拆解完主干网络上的两项关键创新：`Engram` 的 $O(1)$ 静态查表记忆与 `mHC` 的四流双随机残差。下一篇 [09 多 token 预测与 DSpark 动态推测解码](../09-mtp-and-dspark/) 将转向解码末端的权重带宽瓶颈，看模型如何一次前向并行验证多个草稿 token。
+| 对比维度     | NVIDIA GPU 延迟融合栈      | 华为昇腾 NPU 子层成对栈           |
+| :----------- | :------------------------- | :-------------------------------- |
+| 融合边界组织 | 跨子层合并上层写回（10d）  | 子层首尾各自成对执行              |
+| 通信与 SP    | 小批融进 Lamport AllReduce | 全程保留 SP 分片仅 Attn 汇聚      |
+| Engram 衔接  | 第 1/14 层显式拆开边界     | 层间四流已展开直接原位读写        |
+| 末端归并     | 非 PP 末卡局部归并降通信   | 保留 4d 喂 MTP 后再 `hc_collapse` |
+
+到这里，我们已经拆解完主干网络上的两项核心架构升级：在 [07 Engram 条件记忆](../07-engram/) 中用静态查表替 MoE 减负，在本篇中用 Sinkhorn 双随机流形与单遍时移让四流残差既稳又省带宽。下一篇 [09 多 token 预测与 DSpark 动态推测解码](../09-mtp-and-dspark/) 将转向解码末端的权重带宽瓶颈，看模型如何把末尾展平状态送入草稿头一次验证多个词元。
+
+[^hc-paper]: Zhu et al., _Hyper-Connections_, [arXiv:2409.19606](https://arxiv.org/abs/2409.19606)（ICLR 2025），提出在残差流上引入动态（`tanh` 门控）与静态偏置组合的 `Pre` / `Res` / `Post` 多流超连接及标准残差退化初始化。
 
 [^mhc-paper]: Xie et al., _mHC: Manifold-Constrained Hyper-Connections_, [arXiv:2512.24880](https://arxiv.org/abs/2512.24880)（2025-12），Fig. 1、Fig. 8、§3.1–3.2 Table 1–2、§4.1–4.3 式 (3)–(20) 及 §5 Table 4。
 
@@ -378,8 +466,12 @@ def hc_post(self, x, residual, post, comb):
 
 [^dsv4-paper]: DeepSeek-AI, _DeepSeek-V4 Technical Report_, [arXiv:2606.19348](https://arxiv.org/abs/2606.19348)（2026-06），Fig. 2（Transformer Block 双子层 mHC 结构）与 §2.2 式 (1)–(5)（统一 $A_l / B_l / C_l$ 记号）。
 
-[^mhc-vllm]: `vLLM` 仓库（commit `bb23c0a8`）：`vllm/model_executor/kernels/mhc/torch.py`（`L6-45`）、`vllm/model_executor/layers/mhc.py`、`vllm/models/deepseek_v41/nvidia/ops/{mhc.py,mega_mhc.py,mhc_boundary.py}` 与 `nvidia/model.py`（`L539-719`）。
+[^mhc-vllm-layers]: `vLLM` 仓库（commit `99b0b0b0`）：`vllm/model_executor/layers/mhc.py`（`MHCPreOp`、`MHCPreDelayedOp`、`MHCPostOp`、`HCHeadOp`、`MHCFusedPostPreOp` 等 `CustomOp` 分发）。
 
-[^mhc-ascend]: `vllm-ascend` 仓库（commit `3649b8ff`）：`vllm_ascend/models/deepseek_v41/model.py`（`L826-940, 1664-1736` `DeepseekV41DecoderLayer`、`npu_hc_pre_v3`、`npu_hc_post`、`rms_norm_cast` 与 `hc_collapse`）。
+[^mhc-vllm]: `vLLM` 仓库（commit `99b0b0b0`）：`vllm/models/deepseek_v41/nvidia/ops/{mhc.py,mega_mhc.py,mhc_boundary.py}`（`mhc_shifted_post_pre`、`MhcBoundaryKernel`、`mhc_shifted_post_pre_deep_gemm`）与 `nvidia/model.py`（`L530–810` `DeepseekV4DecoderLayer`）。
 
-[^hc-paper]: Zhu et al., _Hyper-Connections_, [arXiv:2409.19606](https://arxiv.org/abs/2409.19606)（ICLR 2025），提出在残差流上引入动态（`tanh` 门控）与静态偏置组合的 `Pre` / `Res` / `Post` 多流超连接及标准残差退化初始化。
+[^mhc-vllm-fi]: `vLLM` 仓库（commit `99b0b0b0`）：`vllm/model_executor/kernels/mhc/{__init__.py,flashinfer_mega.py,tilelang.py,triton.py,aiter.py,torch.py}`。
+
+[^engram-post]: 关于 DeepSeek-V4.1-Flash 在 L1 与 L14 接入 `Engram` 条件记忆模块的后缀哈希、上下文门控与主机卸载详情，见上一篇 [07 Engram 条件记忆](../07-engram/)。
+
+[^mhc-ascend]: `vllm-ascend` 仓库（commit `b776261e`）：`vllm_ascend/models/deepseek_v41/model.py`（`L981–1138` `DeepseekV41DecoderLayer`、`npu_hc_pre_v3`、`npu_hc_post`、`hc_collapse` 与 `L1930–2015` `DeepseekV41Model.forward`）。

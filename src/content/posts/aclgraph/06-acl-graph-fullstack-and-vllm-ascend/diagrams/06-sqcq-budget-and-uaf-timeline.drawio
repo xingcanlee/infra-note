@@ -1,0 +1,44 @@
+<mxfile host="wisp-diagram">
+  <diagram id="aclgraph-06-sqcq-uaf" name="SQ CQ Budget and 507011 UAF Timeline">
+    <mxGraphModel dx="800" dy="600" grid="1" gridSize="8" guides="1" page="0" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="sq_grp" value="1. 物理 SQ/CQ 资源池配额红线：RT_DEVICE_SQCQ_RES_MAX_NUM = 1024U" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#f4f4f2;strokeColor=#5c6067;strokeWidth=1.25;verticalAlign=top;align=left;spacingLeft=12;spacingTop=8;fontFamily=Inter, Noto Sans SC;fontSize=12;fontStyle=1;fontColor=#5c6067;container=0;" vertex="1" parent="1">
+          <mxGeometry x="0" y="0" width="688" height="176" as="geometry" />
+        </mxCell>
+        <mxCell id="sq_dense" value="257 档密集桶 × 4 流 = 1028 槽（越过 1024 红线 → 预热直接报 207008）" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#fbf2df;strokeColor=#7b5518;strokeWidth=2;align=left;verticalAlign=middle;spacingLeft=12;fontFamily=Inter, Noto Sans SC;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="16" y="40" width="656" height="48" as="geometry" />
+        </mxCell>
+        <mxCell id="sq_sparse" value="12 档 MTP 对齐稀疏桶 × 4 流 = 48 槽" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f5e9;strokeColor=#2c522d;strokeWidth=2;align=center;verticalAlign=middle;spacing=6;fontFamily=Inter, Noto Sans SC;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="16" y="104" width="248" height="48" as="geometry" />
+        </mxCell>
+        <mxCell id="sq_free" value="剩余 976 组物理 SQ/CQ 安全余量（稳妥容纳多流通信与副本）" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f2fb;strokeColor=#2f5783;strokeWidth=1;dashed=1;dashPattern=4 4;align=center;verticalAlign=middle;spacing=6;fontFamily=Inter, Noto Sans SC;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="272" y="104" width="400" height="48" as="geometry" />
+        </mxCell>
+
+        <mxCell id="uaf_grp" value="2. 错误码 507011 设备内存 UAF 时间线（释放后重用）" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f2fb;strokeColor=#2f5783;strokeWidth=1.25;verticalAlign=top;align=left;spacingLeft=12;spacingTop=8;fontFamily=Inter, Noto Sans SC;fontSize=12;fontStyle=1;fontColor=#2f5783;container=0;" vertex="1" parent="1">
+          <mxGeometry x="0" y="200" width="688" height="176" as="geometry" />
+        </mxCell>
+        <mxCell id="u_t1" value="t1 捕获录制&lt;br&gt;固化地址 0x1200_4000" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f2fb;strokeColor=#2f5783;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=6;fontFamily=Inter, Noto Sans SC;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="16" y="240" width="176" height="56" as="geometry" />
+        </mxCell>
+        <mxCell id="u_t2" value="t2 中途释放 / 抢占&lt;br&gt;sinks 或局部缓冲被回收" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#fbf2df;strokeColor=#7b5518;strokeWidth=2;align=center;verticalAlign=middle;spacing=6;fontFamily=Inter, Noto Sans SC;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="232" y="240" width="192" height="56" as="geometry" />
+        </mxCell>
+        <mxCell id="u_t3" value="t3 图重放读写悬空指针&lt;br&gt;硬件报 507011 异常" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#fbf2df;strokeColor=#7b5518;strokeWidth=2;align=center;verticalAlign=middle;spacing=6;fontFamily=Inter, Noto Sans SC;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="464" y="240" width="208" height="56" as="geometry" />
+        </mxCell>
+        <mxCell id="u_fix" value="根治方案：sinks 与 Workspace 托管进 GraphParams 持久缓冲，再用 weak_ref_workspaces 只释放多余强引用" style="text;html=1;whiteSpace=wrap;align=center;verticalAlign=middle;fontFamily=Inter, Noto Sans SC;fontSize=11;fontColor=#2c522d;" vertex="1" parent="1">
+          <mxGeometry x="16" y="320" width="656" height="32" as="geometry" />
+        </mxCell>
+        <mxCell id="eu_t1" value="" style="endArrow=classic;startArrow=none;html=1;strokeColor=#1d1d1f;strokeWidth=1.25;edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=10;" edge="1" parent="1" source="u_t1" target="u_t2">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="eu_t2" value="" style="endArrow=classic;startArrow=none;html=1;strokeColor=#7b5518;strokeWidth=1.5;edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=10;" edge="1" parent="1" source="u_t2" target="u_t3">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

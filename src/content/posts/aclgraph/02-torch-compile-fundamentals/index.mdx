@@ -1,25 +1,34 @@
 ---
-title: '02 PyTorch 编译栈与分段融合极限'
-description: '小算子在 Eager 下既吃发射开销又反复读写显存。本文解析 TorchDynamo 字节码捕获、Dynamic Shapes 守卫与 AOTAutograd 降级链，并对比 GPU 与昇腾后端的融合极限。'
+title: '02 PyTorch 编译栈：分段融合与发射上限'
+description: '小算子在 Eager 下既吃主机发射开销又反复读写显存。本文面向零基础开发者，拆解 TorchDynamo 抓图、SymInt 守卫与 AOTAutograd，并对照 GPU 与昇腾融合极限。'
 series: { id: aclgraph, order: 3 }
 pubDate: 2026-10-17
 draft: false
 tags: [torch.compile, TorchDynamo, Symbolic Shapes, Inductor, AscendCompiler, Graph Break]
 ---
 
-小粒度算子在[异步队列](../01-heterogeneous-streams-and-events/)上不仅会触发高频主机发射，还伴随反复的显存读写。许多开发者误以为打开 `torch.compile` 编成“计算图”就能取代设备静态图。
+import Figure from 'astro-wisp/components/Figure.astro';
+import CompileSplitFusionExplainer from './explainers/compile-split-fusion';
+import vllmBlogGraphBreak from './images/vllm-blog-graph-break.png';
+import vllmBlogPiecewiseSplit from './images/vllm-blog-piecewise-split.png';
 
-实际生产里，`vLLM` 与 `vllm-ascend` 始终把两级技术串联起来。它们先由 `torch.compile` 做算子融合并压低访存带宽，再由外层 `CUDAGraphWrapper` 或 `ACLGraphWrapper` 消除发射开销。
+在[第 1 章](../01-heterogeneous-streams-and-events/)里，我们看到异步队列只能掩盖 CPU 发射等待，却无法减少算子数量。于是很多开发者想到打开 `torch.compile`，以为把模型编成一张计算图就能直接取代设备静态图。
 
-## Eager 损耗与字节码捕获
+实际推理工程远没有这么简单。在 PyTorch **Eager（逐算子直跑）** 模式下，系统同时要交两笔税。一是每个算子都要付一次主机发射耗时 $T_{\text{launch}}$；二是碎片算子每算完一步都要把中间结果写回 **HBM（High Bandwidth Memory，高带宽显存）**，下个算子再重读。
 
-PyTorch Eager 模式同时存在两类叠加开销：一是第 1 章分析过的逐算子主机派发成本 $T_{\text{launch}}$；二是零碎算子对 **HBM（High Bandwidth Memory，高带宽显存）**的重复读写。例如前馈网络常见的 SwiGLU（$\text{SiLU}(a) \odot b$）在 Eager 下须先后两次进出 HBM：先读 $a$ 算 `silu` 后写回完整激活张量，紧接着逐元素乘法再从 HBM 重读中间值并与 $b$ 相乘。
+以大模型前馈网络常见的 SwiGLU（$\text{SiLU}(a) \odot b$）为例，设输入批量 $B = 8$、半隐维 $D = 5120$、BF16 单片张量占 $80\,\text{KB}$。Eager 下先算 `silu` 读 $a$ 写中间值，再算 `mul` 读中间值与 $b$ 写输出，来回跑了 5 趟 HBM（共 $400\,\text{KB}$）。
 
-PyTorch 2.x 引入的 **TorchDynamo** 借助 Python **PEP 523（Frame Evaluation API，栈帧求值接口）**接管函数执行前的字节码流，从中提取纯张量计算图[^vllm-compile-doc]。
+`torch.compile` 真正擅长的是把 `silu` 和 `mul` 融进同一段计算核里，把 5 趟搬运压成 3 趟（$240\,\text{KB}$）。但它并不能把整网一次打包下发，生产上仍需外包设备静态图。
 
-如图 1 所示，Dynamo 符号执行字节码指令后产出 `torch.fx.GraphModule`，同时登记前置校验规则 **`Dynamo Guard`**，用来确认后续调用的张量形状、类型与设备属性没有变化。
+## 字节码怎么变成计算图：Dynamo 与断图
 
-一旦遇到 `print(x.item())` 或不透明 C 扩展等无法追踪的逻辑，Dynamo 会触发 **`Graph Break`（局部断图）**。它会先把已截获的 FX 子图送去编译，切回 Python 执行完断点逻辑后再重新接力录图。
+想把日常写的 Python 模型代码变成可优化的计算图，第一步必须解决：Python 是动态解释语言，编译器怎么把张量算子抠出来？
+
+### PEP 523 拦截与 Graph Break
+
+PyTorch 2 在 ASPLOS 2024 论文[^pytorch2-paper]中系统阐述了 `torch.compile`。依托 **TorchDynamo** 与 **TorchInductor**，该方案在 180 多个模型上相对 Eager 取得推理 2.27 倍、训练 1.41 倍的几何平均加速。
+
+其中 **TorchDynamo** 利用 Python **PEP 523（Frame Evaluation API，栈帧求值接口）** 在函数运行前拦住字节码流[^vllm-compile-doc]。Dynamo 遇到张量运算时不真正算数值，而是记录成 `torch.fx.GraphModule`（简称 FX 图），如图 1 所示。
 
 ```mermaid caption="图 1：TorchDynamo 字节码捕获、Dynamo Guard 校验与 Graph Break 切分路径"
 flowchart TD
@@ -32,147 +41,186 @@ flowchart TD
     D -->|"否"| A["完整 FX Subgraph 移交 AOTAutograd"]
 ```
 
-```mermaid caption="图 2：PyTorch 前端抓图降级管线及 GPU Inductor 与昇腾 AscendCompiler 后端分叉架构"
-flowchart TD
-    subgraph FE["PyTorch 通用前端"]
-        FE0["TorchDynamo<br/>PEP 523 提取 FX"] --> FE1["SymInt & Guards<br/>0/1 特化防重编"]
-        FE1 --> FE2["AOTAutograd<br/>输出 Core ATen IR"]
-    end
-    subgraph GPU["GPU · Inductor 路径"]
-        G1["TorchInductor<br/>Loop Fusion 循环融合"] --> G2["Triton / CUDA Kernel<br/>降低 HBM 往返"]
-        G2 --> G3["外层接入 CUDAGraph<br/>消除 Launch 气泡"]
-    end
-    subgraph NPU["Ascend · 编译融合路径"]
-        N1["AscendCompiler<br/>oot_compiler 分段切图"] --> N2["npugraph_ex<br/>GraphFusionPass 融合"]
-        N2 --> N3["外层接入 ACLGraph<br/>消除发射气泡"]
-    end
-    FE2 -->|"下发 FX IR"| G1
-    FE2 -->|"下发 FX IR"| N1
-```
+一旦代码里混入 `print(x.item())`、`torch.save` 或编译器看不懂的 C 扩展，Dynamo 就会触发 **`Graph Break`（局部断图）**。如图 2 所示，编译器会把断点前的 `g(x)` 与断点后的 `h(x)` 分别编成独立子图，中间退回 Python 跑完断点语句[^vllm-tc-blog]。
 
-## 动态形状与符号守卫陷阱
+<Figure
+  src={vllmBlogGraphBreak}
+  alt="vLLM 博客示意图：f(x) 中包含 torch.save 不支持操作时发生 Graph Break，切分为编译子图 g(x)、Eager 执行 torch.save 与编译子图 h(x)"
+  caption="图 2：遇到不支持操作触发 Graph Break 时将函数切分为两段编译子图与中间 Eager 执行（来源 vLLM 官方博客）"
+/>
 
-服务批大小随时变化（上一毫秒 4 个解码 token、下一毫秒跳变至 512 个 Prefill token），若直接将张量维度固化为字面常量会导致每来新长度便重编数秒。PyTorch 基于 **Symbolic Shapes（`SymInt`）** 管理动态维度，关键语义边界如下[^vllm-debug-doc]：
+### 动态批大小：SymInt 与 Guard 陷阱
 
-| 符号机制                     | 运行时行为与约束               | 在线风险与规避手段               |
-| ---------------------------- | ------------------------------ | -------------------------------- |
-| **Backed `SymInt` (`s0`)**   | 已知样本尺寸；分支注入模 Guard | 模余失效重编，`tlparse` 排查     |
-| **Unbacked `SymInt` (`u0`)** | `nonzero()` 等数据依赖动态维   | 视图/尺寸校验触发 Graph Break    |
-| **0/1 步长特化**             | 0 或 1 维默认固化为常量        | `bs=1` 震荡；开无 Guard 包装跳过 |
+推理服务的批大小每步都在跳变，上一毫秒 4 个解码词元，下一毫秒涌入 512 个预填充词元。若编译时把维度写死为常量，每遇到新长度就得重编数秒，在线服务会直接卡死。
 
-![vLLM 编译分段与动态形状符号守卫 tlparse 诊断视图](./images/vllm-torch-compile-flow.png '图 3：vLLM 中 TorchDynamo 捕获、按 Attention 分段切图、后端缓存编译 artifact 与外层静态图包装衔接链路（来源 vLLM 官方文档，Apache-2.0）')
+为此，PyTorch 用 **Symbolic Shapes（`SymInt`，符号整数）** 代表动态维度，并用 **`Dynamo Guard`** 核对后续请求形状是否仍匹配编译产物。图 3 与图 4 展示了 vLLM 抓图流程与 `tlparse` 抓出的守卫异常现场[^vllm-debug-doc]。
 
-![tlparse 中因模余条件分支泄漏出的动态 Guard 堆栈](./images/vllm-dynamic-shapes-tlparse.png '图 4：线上调试工具 tlparse 暴露出的由 % 128 对齐分支注入的符号 Guard 约束堆栈，这类隐蔽守卫往往是动态批大小触发重编的祸首（来源 vLLM 官方文档，Apache-2.0）')
+| 符号机制                     | 运行时行为与约束               | 在线风险与规避手段              |
+| :--------------------------- | :----------------------------- | :------------------------------ |
+| **Backed `SymInt` (`s0`)**   | 已知输入尺寸；分支注入模 Guard | 模余失效重编，用 `tlparse` 排查 |
+| **Unbacked `SymInt` (`u0`)** | `nonzero()` 等数据依赖动态维   | 视图或尺寸校验触发 Graph Break  |
+| **0/1 步长特化**             | 0 维或 1 维默认固化成字面常量  | `bs=1` 反复抖动；无 Guard 跳过  |
 
-## AOTAutograd 分片与后端编译路径分叉
+![vLLM 编译分段与动态形状符号守卫 tlparse 诊断视图](./images/vllm-torch-compile-flow.png '图 3：vLLM 中 TorchDynamo 捕获、按 Attention 分段切图、后端缓存与外层静态图包装链路（来源 vLLM 官方文档，Apache-2.0）')
 
-FX 图进入 **AOTAutograd** 阶段后，先由不占物理显存的 **FakeTensor**（仅保留 Shape、DType 与 Device 元信息）完成抽象追踪。
+![tlparse 中因模余条件分支泄漏出的动态 Guard 堆栈](./images/vllm-dynamic-shapes-tlparse.png '图 4：调试工具 tlparse 暴露出的由 % 128 对齐分支注入的符号 Guard 堆栈，这类隐蔽守卫常导致动态批大小反复重编（来源 vLLM 官方文档，Apache-2.0）')
 
-随后编译器执行 **Functionalization（函数化）**，将 `x.add_(y)` 或切片原位写重写为无副作用的 **Core ATen IR（核心张量中间表示）**节点。这样后端就能安全地重排算子与融合访存，不会污染共享底层存储的张量[^vllm-compile-doc]。
+图 4 揭示了一个隐蔽踩坑：代码里只要写了一句 `if num_tokens % 128 == 0:`，Dynamo 就会偷偷往 Guard 里塞一条模余约束，一旦出现第 129 个词元就失效重编。默认的 **0/1 步长特化** 还会把 `bs = 1` 单独特化，请求在单条与多条间波动时就会反复重编。
 
-完成降级的 Core ATen IR 在 GPU 与华为昇腾 NPU 上走向两条截然不同的代码生成路线[^ascend-compile-doc]：
+正因如此，vLLM 在顶层改用无 Guard 整图追踪：开启全局符号尺寸后不再为 `bs = 1` 单独特化，整网只编出 1 份通用 FX 图，把变长分发交给后端分段处理。
 
-| 后端比较维度 | NVIDIA GPU（`TorchInductor`）          | Ascend NPU（`AscendCompiler`）           |
-| ------------ | -------------------------------------- | ---------------------------------------- |
-| 核心优化方式 | 全局规划与 **Loop Fusion（循环融合）** | 禁 Inductor；FX 模式替换或 `npugraph_ex` |
-| 产物运行形态 | 生成 Triton/CUDA Kernel 减 HBM 写      | 对接 CANN `aclnn` / NNAL 重型融合算子    |
-| 共同调度边界 | 逐段出图，外层需 `CUDAGraph` 发射      | 按 `splitting_ops` 切段，接 `ACLGraph`   |
+## 从 FX 到融合：AOTAutograd
 
-### 为什么编译完成依然突破不了 Host 发射墙
+拿到干净的 FX 图之后，编译器还要过 **AOTAutograd** 这一关。它先用不占物理显存的 **FakeTensor**（只保留形状、数据类型和设备）跑一遍抽象推演，确认张量维度严丝合缝。
 
-无论前端如何合并逐元素算子，注意力算子（如 PagedAttention 或昇腾 `AscendDSAV41Impl`）都高度依赖变长上下文与块表元数据。编译框架因此必须通过 **`splitting_ops`** 把整图切分为多段 `artifact_0`、`artifact_1`，在夹缝间保留动态注意力 Kernel。
+接着执行 **Functionalization（函数化）**：把类似 `x.add_(y)` 的原位修改和切片别名重写成无副作用的 **Core ATen IR（核心张量中间表示）** 节点。这样后端就能放心重排算子与融合访存，不会改坏共享同一块显存的其他变量[^vllm-compile-doc]。
 
-以 40 层非对称 CED 架构的 **DeepSeek-V4.1-Flash** 为例，它在单步解码时仅激活 16B 参数，并把单 token KV 压至 890 B NVFP4[^v41-synth]。即便编译融合把每层的四流混合、CSA2 与 384 选 6 MoE 等约 28 个算子压到 10 个融合算子，40 层单步仍需要主机提交约 400 次 Kernel 启动。
+完成降级的 Core ATen IR 在 NVIDIA GPU 与华为昇腾 NPU 上走向不同的代码生成路线，整体分叉如图 5 所示[^ascend-compile-doc]。
 
-下面的纯 CPU 仿真脚本定量核算了算子融合的 HBM 节省比例、Guard 重编次数以及残余的主机发射耗时：
+![PyTorch 前端降级链及 GPU Inductor 与昇腾 AscendCompiler 后端分叉架构](./diagrams/02-compile-ir-and-backends.drawio '图 5：PyTorch 前端 FX 提取、splitting_ops 切段与 GPU/NPU 双端融合代码生成路径')
+
+| 后端比较维度 | NVIDIA GPU（`TorchInductor`）          | Ascend NPU（`AscendCompiler`）             |
+| :----------- | :------------------------------------- | :----------------------------------------- |
+| 核心优化方式 | 全局分析与 **Loop Fusion（循环融合）** | 关闭 Inductor；FX 模式替换或 `npugraph_ex` |
+| 产物运行形态 | 生成 Triton 或 CUDA 算子降 HBM 读写    | 替换为 CANN `aclnn` 或 NNAL 融合算子       |
+| 共同调度边界 | 逐段出图，外层需 `CUDAGraphWrapper`    | 按 `splitting_ops` 切段，接 `ACLGraph`     |
+
+在 GPU 上，`TorchInductor` 把相邻逐元素与归约算子直接编译成一段 Triton 代码。而在昇腾上，`vllm-ascend`（提交 `b776261e`）用 `GraphFusionPassManager` 在 FX 图上做模式替换，再交由 `npugraph_ex` 下发[^ascend-compile-doc][^ascend-pass]。
+
+典型融合覆盖三类模式：规范化量化 `AddRMSNormQuantFusionPass` 与位置编码 `QKNormRopeFusionPass` 等。此外还有矩阵通信 `MatmulReduceScatterFusionPass` 等通道级替换。
+
+## 为什么编译到头仍绕不开静态执行图
+
+即便前后段算子融合得再干净，大模型里总有一类算子编译不动——注意力计算（如 PagedAttention 或 `AscendDSAV41Impl`）。它每一步都要按请求动态读取变长 KV 块表，无法静态展开成纯张量循环。
+
+为此，vLLM V1 架构[^vllm-v1-blog]与 `torch.compile` 团队[^vllm-tc-blog]在工程上确立了 **`splitting_ops`** 分段方案（图 6）。夹在注意力之间的线性投影与 MLP 分别编译成独立产物并套上静态执行图，注意力算子则保持 Eager 动态调度，并通过自定义 Pass 进一步融合激活与量化。
+
+这种设计也有明确边界：vLLM V1 靠分段编译加轻量调度拿到最高 1.7 倍吞吐提升，并把产物缓存进本地磁盘。但像注意力与量化全局融合 `AttnQuantFusionPass` 这类跨注意力界面的优化，就必须在关闭 `splitting_ops` 切段后才能看到整图[^vllm-tc-blog]。
+
+<Figure
+  src={vllmBlogPiecewiseSplit}
+  alt="vLLM 博客示意图：前端抓图后按 attention 切出前后段，后端编为 artifact_0 与 artifact_1 并各自外包 cuda_graphs 执行"
+  caption="图 6：vLLM 按注意力算子切段编译并在子图外侧自动包装静态执行图（来源 vLLM 官方博客）"
+/>
+
+按 40 层 **DeepSeek-V4.1-Flash** 解码单步估算，就算后端融合把每层 28 个零散算子压成 10 个融合算子，40 层加起来依然要 CPU 发起 400 次指令发射。图 7 拆解了这组数量级变化，并可在第 2 步切换 Guard 模式对比重编次数。
+
+<CompileSplitFusionExplainer
+  client:visible
+  title="图 7：torch.compile 分段切图、HBM 降访存与 40 层残余发射墙 5 步推演"
+/>
+
+下面的纯 CPU Python 脚本量化核算了 SwiGLU 的 HBM 访存降幅、0/1 特化重编次数以及 40 层模型的残余主机发射耗时：
 
 ```python
 from dataclasses import dataclass
-
 
 @dataclass
 class FxNode:
     op: str
     name: str
-    args: tuple[str, ...]
     out_bytes: int
 
-
-def trace_swiglu_block(batch: int, hidden: int, inter: int) -> list[FxNode]:
-    bpe = 2  # BF16
+def trace_swiglu(batch: int, hidden: int, inter: int) -> list[FxNode]:
+    bpe = 2
     return [
-        FxNode("placeholder", "x", (), batch * hidden * bpe),
-        FxNode("call_module", "w_gate", ("x",), batch * inter * bpe),
-        FxNode("call_function", "chunk", ("w_gate",), batch * inter * bpe),
-        FxNode("call_function", "silu", ("a",), batch * (inter // 2) * bpe),
-        FxNode("call_function", "mul", ("silu", "b"), batch * (inter // 2) * bpe),
-        FxNode("call_module", "w_down", ("mul",), batch * hidden * bpe),
-        FxNode("call_function", "add", ("x", "w_down"), batch * hidden * bpe),
+        FxNode("placeholder", "x", batch * hidden * bpe),
+        FxNode("call_module", "w_gate", batch * inter * bpe),
+        FxNode("call_function", "chunk", batch * inter * bpe),
+        FxNode("call_function", "silu", batch * (inter // 2) * bpe),
+        FxNode("call_function", "mul", batch * (inter // 2) * bpe),
+        FxNode("call_module", "w_down", batch * hidden * bpe),
+        FxNode("call_function", "add", batch * hidden * bpe),
     ]
 
-
-nodes = trace_swiglu_block(batch=8, hidden=5120, inter=10240)
+nodes = trace_swiglu(batch=8, hidden=5120, inter=10240)
 print(f"[FX Nodes] total={len(nodes)}, ops={[n.name for n in nodes]}")
 
-# HBM 字节统计：未融合 (silu + mul) vs 融合 SwiGLU epilogue
 B, D_HALF, BPE = 8, 5120, 2
-# silu 读 a 并写中间 s；mul 读 s, b 并写回激活，合计 5 次访存
-unfused_bytes = B * D_HALF * BPE * (2 + 3)
-fused_bytes = B * D_HALF * BPE * 3  # 融合核单遍读 a, b 并写回一次
+unfused_bytes = B * D_HALF * BPE * 5
+fused_bytes = B * D_HALF * BPE * 3
 
-# Symbolic Shape 0/1 Guard vs Backed Dynamic Shape 仿真
 def eval_guards(batches: list[int], zero_one_spec: bool) -> int:
-    compiled_variants = set()
-    recompiles = 0
+    seen, recompiles = set(), 0
     for bs in batches:
         key = ("spec_1" if bs <= 1 else "dyn_N") if zero_one_spec else "dyn_N"
-        if key not in compiled_variants:
-            compiled_variants.add(key)
+        if key not in seen:
+            seen.add(key)
             recompiles += 1
     return recompiles
-
 
 re_01 = eval_guards([4, 8, 1, 16, 1], zero_one_spec=True)
 re_sym = eval_guards([4, 8, 1, 16, 1], zero_one_spec=False)
 
-# 对照 DeepSeek-V4.1-Flash（40 层 CED，每层 ~28 Eager 算子 -> 10 融合算子）
-n_layers = 40
-ops_eager, ops_fused = 28, 10
-t_launch_us = 12.0
-t_kernel_fused_us = 8.5
+n_layers, ops_eager, ops_fused = 40, 28, 10
+eager_host_us = n_layers * ops_eager * 12.0
+compiled_host_us = n_layers * ops_fused * 12.0
+compiled_dev_us = n_layers * ops_fused * 8.5
 
-eager_host_us = n_layers * ops_eager * t_launch_us
-compiled_host_us = n_layers * ops_fused * t_launch_us
-compiled_dev_us = n_layers * ops_fused * t_kernel_fused_us
-
-saved_pct = 1 - fused_bytes / unfused_bytes
-print(
-    f"[HBM Elementwise] unfused={unfused_bytes/1024:.1f}KB -> "
-    f"fused={fused_bytes/1024:.1f}KB (-{saved_pct:.0%})"
-)
+print(f"[HBM Elementwise] unfused={unfused_bytes/1024:.1f}KB -> fused={fused_bytes/1024:.1f}KB (-{1 - fused_bytes/unfused_bytes:.0%})")
 print(f"[Guard Recompiles] 0/1_spec={re_01} vs uniform_dynamic={re_sym}")
-print(
-    f"[40-Layer V4.1-Flash Wall] EagerHost={eager_host_us:.0f}us, "
-    f"CompiledHost={compiled_host_us:.0f}us vs CompiledDev={compiled_dev_us:.0f}us "
-    f"(Host/Dev={compiled_host_us/compiled_dev_us:.2f}x)"
-)
+print(f"[40L V4.1-Flash] EagerHost={eager_host_us:.0f}us, CompiledHost={compiled_host_us:.0f}us vs Dev={compiled_dev_us:.0f}us ({compiled_host_us/compiled_dev_us:.2f}x)")
 ```
 
-脚本输出显示，算子融合将逐元素 HBM 读写压低了 40%，并把主机派发耗时从 13440 微秒降到 4800 微秒。但对比 3400 微秒的残余设备耗时，主机发射仍占到硬件执行时间的 1.41 倍。
+脚本输出证实，融合把逐元素访存削减了 40%，把主机发射耗时从 $13440\,\mu\text{s}$ 压到了 $4800\,\mu\text{s}$。但对比 $3400\,\mu\text{s}$ 的设备算力耗时，主机下发依旧占到设备执行时间的 1.41 倍：
 
 ```text
 [FX Nodes] total=7, ops=['x', 'w_gate', 'chunk', 'silu', 'mul', 'w_down', 'add']
 [HBM Elementwise] unfused=400.0KB -> fused=240.0KB (-40%)
 [Guard Recompiles] 0/1_spec=2 vs uniform_dynamic=1
-[40-Layer V4.1-Flash Wall] EagerHost=13440us, CompiledHost=4800us vs CompiledDev=3400us (Host/Dev=1.41x)
+[40L V4.1-Flash] EagerHost=13440us, CompiledHost=4800us vs Dev=3400us (1.41x)
 ```
 
-要从热路径拿掉这数千微秒的主机往返，必须把整段任务拓扑直接固化到设备驱动侧。[第 3 章：CUDA Graph 原理与四大静态边界](../03-cuda-graph-fundamentals/)将介绍确立行业基线的 CUDA 静态图实现。
+## 源码对照：分段后端与昇腾编译
 
-[^vllm-compile-doc]: 参阅 `vllm`（提交 `bb23c0a8`）架构设计文档 `docs/design/torch_compile.md` 及其配套调试指南 `docs/design/debug_vllm_compile.md`。
+在 `vllm`（提交 `99b0b0b0`）与 `vllm-ascend`（提交 `b776261e`）中，切分出来的每一段静态子图都交由对应的后端管理器按形状区间分别编译和缓存，核心类关系如图 8 所示[^vllm-pw][^ascend-ci][^ascend-pass]。
 
-[^vllm-debug-doc]: 参阅 `vllm`（提交 `bb23c0a8`）文档 `docs/design/debug_vllm_compile.md` 关于 `BACKED`、`UNBACKED` 与 `BACKED_SIZE_OBLIVIOUS` 对 Guard 重编影响的讨论。
+```mermaid caption="图 8：vllm@99b0b0b0 分段编译后端与 vllm-ascend@b776261e 融合通道类关系"
+classDiagram
+    class PiecewiseBackend {
+        +compile_ranges
+        +compile_sizes
+        +RangeEntry
+        +create_concrete_args()
+    }
+    class AscendCompiler {
+        +compile_factors()
+        +initialize_cache()
+        +compile()
+    }
+    class GraphFusionPassManager {
+        +AddRMSNormQuantFusionPass
+        +QKNormRopeFusionPass
+        +MatmulReduceScatterFusionPass
+    }
+    class npugraph_ex_compile {
+        +patched_get_compiled_gm()
+        +skip_cache_if_triton()
+    }
 
-[^v41-synth]: 关于 DeepSeek-V4.1-Flash 的 40 层 CED 主干、CSA2 压缩与 384 选 6 细粒度 MoE 细节，可对照本站[10 串珠成链：V4.1 单步全链路与双硬件协同](../../deepseek/10-architecture-synthesis/)。
+    PiecewiseBackend --> AscendCompiler : delegates Ascend subgraph
+    AscendCompiler --> GraphFusionPassManager : runs FX pattern passes
+    AscendCompiler --> npugraph_ex_compile : lowers to NPU backend
+```
 
-[^ascend-compile-doc]: 参阅 `vllm-ascend`（提交 `3649b8ff`）设计文档 `docs/source/developer_guide/Design_Documents/npugraph_ex.md` 及特性手册 `docs/source/user_guide/feature_guide/graph_mode.md`。
+昇腾编译通道在 `npugraph_ex_compile` 里有一项关键工程保护[^ascend-ci]。若子图包含自定义 Triton Ascend 算子，代码会依赖进程内临时注册的 `kernel_side_table` 跳转索引，跨进程读取缓存必定报错。因此编译器会检测 `triton_kernel_wrapper` 并跳过磁盘缓存，必要时可用 `force_eager` 把疑难算子切出编译图。
+
+要彻底拿掉残余的数千微秒主机发射墙，光靠编译器融算子已经到头，必须把整段指令拓扑固化到驱动侧实现单次发射。[第 3 章：CUDA Graph 原理：流捕获、四边界与双模](../03-cuda-graph-fundamentals/)将确立设备静态执行图的核心契约。
+
+[^vllm-compile-doc]: 参阅 `vllm`（提交 `99b0b0b0`）架构设计文档 `docs/design/torch_compile.md` 与调试指南 `docs/design/debug_vllm_compile.md`。
+
+[^vllm-debug-doc]: 参阅 `vllm`（提交 `99b0b0b0`）文档 `docs/design/debug_vllm_compile.md` 对 `BACKED`、`UNBACKED` 与 `BACKED_SIZE_OBLIVIOUS` 动态维守卫的讨论。
+
+[^ascend-compile-doc]: 参阅 `vllm-ascend`（提交 `b776261e`）设计文档 `docs/source/developer_guide/Design_Documents/npugraph_ex.md` 及特性手册 `docs/source/user_guide/feature_guide/graph_mode.md`。
+
+[^ascend-ci]: 参阅 `vllm-ascend`（提交 `b776261e`）源码 `vllm_ascend/compilation/compiler_interface.py`（L207–330 `npugraph_ex_compile` 与 `AscendCompiler`、`kernel_side_table` 缓存跳过）。
+
+[^ascend-pass]: 参阅 `vllm-ascend`（提交 `b776261e`）源码 `vllm_ascend/compilation/graph_fusion_pass_manager.py`（L28–79 `GraphFusionPassManager`）及 `passes/norm_quant_fusion_pass.py`。
+
+[^vllm-pw]: 参阅 `vllm`（提交 `99b0b0b0`）源码 `vllm/compilation/piecewise_backend.py`（L37–160 `create_concrete_args`、`RangeEntry` 与 `PiecewiseBackend`）。
+
+[^pytorch2-paper]: Jason Ansel et al., _PyTorch 2: Faster Machine Learning Through Dynamic Python Bytecode Transformation and Graph Compilation_, [ASPLOS 2024](https://doi.org/10.1145/3620665.3640366)，提出 TorchDynamo、TorchInductor 并在 180 余个模型上验证推理 2.27 倍、训练 1.41 倍几何平均加速。
+
+[^vllm-tc-blog]: Luka Govedič et al., [Introduction to torch.compile and How It Works with vLLM](https://blog.vllm.ai/2025/08/20/torch-compile.html)（vLLM 官方博客，2025-08-20），阐释 Graph Break 切图、`splitting_ops`、自定义 Pass、磁盘缓存与 `AttnQuantFusionPass` 取舍。
+
+[^vllm-v1-blog]: vLLM Team, [vLLM V1: A Major Upgrade to vLLM's Core Architecture](https://blog.vllm.ai/2025/01/27/v1-alpha-release.html)（vLLM 官方博客，2025-01-27），介绍 `torch.compile` 与 Piecewise CUDA Graphs 组合实现最高 1.7 倍吞吐提升。

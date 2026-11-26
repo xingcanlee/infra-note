@@ -14,6 +14,18 @@
         "Host Device SQ CQ Arch"
       ]
     },
+    "src/content/posts/aclgraph/02-torch-compile-fundamentals/diagrams/02-compile-ir-and-backends.drawio": {
+      "source": "sha256-052f232f075d210738bf5de9e271984616d41c38389708051faca1192c2d07c4",
+      "style": "clean",
+      "exporter": "drawio-cli",
+      "embedFonts": false,
+      "outputs": {
+        "src/content/posts/aclgraph/02-torch-compile-fundamentals/diagrams/02-compile-ir-and-backends.wisp.svg": "sha256-ba80d263c4dee0f4fd9e16ed466900fbe31ec90e2993a5182ea2d5329900180e"
+      },
+      "pages": [
+        "PyTorch Compile IR and Dual Backends"
+      ]
+    },
     "src/content/posts/aclgraph/03-cuda-graph-fundamentals/diagrams/03-cuda-graph-four-boundaries.excalidraw": {
       "source": "sha256-0007110a44a9109bc84acf3f8a7872afa5e876fefb70e97cf5e7f555383346fc",
       "style": "hand",
@@ -22,6 +34,54 @@
       "outputs": {
         "src/content/posts/aclgraph/03-cuda-graph-fundamentals/diagrams/03-cuda-graph-four-boundaries.wisp.svg": "sha256-04d0c1db6b58bd5fb5222da2c3cd5721cb68d180f22c417951481961c56d4417"
       }
+    },
+    "src/content/posts/aclgraph/03-cuda-graph-fundamentals/diagrams/03-cuda-graph-memory-pool-and-replay.drawio": {
+      "source": "sha256-9f87d86656da02c5fd2599216bfb43a4bd0a4c5a07b865a6865d20cb508feba5",
+      "style": "clean",
+      "exporter": "drawio-cli",
+      "embedFonts": false,
+      "outputs": {
+        "src/content/posts/aclgraph/03-cuda-graph-fundamentals/diagrams/03-cuda-graph-memory-pool-and-replay.wisp.svg": "sha256-91969b7f099e5b8270d4b1a7ebfff717ff9cfcad0fd0f94044e079eebdc7afac"
+      },
+      "pages": [
+        "CUDA Graph Memory Pool and Replay"
+      ]
+    },
+    "src/content/posts/aclgraph/04-acl-graph-architecture-and-capture/diagrams/04-aclgraph-capture-replay-arch.drawio": {
+      "source": "sha256-05cab48ccff80bab667da2cd12f7fe1b633c079e87094c89ee9f71eab9e7f897",
+      "style": "clean",
+      "exporter": "drawio-cli",
+      "embedFonts": false,
+      "outputs": {
+        "src/content/posts/aclgraph/04-acl-graph-architecture-and-capture/diagrams/04-aclgraph-capture-replay-arch.wisp.svg": "sha256-4762621b79f5f8df5aeb24bc0d6daa041ee3b7c7084df8a676b7046bcc16118c"
+      },
+      "pages": [
+        "ACL Graph Capture and Replay Architecture"
+      ]
+    },
+    "src/content/posts/aclgraph/05-acl-graph-task-update-and-conditional-subgraph/diagrams/05-taskgrp-cond-arch.drawio": {
+      "source": "sha256-46c9a301e905d17db9f74ff481935fccac499ae279728c7f9046d9b9f1244c6c",
+      "style": "clean",
+      "exporter": "drawio-cli",
+      "embedFonts": false,
+      "outputs": {
+        "src/content/posts/aclgraph/05-acl-graph-task-update-and-conditional-subgraph/diagrams/05-taskgrp-cond-arch.wisp.svg": "sha256-30c68988d9f72d30c719970e3f20a1cb2e95d1e2848a4e9caf8c105da6552468"
+      },
+      "pages": [
+        "TaskGrp Hot Update and Conditional Subgraph"
+      ]
+    },
+    "src/content/posts/aclgraph/06-acl-graph-fullstack-and-vllm-ascend/diagrams/06-sqcq-budget-and-uaf-timeline.drawio": {
+      "source": "sha256-04bd6f1c9db3a33987a738c0c3ade74f6c8e82e8215c3370100833f24fe99bdd",
+      "style": "clean",
+      "exporter": "drawio-cli",
+      "embedFonts": false,
+      "outputs": {
+        "src/content/posts/aclgraph/06-acl-graph-fullstack-and-vllm-ascend/diagrams/06-sqcq-budget-and-uaf-timeline.wisp.svg": "sha256-5c392ada8596329fbd2c8c8b0ff70a88444948a81713785a92d3b8c81d637941"
+      },
+      "pages": [
+        "SQ CQ Budget and 507011 UAF Timeline"
+      ]
     },
     "src/content/posts/deepseek/01-mla/diagrams/01-mla-arch.drawio": {
       "source": "sha256-78188788fcd1cf1aef419672dc1bbd5ced45a33ec9600189c23e4fbf2c2bebe9",
@@ -264,12 +324,12 @@
       ]
     },
     "src/content/posts/deepseek/08-mhc/diagrams/08-mhc-single-pass.drawio": {
-      "source": "sha256-1146c918c8a59ce4b4e4a664be3e74469979890d22f65ebe4fda4f75292d2265",
+      "source": "sha256-5daeb923753bc3142daee6bedfb7dfcac666761b606791b8b8437a245013df5f",
       "style": "clean",
       "exporter": "drawio-cli",
       "embedFonts": false,
       "outputs": {
-        "src/content/posts/deepseek/08-mhc/diagrams/08-mhc-single-pass.wisp.svg": "sha256-0c50bba3cded533c66e02d228c4b0c3bc41eb708f092175f1ee208c3fb583195"
+        "src/content/posts/deepseek/08-mhc/diagrams/08-mhc-single-pass.wisp.svg": "sha256-287f7d3103f878e16ce24e71a2f5ae09265108894362227f81a5664f13673e17"
       },
       "pages": [
         "mhc-single-pass"

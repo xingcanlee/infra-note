@@ -1,130 +1,175 @@
 ---
-title: '05 ACL Graph 热更新与条件子图流控'
-description: '变长 KV 导致的 Tiling 失效与动态分支常逼迫静态图退回 CPU。本文结合 CANN 与 torch_npu 源码，解析 TaskGrp 热刷新、ExternalEvent 防踩踏与 CondHandle 条件子图流控。'
+title: '05 ACL Graph 动态破壁：槽位热更与条件子图'
+description: '变长 KV 缓存引发 Host Tiling 失效，动态分支又常逼迫静态图退回 CPU。本文结合 CANN 与 torch_npu、vllm-ascend 源码，拆解 TaskGrp 热更新与 CondHandle 条件子图。'
 series: { id: aclgraph, order: 6 }
 pubDate: 2026-10-20
 draft: false
 tags: [ACL Graph, TaskGrp, TaskUpdate, ExternalEvent, Conditional Subgraph, CondHandle, torch_npu]
 ---
 
-import AclGraphDynamicControlExplainer from './explainers/AclGraphDynamicControlExplainer';
+import AclGraphDynamicControlExplainer from './explainers/aclgraph-dynamic-control';
 
-基础 ACL Graph 只能重放固定拓扑，但生产服务常在两处打破静态假设。在 **DeepSeek-V4.1-Flash** 长上下文解码与 **DSpark** 3 层 SWA 动态推测解码中[^dspark-sub]，系统必须应对以下两类运行期变化：
+上一章建出的静态 ACL Graph 能把上千个算子打包重放，但生产推理很快会在两处碰到“静态前提破碎”的难题：
+
+- **主机侧动态切片**：`seq_kv` 随生成不断拉长，昇腾 `aclnn` 注意力必须在 Host 重算分块参数 `Tiling`。
+- **设备侧动态分支**：比如 DSpark 投机解码循环校验草稿 token[^dspark-sub]，直到某一层拒绝才跳出。
 
 | 动态变化维度 | 静态图局限与生产瓶颈                    | ACL Graph 原地化解方案                |
-| ------------ | --------------------------------------- | ------------------------------------- |
+| :----------- | :-------------------------------------- | :------------------------------------ |
 | 算子参数层面 | `seq_kv` 增长使 Host 预计算 Tiling 失效 | `TaskGrp` + `TaskUpdate` 划槽原地刷新 |
 | 控制流层面   | 条件跳出与循环依赖 CPU `Synchronize`    | `CondHandle` + 条件子图无往返分支循环 |
 
-```mermaid caption="图 1：父图内嵌可原地覆写的 TaskGrp 槽位、ExternalEvent 保序同步边界以及 CondHandle 条件分支子图协同结构"
-flowchart TB
-  subgraph P["父 ACL Graph 主逻辑流 (Parent CaptureModel)"]
-    direction LR
-    P0["前驱 Task<br/>Norm / QKV"] --> P1["TaskGrp<br/>SinkSqe=1 可原地覆写"]
-    P1 --> P2["notify wait<br/>SQE+1"]
-    P2 --> P3["后续 Task<br/>Notify 唤醒"]
-    P2 --> P4{"CondTask<br/>*devAddr"}
-  end
-  subgraph U["Replay 前热刷新 (TaskUpdate)"]
-    direction TB
-    U0["update_stream TaskUpdateBegin<br/>原地重写 PA/FIA Tiling 描述符"] --> U1["ExternalEvent<br/>更新流 record → 主图 wait + reset"]
-  end
-  subgraph S["CondHandle 与条件子图"]
-    direction TB
-    S0["CondHandle (8B devAddr_)<br/>PreExecute H2D 条件字"] --> S1["Sub Graph 0 (IF / WHILE)<br/>结尾共享 subModelNotify_"]
-    S0 -.-> S2["Sub Graph 1 (Else)<br/>同发 Notify Record 返回"]
-  end
-  U1 --> P1
-  S0 --> P4
-```
+为了不因为一两处变化就把整张 40 层静态图推倒重录，CANN Runtime 在静态图骨架里同时开了两扇“活门”，结构如图 1 所示[^cann-model-ri][^cond-hpp]。
+
+![TaskGrp 热更新槽位与 CondHandle 条件子图架构总览](./diagrams/05-taskgrp-cond-arch.drawio '图 1：父图内嵌可原地覆写的 TaskGrp 槽位、ExternalEvent 防踩踏护栏以及 CondHandle 条件子图结构')
 
 ## TaskGrp 划槽与热刷新
 
-NVIDIA Kernel 通常在设备侧直接读取常驻的 `seq_lens`。而昇腾 `aclnn` 注意力算子把 Tiling 与 Workspace 偏移计算前移到了主机侧，并随 Kernel Args 写入任务描述符。
+NVIDIA GPU 注意力 Kernel 习惯在设备侧直接从常驻张量读取 `seq_lens`。相比之下，昇腾许多 `aclnn` 融合注意力（如 PagedAttention 与 FIA）把分块 `Tiling` 与临时空间计算提前放在了主机侧，再写进任务描述符。
 
-由于同分桶内其余投影与 MoE 算子完全不变，CANN Runtime 通过 **`aclrtTaskGrp`** 对变长算子槽位实施“局部打孔、定点替换”[^cann-model-ri][^cap-session-up]：
+只要同批量桶内的 KV 长度一变，这条注意力描述符就得更新，但前后接邻的线性投影与 MoE 算子其实纹丝不动。于是 CANN Runtime 提供了 **`aclrtTaskGrp`** 局部划槽机制[^cann-model-ri][^cap-session-up]：
 
 | 操作时机         | 核心 CANN / torch_npu 接口        | 底层逻辑队列动作                           |
-| ---------------- | --------------------------------- | ------------------------------------------ |
-| 捕获期标注起止   | `aclmdlRICaptureTaskGrpBegin/End` | 插入预取 Nop，登记可改 `(stream, task)` 槽 |
-| 重放前切换更新态 | `CaptureTaskUpdateBegin`          | 传入非捕获 `update_stream` 切换至 `UPDATE` |
-| 发射新参数描述符 | 重算新 `seq_kv` 下的 FIA/PA 算子  | `isUpdateSinkSqe=1` 一对一覆写原 Tiling    |
-| 更新完毕封闭生效 | `CaptureTaskUpdateEnd`            | 结束切片更新作用域，其余图节点不动         |
+| :--------------- | :-------------------------------- | :----------------------------------------- |
+| 捕获期标注起止   | `aclmdlRICaptureTaskGrpBegin/End` | 插入预取占位并登记可改 `(stream, task)` 槽 |
+| 重放前切换更新态 | `CaptureTaskUpdateBegin`          | 传入非捕获 `update_stream` 切至更新态      |
+| 发射新参数描述符 | 重算新 `seq_kv` 下的 FIA/PA 算子  | `isUpdateSinkSqe=1` 一对一覆写原参数描述符 |
+| 更新完毕封闭生效 | `CaptureTaskUpdateEnd`            | 结束切片更新作用域，其余图节点维持不变     |
 
-<AclGraphDynamicControlExplainer
-  client:visible
-  title="图 2：TaskGrp 局部热覆写（配 ExternalEvent 护栏）与 CondHandle 原生条件子图控制流交互推演"
-/>
+### ExternalEvent 防踩踏协议
 
-### 外部事件护栏与热更防踩踏
+只做原地覆写还不够安全。想象一下流水线重放的场景：如果第 $t+1$ 步的 `update_stream` 在第 $t$ 步的物理算子还没读完参数槽位时就提前改写，或者主图没等更新落定就冲进了下一轮计算，就会立刻读脏或挂死。
 
-原地热刷新必须挡住跨步读写竞态。如果第 $t+1$ 步的 `TaskUpdateBegin` 在第 $t$ 步物理任务读完参数槽位前就覆写描述符，或者主图在更新落定前提前回放，都会引发数据踩踏。
+为此，图分发层借用 `ExternalEvent` 建了一道可复用的“一次性闸门”（图 2）[^torch-graphs][^torch-streams-up]：
 
-为此，CANN Runtime 与 `torch_npu` 图分发模块通过 **`ExternalEvent`** 构建了防踩踏协议（如图 3 所示）[^torch-graphs][^torch-streams-up]。
+- **捕获期埋门**：先往可更新算子前方写入 `event.wait(stream)`，紧跟一条 `event.reset(stream)`。
+- **更新前放行**：重放前在 `update_stream` 重写槽位，并在尾部发 `event.record` 放行。
+- **过门即关锁**：主图流顺利跨过等待点并由硬件自动重设信号，随后读取最新描述符执行，天然防住下一轮跨步误放行。
 
-捕获期，图分发代理先用 `graph_task_group_begin/end` 框出动态算子的 `taskGrp` 槽位。随后它会在算子前方插入 `ExternalEvent.wait` 与 `ExternalEvent.reset`，清掉上一轮残留信号。
-
-到重放前热更时，框架在非捕获流 `update_stream` 上打开 `TaskUpdateBegin/End` 重写 Tiling，并在尾部发射 `ExternalEvent.record`。这保证了参数更新与前序图回放无阻塞重叠，同时按因果顺序放行新参数。
-
-```mermaid caption="图 3：update_stream 与主图通过 ExternalEvent 同步防踩踏时序"
+```mermaid caption="图 2：update_stream 与主图通过 ExternalEvent Wait+Reset 协同防踩踏时序"
 sequenceDiagram
     participant U as update_stream
     participant E as ExternalEvent
     participant M as 主图 CaptureStream
-    Note over M: Capture: 槽位包裹 Wait+Reset
-    U->>U: 1. TaskUpdateBegin 重算 Tiling
-    U->>E: 2. ExternalEvent.record()
+    Note over M: Capture 阶段已在槽位前埋 Wait+Reset
+    U->>U: 1. TaskUpdateBegin 重算 Tiling 描述符
+    U->>E: 2. ExternalEvent.record() 打开闸门
     E-->>M: 3. 放行图内 Wait 屏障
-    M->>M: 4. ExternalEvent.reset() 清标记
-    M->>M: 5. 读取最新 SQE 执行 PA/FIA
+    M->>M: 4. ExternalEvent.reset() 清标志防误放行
+    M->>M: 5. 读取最新 SQE 执行 PA 或 FIA
 ```
 
-## NPU 设备端条件子图流控
+## CondHandle 与条件子图流控
 
-当 `if`、`while` 或 `switch` 分支取决于中间张量值时，常规静态图必须退回主机判断。为此 `cann/runtime` 提供了 **Conditional Subgraph（条件子图）**体系。它依托 `CondHandle` 与 `CaptureToModelRI` 把控制跳转下沉进 NPU 与 TS 固件[^cond-hpp][^cond-cc]。
+如果说 `TaskGrp` 解决了“算子参数会变”，那么 **`CondHandle`（条件句柄）** 解决的就是“图该往哪走”。图 3 把这两种破壁原语并排放在一起，按 6 步推演了槽位热覆写、漏掉 `reset` 时的跨步踩踏以及设备侧 3 种动态 `WHILE` 退出情况。
 
-### 条件句柄复位与分支参数结构
+<AclGraphDynamicControlExplainer
+  client:visible
+  title="图 3：TaskGrp 热覆写、ExternalEvent 防护与 CondHandle 设备侧条件子图 6 步推演"
+/>
 
-调用 `aclmdlRICondHandleCreate` 时，`CondHandle::Setup` 会在设备侧分配 8 字节 `devAddr_`，并在主机保存不可变的默认值 `defaultValue_`[^cond-hpp]。前序算子可通过 `aclmdlRICondHandleGetCondPtr` 拿到设备指针并直接在算子内写条件值。
+### 条件句柄复位与分支参数
 
-若创建句柄时传入 **`ACL_MODEL_RI_COND_HANDLE_ASSIGN_DEFAULT`** 标志，`PreModelExecute` 会在每次重放前刷新条件值。它会用 **H2D（Host-to-Device，主机到设备拷贝）**把默认值写回 `devAddr_`，确保多次重放幂等。
+调用 `aclmdlRICondHandleCreate` 时，`CondHandle::Setup` 会在设备显存申请 8 字节的 `devAddr_`。主机侧同时保存一份默认值 `defaultValue_`[^cond-hpp]。前序算子能通过 `aclmdlRICondHandleGetCondPtr` 拿到这个地址，直接在芯片里写入 0 或非 0 判断字。这种把跳转判断完全留在芯片侧的思路，与 NVIDIA 在 CUDA 12.4–12.8 引入的 Conditional Nodes 一脉相承[^nv-cond-blog]。
 
-随后我们在父图控制点装配 `aclmdlRICondTaskParams`[^acl-rt-h] 并调用 `aclmdlRIAddCondTask`。参数中的 type 与 size 分别指定分支类型与子图数量：`IF` 支持 1 或 2 路，`WHILE` 固定为 1 路直到条件值为零退出，`SWITCH` 则按整型索引跳转多路：
+若建句柄时勾选 `ACL_MODEL_RI_COND_HANDLE_ASSIGN_DEFAULT` 标志，`PreModelExecute` 会在每次重放前跑一次 **H2D** 拷贝。它把 `devAddr_` 刷新回默认值，这样就算前一轮把条件改成了 0，下一轮也能干净重跑[^cond-hpp]。
+
+在父图分叉点，开发者填写 `aclmdlRICondTaskParams` 并调用 `aclmdlRIAddCondTask` 注册跳转节点[^acl-rt-h]：
 
 ```cpp
 typedef struct tagAclmdlRICondTaskParams {
-    aclmdlRICondHandle handle;     // 绑定指向设备 8 B 条件值的硬件句柄
-    aclmdlRICondTaskType type;     // ACL_MODEL_RI_COND_TYPE_IF(0) / WHILE(1) / SWITCH(2)
-    uint32_t size;                 // 产出子图数组元素个数：IF 允许 1 或 2，WHILE 固定为 1，SWITCH 须大于 0
-    aclmdlRI* modelRIArray;        // 输出数组，接收 Runtime 预先分配好的各支路子 aclmdlRI 句柄
+    aclmdlRICondHandle handle;     // 绑定指向设备 8 B 条件字的硬件句柄
+    aclmdlRICondTaskType type;     // IF(0) / WHILE(1) / SWITCH(2) 三种控制类型
+    uint32_t size;                 // 子图数量：IF 许 1 或 2，WHILE 固定为 1，SWITCH 大于 0
+    aclmdlRI* modelRIArray;        // 输出数组，接收预先分配好的支路子句柄
 } aclmdlRICondTaskParams;
 ```
 
 ### 子图录制与共享通知唤醒
 
-拿到预分配的子句柄数组 `modelRIArray` 后，我们在各支路流上调用 **`aclmdlRICaptureToModelRIBegin`** 录制分支算子。各支路最终以 `aclmdlRICaptureEnd` 闭合[^cond-hpp][^cond-cc]。同一 `CondHandle` 名下的所有分支子图，在硬件侧共同绑定唯一一枚通知字 `subModelNotify_`。
+拿到 `modelRIArray` 里的子图句柄后，分别用 **`aclmdlRICaptureToModelRIBegin`** 在各支路流录制算子。末尾同样以 `aclmdlRICaptureEnd` 收尾[^cond-hpp][^cond-cc]。同一句柄名下的全部分支子图，在硬件上共用同一枚收尾通知 `subModelNotify_`。
 
-在父流侧，`aclmdlRIAddCondTask` 先插入条件跳转描述符 `TS_TASK_TYPE_CAPTURE_CONDITION`，紧接着在下一槽位追加 `notify wait` 挂起父流。执行时，TS 固件直接读取 HBM 中的 8 字节 `*devAddr_` 激活对应支路流（如图 4 所示）。
+运行期由设备调度器 TS 直接唱主角，过程如图 4 所示：TS 读取 HBM 里 `*devAddr_` 的 8 字节条件字，激活对应分支子图流。与此同时，父流紧随其后的 `notify wait` 挂起等待；被选中的子图跑完后发射共享 `Notify`，唤醒父流往下走或再次重入循环，全程不经过 CPU。
 
-命中分支跑完子图算子后，在末尾发射 `subModelNotify_` 的 `notify record` 唤醒父流继续执行或进入下一轮循环。在 Python 层，`torch_npu` 的控制流分发模块会自动把 `torch.ops.higher_order.cond` 与 `while_loop` 映射到这条硬件链路[^torch-cond]。
-
-```mermaid caption="图 4：TS 固件读取 CondHandle 激活条件子图并经共享 Notify 唤醒父流时序"
+```mermaid caption="图 4：TS 固件读取 8 字节 CondHandle 激活条件子图并经共享 Notify 唤醒父流时序"
 sequenceDiagram
     participant P as Parent Stream
     participant TS as TS + CondHandle
     participant Sub as SubModel Stream
-    P->>TS: 1. 写入 *devAddr_
-    P->>TS: 2. 触发 CondTask
-    TS->>Sub: 3. 唤醒命中分支
-    Note over P: 4. notify wait 挂起
-    Sub->>Sub: 5. 连续运行子图算子
-    Sub-->>P: 6. 共享 Notify 唤醒
-    Note over P: 7. 继续执行或循环
+    P->>TS: 1. 前序算子改写 *devAddr_
+    P->>TS: 2. 触发 CondTask 描述符
+    TS->>Sub: 3. 硬件按条件唤醒对应分支
+    Note over P: 4. notify wait 设备内挂起
+    Sub->>Sub: 5. 连续执行分支子图算子
+    Sub-->>P: 6. 发射共享 subModelNotify_
+    Note over P: 7. 唤醒继续执行或下轮 WHILE
 ```
+
+## 源码对照：上层框架动态接入
+
+将底层槽位更新与条件节点接入 PyTorch 和推理引擎，主要由两套代码协同。`Ascend/pytorch`（提交 `d09e29e4`）与 `vllm-ascend`（提交 `b776261e`）的类关系见图 5[^torch-graphs][^torch-cond][^vllm-upd]。
+
+```mermaid caption="图 5：torch_npu@d09e29e4 与 vllm-ascend@b776261e 动态图扩展与条件控制流类关系"
+classDiagram
+    class TorchGraphDispatch {
+        <<torch_npu/npu/graphs.py>>
+        +graph_dispatch_records
+        +update_stream
+        +update_capture_record(cpu_update_input)
+    }
+    class ControlFlowDispatch {
+        <<conditional_nodes.py>>
+        +if_else_node()
+        +while_loop_node()
+    }
+    class UpdatableGraph {
+        <<vllm-ascend updatable_graph.py>>
+        +list~GraphUpdateTask~ tasks
+        +register_task(operation, kwargs, provider)
+        +resolve_tasks(source)
+        +update(update_stream, resolved_tasks)
+    }
+    class GraphUpdateTask {
+        +handle
+        +ExternalEvent event
+        +bind(params)
+        +apply(update_stream)
+    }
+    UpdatableGraph *-- GraphUpdateTask : orchestrates
+    TorchGraphDispatch ..> UpdatableGraph : shares TaskGrp + ExternalEvent pattern
+```
+
+在 `torch_npu` 中，调度拦截器在捕获时自动为注意力算子套上 `ExternalEvent` 等待与重置，并用 `graph_task_group_begin` 框住算子本体[^torch-graphs]。
+
+另一边的控制流模块把高阶分支算子无缝转译为设备条件节点。其中 `cond` 与 `while_loop` 分别映射到 `begin_capture_to_if_node` 和 `begin_capture_to_while_node`[^torch-cond]。
+
+到了生产引擎层，`vllm-ascend`（提交 `b776261e`）进一步抽象出了继承自 `NPUGraph` 的 `UpdatableGraph`[^vllm-upd]。它把每次注意力元数据的来源解耦为 `ContextSource`（常规步主模型）与 `SharedSource`（草稿头多模型共享），下面这段从源码提炼的写法清晰展示了捕获注册与更新重放的配合：
+
+```python
+class GraphUpdateTask:
+    def apply(self, update_stream) -> None:
+        torch.npu.graph_task_update_begin(update_stream, self.handle)
+        self.operation(**self.kwargs)
+        torch.npu.graph_task_update_end(update_stream)
+        self.event.record(update_stream)
+
+class UpdatableGraph(torch.npu.NPUGraph):
+    def register_task(self, operation, kwargs, provider) -> None:
+        stream = torch.npu.current_stream()
+        event = torch.npu.ExternalEvent()
+        event.wait(stream)
+        event.reset(stream)
+        torch.npu.graph_task_group_begin(stream)
+        operation(**kwargs)
+        handle = torch.npu.graph_task_group_end(stream)
+        self.tasks.append(GraphUpdateTask(operation, weak_ref_tensors(kwargs), provider, handle, event))
+```
+
+值得初学者特别留意一行细节：`register_task` 传入的 `kwargs` 会先经过 `weak_ref_tensors` 转成弱引用。这么做是为了避免静态图长期死死拽住一次捕获时的临时张量，触发显存泄漏。下一章会看到，同样这条生命周期法则若处置不当，正是线上报错 507011 的主要诱因之一。
 
 ## 热刷新与设备循环协同仿真
 
-下面的纯 CPU Python 脚本同时模拟了变长 KV Cache 的局部更新与设备侧自循环推测校验过程：
+下面的纯 CPU Python 脚本把两套机制组合起来，验证 `seq_kv` 增长时本地热更 Tiling 槽位，以及设备侧根据草稿接受率自循环退出时 CPU 零干预：
 
 ```python
 class CondHandleSim:
@@ -137,56 +182,33 @@ class CondHandleSim:
         if self.assign_default:
             self.dev_addr_val = self.default_val
 
-
 class TaskGrpAndCondModel:
     def __init__(self) -> None:
         self.pa_sqe = {"seq_kv": 0, "tiling_ver": 0, "isUpdateSinkSqe": 1}
         self.ext_ev_reset_done = True
         self.cond_handle = CondHandleSim(default_val=1, assign_default=True)
 
-    def task_update_and_replay(
-        self, seq_kv: int, draft_probs: list[float], threshold: float = 0.65
-    ) -> dict:
+    def task_update_and_replay(self, seq_kv: int, draft_probs: list[float], threshold: float = 0.65) -> dict:
         if not self.ext_ev_reset_done:
             raise RuntimeError("ExternalEvent must be waited & reset before update")
-        # Step A: 非捕获更新流原地覆写 TaskGrp 槽位并记录 ExternalEvent
         self.pa_sqe["seq_kv"] = seq_kv
         self.pa_sqe["tiling_ver"] += 1
-        # Step B: PreModelExecute 将 CondHandle defaultValue_ H2D 复位至 devAddr_
         self.cond_handle.pre_model_reset()
-        # Step C: 设备侧硬件 WHILE 循环直接执行条件子图（零 CPU 往返）
         iters = 0
-        cpu_roundtrips = 0
         while self.cond_handle.dev_addr_val != 0 and iters < len(draft_probs):
-            p = draft_probs[iters]
+            if draft_probs[iters] < threshold:
+                self.cond_handle.dev_addr_val = 0
             iters += 1
-            if p < threshold:
-                self.cond_handle.dev_addr_val = 0  # 子图算子向 *devAddr_ 写入 0
-        # Step D: 父图内等待并重置 ExternalEvent，恢复下步防护护栏
         self.ext_ev_reset_done = True
-        return {
-            "seq_kv": self.pa_sqe["seq_kv"],
-            "tiling_ver": self.pa_sqe["tiling_ver"],
-            "while_iters": iters,
-            "cpu_roundtrips": cpu_roundtrips,
-        }
-
+        return {"seq_kv": seq_kv, "ver": self.pa_sqe["tiling_ver"], "iters": iters, "cpu_rt": 0}
 
 sim = TaskGrpAndCondModel()
-cases = [
-    (128, [0.91, 0.88, 0.52, 0.80]),
-    (512, [0.95, 0.92, 0.90, 0.87]),
-    (2048, [0.40, 0.85, 0.90, 0.88]),
-]
-for step_idx, (skv, probs) in enumerate(cases, start=1):
+for idx, (skv, probs) in enumerate([(128, [0.91, 0.88, 0.52, 0.80]), (512, [0.95, 0.92, 0.90, 0.87]), (2048, [0.40, 0.85, 0.90, 0.88])], 1):
     out = sim.task_update_and_replay(skv, probs)
-    print(
-        f"[Step {step_idx}] PA.seq_kv={out['seq_kv']:4d} (ver={out['tiling_ver']}), "
-        f"WHILE_iters={out['while_iters']}, CPU_roundtrips={out['cpu_roundtrips']}"
-    )
+    print(f"[Step {idx}] PA.seq_kv={out['seq_kv']:4d} (ver={out['ver']}), WHILE_iters={out['iters']}, CPU_roundtrips={out['cpu_rt']}")
 ```
 
-运行日志如下：`seq_kv` 从 128 跃迁至 2048 期间仅局部递增刷新 3 次，同时设备侧分别执行 3、4、1 轮子图内部迭代即动态退出，CPU 往返干预次数始终为 0：
+输出证实 `seq_kv` 从 128 跃迁到 2048 仅原地递增刷新 3 次，同时设备侧分别在 3、4、1 轮后自主退出循环，CPU 往返始终为 0：
 
 ```text
 [Step 1] PA.seq_kv= 128 (ver=1), WHILE_iters=3, CPU_roundtrips=0
@@ -194,22 +216,26 @@ for step_idx, (skv, probs) in enumerate(cases, start=1):
 [Step 3] PA.seq_kv=2048 (ver=3), WHILE_iters=1, CPU_roundtrips=0
 ```
 
-[第 6 章：ACL Graph 生产全栈与故障定位](../06-acl-graph-fullstack-and-vllm-ascend/)将把前述全部底层原语接入 `vllm-ascend` 生产全栈，给出模式选型矩阵与高频错误码排障路径。
+[第 6 章：ACL Graph 生产全栈：选型配额与故障定位](../06-acl-graph-fullstack-and-vllm-ascend/)将把全部机制贯通进 `vllm-ascend` 四层生产架构，并给出配额计算公式与线上三大高频报错的排查实战路径。
 
-[^cann-model-ri]: 参阅 `cann/runtime`（提交 `1954820a`）头文件 `include/external/acl/acl_rt.h`（第 830、5230、5240 行等）及 API 手册 `15_model_running_instance_management.md`。
+[^cann-model-ri]: 参阅 `cann/runtime`（提交 `1954820a`）头文件 `include/external/acl/acl_rt.h`（第 830、5230、5240 行）与 API 手册 `15_model_running_instance_management.md`。
 
-[^cap-session-up]: 参阅 `cann/runtime`（提交 `1954820a`）源码 `src/runtime/feature/aclgraph/capture_session.cc` 与 `capture_model.cc` 对 `StreamBeginTaskGrp`、`StreamBeginTaskUpdate`、`UpdateStreamTask` 和 `isUpdateSinkSqe` 标志位的实现。
+[^cap-session-up]: 参阅 `cann/runtime`（提交 `1954820a`）源码 `src/runtime/feature/aclgraph/capture_session.cc` 与 `capture_model.cc` 对 `StreamBeginTaskGrp` 与 `UpdateStreamTask` 的实现。
 
-[^torch-graphs]: 参阅 `Ascend/pytorch`（提交 `d09e29e4`）源码 `torch_npu/npu/graphs.py` 第 420–588 行 `_GraphDispatchMode` 与 `update_capture_record` 实现。
+[^torch-graphs]: 参阅 `Ascend/pytorch`（提交 `d09e29e4`）源码 `torch_npu/npu/graphs.py` 第 420–588 行调度拦截与 `update_capture_record` 实现。
 
-[^torch-streams-up]: 参阅 `Ascend/pytorch`（提交 `d09e29e4`）源码 `torch_npu/npu/streams.py` 第 180–365 行关于 `ExternalEvent` 与 `Event(external=True)` 行为规范的注释。
+[^torch-streams-up]: 参阅 `Ascend/pytorch`（提交 `d09e29e4`）源码 `torch_npu/npu/streams.py` 第 180–365 行对 `ExternalEvent` 与重置机制的注释。
 
-[^cond-hpp]: 参阅 `cann/runtime`（提交 `1954820a`）源码 `src/runtime/core/inc/cond_handle/cond_handle.hpp` 第 24–77 行与 `src/runtime/feature/aclgraph/cond_handle.cc` 第 1–188 行对 `CondHandle`、`InitCondTaskByDefValue` 及 `UpdateCondTaskNotifyWaitSqe` 的实现。
+[^cond-hpp]: 参阅 `cann/runtime`（提交 `1954820a`）源码 `src/runtime/core/inc/cond_handle/cond_handle.hpp` 第 24–77 行与 `src/runtime/feature/aclgraph/cond_handle.cc` 第 1–188 行。
 
-[^cond-cc]: 参阅 `cann/runtime`（提交 `1954820a`）官方例子 `example/2_advanced_features/model_ri/3_cond_model/main.cpp` 及 `4_model_sync_external/main.cpp`。
+[^cond-cc]: 参阅 `cann/runtime`（提交 `1954820a`）示例 `example/2_advanced_features/model_ri/3_cond_model/main.cpp` 与 `4_model_sync_external/main.cpp`。
 
 [^acl-rt-h]: 参阅 `cann/runtime`（提交 `1954820a`）头文件 `include/external/acl/acl_rt.h` 第 436–454 及 5938–5975 行。
 
-[^torch-cond]: 参阅 `Ascend/pytorch`（提交 `d09e29e4`）源码 `torch_npu/npu/_npugraph_conditional_nodes.py` 第 1–159 行对 `NPUGraphCaptureControlFlowOpDispatchMode` 与高阶控制流的适配实现。
+[^torch-cond]: 参阅 `Ascend/pytorch`（提交 `d09e29e4`）源码 `torch_npu/npu` 目录下条件节点分发模块第 1–159 行对 `NPUGraphCaptureControlFlowOpDispatchMode` 的实现。
 
-[^dspark-sub]: 关于 DeepSeek-V4.1-Flash DSpark（3 层 SWA Draft 头与无损多 token 校验）细节，参阅本站[09 多 token 预测与 DSpark 动态推测解码](../../deepseek/09-mtp-and-dspark/)。
+[^vllm-upd]: 参阅 `vllm-ascend`（提交 `b776261e`）源码 `vllm_ascend/compilation/updatable_graph.py` 第 1–180 行对 `UpdatableGraph` 与 `GraphUpdateTask` 的实现。
+
+[^dspark-sub]: DeepSeek-V4.1-Flash DSpark 3 层 SWA 草稿头细节见本站[09 多 token 预测与 DSpark 动态推测解码](../../deepseek/09-mtp-and-dspark/)。
+
+[^nv-cond-blog]: NVIDIA Technical Blog, [Dynamic Control Flow in CUDA Graphs with Conditional Nodes](https://developer.nvidia.com/blog/dynamic-control-flow-in-cuda-graphs-with-conditional-nodes/)，介绍 CUDA 12.4 至 12.8 图内 `IF`/`WHILE`/`SWITCH` 设备控制流原语。

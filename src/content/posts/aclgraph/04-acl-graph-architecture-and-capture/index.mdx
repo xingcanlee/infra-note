@@ -1,135 +1,155 @@
 ---
-title: '04 ACL Graph 架构与影子模型流录制'
-description: '昇腾小批解码受困于主机派发开销与参数区易变寿命。本文结合 CANN Runtime 源码，解析影子模型流捕获、Device 参数备份、EndGraph Notify 握手与多流 Fork-Join 校验规则。'
+title: '04 ACL Graph 录制架构：影子流与参数备份'
+description: '昇腾 NPU 受制于易变参数区与 1024 物理队列池，静态图不能直接照搬 CUDA 做法。本文面向零基础开发者，拆解影子模型流录制、D2D 参数备份、EndGraph Notify 握手与多流校验源码。'
 series: { id: aclgraph, order: 5 }
 pubDate: 2026-10-19
 draft: false
 tags: [ACL Graph, Shadow Stream, CANN Runtime, Capture, Replay, Fork-Join, Notify]
 ---
 
-import AclGraphShadowStreamExplainer from './explainers/AclGraphShadowStreamExplainer';
+import AclGraphShadowStreamExplainer from './explainers/aclgraph-shadow-stream';
 
-在华为昇腾 NPU 上，静态执行图的核心实现是以 `aclmdlRI`（Model Running Instance，模型运行实例）接口为代表的 **ACL Graph**[^cann-acl-api]。上层 `torch_npu.npu.NPUGraph` 提供了与 CUDA Graph 一致的 Python API，降低框架接入成本。
+上一章拆解了 CUDA Graph 怎么把算子录成一张静态 DAG。切换到华为昇腾 NPU 上，上层 `torch_npu.npu.NPUGraph` 保留了几乎一致的 Python 接口，但在底层面临三道独特的硬件约束[^cann-acl-api]：
 
-在 CANN Runtime 底层，ACL Graph 需要匹配 **TS（Task Scheduler，任务调度器）**、`Notify` 信号池与主机参数区生命周期。为此它设计了一套以 **Shadow Model Stream（影子模型流）**与逻辑任务队列为核心的双流架构。
+- **TS 固件调度**：任务调度器需要专属模型队列来连续拉取整图描述符。
+- **易变参数暂存**：`aclnn` 算子的运行参数 `comm.args` 默认放在易被图外覆盖的暂存区。
+- **稀缺物理通道**：单卡物理 SQ/CQ 池上限只有 1024 组，不能在建图瞬间盲目占满。
 
-## 昇腾发射瓶颈与生产双态取舍
+为了跨过这三道门槛，CANN Runtime 引入了 **Shadow Model Stream（影子模型流）**双流架构。它的核心接口代表是 `aclmdlRI`（模型运行实例）。
 
-小批量 Decode 期间，细粒度算子在单卡 AICore 上往往只运行数微秒，CPU 构造参数与提交队列的速度赶不上硬件消费，导致密集空泡。
+## 双态取舍：Prefill 与 Decode
 
-以 40 层 **DeepSeek-V4.1-Flash**[^v41-cap] 为例，即便 CSA2 把 KV 压至轻量 NVFP4，单层仍含约 28 个算子。它们涵盖四流混合、细粒度 MoE 与 `AscendDSAV41Impl`。加上第 1、14 层的异步 Engram 注入，整网单步需提交超过 1100 次。
+和 GPU 一样，昇腾生产推理也把静态图严格限制在 Decode 阶段。以 40 层 **DeepSeek-V4.1-Flash** 为例，每层含约 28 个算子，再加上第 1、14 层的异步 Engram 注入，单步共需提交超过 1120 次算子[^v41-cap]。
 
-因此线上服务在 **Prefill 阶段保持常规 Eager 发射**：长提示词矩阵计算耗时高且形状变化大，跳过静态图能省去 Padding 与捕图成本。请求进入 **Decode 阶段**后，模型运行器依据 `exe_mode` 切换至预录制的 **ACL Graph**，实现一次捕获、多次触发[^cann-acl-api]。
+小批量解码时单算子只跑几微秒，主机发单时间远大于设备计算时间。Prefill 阶段长序列矩阵计算饱和且长度剧变，保持常规 Eager 反而能省去 Padding 与多档捕图开销；请求进入 Decode 阶段后，框架才按执行模式切入预录制的 ACL Graph[^cann-acl-api]。
 
-## Capture 六步与 Replay 两步
+## Capture 六步与参数备份
 
-ACL Graph 把执行生命周期拆分为彼此隔离的 **Capture（图捕获）**与 **Replay（图重放）**两阶段，端到端流转见图 1。
+ACL Graph 将静态图生命周期拆成隔离的两个阶段：**Capture（图捕获）**只建逻辑队列，**Replay（图重放）**才真正绑物理通道并激发计算，架构如图 1 所示[^model-ri-impl][^cap-session]。
 
-```mermaid caption="图 1：ACL Graph Capture 阶段构造影子流与参数备份及 Replay 阶段懒绑物理 SQ/CQ 流程"
-flowchart TD
-    subgraph CAP["Capture 阶段：只建逻辑队列，设备零执行"]
-        U1["用户流 CaptureBegin<br/>进入捕获模式"] --> REC["Shadow Stream 影子流<br/>建 LogicSQ + D2D 备 Args"]
-        REC --> ENDG["CaptureEnd 收尾<br/>校验拓扑 + 追加 EndGraph"]
-    end
-    subgraph REP["Replay 阶段：懒绑定与单次 Trigger 连续运行"]
-        PRE["PreModelExecute<br/>BuildSqCq + Refresh 状态"] --> USR["ExecuteAsync 用户流<br/>下发 model exe + notify wait"]
-        USR -->|"Trigger"| MDL["影子队列满载直通<br/>跑完发 Notify 唤醒用户流"]
-    end
-    ENDG -->|"冻结图句柄 modelRI"| PRE
-```
+![ACL Graph Capture 与 Replay 双阶段架构与硬件防踩踏隔离](./diagrams/04-aclgraph-capture-replay-arch.drawio '图 1：Capture 阶段构造影子流 LogicSQ 与 D2D 参数备份及 Replay 阶段懒绑物理 SQ/CQ 流程')
 
-在 **Capture 阶段**，CANN Runtime 的 `src/acl/aclrt_impl/model_ri.cpp` 与会话类 `CaptureSession` 执行六项核心动作[^model-ri-impl][^cap-session]：
+在 **Capture 阶段**，CANN Runtime 通过 `CaptureSession` 与 `CaptureModel` 完成六项关键动作[^model-ri-impl][^cap-session]：
 
-| 阶段动作 | 底层核心职责               | CANN Runtime 关键函数 / 结构                           |
-| -------- | -------------------------- | ------------------------------------------------------ |
+| 阶段动作 | 底层核心职责               | CANN Runtime 关键函数或结构                            |
+| :------- | :------------------------- | :----------------------------------------------------- |
 | 动作 1   | 劫持用户流原任务参数体     | `CaptureSession::StreamBeginCapture`                   |
-| 动作 2   | 申请持久设备缓冲 D2D 备份  | `CaptureModel::CopyTaskArgsDeviceBuffer`[^args-backup] |
+| 动作 2   | 申请持久缓冲并做设备内备份 | `CaptureModel::CopyTaskArgsDeviceBuffer`[^args-backup] |
 | 动作 3   | 内存态生成逻辑任务描述符   | 构造 `LogicSQ` 链表条目                                |
 | 动作 4   | 闭合校验流依赖与 DAG 合法  | `CheckCaptureModelValidity`（`0x0703001F`）            |
-| 动作 5   | 严守用户调用序列与跨流依赖 | 原序追加进逻辑流任务表                                 |
+| 动作 5   | 严守调用序列与跨流先后关系 | 原序追加进逻辑流任务表                                 |
 | 动作 6   | 捕获期不实际驱动算力核执行 | `IsSoftwareSqEnable` 录完即返不落硬件                  |
 
-针对表格中的动作 2，昇腾算子发射结构体 `comm.args` 常驻留于易变的临时参数区。为此 `CopyTaskArgsDeviceBuffer` 调用 `DevMemAllocWithBackupFlag` 申请持久缓冲。它用 **D2D（Device-to-Device，设备内显存拷贝）**备份参数[^args-backup]，防止图外运算覆盖静态图里的算子指针。
+其中最容易被初学者忽略的是动作 2。昇腾算子发射体常附带主机构造的局部偏移与 `comm.args` 结构，落在容易复用的临时缓冲区里。一旦外部下一轮计算借用同一块缓冲区，图里固化的指针就会读到错误维度。
 
-到了 **Replay 阶段**，核心动作收敛为 `PreModelExecute` 与 `ExecuteAsync` 两步[^cap-model]。首次调用 `aclmdlRIExecuteAsync` 时，`CaptureModel::BuildSqCq` 会懒分配物理 `SQ/CQ` 并刷新关联 `Notify ID`。此后每次重放，主线程只需向执行流写入一条 **Trigger（总触发信号）**，调度器就会按预建描述符连续跑完全图。
+因此，`CaptureModel::CopyTaskArgsDeviceBuffer` 会调用 `DevMemAllocWithBackupFlag` 申请持久化设备显存[^args-backup]。随后它发出一笔 **D2D（Device-to-Device，设备内显存拷贝）**，把静态图需要的每份参数快照锁进影子流的专属副本区，彻底与图外临时内存解耦。
+
+到了 **Replay 阶段**，流程简化为两步[^cap-model]。初次调用 `aclmdlRIExecuteAsync` 时，`PreModelExecute` 会触发 `BuildSqCq` 懒申请物理 `SQ/CQ` 并刷新 `Notify ID`。此后日常重放只需向用户流塞入一条 **Trigger（总触发信号）**，调度器就会沿着建好的影子队列连续跑完上千个算子，省下全部重复派发成本。
+
+## 单流影子流与 EndGraph 握手
+
+很多开发者初次听到“影子流”，会以为硬件另外开了一条神秘算力核心。其实在逻辑上，它是专门承载“静态图内部任务链”的隔离通道，让用户流里图外与图内的算子互不干扰。图 2 用 6 步交互推演了这套重定向与 D2D 防覆盖效果。
 
 <AclGraphShadowStreamExplainer
   client:visible
-  title="图 2：ACL Graph 单流影子流重定向、EndGraph Notify 收尾、多流 Fork-Join 扩展与 Replay 运行交互推演"
+  title="图 2：ACL Graph 影子模型流重定向、D2D 参数备份与 EndGraph Notify 握手 6 步推演"
 />
 
-## 单流录制与影子模型流握手
+单流重放的关键在于收尾同步。调用 `aclmdlRICaptureEnd` 结束捕获时，Runtime 会在影子流末端追加 EndGraph 通知，对应硬件任务 `TS_TASK_TYPE_NOTIFY_RECORD`。随后冻结图句柄 `modelRI`[^cap-model]。
 
-理解单流录制的关键，在于区分**用户调用流**与 **Shadow Model Stream** 的两阶段职责（如图 2 所示）[^cap-session][^cap-model]。
+正式推理重放时，用户流 `Stream 1` 会在 `task 3` 之后紧贴写入 `model exe` 与 `notify wait` 两条轻指令，时序见图 3。前者点燃影子流全速执行，后者让硬件在芯片内挂起用户流，直到影子流算完发回 `Notify` 才继续后面的 `task n`。全过程都在设备内部完成，不惊动 CPU。
 
-对 `Stream 1` 调用 `aclmdlRICaptureBegin(stream, mode)` 后，Runtime 会新建捕获对象并配对创建 **Shadow Stream（影子流）**。
-
-捕获期间投入 `Stream 1` 的 `memcpyAsync` 与 `aclnnMul` 都会转发进影子流的 `LogicSQ`，而前序普通任务仍留在用户流正常执行。
-
-调用 `aclmdlRICaptureEnd` 结束捕获时，Runtime 会在影子流末端追加一条 EndGraph 通知记录（`TS_TASK_TYPE_NOTIFY_RECORD`）。随后它冻结图拓扑并产出 `modelRI`。
-
-重放时，用户流只需在 `task 3` 与 `task n` 之间插入 `aclmdlRIExecuteAsync`（如图 3 所示）。Runtime 会向用户流写入 `model exe` 与 `notify wait` 两条控制任务。前者触发影子流全速执行，后者让硬件挂起用户流直到 EndGraph Notify 返回，整段等待都在芯片内部完成且不阻塞 CPU。
-
-```mermaid caption="图 3：Replay 阶段用户流下发 model exe 与 notify wait 触发影子流时序"
+```mermaid caption="图 3：Replay 阶段用户流下发 model exe 与 notify wait 触发影子流硬件握手时序"
 sequenceDiagram
     participant S1 as Stream 1 用户流
     participant M as Shadow Stream 影子流
     S1->>S1: task 3 (Eager 算子)
     S1->>M: model exe (单次 Trigger)
-    Note over S1: notify wait (硬件挂起)
+    Note over S1: notify wait (设备内挂起)
     M->>M: memcpy + aclnnMul 连跑
     M-->>S1: notify record (EndGraph)
-    S1->>S1: task n (读取输出)
+    S1->>S1: task n (读取静态图输出)
 ```
 
-## 多流汇合校验与安全隔离模式
+## 多流汇合校验与捕获模式
 
-需要重叠计算与通信的多流模型，依赖流间 **Event Record / Wait** 将副流吸收进同一静态图捕获域，其标准写法与 `cann/runtime` 多流测试例程一致[^model-ri-doc]：
+实际推理常要开启副流做通信或 Engram 异步预取，与主流构成并行的 **Fork-Join** 拓扑。在 CANN Runtime 中，多流捕获必须通过原生 **Event Record / Wait** 形成有始有终的封闭圈，标准写法与官方例程一致[^model-ri-doc]：
 
 ```cpp
 // 1. 从 stream1 开启全局捕获
 CHECK_ERROR(aclmdlRICaptureBegin(stream1, ACL_MODEL_RI_CAPTURE_MODE_GLOBAL));
-// 2. 分叉点 (Fork)：在处于捕获态的 stream1 记录 event1，再让未捕获的 stream2 等待它
+// 2. 分叉点 (Fork)：处于捕获态的 stream1 记录 event1，未捕获的 stream2 等待它
 CHECK_ERROR(aclrtRecordEvent(event1, stream1));
 CHECK_ERROR(aclrtStreamWaitEvent(stream2, event1));
 
-// 3. 此刻 stream2 已被 Runtime 自动吸收并归属进同一 ACL Graph 捕获域，双流并发下发各自算子
+// 3. stream2 已被 Runtime 自动吸收并归属同一捕获域，双流并发下发算子
 aclnnMul(mulWorkspaceAddr, mulWorkspaceSize, mulExecutor, stream1);
 aclnnMul(mulWorkspaceAddr2, mulWorkspaceSize2, mulExecutor2, stream2);
 aclnnAdd(mulWorkspaceAddr2, mulWorkspaceSize2, mulExecutor2, stream2);
 
-// 4. 汇合点 (Join)：由 stream2 记录结束锚点 event2，并由捕获原点流 stream1 明确等待收尾
+// 4. 汇合点 (Join)：stream2 记录 event2，捕获原点流 stream1 等待收尾
 CHECK_ERROR(aclrtRecordEvent(event2, stream2));
 CHECK_ERROR(aclrtStreamWaitEvent(stream1, event2));
 
-// 5. 捕获收尾：Runtime 验明两条流已完整汇合形成有效有向图拓扑后输出 modelRI
+// 5. 捕获收尾：Runtime 验明双流完整汇合形成有效有向图后冻结输出 modelRI
 CHECK_ERROR(aclmdlRICaptureEnd(stream1, &modelRI));
 ```
 
-在 `aclmdlRICaptureEnd` 阶段，`CaptureSession::CheckCaptureModelValidity` 会核查两项闭合规则[^cap-session]。只要副流未通过反向 Event 汇回原点流 `origCaptureStream`，或者误将 `RT_EVENT_EXTERNAL` 充当内部依赖，Runtime 就会拒绝建图。此时系统抛出 **`RT_ERROR_STREAM_UNJOINED`**（错误码 `0x0703001F`，日志 EE1017）。
+到了 `aclmdlRICaptureEnd`，`CaptureSession::CheckCaptureModelValidity` 会强制核对两条铁律[^cap-session]。只要有任何旁路流没通过反向事件汇回原点流 `origCaptureStream`，或者误用了图间通信用的 `RT_EVENT_EXTERNAL`，系统就会立刻拦截建图。此时报错 **`RT_ERROR_STREAM_UNJOINED`**，对应十六进制错误码 `0x0703001F` 与日志标记 EE1017。
 
-此外，`aclmdlRICaptureBegin` 还提供三种安全模式控制多线程并发隔离，并支持在捕获期间通过 `aclmdlRICaptureThreadExchangeMode` 动态切换：
+为了配合多线程调度（如后台监控线程），`aclmdlRICaptureBegin` 提供三种与 CUDA 语义一致的安全模式。捕获期间还可用 `aclmdlRICaptureThreadExchangeMode` 动态切换：
 
 | 捕获安全模式（`aclmdlRICaptureMode`）    | 跨线程与并发隔离规则           | 典型适用场景             |
-| ---------------------------------------- | ------------------------------ | ------------------------ |
+| :--------------------------------------- | :----------------------------- | :----------------------- |
 | `ACL_MODEL_RI_CAPTURE_MODE_GLOBAL`       | 拦截同进程他线程不安全异步调用 | 单进程单主控、默认保护   |
-| `ACL_MODEL_RI_CAPTURE_MODE_THREAD_LOCAL` | 仅拦截发起捕获线程，余流正常   | 多线程调度与指标热更并行 |
-| `ACL_MODEL_RI_CAPTURE_MODE_RELAXED`      | 放开隐式截断，调用方自保隔离   | 底层沙箱与特殊内存池集成 |
+| `ACL_MODEL_RI_CAPTURE_MODE_THREAD_LOCAL` | 仅拦截发起捕获线程，余流正常   | 多线程调度与指标统计并行 |
+| `ACL_MODEL_RI_CAPTURE_MODE_RELAXED`      | 放开隐式截断，调用方自保隔离   | 底层沙箱与定制内存池集成 |
+
+将对外 C 接口、捕获会话管理器与硬件资源池串起来，`cann/runtime`（提交 `1954820a`）的核心类协作用图 4 总结如下：
+
+```mermaid caption="图 4：cann/runtime@1954820a 静态图对外接口、会话校验与物理队列池核心类关系"
+classDiagram
+    class ModelRiApi {
+        <<model_ri.cpp>>
+        +aclmdlRICaptureBegin()
+        +aclmdlRICaptureEnd()
+        +aclmdlRIExecuteAsync()
+    }
+    class CaptureSession {
+        +origCaptureStream
+        +StreamBeginCapture()
+        +StreamEndCapture()
+        +CheckCaptureModelValidity()
+    }
+    class CaptureModel {
+        +LogicSQ tasks
+        +CopyTaskArgsDeviceBuffer()
+        +PreModelExecute()
+        +BuildSqCq()
+        +ModelEndGraph()
+    }
+    class DeviceSqCqPool {
+        +RT_DEVICE_SQCQ_RES_MAX_NUM = 1024U
+        +BatchAllocSqCq()
+        +FreeSqCq()
+    }
+    ModelRiApi --> CaptureSession : manages lifecycle
+    CaptureSession --> CaptureModel : builds shadow stream
+    CaptureModel ..> DeviceSqCqPool : lazy alloc on first replay
+```
 
 ## 捕获状态机与参数隔离仿真
 
-下面的纯 CPU Python 状态机模拟了 `CaptureSession` 的核心状态流转。脚本重点验证参数快照备份、未汇合流拦截以及首次重放懒分配物理队列三项行为：
+下面这份纯 CPU Python 状态机复现了 `CaptureSession` 的拓扑录制、D2D 参数备份隔离、未汇合检查与首次重放懒分配行为：
 
 ```python
 from dataclasses import dataclass
-
 
 @dataclass
 class LogicSqTask:
     name: str
     args_backup: tuple
     is_notify_record: bool = False
-
 
 class MockCaptureSession:
     def __init__(self) -> None:
@@ -169,7 +189,7 @@ class MockCaptureSession:
     def capture_end(self) -> list[LogicSqTask]:
         unjoined = [s for s in self.capture_streams if s != self.origin_stream and s not in self.joined_streams]
         if unjoined:
-            raise RuntimeError(f"RT_ERROR_STREAM_UNJOINED (0x0703001F): unjoined streams={unjoined}")
+            raise RuntimeError(f"RT_ERROR_STREAM_UNJOINED (0x0703001F): unjoined={unjoined}")
         self.tasks.append(LogicSqTask("TS_TASK_TYPE_NOTIFY_RECORD(EndGraph)", ("root_notify",), True))
         self.capturing = False
         return list(self.tasks)
@@ -183,7 +203,6 @@ class MockCaptureSession:
         ops.append(f"{user_stream}<-notify_wait(EndGraph)")
         return ops
 
-
 sess = MockCaptureSession()
 sess.capture_begin("stream_1")
 host_dims = [8, 128]
@@ -191,17 +210,16 @@ sess.record_task("stream_1", "memcpyAsync", host_dims)
 sess.record_event("ev_fork", "stream_1")
 sess.stream_wait_event("stream_2", "ev_fork")
 sess.record_task("stream_2", "aclnnMul_branch", [8, 128])
-host_dims[0] = 999  # 模拟捕获后修改主机临时缓冲，备份副本应保持 (8, 128)
+host_dims[0] = 999  # 模拟图外临时缓冲区改写，验证备份副本不受影响
 sess.record_event("ev_join", "stream_2")
 sess.stream_wait_event("stream_1", "ev_join")
 model_tasks = sess.capture_end()
-
 print(f"[Captured LogicSQ] count={len(model_tasks)}, args_backup_of_task0={model_tasks[0].args_backup}, tail={model_tasks[-1].name}")
 print(f"[Replay #1] {sess.execute_async('stream_1')}")
 print(f"[Replay #2] {sess.execute_async('stream_1')}")
 ```
 
-脚本输出印证了两项不变量：捕获后把 `host_dims[0]` 原地改为 999，逻辑队列内的参数副本依然保持 `(8, 128)`。此外，`BuildSqCq` 只在初次重放时分配 `streams=2` 物理通道，后续执行仅向用户流写入两条控制命令：
+输出印证了两项机制：图外把 `host_dims[0]` 改为 999 后，图内备份副本仍安全停在 `(8, 128)`。`BuildSqCq` 也只在初次重放时按需绑出 2 条物理流，后续调用轻装直发：
 
 ```text
 [Captured LogicSQ] count=3, args_backup_of_task0=(8, 128), tail=TS_TASK_TYPE_NOTIFY_RECORD(EndGraph)
@@ -209,18 +227,18 @@ print(f"[Replay #2] {sess.execute_async('stream_1')}")
 [Replay #2] ['stream_1<-model_exe(trigger shadow_model_s0)', 'stream_1<-notify_wait(EndGraph)']
 ```
 
-基础静态图把所有参数与控制流都冻结在录制瞬间。但线上推理还会遇到变长 KV Cache 触发的 Attention Tiling 更新，以及投机解码里的条件分支。[第 5 章：ACL Graph 热更新与条件子图流控](../05-acl-graph-task-update-and-conditional-subgraph/)将说明如何在不重建整图的前提下消化这两类动态变化。
+至此我们掌握了静态图的“静止态”。但长序列 KV 增长会改变 Attention 的 Host Tiling 切分参数，投机解码又需要循环跳出控制流。[第 5 章：ACL Graph 动态破壁：槽位热更与条件子图](../05-acl-graph-task-update-and-conditional-subgraph/)将说明如何在静态骨架内部“打孔热更”并下沉条件跳转。
 
-[^cann-acl-api]: 参阅 `cann/runtime`（提交 `1954820a`）文档 `docs/zh/api_ref/15_model_running_instance_management.md`，全面列示 `aclmdlRICaptureBegin`、`aclmdlRICaptureEnd`、`aclmdlRIExecuteAsync` 等生命周期管理接口与约束。
+[^cann-acl-api]: 参阅 `cann/runtime`（提交 `1954820a`）文档 `docs/zh/api_ref/15_model_running_instance_management.md`，完整说明 `aclmdlRICaptureBegin`、`aclmdlRICaptureEnd` 与 `aclmdlRIExecuteAsync` 约束。
 
-[^model-ri-impl]: 参阅 `cann/runtime`（提交 `1954820a`）源码 `src/acl/aclrt_impl/model_ri.cpp` 第 1–466 行公开接口实现层。
+[^model-ri-impl]: 参阅 `cann/runtime`（提交 `1954820a`）源码 `src/acl/aclrt_impl/model_ri.cpp` 第 1–466 行。
 
-[^cap-session]: 参阅 `cann/runtime`（提交 `1954820a`）源码 `src/runtime/feature/aclgraph/capture_session.cc` 第 1–1167 行对 `StreamBeginCapture`、`StreamEndCapture`、`CheckCaptureModelValidity` 及 `RT_ERROR_STREAM_UNJOINED` 拦截逻辑的定义。
+[^cap-session]: 参阅 `cann/runtime`（提交 `1954820a`）源码 `src/runtime/feature/aclgraph/capture_session.cc` 第 1–1167 行对 `StreamBeginCapture`、`CheckCaptureModelValidity` 及 `RT_ERROR_STREAM_UNJOINED` 的实现。
 
-[^args-backup]: 参阅 `cann/runtime`（提交 `1954820a`）源码 `src/runtime/feature/aclgraph/capture_model_args_backup.cc` 第 16–55 行 `CaptureModel::CopyTaskArgsDeviceBuffer` 的 Device 参数保护拷贝实现。
+[^args-backup]: 参阅 `cann/runtime`（提交 `1954820a`）源码 `src/runtime/feature/aclgraph/capture_model_args_backup.cc` 第 16–55 行 `CaptureModel::CopyTaskArgsDeviceBuffer` 的备份实现。
 
-[^cap-model]: 参阅 `cann/runtime`（提交 `1954820a`）源码 `src/runtime/feature/aclgraph/capture_model.cc` 第 497–615、1556–1605 及 2346–2413 行对 `PreModelExecute`、`BuildSqCq` 和 `ModelEndGraph` 的底层管控逻辑。
+[^cap-model]: 参阅 `cann/runtime`（提交 `1954820a`）源码 `src/runtime/feature/aclgraph/capture_model.cc` 第 497–615、1556–1605 及 2346–2413 行。
 
-[^model-ri-doc]: 参阅 `cann/runtime`（提交 `1954820a`）官方示例 `example/2_advanced_features/model_ri/0_simple_model/main.cpp` 与 API 手册多流 Stream Capture 例程。
+[^model-ri-doc]: 参阅 `cann/runtime`（提交 `1954820a`）示例 `example/2_advanced_features/model_ri/0_simple_model/main.cpp` 与多流捕获例程。
 
-[^v41-cap]: DeepSeek-V4.1-Flash 40 层 CED、`npu_hc_pre_v3`/`npu_hc_post` 及 `AscendDSAV41Impl` 在昇腾生产栈的算子分布见本站[10 串珠成链：V4.1 单步全链路与双硬件协同](../../deepseek/10-architecture-synthesis/)。
+[^v41-cap]: DeepSeek-V4.1-Flash 40 层 CED 与异步 Engram 在昇腾生产栈的算子分布见本站[10 串珠成链：V4.1 单步全链路与双硬件协同](../../deepseek/10-architecture-synthesis/)。

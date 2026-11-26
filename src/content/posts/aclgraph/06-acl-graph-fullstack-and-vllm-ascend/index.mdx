@@ -1,23 +1,29 @@
 ---
-title: '06 ACL Graph 生产全栈与故障定位'
-description: '盲目配桶易撞穿 1024 队列上限或引发异步 UAF 崩溃。本文贯通 vLLM-Ascend 四层生产栈，梳理 cudagraph_mode 选型、MTP 对齐分桶与三大线上故障的二分排障流程。'
+title: '06 ACL Graph 生产全栈：选型配额与故障定位'
+description: '盲目配桶易撞穿 1024 物理队列上限或引发 507011 异步释放崩溃。本文贯通 vllm-ascend 四层生产栈，梳理图模式选型、MTP 对齐配额公式与三大线上故障二分定位法。'
 series: { id: aclgraph, order: 7 }
 pubDate: 2026-10-21
 draft: false
 tags: [vLLM-Ascend, npugraph_ex, SuperKernel, XliteGraph, '207008', '507011', Profiling]
 ---
 
-把 ACL Graph 拉进 `vllm-ascend` 高并发生产栈后，收益与风险往往同时放大。若图模式选型失当或物理队列配额超限，服务会在预热阶段直接报错退出，或在线上并发期间触发隐蔽的异步显存崩溃与性能回退。
+把 ACL Graph 真正推进高并发生产服务后，收益与隐患常常成对出现。模式选型过激可能撑爆图数与显存，分桶太密会在预热阶段当场报 **207008** 退出，工作区或输出张量过早释放又会在运行时炸出神秘的 **507011** 异步异常。
 
-## 生产四层软硬件调用栈映射
+解决这类线上疑难杂症不能靠盲猜环境变量，而需要先把 `vllm-ascend` 到物理 NPU 的四层调用链摸清，再把预算数字与生命周期边界算实。
 
-```mermaid caption="图 1：ACL Graph 贯穿 vllm-ascend、torch_npu、cann/runtime 与 HDK/NPU 物理队列的四层调用栈映射"
+## 四层生产调用栈与源码映射
+
+从顶层引擎调度到底层硬件固件，ACL Graph 生产全栈由职责分明的四层软件栈串联（图 1 与图 2）[^vllm-ascend-acl][^vllm-ascend-npug]：
+
+![vLLM-Ascend 官方软硬件协同架构总览](./images/vllm-ascend-stack-overview.png '图 1：vllm-ascend 上下游对接 PyTorch/TorchNPU、Triton Ascend、CANN Ops/Toolkit 与底层 Ascend HDK 全栈定位（来源 vllm-ascend 官方文档，Apache-2.0）')
+
+```mermaid caption="图 2：ACL Graph 贯穿 vllm-ascend、torch_npu、cann/runtime 与 Ascend HDK 四层调用栈映射"
 flowchart TD
-    subgraph L1["L1 · vLLM-Ascend 调度与编译层"]
-        L1A["cudagraph_mode 分桶<br/>FULL / PIECEWISE + MTP"] --> L1B["npugraph_ex + ACLGraphWrapper<br/>模式替换与 weak_ref"]
+    subgraph L1["L1 · vllm-ascend 调度与包装层"]
+        L1A["cudagraph_mode 分桶<br/>FULL / PIECEWISE + MTP"] --> L1B["ACLGraphWrapper & UpdatableGraph<br/>npugraph_ex + weak_ref"]
     end
     subgraph L2["L2 · PyTorch + torch_npu 桥接层"]
-        L2A["NPUGraph 与 Pool 管理<br/>capture_begin / replay"] --> L2B["_GraphDispatchMode<br/>自动包裹 TaskGrp 与条件流"]
+        L2A["NPUGraph 与 Pool 管理<br/>capture_begin / replay"] --> L2B["GraphDispatch & CondDispatch<br/>自动包裹 TaskGrp 与条件流"]
     end
     subgraph L3["L3 · CANN Runtime 模型运行时"]
         L3A["CaptureSession + CaptureModel<br/>拓扑校验与 CopyTaskArgs"] --> L3B["DeviceSqCqPool & Notify<br/>物理 SQ/CQ 上限 1024"]
@@ -25,135 +31,157 @@ flowchart TD
     subgraph L4["L4 · Ascend HDK 与 NPU 硬件层"]
         L4A["物理 SQ/CQ 队列<br/>超限报 207008"] --> L4B["TS 固件与 AICore<br/>异常报 507011 / UAF"]
     end
-    L1B -->|"封装捕获/重放"| L2A
+    L1B -->|"封装捕获与重放"| L2A
     L2B -->|"下沉逻辑队列"| L3A
-    L3B -->|"提交物理队列"| L4A
+    L3B -->|"分配物理队列并提交"| L4A
 ```
 
-从上层框架到底层芯片固件，生产全栈划分为边界明确的四层架构（见图 1 与图 2）：
+- **L1（`vllm-ascend` 调度层）**：按批量桶分派 `FULL` 或 `PIECEWISE`，并弱引用回收临时空间。
+- **L2（`torch_npu` 桥接层）**：对齐 CUDA `NPUGraph` 接口，借调度代理接入 `TaskGrp` 热刷新。
+- **L3（`cann/runtime` 原生层）**：`CaptureSession` 检拓扑，`CaptureModel` 建影子 `LogicSQ` 并做参数备份。
+- **L4（Ascend HDK 硬件层）**：持有 1024 组物理 SQ/CQ，由 TS 固件直接驱动算力核执行。
 
-在最上层的 **L1 `vllm-ascend` 调度层**[^vllm-ascend-acl][^vllm-ascend-npug]，引擎负责批大小稀疏分桶、按请求态分派全图或分段模式，并用 `ACLGraphWrapper` 与 `weak_ref_outputs` 回收输出强引用。往下衔接 **L2 `torch_npu` 桥接层**，它提供对齐 CUDA 语义的 `NPUGraph`、全局图池映射，并经分发代理自动接入 TaskGrp 热刷新与条件控制流。
+### 包装器类关系与关键片段
 
-到底层的 **L3 `cann/runtime` 原生底座**，`CaptureSession` 负责拓扑闭合鉴权，`CaptureModel` 则构造持久 `LogicSQ` 并备份设备参数。`CondHandle` 与 `DeviceSqCqPool` 分别管控条件唤醒和队列分配。
+在 `vllm-ascend`（提交 `b776261e`）中，包装器家族继承了第 3 章的 `CUDAGraphWrapper` 体系。它新增了 `UpdatableGraph` 替换、Workspace 弱引用与可中断抓图包装器，类协作见图 3[^vllm-acl-src][^vllm-brk-src]。
 
-最下方的 **L4 Ascend HDK 与硬件层**持有 1024U 上限的物理 SQ/CQ，并配备 8192 个 Notify 与 65536 个 Event 槽位。设备侧由 TS 固件直接驱动 AICore、AICPU 与 HCCL 执行。
+```mermaid caption="图 3：vllm-ascend@b776261e ACLGraphWrapper、UpdatableGraph 与 BreakableACLGraphWrapper 类关系"
+classDiagram
+    class ACLGraphWrapper {
+        +runtime_mode
+        +graph_pool
+        +concrete_aclgraph_entries
+        +__call__()
+        -_updatable_graph_replay()
+    }
+    class ACLGraphEntry {
+        +BatchDescriptor batch_descriptor
+        +NPUGraph aclgraph
+        +output
+        +input_addresses
+    }
+    class GraphParams {
+        +events
+        +workspaces
+        +handles
+        +attn_params
+    }
+    class BreakableACLGraphWrapper {
+        +use_eagle
+        +enable_enpu
+        -_capture()
+        -_replay()
+    }
+    ACLGraphWrapper *-- ACLGraphEntry : caches per batch
+    ACLGraphWrapper ..> GraphParams : weak_ref_workspaces()
+    BreakableACLGraphWrapper --|> BreakableCUDAGraphWrapper : inherits split logic
+    BreakableACLGraphWrapper ..> GraphParams : shares workspace contract
+```
 
-![vLLM-Ascend 官方软硬件协同架构总览](./images/vllm-ascend-stack-overview.png '图 2：vllm-ascend 上下游对接 PyTorch/TorchNPU、Triton Ascend、CANN Ops/Toolkit 及底层 Ascend HDK/NPU 全栈定位（来源 vllm-ascend 官方文档，Apache-2.0）')
+下面这段代码提炼自 `acl_graph.py` 的核心生命周期：捕获完成后，`weak_ref_workspaces` 与 `weak_ref_tensors` 会释放多余的临时强引用。重放阶段，`FULL` 模式在非草稿路径下还须同步当前流，防止乱序[^vllm-acl-src]：
 
-## 图模式选型与分桶配额计算
+```python
+with torch.npu.graph(aclgraph, pool=self.graph_pool):
+    with super_kernel_scope("full_model", self.enable_super_kernel):
+        output = self.runnable(*args, **kwargs)
+    get_offloader().join_after_forward()  # 多流预取必须汇合后再 CaptureEnd
 
-上线部署的核心开关围绕 **`cudagraph_mode`** 与 **`npugraph_ex` 编译优化套件**组合配置[^vllm-ascend-graph][^vllm-ascend-acl]：
+weak_ref_workspaces(_graph_params)
+entry.output = weak_ref_tensors(output)
+entry.aclgraph = aclgraph
 
-| 模式 / 开关          | 核心机制           | 适用场景           | 关键边界              |
-| -------------------- | ------------------ | ------------------ | --------------------- |
-| `NONE`（Eager）      | 关静态图，逐算子发 | 纯 Prefill 或调试  | 解码受 Host 气泡拖累  |
-| `PIECEWISE`          | 隔离 Attention 编  | Chunked Prefill    | 留少量 CPU 调度       |
-| `FULL_DECODE_ONLY`   | 纯解码全图，混批跳 | 稳健生产默认配置   | 按桶预捕占显存        |
-| `FULL_AND_PIECEWISE` | 解码全图+混批分段  | 高吞吐混排与微延迟 | 配 `weak_ref_outputs` |
-| `npugraph_ex`        | 图替换、可退旧栈   | 小算子密集自定义图 | 含 Triton 跳缓存      |
-| `SuperKernel`        | 多算子超融合直通   | A3 / 950 极低延迟  | 需静态输入与白名单    |
+# 重放前若未启用 enpu 统一编排且处于 FULL 主图模式，先同步防止与上轮 update_attn_params 乱序
+if not self.enable_enpu and self.runtime_mode == CUDAGraphMode.FULL and not is_draft_eagle:
+    torch.npu.current_stream().synchronize()
+```
 
-启用 **`npugraph_ex`** 编译优化套件时，还需留意自定义 Triton Ascend Kernel 的持久化约束[^vllm-ascend-npug]。这类算子会在参数表内产生 **`kernel_side_table`** 动态外部地址跳转表，编译器为防止跨进程加载失配会跳过磁盘缓存，导致每次冷启动重新编译该子图。遇到此类情况可通过 `force_eager` 把疑难算子切出静态下沉通道。
+## 图模式选型与 SQ/CQ 配额
 
-稀疏分桶的物理池总消费必须满足以下约束公式：
+上线前要围绕 **`cudagraph_mode`** 与 **`npugraph_ex` 编译优化套件**做组合选型[^vllm-ascend-graph][^vllm-ascend-npug]：
+
+| 模式或优化开关       | 核心机制与路由     | 适用负载场景       | 关键边界与注意事项     |
+| :------------------- | :----------------- | :----------------- | :--------------------- |
+| `NONE`（Eager）      | 关静态图，逐算子发 | 纯 Prefill 或调试  | 解码受发射气泡严重拖累 |
+| `PIECEWISE`          | 隔离 Attention 编  | Chunked Prefill 混 | 保留部分 CPU 调度开销  |
+| `FULL_DECODE_ONLY`   | 纯解码全图，混批跳 | 稳健生产默认推荐   | 按批量桶预捕占显存     |
+| `FULL_AND_PIECEWISE` | 解码全图+混批分段  | 高吞吐混排与微延迟 | 须开输出弱引用省显存   |
+| `npugraph_ex`        | 图替换、可退旧栈   | 小算子密集自定义图 | 含 Triton 跳磁盘缓存   |
+| `SuperKernel`        | 多算子超融合直通   | A3 / 950 极低延迟  | 需静态输入与白名单     |
+
+启用 **`npugraph_ex`** 编译套件时，还要盯住一条隐藏成本：自定义 Triton Ascend 算子往往会在参数区生成 **`kernel_side_table`** 动态外部地址表。编译器为避免跨进程重启地址失配，会主动跳过这类子图的磁盘缓存，导致每次冷启动重新编译；若触发过慢，可用 `force_eager` 把疑难算子摘回常规通道[^vllm-ascend-npug]。
+
+选定模式之后，必须核算**物理 SQ/CQ 队列预算**。由于单卡硬件池硬限为 `RT_DEVICE_SQCQ_RES_MAX_NUM = 1024U`[^sqcq-6]，多档分桶的总通道消耗绝不能踩线：
 
 $$
 N_{\text{SQ/CQ}} = |\text{aligned\_buckets}| \times N_{\text{streams}} \le 1024
 $$
 
-若盲目配置 1 到 256 的全密集桶且每图挂接 4 条逻辑流（计算、HCCL、拷贝与辅助同步流），通道需求立刻突破 1024 上限。生产环境应采用前密后疏的稀疏桶表。开启 **DSpark / MTP 多 token 推测**时，还须将每档桶容量对齐为 `num_spec_tokens + 1` 的整数倍。例如单步验证 2 token 就要对齐到偶数倍，减少无效 Padding 计算。
+一旦盲目配上 1 到 256 的密集桶、且每图挂接 4 条逻辑流（计算、HCCL 通信、卸载拷贝与辅助更新流），总消耗立刻突破 1024 上限。生产配置应当“前密后疏”；如果开了 **DSpark / MTP 多 token 推测**，还须把各档桶容量向上对齐到 `num_spec_tokens + 1` 的整数倍，减少无效对齐浪费。
 
-## 三大高频故障与二分排障路径
+![SQ/CQ 1024 物理队列预算墙与 507011 异步释放重用 UAF 时间线](./diagrams/06-sqcq-budget-and-uaf-timeline.drawio '图 4：密集 vs 稀疏分桶物理 SQ/CQ 消耗对比（上）与弱引用过早释放触发 507011 UAF 崩溃时序（下）')
 
-线上启用 ACL Graph 后的常见故障主要分为三类。结合图 3 的决策路径，借助 `VLLM_ASCEND_ENABLE_ACLGRAPH=0`、`ASCEND_LAUNCH_BLOCKING=1` 与 `msprof` 即可完成二分定位：
+## 三大高频故障与二分排障
+
+生产打开 ACL Graph 后遇到异常，记住先看三类经典症状（图 4 下半区与图 5）[^err-codes][^cap-6]：
 
 ### 错误码 207008 资源耗尽
 
-冷启动预热多档分桶时，进程可能报错 `ACL_ERROR_RT_NO_STREAM_RESOURCE`（错误码 207008，日志 EE1023）。日志通常还会打印 `driver error:no stream resource`[^err-codes][^sqcq-6][^cap-6]。
-
-这是因为 `CaptureModel::BuildSqCq` 按流数量分配通道时撞穿了 `RT_DEVICE_SQCQ_RES_MAX_NUM = 1024U` 硬限。并且这些通道必须到 `aclmdlRIDestroy` 才释放归还。排障时先按 $\text{桶数} \times \text{每图流数} \le 1024$ 核对预算，精简细碎分桶并收拢冗余副流即可根治。
+冷启动预捕各档分桶时进程突然退出，常见报错为 `ACL_ERROR_RT_NO_STREAM_RESOURCE`。它对应错误码 **207008**（日志 `EE1023`），提示 `driver error:no stream resource`[^err-codes]。这是因为 `CaptureModel::BuildSqCq` 绑通道时撞穿了 `1024U` 池容量。由于分配出的物理通道要等 `aclmdlRIDestroy` 才归还，排障只需按预算公式削减细碎分桶或合并冗余副流[^sqcq-6][^cap-6]。
 
 ### 错误码 507011 设备内存异常
 
-暖机阶段运行正常，进入并发抢占与显存块回收后，设备流突然挂死并报 `ACL_ERROR_RT_MODEL_EXECUTE`（错误码 507011）[^err-codes]。这类故障的典型根因是设备侧内存 **UAF（Use-After-Free，释放后重用）**。
+单请求跑得通，一进高并发抢占或回收内存就突然卡死，设备流抛出 `ACL_ERROR_RT_MODEL_EXECUTE`（错误码 **507011**）[^err-codes]。这类问题多半源于异步 **UAF（释放后重用）**：图内固化的虚拟地址（例如 `sinks` 汇总缓冲、局部 `Workspace` 或被误设弱引用的输出）在图真正算完前就被内存池收走并覆写了。
 
-捕获期固化在 SQE 与参数区的虚拟地址（如 `sinks` 汇总缓冲、局部 `Workspace` 或被 `weak_ref_outputs` 释回的内存块）在重放前可能被分配器回收。一旦再次访存就会触发硬件异常。定位时先设置 `ASCEND_LAUNCH_BLOCKING=1` 同步捕获报错位置，再将图内引用张量改用全局持久缓冲保活。
+排查时先设 `ASCEND_LAUNCH_BLOCKING=1` 同步定位报错算子。随后检查图内张量是否已用长生命周期缓冲保活，避免 `weak_ref_outputs` 误伤仍在下游引用的输出。
 
 ### 异步重放踩踏与性能回退
 
-有时系统不报错却偶发输出乱码 token，或者推理吞吐掉回 Eager 水平。前者的常见原因在于 `aclmdlRIExecuteAsync` 会非阻塞返回 CPU，外循环在第 $t$ 步影子流读完旧数据前就提前覆写了第 $t+1$ 步的静态输入缓冲。后者则往往源于隐藏动态维触发静默回退，或 `ExternalEvent` 漏重置引起阻塞等待。
+有时进程不崩，却偶尔吐出乱码 token，或吞吐掉回 Eager 水平。前一种常见于主机连发太快：第 $t$ 步影子流还没读完静态输入，第 $t+1$ 步就覆盖了输入缓冲；后一种往往是隐含动态分支触发静默回退，或 `ExternalEvent` 漏了 `reset` 造成死等。
 
-排查时先设置 `VLLM_ASCEND_ENABLE_ACLGRAPH=0` 排除权重与量化自身问题，再用 `msprof` 观察计算轨与 `ACL` 轨时间线。如果发现密集的 Host Launch 柱说明已退回分段 Eager，算子前出现长段空白带则多半是错置同步或未重置事件。
+这时设 `VLLM_ASCEND_ENABLE_ACLGRAPH=0` 一刀切下二分（图 5）。关掉后仍报错说明故障在权重或算子；立刻恢复则用 `msprof` 看 `ACL` 轨，密密麻麻的 Host 柱表明回退分段，空白则指向事件误堵。
 
-```mermaid caption="图 3：ACL Graph 线上故障（207008、507011 与异步竞态）二分定位路径"
+```mermaid caption="图 5：ACL Graph 线上故障（207008、507011 与性能回退）二分定位决策路径"
 flowchart TD
     S["ACL Graph 异常 / 507011 / 低吞吐"] --> B{"设 VLLM_ASCEND_ENABLE_ACLGRAPH=0<br/>切回 Eager 是否恢复?"}
-    B -->|"仍然报错"| M["权重、量化或算子问题<br/>设 ASCEND_LAUNCH_BLOCKING=1"]
-    B -->|"开启 Graph 触发"| C{"冷启动直接报错 207008?"}
-    C -->|"是"| R1["检查 桶数*流数 > 1024<br/>精简桶位与冗余辅助流"]
+    B -->|"仍然报错"| M["权重、量化或单算子故障<br/>开 ASCEND_LAUNCH_BLOCKING=1"]
+    B -->|"关闭后恢复"| C{"冷启动预热直接报 207008?"}
+    C -->|"是"| R1["核算 桶数 * 流数 <= 1024<br/>精简桶位与合并冗余副流"]
     C -->|"否"| D{"507011 或偶发乱码?"}
-    D -->|"是"| R2["查 sinks/Workspace UAF<br/>或 Static Buffer 异步覆写"]
-    D -->|"性能回退"| P["msprof 查 Host 柱与气泡<br/>查分桶与 ExternalEvent"]
+    D -->|"是"| R2["查 Workspace / sinks UAF<br/>与静态输入缓冲异步覆写"]
+    D -->|"性能回退"| P["msprof 查 Host 发射柱与气泡<br/>核对分桶命中与 ExternalEvent"]
 ```
 
-## 队列配额与内存越界仿真
+## 配额核算与内存越界仿真
 
-下面的纯 CPU Python 脚本依据 `RT_DEVICE_SQCQ_RES_MAX_NUM = 1024U` 核算密集与稀疏分桶的通道余量。脚本同时复现了 `sinks` 指针提前释放触发的 507011 UAF 报错：
+下面这段纯 CPU 脚本按硬件上限 `RT_DEVICE_SQCQ_RES_MAX_NUM = 1024` 核算通道余量。它同时模拟了 `sinks` 指针提前释放触发 **507011** UAF 告警的过程：
 
 ```python
-RT_DEVICE_SQCQ_RES_MAX_NUM = 1024  # cann/runtime device_sq_cq_pool.hpp
+RT_DEVICE_SQCQ_RES_MAX_NUM = 1024
 
-
-def check_sqcq_budget(
-    buckets: list[int], streams_per_graph: int, mtp_tokens: int = 1
-) -> dict:
-    # 开启 MTP 时将分桶规格按 (num_mtp_tokens + 1) 向上对齐
-    step_unit = mtp_tokens + 1
-    aligned = sorted(
-        {((b + step_unit - 1) // step_unit) * step_unit for b in buckets}
-    )
+def check_sqcq_budget(buckets: list[int], streams_per_graph: int, mtp_tokens: int = 1) -> dict:
+    unit = mtp_tokens + 1
+    aligned = sorted({((b + unit - 1) // unit) * unit for b in buckets})
     total_sqcq = len(aligned) * streams_per_graph
-    oom_207008 = total_sqcq > RT_DEVICE_SQCQ_RES_MAX_NUM
     return {
         "num_graphs": len(aligned),
-        "streams_per_graph": streams_per_graph,
         "total_sqcq": total_sqcq,
-        "oom_207008": oom_207008,
+        "oom_207008": total_sqcq > RT_DEVICE_SQCQ_RES_MAX_NUM,
         "headroom": RT_DEVICE_SQCQ_RES_MAX_NUM - total_sqcq,
     }
 
+dense_res = check_sqcq_budget(list(range(1, 258)), streams_per_graph=4, mtp_tokens=0)
+sparse_res = check_sqcq_budget([8, 16, 24, 32, 48, 64, 96, 128, 192, 256, 384, 512], streams_per_graph=4, mtp_tokens=1)
+print(f"[Dense Bucketing] graphs={dense_res['num_graphs']}, total_SQCQ={dense_res['total_sqcq']}/1024, trigger_207008={dense_res['oom_207008']}")
+print(f"[Sparse + MTP(k=1)] graphs={sparse_res['num_graphs']}, total_SQCQ={sparse_res['total_sqcq']}/1024, headroom={sparse_res['headroom']}")
 
-dense_buckets = list(range(1, 258))  # 257 档密集桶 -> 257 * 4 = 1028 > 1024
-sparse_buckets = [8, 16, 24, 32, 48, 64, 96, 128, 192, 256, 384, 512]
-
-dense_res = check_sqcq_budget(dense_buckets, streams_per_graph=4, mtp_tokens=0)
-# MTP k=1 -> 对齐到 2 的整数倍
-sparse_res = check_sqcq_budget(sparse_buckets, streams_per_graph=4, mtp_tokens=1)
-
-print(
-    f"[Dense Bucketing] graphs={dense_res['num_graphs']}, "
-    f"total_SQCQ={dense_res['total_sqcq']}/1024, "
-    f"trigger_207008={dense_res['oom_207008']}"
-)
-print(
-    f"[Sparse + MTP(k=1)] graphs={sparse_res['num_graphs']}, "
-    f"total_SQCQ={sparse_res['total_sqcq']}/1024, headroom={sparse_res['headroom']}"
-)
-
-# 复现 507011 异步 UAF：图引用指针在重放结束前被提前释放
 class DeviceBufferTracker:
     def __init__(self) -> None:
         self.freed: set[int] = set()
-
     def free(self, ptr: int) -> None:
         self.freed.add(ptr)
-
     def check_replay(self, captured_ptrs: list[int]) -> str:
         dangling = [hex(p) for p in captured_ptrs if p in self.freed]
-        if dangling:
-            return f"507011 ACL_ERROR_RT_MODEL_EXECUTE (UAF on {dangling})"
-        return "EXEC_OK"
-
+        return f"507011 ACL_ERROR_RT_MODEL_EXECUTE (UAF on {dangling})" if dangling else "EXEC_OK"
 
 trk = DeviceBufferTracker()
 sinks_ptr, work_ptr = 0x1200_4000, 0x1200_8000
@@ -162,7 +190,7 @@ trk.free(sinks_ptr)
 print(f"[UAF Bug] {trk.check_replay([sinks_ptr, work_ptr])}")
 ```
 
-仿真输出显示，257 档密集桶消耗 1028 组通道并直接触发 `trigger_207008=True`，对齐 MTP 的 12 档稀疏桶仅用 48 组、留下 976 组余量。在生命周期追踪器中，未保活指针也在重放检查阶段触发了 507011 UAF 告警：
+输出划出两条红线：257 档密集桶共耗 1028 组通道，直接触发 `trigger_207008=True`。对齐 `MTP(k=1)` 的 12 档稀疏桶仅耗 48 组；而一旦 `sinks_ptr` 提前释放，重放即报 **507011 UAF**：
 
 ```text
 [Dense Bucketing] graphs=257, total_SQCQ=1028/1024, trigger_207008=True
@@ -171,16 +199,20 @@ print(f"[UAF Bug] {trk.check_replay([sinks_ptr, work_ptr])}")
 [UAF Bug] 507011 ACL_ERROR_RT_MODEL_EXECUTE (UAF on ['0x12004000'])
 ```
 
-至此，本专题完成了从异步队列、编译期融合、CUDA/ACL 静态捕图、局部热刷新与条件子图直到四层生产集成的全链路贯通。如需继续回查上层 Continuous Batching 调度与通用全链路 profiling 方法论，可继续阅读姊妹系列[vLLM 与昇腾推理引擎](../../vllm/)及终章[性能观测与线上故障定位](../../vllm/06-profiling-and-debugging/)。
+至此，本系列贯通了异步队列、`torch.compile`、CUDA Graph、影子流与 `vllm-ascend` 全栈排障。想了解上层调度与 Profiling 实战，可读[vLLM 与昇腾推理引擎](../../vllm/)及[性能观测与线上故障定位](../../vllm/06-profiling-and-debugging/)。
 
-[^vllm-ascend-acl]: 参阅 `vllm-ascend`（提交 `3649b8ff`）设计文档 `docs/source/developer_guide/Design_Documents/ACL_Graph.md`，介绍模型全图捕获与分段运行接入详情。
+[^vllm-ascend-acl]: 参阅 `vllm-ascend`（提交 `b776261e`）设计文档 `docs/source/developer_guide/Design_Documents/ACL_Graph.md`。
 
-[^vllm-ascend-npug]: 参阅 `vllm-ascend`（提交 `3649b8ff`）设计文档 `docs/source/developer_guide/Design_Documents/npugraph_ex.md`，详述 `force_eager`、`inplace_pass`、`register_replacement` 与 Triton `kernel_side_table` 导致图缓存跳过磁盘持久化的约束。
+[^vllm-ascend-npug]: 参阅 `vllm-ascend`（提交 `b776261e`）设计文档 `docs/source/developer_guide/Design_Documents/npugraph_ex.md`，详述 `force_eager` 与 Triton 磁盘缓存约束。
 
-[^vllm-ascend-graph]: 参阅 `vllm-ascend`（提交 `3649b8ff`）用户指南 `docs/source/user_guide/feature_guide/graph_mode.md`，完整说明 `cudagraph_mode` 各选项、`enable_static_kernel`、`SuperKernel` 及 `XliteGraph` 配合准则。
+[^vllm-ascend-graph]: 参阅 `vllm-ascend`（提交 `b776261e`）用户指南 `docs/source/user_guide/feature_guide/graph_mode.md`，说明 `cudagraph_mode` 与 `SuperKernel` 配置。
 
-[^err-codes]: 参阅 `cann/runtime`（提交 `1954820a`）错误码声明 `include/external/acl/error_codes/rt_error_codes.h` 第 76、102 行及映射表 `src/runtime/core/src/common/errcode_manage.cc` 第 94–96、184、190、470 行。
+[^vllm-acl-src]: 参阅 `vllm-ascend`（提交 `b776261e`）源码 `vllm_ascend/compilation/acl_graph.py` 第 60–400 行对 `ACLGraphWrapper`、`ACLGraphEntry` 与工作区弱引用的实现。
 
-[^sqcq-6]: 参阅 `cann/runtime`（提交 `1954820a`）源码 `src/runtime/core/src/device/device_sq_cq_pool.hpp` 第 23 行常量 `RT_DEVICE_SQCQ_RES_MAX_NUM = 1024U` 及 `device_sq_cq_pool.cc` 第 116–145 行 `BatchAllocSqCq` 池校验。
+[^vllm-brk-src]: 参阅 `vllm-ascend`（提交 `b776261e`）源码 `vllm_ascend/compilation/breakable_aclgraph.py` 第 38–91 行 `BreakableACLGraphWrapper`。
 
-[^cap-6]: 参阅 `cann/runtime`（提交 `1954820a`）源码 `src/runtime/feature/aclgraph/capture_model.cc` 第 1556–1605 行 `CaptureModel::BuildSqCq` 校验物理流容量超限并抛出 `EE1023`。
+[^err-codes]: 参阅 `cann/runtime`（提交 `1954820a`）头文件 `include/external/acl/error_codes/rt_error_codes.h` 第 76、102 行及 `errcode_manage.cc` 错误码映射。
+
+[^sqcq-6]: 参阅 `cann/runtime`（提交 `1954820a`）源码 `src/runtime/core/src/device/device_sq_cq_pool.hpp` 第 23 行常量 `RT_DEVICE_SQCQ_RES_MAX_NUM = 1024U`。
+
+[^cap-6]: 参阅 `cann/runtime`（提交 `1954820a`）源码 `src/runtime/feature/aclgraph/capture_model.cc` 第 1556–1605 行 `BuildSqCq` 校验逻辑。

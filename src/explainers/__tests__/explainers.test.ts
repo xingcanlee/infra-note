@@ -55,6 +55,12 @@ import MoeRoutingAlignExplainer, {
 import EngramHashExplainer, {
   buildEngramHashSteps,
 } from '@/content/posts/deepseek/07-engram/explainers/engram-hash';
+import MegaMhcPassExplainer, {
+  buildMegaMhcPassSteps,
+} from '@/content/posts/deepseek/08-mhc/explainers/mega-mhc-pass';
+import MhcSinkhornExplainer, {
+  buildMhcSinkhornSteps,
+} from '@/content/posts/deepseek/08-mhc/explainers/mhc-sinkhorn';
 import ShortConvExplainer, {
   buildShortConvSteps,
 } from '@/content/posts/deepseek/07-engram/explainers/short-conv';
@@ -68,13 +74,16 @@ import PagedSchedulerExplainer, {
 
 import AclGraphDynamicControlExplainer, {
   buildAclGraphDynamicControlSteps,
-} from '@/content/posts/aclgraph/05-acl-graph-task-update-and-conditional-subgraph/explainers/AclGraphDynamicControlExplainer';
+} from '@/content/posts/aclgraph/05-acl-graph-task-update-and-conditional-subgraph/explainers/aclgraph-dynamic-control';
 import AclGraphShadowStreamExplainer, {
   buildAclGraphShadowStreamSteps,
-} from '@/content/posts/aclgraph/04-acl-graph-architecture-and-capture/explainers/AclGraphShadowStreamExplainer';
+} from '@/content/posts/aclgraph/04-acl-graph-architecture-and-capture/explainers/aclgraph-shadow-stream';
+import CompileSplitFusionExplainer, {
+  buildCompileSplitFusionSteps,
+} from '@/content/posts/aclgraph/02-torch-compile-fundamentals/explainers/compile-split-fusion';
 import StreamEventPipelineExplainer, {
   buildStreamEventPipelineSteps,
-} from '@/content/posts/aclgraph/01-heterogeneous-streams-and-events/explainers/StreamEventPipelineExplainer';
+} from '@/content/posts/aclgraph/01-heterogeneous-streams-and-events/explainers/stream-event-pipeline';
 
 interface ExplainerEntry {
   name: string;
@@ -120,6 +129,8 @@ const ALL_EXPLAINERS: ExplainerEntry[] = [
   },
   { name: 'EngramHash', Component: EngramHashExplainer, buildSteps: buildEngramHashSteps },
   { name: 'ShortConv', Component: ShortConvExplainer, buildSteps: buildShortConvSteps },
+  { name: 'MhcSinkhorn', Component: MhcSinkhornExplainer, buildSteps: buildMhcSinkhornSteps },
+  { name: 'MegaMhcPass', Component: MegaMhcPassExplainer, buildSteps: buildMegaMhcPassSteps },
   { name: 'SpecDecVerify', Component: SpecDecVerifyExplainer, buildSteps: buildSpecDecVerifySteps },
   {
     name: 'PagedScheduler',
@@ -130,6 +141,11 @@ const ALL_EXPLAINERS: ExplainerEntry[] = [
     name: 'StreamEventPipeline',
     Component: StreamEventPipelineExplainer,
     buildSteps: buildStreamEventPipelineSteps,
+  },
+  {
+    name: 'CompileSplitFusion',
+    Component: CompileSplitFusionExplainer,
+    buildSteps: buildCompileSplitFusionSteps,
   },
   {
     name: 'AclGraphShadowStream',
@@ -143,9 +159,9 @@ const ALL_EXPLAINERS: ExplainerEntry[] = [
   },
 ];
 
-describe('all 18 interactive SVG explainers', () => {
-  it('covers exact 18 explainers across all 5 series', () => {
-    expect(ALL_EXPLAINERS).toHaveLength(18);
+describe('all 21 interactive SVG explainers', () => {
+  it('covers exact 21 explainers across all 5 series', () => {
+    expect(ALL_EXPLAINERS).toHaveLength(21);
   });
 
   it.each(ALL_EXPLAINERS)(
