@@ -31,16 +31,16 @@ NVIDIA GPU 注意力算子习惯直接从设备常驻张量读取 `seq_lens`，�
 
 只要同批量桶内的 KV 长度一变，注意力描述符就得更新，否则 `FULL` 全图就会算错。为了让 `vllm-ascend` 在开启 `FULL` 或 `FULL_DECODE_ONLY` 时不必推倒整张图重录，CANN Runtime 提供了 **`aclrtTaskGrp`** 局部槽位更新机制[^cann-model-ri][^cap-session-up]：
 
-| 操作时机         | 核心 CANN / torch_npu 接口        | 底层逻辑队列动作                               |
-| :--------------- | :-------------------------------- | :--------------------------------------------- |
-| 捕获期标注起止   | `aclmdlRICaptureTaskGrpBegin/End` | 插入预取占位并登记可更新 `(stream, task)` 槽位 |
-| 重放前切换更新态 | `CaptureTaskUpdateBegin`          | 传入非捕获 `update_stream` 切换至更新状态      |
-| 发射新参数描述符 | 重算新 `seq_kv` 下的 FIA/PA 算子  | `isUpdateSinkSqe=1` 一对一覆写原参数描述符     |
-| 更新完毕封闭生效 | `CaptureTaskUpdateEnd`            | 结束切片更新作用域，其余图节点维持不变         |
+| 操作时机         | 核心 CANN / torch_npu 接口        | 底层逻辑队列动作                                     |
+| :--------------- | :-------------------------------- | :--------------------------------------------------- |
+| 捕获期标注起止   | `aclmdlRICaptureTaskGrpBegin/End` | 插入 Prefetch 占位并登记可更新 `(stream, task)` 槽位 |
+| 重放前切换更新态 | `CaptureTaskUpdateBegin`          | 传入非捕获 `update_stream` 切换至更新状态            |
+| 发射新参数描述符 | 重算新 `seq_kv` 下的 FIA/PA 算子  | `isUpdateSinkSqe=1` 一对一覆写原参数描述符           |
+| 更新完毕封闭生效 | `CaptureTaskUpdateEnd`            | 结束切片更新作用域，其余图节点维持不变               |
 
 ### ExternalEvent 防冲突协议
 
-只做原地覆写还不够安全。想象一下流水线重放的场景：如果第 $t+1$ 步的 `update_stream` 在第 $t$ 步的物理算子还没读完参数槽位时就提前改写，或者主图没等更新落定就冲进了下一轮计算，就会立刻读到脏数据或卡死。
+只做原地覆写还不够安全。在流水线重放场景中，如果第 $t+1$ 步的 `update_stream` 在第 $t$ 步物理算子读完参数槽位前就提前改写，就会读到脏数据。同理，若主图未等更新完成就进入下一轮计算，同样会触发竞态或卡死。
 
 为此，图分发层借用 `ExternalEvent` 构造了可复用的单次触发屏障（图 2）[^torch-graphs][^torch-streams-up]：
 
@@ -63,18 +63,18 @@ sequenceDiagram
 
 ## CondHandle 与条件子图流控
 
-如果说 `TaskGrp` 解决了“算子参数会变”，那么 **`CondHandle`（条件句柄）** 解决的就是“图该往哪走”。图 3 把这两种动态扩展原语并排放在一起，按 6 步推演了槽位原地覆写、漏掉 `reset` 时的跨步读写冲突以及设备侧 3 种动态 `WHILE` 退出情况。
+如果说 `TaskGrp` 解决了“算子参数会变”，那么 **`CondHandle`（条件句柄）** 解决的就是“图该往哪走”。图 3 把这两种动态扩展原语并排放在一起，对比了槽位原地覆写、漏掉 `reset` 时的跨步读写冲突以及设备侧 3 种动态 `WHILE` 退出情况。
 
 <AclGraphDynamicControlExplainer
   client:visible
-  title="图 3：TaskGrp 原地覆写、ExternalEvent 防护与 CondHandle 设备侧条件子图 6 步推演"
+  title="图 3：TaskGrp 原地覆写、ExternalEvent 防护与 CondHandle 设备侧条件子图时序对比"
 />
 
 ### 条件句柄复位与分支参数
 
 调用 `aclmdlRICondHandleCreate` 时，`CondHandle::Setup` 会在设备显存申请 8 字节的 `devAddr_`。主机侧同时保存一份默认值 `defaultValue_`[^cond-hpp]。前序算子能通过 `aclmdlRICondHandleGetCondPtr` 拿到这个地址，直接在芯片里写入 0 或非 0 判断字。这种把跳转判断完全留在芯片侧的思路，与 NVIDIA 在 CUDA 12.4–12.8 引入的 Conditional Nodes 一脉相承[^nv-cond-blog]。
 
-若建句柄时勾选 `ACL_MODEL_RI_COND_HANDLE_ASSIGN_DEFAULT` 标志，`PreModelExecute` 会在每次重放前跑一次 **H2D**（主机内存拷向设备显存）。它把条件地址刷新回默认值，避免上一轮改写的 0 值延续到下一轮[^cond-hpp]。
+若建句柄时传入 `ACL_MODEL_RI_COND_HANDLE_ASSIGN_DEFAULT` 标志，`PreModelExecute` 会在每次重放前跑一次 **H2D**（主机内存拷向设备显存）。它把条件地址刷新回默认值，避免上一轮改写的 0 值延续到下一轮[^cond-hpp]。
 
 在父图分叉点，开发者填写 `aclmdlRICondTaskParams` 并调用 `aclmdlRIAddCondTask` 注册跳转节点[^acl-rt-h]：
 
@@ -145,7 +145,7 @@ classDiagram
 
 另一边的控制流模块把高阶分支算子无缝转译为设备条件节点。其中 `cond` 与 `while_loop` 分别映射到 `begin_capture_to_if_node` 和 `begin_capture_to_while_node`[^torch-cond]。
 
-到了生产引擎层，`vllm-ascend`（提交 `b776261e`）进一步抽象出了继承自 `NPUGraph` 的 `UpdatableGraph`[^vllm-upd]。它把每次注意力元数据的来源解耦为 `ContextSource`（常规步主模型）与 `SharedSource`（草稿头多模型共享），下面这段从源码提炼的写法清晰展示了捕获注册与更新重放的配合：
+到了生产引擎层，`vllm-ascend`（提交 `b776261e`）进一步抽象出了继承自 `NPUGraph` 的 `UpdatableGraph`[^vllm-upd]。它把每次注意力元数据的来源解耦为 `ContextSource`（常规步主模型）与 `SharedSource`（草稿头多模型共享），下面这段从源码提炼的写法展示了捕获注册与更新重放的配合：
 
 ```python
 class GraphUpdateTask:
@@ -167,7 +167,7 @@ class UpdatableGraph(torch.npu.NPUGraph):
         self.tasks.append(GraphUpdateTask(operation, weak_ref_tensors(kwargs), provider, handle, event))
 ```
 
-值得初学者特别留意一行细节：`register_task` 传入的 `kwargs` 会先经过 `weak_ref_tensors` 转成弱引用。这么做是为了避免静态图长期死死拽住一次捕获时的临时张量，触发显存泄漏。下一章会看到，同样这条生命周期法则若处置不当，正是线上报错 507011 的主要诱因之一。
+需要注意 `register_task` 传入的 `kwargs` 会先经过 `weak_ref_tensors` 转成弱引用。这样可以避免静态图长期持有捕获期的临时张量，防止显存泄漏。下一章会看到，同样这条生命周期法则若处置不当，正是线上报错 507011 的主要诱因之一。
 
 ## 参数更新与设备循环仿真
 

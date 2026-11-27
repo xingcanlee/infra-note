@@ -7,7 +7,7 @@ draft: false
 tags: [vLLM-Ascend, npugraph_ex, SuperKernel, XliteGraph, '207008', '507011', Profiling]
 ---
 
-把 ACL Graph 真正推进高并发生产服务后，收益与隐患常常成对出现。模式选型过激可能撞上 NPU 后端限制，分桶太密会在预热阶段当场报 **207008** 退出，工作区或输出张量过早释放又会在运行时炸出异步异常 **507011**。
+把 ACL Graph 真正推进高并发生产服务后，收益与隐患常常成对出现。模式选型过激可能撞上 NPU 后端限制，分桶太密会在预热阶段当场报 **207008** 退出，工作区或输出张量过早释放又会在运行时触发异步异常 **507011**。
 
 解决这类线上疑难杂症不能靠盲猜环境变量，而需要先把 `vllm-ascend` 如何承接[第 4 章](../04-vllm-cudagraph-modes/)的 `CUDAGraphMode` 体系摸清，再把四层调用栈、队列配额与生命周期边界算实。
 
@@ -86,7 +86,7 @@ classDiagram
 with torch.npu.graph(aclgraph, pool=self.graph_pool):
     with super_kernel_scope("full_model", self.enable_super_kernel):
         output = self.runnable(*args, **kwargs)
-    get_offloader().join_after_forward()  # 多流预取必须汇合后再 CaptureEnd
+    get_offloader().join_after_forward()  # 多流 Prefetch 必须汇合后再 CaptureEnd
 
 weak_ref_workspaces(_graph_params)
 entry.output = weak_ref_tensors(output)
@@ -111,7 +111,7 @@ if not self.enable_enpu and self.runtime_mode == CUDAGraphMode.FULL and not is_d
 | `FULL_DECODE_ONLY`   | `NONE`（关闭编译） | 解码走整图重放           | 不触发分段编译，适合 PD 分离节省显存 |
 | `FULL_AND_PIECEWISE` | `PIECEWISE`        | 纯解码走整图，混合批分段 | 混合批走 `npugraph_ex`，纯解码走整图 |
 
-在多卡与特型模型上，`NPUPlatform` 还会执行比 GPU 更严格的检查[^vllm-ascend-acl]。编解码模型启用 `FULL` 整图时会自动回退，上下文并行（CP）场景也存在限制。[第 6 章](../06-acl-graph-task-update-and-conditional-subgraph/)的 `update_graph_params()` 也仅向部分注意力后端开放参数原地更新，分级如下[^vllm-ascend-graph]：
+在多卡与特型模型上，`NPUPlatform` 还会执行比 GPU 更细致的检查[^vllm-ascend-acl]。编解码模型启用 `FULL` 整图时会自动回退，上下文并行（CP）场景也存在限制。[第 6 章](../06-acl-graph-task-update-and-conditional-subgraph/)的 `update_graph_params()` 也仅向部分注意力后端开放参数原地更新，分级如下[^vllm-ascend-graph]：
 
 | 昇腾注意力后端                    | `AttentionCGSupport` 等级 | 参数更新与模式适配要点                |
 | :-------------------------------- | :------------------------ | :------------------------------------ |
@@ -127,9 +127,9 @@ $$
 N_{\text{SQ/CQ}} = |\text{aligned\_buckets}| \times N_{\text{streams}} \le 1024
 $$
 
-一旦盲目配上 1 到 256 的密集桶、且每图挂接 4 条逻辑流（计算、通信、卸载拷贝与辅助更新流），总消耗立刻突破 1024 上限。生产配置应当“前密后疏”。若开启 **`MTP`**（多词元预测）一次校验多个草稿词元，分桶容量还须向上对齐到 `num_spec_tokens + 1` 的整数倍。
+一旦盲目配上 1 到 256 的密集桶、且每图挂接 4 条逻辑流（计算、通信、卸载拷贝与辅助更新流），总消耗立刻突破 1024 上限。生产配置应当“前密后疏”。若开启 **`MTP`**（Multi-Token Prediction，多 token 预测）一次校验多个草稿 token，分桶容量还须向上对齐到 `num_spec_tokens + 1` 的整数倍。
 
-![SQ/CQ 1024 物理队列预算墙与 507011 异步释放重用 UAF 时间线](./diagrams/06-sqcq-budget-and-uaf-timeline.drawio '图 4：密集 vs 稀疏分桶物理 SQ/CQ 消耗对比（上）与弱引用过早释放触发 507011 UAF 崩溃时序（下）')
+![SQ/CQ 1024 物理队列配额上限与 507011 异步释放重用 UAF 时间线](./diagrams/06-sqcq-budget-and-uaf-timeline.drawio '图 4：密集 vs 稀疏分桶物理 SQ/CQ 消耗对比（上）与弱引用过早释放触发 507011 UAF 崩溃时序（下）')
 
 ## 三大高频故障与二分排障
 
@@ -147,7 +147,7 @@ $$
 
 ### 异步读写冲突与性能回退
 
-有时进程不崩，却偶尔吐出乱码 token，或吞吐掉回 Eager 水平。前一种常见于主机连发太快：第 $t$ 步影子流还没读完静态输入，第 $t+1$ 步就覆盖了输入缓冲；后一种往往是隐含动态分支触发静默回退，或 `ExternalEvent` 漏了 `reset` 造成死等。
+有时进程未崩溃，却偶尔输出异常 token，或吞吐掉回 Eager 水平。前一种常见于主机连发太快：第 $t$ 步影子流还没读完静态输入，第 $t+1$ 步就覆盖了输入缓冲；后一种往往是隐含动态分支触发静默回退，或 `ExternalEvent` 漏了 `reset` 造成死等。
 
 这时设 `VLLM_ASCEND_ENABLE_ACLGRAPH=0` 做二分隔离（图 5）。关掉后仍报错说明故障在权重或算子；立刻恢复则用 `msprof`（昇腾性能剖析工具）查看 `ACL` 轨，密集发射柱说明已回退，空白则指向事件堵塞。
 
@@ -210,7 +210,7 @@ print(f"[UAF Bug] {trk.check_replay([sinks_ptr, work_ptr])}")
 [UAF Bug] 507011 ACL_ERROR_RT_MODEL_EXECUTE (UAF on ['0x12004000'])
 ```
 
-至此，本系列贯通了异步队列、`torch.compile`、CUDA Graph、影子流与 `vllm-ascend` 全栈排障。想了解上层调度与 Profiling 实战，可读[《vLLM 推理引擎》](../../vllm/)、[《vLLM-Ascend 昇腾插件与硬件拓展》](../../vllm-ascend/)与[性能观测与线上故障定位](../../vllm/11-profiling-and-debugging/)。
+至此，本系列贯通了异步队列、`torch.compile`、CUDA Graph、影子流与 `vllm-ascend` 全栈排障。想了解上层调度与 Profiling 实战，可读[《vLLM 推理引擎》](../../vllm/)、[《vLLM-Ascend 昇腾插件与硬件扩展》](../../vllm-ascend/)与[性能观测与线上故障定位](../../vllm/11-profiling-and-debugging/)。
 
 [^vllm-ascend-acl]: 参阅 `vllm-ascend`（提交 `b776261e`）设计文档 `docs/source/developer_guide/Design_Documents/ACL_Graph.md`。
 

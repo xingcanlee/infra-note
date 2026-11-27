@@ -1,6 +1,6 @@
 ---
 title: '04 KV Cache 与 MQA / GQA'
-description: '自回归每步只生成 1 个 token，重算前缀会浪费算力，全量缓存又很快撑爆显存与带宽。本文量化分析 64 层多头模型的缓存开销与带宽墙，对比 MQA 和 GQA 的收益妥协，并对照双端分页 KV 排布。'
+description: '自回归每步只生成 1 个 token，重算前缀会浪费算力，全量缓存又会占满显存与带宽。本文量化分析 64 层多头模型的缓存开销与带宽墙，对比 MQA 和 GQA 的收益权衡，并对照双端分页 KV 排布。'
 series: { id: foundations, order: 5 }
 pubDate: 2026-11-15
 tags: [DeepSeek, Attention, KV Cache, GQA, Roofline, vLLM, Ascend]
@@ -49,7 +49,7 @@ $$
 
 这行渐近关系直接决定了解码注意力的 Roofline 位置：在标准 MHA 下每组键值头只服务 1 个查询头（$g = 1$），代回 $T = 2048$ 的精确公式算得算术强度只有 0.999 FLOP/B。无论算力核多强，只要每次搬进 2 字节历史 KV 只做 2 次乘加就丢弃，硬件就几乎全部时间在等 HBM 搬运。
 
-## MQA 与 GQA 的头共享妥协
+## MQA 与 GQA 的头共享权衡
 
 既然标准 MHA 的瓶颈在于每个查询头都要从显存里拉取一份专属的 Key 和 Value，最直接的压缩办法就是减少键值头数 $n_{kv}$，让多个查询头共用同一组 KV。把 $n_q$ 个查询头均匀划分为 $n_{kv}$ 组，每组包含 $g = n_q / n_{kv}$ 个查询头。图 2 用等比例宽度的张量条对比了标准 MHA、**GQA（分组查询注意力）**与 **MQA（多查询注意力）**的头映射和缓存体积。
 
@@ -57,7 +57,7 @@ $$
 
 沿着图 2 向下压缩键值头数，硬件收益和模型质量呈现一条折中曲线。在 MHA（$g = 1$，$n_{kv} = n_q$）模式下，每个查询头独占一套 KV，容量与访存需求最大。
 
-2019 年 Shazeer 提出的 **MQA（Multi-Query Attention，多查询注意力）**[^mqa-paper]让层内所有查询头共享唯一一对 $(K_0, V_0)$。在 **TPUv2（Google Tensor Processing Unit v2）**上，它将贪心解码耗时从 46 us/token 压到 3.8 us/token。Beam-4 搜索耗时也同步从 203 us 降至 32 us。
+2019 年 Shazeer 提出的 **MQA（Multi-Query Attention，多查询注意力）**[^mqa-paper]让层内所有查询头共享唯一一对 $(K_0, V_0)$。在 **TPUv2（Google Tensor Processing Unit v2）**上，它将贪心解码耗时从 46 μs/token 压到 3.8 μs/token。Beam-4 搜索耗时也同步从 203 μs 降至 32 μs。
 
 对应到前面的 64 层模型，MQA 把单 token 缓存缩小 64 倍至 32.0 KiB/token。16 路并发 32K 上下文总显存从 1024.0 GiB 降为 16.0 GiB，而 $T=2048$ 时的解码算术强度跃升至 62.031 FLOP/B。
 
@@ -69,7 +69,7 @@ $$
 
 | 模型配置（来源）                        | 配置              | 代表指标对照                                                  |
 | :-------------------------------------- | :---------------- | :------------------------------------------------------------ |
-| 1B 语言模型（Shazeer 2019[^mqa-paper]） | MHA vs MQA        | 困惑度 29.9 vs 30.2（缩减头数降到 30.9–31.2）                 |
+| 1B 语言模型（Shazeer 2019[^mqa-paper]） | MHA vs MQA        | PPL（困惑度，越低越准）29.9 vs 30.2（缩减头数升至 30.9–31.2） |
 | T5-XXL 微调（Ainslie 2023[^gqa-paper]） | MHA / GQA-8 / MQA | 均分 47.2 / 47.1 / 46.6；解码 1.51 s / 0.28 s / 0.24 s        |
 | 7B Dense（DeepSeek-V2[^dsv2-paper]）    | MHA / GQA-8 / MQA | MMLU 45.2/41.2/37.9；BBH 37.0/35.6/33.2；CEval 42.9/37.7/30.0 |
 

@@ -1,481 +1,569 @@
-import { useMemo } from 'react';
-import { Stage, type Step, type Tone } from 'astro-wisp/explainers';
+import { useMemo, useState } from 'react';
+import { Stage, type Step } from 'astro-wisp/explainers';
 import { motion } from 'motion/react';
-import { BeatExplainer, SvgBeatGroup, defaultBeats, type BeatSpec } from '@/explainers/kit';
-import DataFlowArrow from '@/explainers/kit/DataFlowArrow';
-import HeatmapMatrix from '@/explainers/kit/HeatmapMatrix';
+import { InteractiveExplainer, LabSlider } from '@/explainers/kit';
 import { MetricRow, SectionBox } from '@/explainers/kit/MetricRow';
 import SvgRichLabel from '@/explainers/kit/SvgRichLabel';
 import TensorBlock from '@/explainers/kit/TensorBlock';
 import {
-  MANIM_EASE,
+  RADIUS,
   STAGE_W,
   assertMaxHues,
   resolveToneFill,
   resolveToneStroke,
+  useDiagramMotion,
 } from '@/explainers/kit/motion';
 
 export interface RopeRotationState {
-  stepIndex: number;
-  formulaTex: string;
-  beats: BeatSpec[];
+  delta: number;
+  dist: number;
   m: number;
   n: number;
-  qAngleDeg: number;
-  kAngleDeg: number;
-  relAngleDeg: number;
-  dotVal: string;
-  angleMatrix: (number | null)[][];
-  colLabels: string[];
-  highlightFreqs: boolean;
-  highlightPairing: boolean;
+  dotVal: number;
+  formulaTex: string;
 }
 
-const FREQ_LABELS = ['$i=0\\;(1.000)$', '$i=1\\;(0.100)$', '$i=2\\;(0.010)$', '$i=3\\;(0.001)$'];
-const THETAS = [1.0, 0.1, 0.01, 0.001];
+const THETAS = [1.0, 0.1, 0.01, 0.001] as const;
+const Q_B = [1.2, -0.4, 0.8, 0.3, -0.6, 1.1, 0.2, -0.5] as const;
+const K_B = [-0.5, 0.9, 0.4, -1.1, 0.7, 0.2, -0.8, 0.6] as const;
+
+const Q_BASE_DEG = 20;
+const K_BASE_DEG = 55;
+const RAD_TO_DEG = 180 / Math.PI;
+
+function compute8dRopeDot(dist: number): number {
+  let sum = 0;
+  for (let i = 0; i < 4; i++) {
+    const q0 = Q_B[i];
+    const q1 = Q_B[i + 4];
+    const k0 = K_B[i];
+    const k1 = K_B[i + 4];
+    const ang = dist * THETAS[i];
+    const c = Math.cos(ang);
+    const s = Math.sin(ang);
+    sum += (q0 * k0 + q1 * k1) * c + (q0 * k1 - q1 * k0) * s;
+  }
+  return sum;
+}
 
 function deg2xy(cx: number, cy: number, r: number, deg: number): [number, number] {
   const rad = (deg * Math.PI) / 180;
   return [cx + r * Math.cos(rad), cy - r * Math.sin(rad)];
 }
 
+function arrowHeadPoly(from: [number, number], to: [number, number], size = 7): string {
+  const dx = to[0] - from[0];
+  const dy = to[1] - from[1];
+  const len = Math.hypot(dx, dy) || 1;
+  const ux = dx / len;
+  const uy = dy / len;
+  const px = -uy;
+  const py = ux;
+  const bx = to[0] - ux * size;
+  const by = to[1] - uy * size;
+  const w = size * 0.46;
+  return `${to[0].toFixed(1)},${to[1].toFixed(1)} ${(bx + px * w).toFixed(1)},${(by + py * w).toFixed(1)} ${(bx - px * w).toFixed(1)},${(by - py * w).toFixed(1)}`;
+}
+
 export function buildRopeRotationSteps(): Step<RopeRotationState>[] {
-  const tones: Tone[] = ['active', 'highlight', 'done'];
-  assertMaxHues(tones);
-
-  const makeAngles = (positions: number[]): (number | null)[][] =>
-    THETAS.map((th) => positions.map((p) => Number(((p * th) % (2 * Math.PI)).toFixed(2))));
-
-  const radToDeg = (rad: number) => (rad * 180) / Math.PI;
-  const qBaseDeg = 20;
-  const kBaseDeg = 55;
-  const stepTheta0 = radToDeg(1.0); // 57.2958 deg/token
-
+  assertMaxHues(['active', 'highlight', 'done']);
   return [
     {
-      label: '基线夹角',
+      label: '基线 (0,0)',
       duration: 4600,
       state: {
-        stepIndex: 0,
-        formulaTex:
-          '$m=0,\\; n=0 \\;\\Longrightarrow\\; \\langle R_0 q, R_0 k \\rangle = \\langle q, k \\rangle$',
-        beats: defaultBeats([
-          '绘制基线查询向量 q',
-          '绘制基线键向量 k 与夹角弧',
-          '对照零旋转相位矩阵',
-          '确认无位置感原始内积',
-        ]),
+        delta: 0,
+        dist: 0,
         m: 0,
         n: 0,
-        qAngleDeg: qBaseDeg,
-        kAngleDeg: kBaseDeg,
-        relAngleDeg: kBaseDeg - qBaseDeg,
-        dotVal: '$\\cos(35^\\circ) = +0.819$',
-        angleMatrix: makeAngles([0, 1, 2, 5]),
-        colLabels: ['$m=0$', '$m=1$', '$m=2$', '$m=5$'],
-        highlightFreqs: false,
-        highlightPairing: false,
+        dotVal: compute8dRopeDot(0),
+        formulaTex:
+          '$m=0,\\; n=0,\\; d=0 \\;\\Longrightarrow\\; \\langle R_0 q, R_0 k \\rangle = -0.3500$',
       },
-      caption:
-        '未旋转前（$m=0, n=0$），第 0 对二维子空间 $(x_0, x_1)$ 中的向量 $q$ 与 $k$ 夹角仅由自身内容决定；若此时把语序打乱，注意力点积仍毫无变化。',
+      caption: '未旋转基线 ($m=0, n=0$)：两向量相对距离为 $0$，点积仅由内容决定。',
     },
     {
-      label: '旋转偏移',
+      label: '偏移 (2,5)',
       duration: 4600,
       state: {
-        stepIndex: 1,
-        formulaTex: '$R_m^\\top R_n = R_3 \\Rightarrow \\langle R_2 q, R_5 k \\rangle = 0.6687$',
-        beats: defaultBeats([
-          '旋转查询向量至 m=2',
-          '旋转键向量至 n=5 并标定相对弧',
-          '填入 m=2,n=5 多频角矩阵',
-          '汇总全 8 维点积 0.6687',
-        ]),
+        delta: 2,
+        dist: 3,
         m: 2,
         n: 5,
-        qAngleDeg: qBaseDeg + 2 * stepTheta0,
-        kAngleDeg: kBaseDeg + 5 * stepTheta0,
-        relAngleDeg: kBaseDeg - qBaseDeg + 3 * stepTheta0,
-        dotVal: '全 8 维点积 $= 0.668685$',
-        angleMatrix: makeAngles([2, 5, 7, 10]),
-        colLabels: ['$m=2$', '$n=5$', '$m=7$', '$n=10$'],
-        highlightFreqs: false,
-        highlightPairing: false,
+        dotVal: compute8dRopeDot(3),
+        formulaTex:
+          '$R_2^\\top R_5 = R_3 \\;\\Longrightarrow\\; \\langle R_2 q, R_5 k \\rangle = 0.668685$',
       },
-      caption:
-        '将位置 $m=2$ 旋转 $2\\theta_0$、位置 $n=5$ 旋转 $5\\theta_0$，由于正交矩阵满足 $R_m^\\top R_n = R_{n-m}$，两向量的相对夹角偏移精确等于 $(n - m)\\theta_0 = 3\\,\\text{rad}$，全 8 维点积为 $0.668685$。',
+      caption: '保持相对距离 $d=3$ 时，$(m=2, n=5)$ 算出全 8 维点积 $0.668685$。',
     },
     {
-      label: '平移不变',
+      label: '平移 (7,10)',
       duration: 4600,
       state: {
-        stepIndex: 2,
-        formulaTex: '$\\Delta = 10-7 = 3 \\Rightarrow \\langle R_7 q, R_{10} k \\rangle = 0.6687$',
-        beats: defaultBeats([
-          '将 q 同步后移 5 位至 m=7',
-          '将 k 同步旋转至 n=10 保持 3 rad 弧',
-          '对比矩阵 (7,10) 多频相位',
-          '验证点积 0.6687 保持不变',
-        ]),
+        delta: 7,
+        dist: 3,
         m: 7,
         n: 10,
-        qAngleDeg: qBaseDeg + 7 * stepTheta0,
-        kAngleDeg: kBaseDeg + 10 * stepTheta0,
-        relAngleDeg: kBaseDeg - qBaseDeg + 3 * stepTheta0,
-        dotVal: '点积 $= 0.668685$ (不变)',
-        angleMatrix: makeAngles([2, 5, 7, 10]),
-        colLabels: ['$m=2$', '$n=5$', '$m=7$', '$n=10$'],
-        highlightFreqs: false,
-        highlightPairing: false,
+        dotVal: compute8dRopeDot(3),
+        formulaTex:
+          '$R_7^\\top R_{10} = R_3 \\;\\Longrightarrow\\; \\langle R_7 q, R_{10} k \\rangle = 0.668685$',
       },
-      caption:
-        '将两个 token 一起向后平移 5 位到 $(m=7, n=10)$：两根向量在圆周上同步旋转了 $5\\theta_0$，但绿色相对弧角与全 8 维点积依然锁定为 $0.668685$。',
+      caption: '整体向后平移 5 位到 $(7, 10)$，绿色相对夹角与全 8 维点积保持 $0.668685$ 不变。',
     },
     {
-      label: '高频与低频',
+      label: '远距 (19,22)',
       duration: 4600,
       state: {
-        stepIndex: 3,
-        formulaTex: '$(19,22):\\; R_{19}^\\top R_{22} = R_3\\; (\\text{内积不变})$',
-        beats: defaultBeats([
-          '推进查询至 m=19',
-          '再添 +17 rad 确认 3 rad 弧角不变',
-          '追踪跨 +12 位绝对相位漂移',
-          '归纳相对位移唯一性',
-        ]),
+        delta: 19,
+        dist: 3,
         m: 19,
         n: 22,
-        qAngleDeg: qBaseDeg + 19 * stepTheta0,
-        kAngleDeg: kBaseDeg + 22 * stepTheta0,
-        relAngleDeg: kBaseDeg - qBaseDeg + 3 * stepTheta0,
-        dotVal: '同为 $0.668685$ (不变量)',
-        angleMatrix: makeAngles([2, 5, 19, 22]),
-        colLabels: ['$m=2$', '$n=5$', '$m=19$', '$n=22$'],
-        highlightFreqs: false,
-        highlightPairing: false,
+        dotVal: compute8dRopeDot(3),
+        formulaTex:
+          '$R_{19}^\\top R_{22} = R_3 \\;\\Longrightarrow\\; \\langle R_{19} q, R_{22} k \\rangle = 0.668685$',
       },
-      caption:
-        '再往后整体平移 12 个 token 到 $(m=19, n=22)$：$R_{19} q$ 与 $R_{22} k$ 各自在圆周上多转约 $2.71$ 圈（共 $+17\\,\\text{rad}$），相对夹角仍保持 $3\\theta_0$，绝对坐标在点积中化简为相对位移。',
-    },
-    {
-      label: '多频衰减',
-      duration: 4600,
-      state: {
-        stepIndex: 4,
-        formulaTex: '$\\theta_i = 10^{-i}:\\; i=0\\text{ 快转},\\; i=3\\text{ 慢转}$',
-        beats: defaultBeats([
-          '锚定第 0 子空间几何基准',
-          '展开跨 1..1000 token 相位矩阵',
-          '高亮高频快转与低频慢转角格',
-          '对齐多尺度衰减规律',
-        ]),
-        m: 19,
-        n: 22,
-        qAngleDeg: qBaseDeg + 19 * stepTheta0,
-        kAngleDeg: kBaseDeg + 22 * stepTheta0,
-        relAngleDeg: kBaseDeg - qBaseDeg + 3 * stepTheta0,
-        dotVal: '多频衰减跨度 1..1000',
-        angleMatrix: makeAngles([1, 10, 100, 1000]),
-        colLabels: ['$m=1$', '$m=10$', '$m=100$', '$m=1000$'],
-        highlightFreqs: true,
-        highlightPairing: false,
-      },
-      caption:
-        '右上方热力图展示频率衰减：最高频 $i=0$（$1.0\\;\\text{rad/tok}$）每步快转紧盯邻词，最低频 $i=3$（$0.001\\;\\text{rad/tok}$）跨越千词仅旋转 $1.00\\;\\text{rad}$，支撑长程衰减。',
-    },
-    {
-      label: '通道配对',
-      duration: 4600,
-      state: {
-        stepIndex: 5,
-        formulaTex: '$\\text{NeoX}(i, i+d/2) \\equiv \\text{GPT-J}(2i, 2i+1)$',
-        beats: defaultBeats([
-          '固定左侧二维旋转几何模型',
-          '比对 NeoX 对半切片配对格式',
-          '点亮 DeepSeek 相邻复数配对',
-          '确认加载重排零数值误差',
-        ]),
-        m: 19,
-        n: 22,
-        qAngleDeg: qBaseDeg + 19 * stepTheta0,
-        kAngleDeg: kBaseDeg + 22 * stepTheta0,
-        relAngleDeg: kBaseDeg - qBaseDeg + 3 * stepTheta0,
-        dotVal: 'NeoX vs GPT-J 差 $= 0.00$',
-        angleMatrix: makeAngles([1, 10, 100, 1000]),
-        colLabels: ['$m=1$', '$m=10$', '$m=100$', '$m=1000$'],
-        highlightFreqs: false,
-        highlightPairing: true,
-      },
-      caption:
-        '工程上 rotate_neox 将前半与后半通道配对 $(i, i+d/2)$，DeepSeek 复数 rotate_gptj 则配对相邻通道 $(2i, 2i+1)$；权重加载时重排切片索引即可让两者数值完全等价。',
+      caption: '平移至 $(19, 22)$ 时高频转过近三圈而低频缓转，相对内积依然严格相等。',
     },
   ];
 }
-
-const FREQ_FOCUS_CELLS = new Set(['0,0', '0,1', '3,2', '3,3']);
 
 export default function RopeRotationExplainer({
   title = '图 2：RoPE 二维旋转相对不变性、频谱速度衰减与通道配对模式',
 }: {
   title?: string;
 }) {
-  const steps = useMemo(() => buildRopeRotationSteps(), []);
+  assertMaxHues(['active', 'highlight', 'done']);
+  const { stepTransition } = useDiagramMotion();
+  const [delta, setDelta] = useState(2);
+  const [dist, setDist] = useState(3);
+
+  const m = delta;
+  const n = delta + dist;
+  const dotVal = useMemo(() => compute8dRopeDot(dist), [dist]);
+
+  const cx = 144;
+  const cy = 140;
+  const r = 72;
+  const arcR = 34;
+
+  // 基准向量坐标（在 m=0, n=0 处），外层 motion.g 绕 (cx, cy) 做平滑旋转
+  const qBaseTip = deg2xy(cx, cy, r, Q_BASE_DEG);
+  const kBaseTip = deg2xy(cx, cy, r, K_BASE_DEG);
+  const mDeg = m * THETAS[0] * RAD_TO_DEG;
+  const nDeg = n * THETAS[0] * RAD_TO_DEG;
+
+  // 绿色相对角扇形弧：在自身局部坐标系下从 Q_BASE_DEG 扫向 K_BASE_DEG + d * RAD_TO_DEG，
+  // 外层随 mDeg 同步旋转，拖动 Δ 时扇形与双向量锁定一起平滑公转
+  const rawSweepDeg = K_BASE_DEG - Q_BASE_DEG + dist * THETAS[0] * RAD_TO_DEG;
+  const effSweepDeg = ((rawSweepDeg % 360) + 360) % 360;
+  const [arcStartX, arcStartY] = deg2xy(cx, cy, arcR, Q_BASE_DEG);
+  const [arcEndX, arcEndY] = deg2xy(cx, cy, arcR, Q_BASE_DEG + effSweepDeg);
+  const arcPathD = `M ${arcStartX.toFixed(1)} ${arcStartY.toFixed(1)} A ${arcR} ${arcR} 0 ${effSweepDeg > 180 ? 1 : 0} 0 ${arcEndX.toFixed(1)} ${arcEndY.toFixed(1)}`;
+  const sectorPathD = `M ${cx} ${cy} L ${arcStartX.toFixed(1)} ${arcStartY.toFixed(1)} A ${arcR} ${arcR} 0 ${effSweepDeg > 180 ? 1 : 0} 0 ${arcEndX.toFixed(1)} ${arcEndY.toFixed(1)} Z`;
+
+  // 直立标签坐标随各自总角平滑绕圆轨道跟随（防止文字随向量倒转）
+  const [qLblX, qLblY] = deg2xy(cx, cy, r + 15, Q_BASE_DEG + mDeg);
+  const [kLblX, kLblY] = deg2xy(cx, cy, r + 15, K_BASE_DEG + nDeg);
+
+  const qStroke = resolveToneStroke('active');
+  const kStroke = resolveToneStroke('highlight');
+  const relStroke = resolveToneStroke('done');
+
+  const formulaTex = `$m=${m},\\; n=${n},\\; d=n-m=${dist} \\;\\Longrightarrow\\; \\langle R_{${m}}q,\\, R_{${n}}k \\rangle = ${dotVal.toFixed(6)}$`;
+  const caption = `当前绝对位置 $m=${m},\\; n=${n}$（整体平移 $\\Delta=${delta}$），相对距离 $d=${dist}$。拖动整体平移 $\\Delta$ 时，$R_m q$、$R_n k$ 与绿色相对扇形弧在圆周上同步旋转，夹角与全 8 维点积（$${dotVal.toFixed(6)}$）严格不变；右侧四枚频段表盘直观对比 $\\theta_i = 1.0 \\to 0.001\\;\\text{rad/tok}$ 的多尺度衰减。`;
 
   return (
-    <BeatExplainer
-      steps={steps}
+    <InteractiveExplainer
       title={title}
       label="RoPE 二维旋转几何与多频衰减交互"
-      stageMinHeight={460}
-      getBeats={(step) => step.state.beats}
-      getFormula={(step) => step.state.formulaTex}
+      stageMinHeight={420}
+      formula={formulaTex}
+      caption={caption}
+      onReset={() => {
+        setDelta(2);
+        setDist(3);
+      }}
+      controls={
+        <>
+          <LabSlider
+            label="整体平移 Δ"
+            min={0}
+            max={20}
+            step={1}
+            value={delta}
+            valueText={`Δ=${delta} (m=${m})`}
+            onChange={setDelta}
+          />
+          <LabSlider
+            label="相对距离 d"
+            min={0}
+            max={8}
+            step={1}
+            value={dist}
+            valueText={`d=${dist} (n=${n})`}
+            onChange={setDist}
+          />
+        </>
+      }
     >
-      {(step, { beat }) => {
-        const s = step.state;
-        const cx = 144;
-        const cy = 140;
-        const r = 72;
-        const [qx, qy] = deg2xy(cx, cy, r, s.qAngleDeg);
-        const [kx, ky] = deg2xy(cx, cy, r, s.kAngleDeg);
-        const arcR = 32;
-        const [aqx, aqy] = deg2xy(cx, cy, arcR, s.qAngleDeg);
-        const [akx, aky] = deg2xy(cx, cy, arcR, s.kAngleDeg);
+      <Stage width={STAGE_W} height={352} label="RoPE 2D 旋转平面与多频表盘">
+        <SectionBox
+          x={16}
+          y={14}
+          w={268}
+          h={256}
+          title={`第 0 对子空间 ($m=${m},\\;n=${n},\\;d=${dist}$)`}
+          tone="active"
+        />
 
-        const qStroke = resolveToneStroke('active');
-        const kStroke = resolveToneStroke('highlight');
-        const relStroke = resolveToneStroke('done');
+        <circle
+          cx={cx}
+          cy={cy}
+          r={r}
+          fill={resolveToneFill('neutral')}
+          fillOpacity={0.25}
+          stroke="var(--wisp-border)"
+          strokeWidth={1.25}
+          strokeDasharray="4 3"
+        />
+        <line
+          x1={cx - r - 12}
+          y1={cy}
+          x2={cx + r + 12}
+          y2={cy}
+          stroke="var(--wisp-border)"
+          strokeWidth={1}
+        />
+        <line
+          x1={cx}
+          y1={cy - r - 12}
+          x2={cx}
+          y2={cy + r + 12}
+          stroke="var(--wisp-border)"
+          strokeWidth={1}
+        />
+        <SvgRichLabel
+          x={cx + r + 14}
+          y={cy}
+          width={26}
+          height={18}
+          text="$x_0$"
+          fontSize={10.5}
+          color="var(--wisp-muted)"
+          anchor="start"
+        />
+        <SvgRichLabel
+          x={cx + 6}
+          y={cy - r - 10}
+          width={26}
+          height={18}
+          text="$x_1$"
+          fontSize={10.5}
+          color="var(--wisp-muted)"
+          anchor="start"
+        />
+        <circle cx={cx} cy={cy} r={2.5} fill="var(--wisp-muted)" />
 
-        const qLblX = Math.max(24, Math.min(230, qx + (qx >= cx ? 8 : -8)));
-        const qAnchor = qx >= cx ? 'start' : 'end';
-        const kLblX = Math.max(24, Math.min(230, kx + (kx >= cx ? 8 : -8)));
-        const kAnchor = kx >= cx ? 'start' : 'end';
-        const arcText =
-          s.stepIndex === 0
-            ? '基线内容夹角 $35^\\circ$'
-            : `相对偏移 $(n-m)=${s.n - s.m}\\;\\text{rad}$`;
-
-        return (
-          <Stage width={STAGE_W} height={352} label="RoPE 2D 旋转平面与多频相位矩阵">
-            {/* Left: Clean geometric 2D rotation plane */}
-            <SectionBox
-              x={16}
-              y={14}
-              w={268}
-              h={256}
-              title={`第 0 对子空间 ($m=${s.m},\\;n=${s.n},\\;n-m=${s.n - s.m}$)`}
-              tone="active"
-            />
+        {/* 绿色相对角扇形弧：绕圆心随 mDeg 与双向量同步旋转 */}
+        <motion.g
+          initial={false}
+          animate={{ rotate: -mDeg }}
+          transition={stepTransition}
+          style={{ transformOrigin: `${cx}px ${cy}px` }}
+        >
+          {rawSweepDeg >= 360 && (
             <circle
               cx={cx}
               cy={cy}
-              r={r}
-              fill={resolveToneFill('neutral')}
-              fillOpacity={0.25}
-              stroke="var(--wisp-border)"
-              strokeWidth={1.25}
-              strokeDasharray="4 3"
-            />
-            <line
-              x1={cx - r - 12}
-              y1={cy}
-              x2={cx + r + 12}
-              y2={cy}
-              stroke="var(--wisp-border)"
-              strokeWidth={1}
-            />
-            <line
-              x1={cx}
-              y1={cy - r - 12}
-              x2={cx}
-              y2={cy + r + 12}
-              stroke="var(--wisp-border)"
-              strokeWidth={1}
-            />
-            <SvgRichLabel
-              x={cx + r + 14}
-              y={cy}
-              width={26}
-              height={18}
-              text="$x_0$"
-              fontSize={10.5}
-              color="var(--wisp-muted)"
-              anchor="start"
-            />
-            <SvgRichLabel
-              x={cx + 6}
-              y={cy - r - 10}
-              width={26}
-              height={18}
-              text="$x_1$"
-              fontSize={10.5}
-              color="var(--wisp-muted)"
-              anchor="start"
-            />
-            <circle cx={cx} cy={cy} r={2.5} fill="var(--wisp-muted)" />
-
-            {/* Relative angle arc with Manim draw */}
-            <motion.path
-              d={`M ${aqx.toFixed(1)} ${aqy.toFixed(1)} A ${arcR} ${arcR} 0 ${s.relAngleDeg % 360 > 180 ? 1 : 0} 0 ${akx.toFixed(1)} ${aky.toFixed(1)}`}
+              r={arcR}
               fill="none"
               stroke={relStroke}
-              strokeWidth={2}
-              initial={false}
-              animate={{ pathLength: beat >= 1 ? 1 : 0, opacity: beat >= 1 ? 1 : 0 }}
-              transition={{ duration: 0.42, ease: MANIM_EASE }}
+              strokeWidth={1.25}
+              strokeDasharray="3 3"
+              strokeOpacity={0.5}
             />
-            <SvgBeatGroup visible={beat >= 1}>
+          )}
+          <path d={sectorPathD} fill={resolveToneFill('done')} fillOpacity={0.35} />
+          <path
+            d={arcPathD}
+            fill="none"
+            stroke={relStroke}
+            strokeWidth={2.2}
+            strokeLinecap="round"
+          />
+        </motion.g>
+
+        {/* 查询向量 R_m q：绕圆心平滑旋转 */}
+        <motion.g
+          initial={false}
+          animate={{ rotate: -mDeg }}
+          transition={stepTransition}
+          style={{ transformOrigin: `${cx}px ${cy}px` }}
+        >
+          <line
+            x1={cx}
+            y1={cy}
+            x2={qBaseTip[0]}
+            y2={qBaseTip[1]}
+            stroke={qStroke}
+            strokeWidth={2.4}
+            strokeLinecap="round"
+          />
+          <polygon points={arrowHeadPoly([cx, cy], qBaseTip)} fill={qStroke} />
+        </motion.g>
+
+        {/* 键向量 R_n k：绕圆心平滑旋转 */}
+        <motion.g
+          initial={false}
+          animate={{ rotate: -nDeg }}
+          transition={stepTransition}
+          style={{ transformOrigin: `${cx}px ${cy}px` }}
+        >
+          <line
+            x1={cx}
+            y1={cy}
+            x2={kBaseTip[0]}
+            y2={kBaseTip[1]}
+            stroke={kStroke}
+            strokeWidth={2.4}
+            strokeLinecap="round"
+          />
+          <polygon points={arrowHeadPoly([cx, cy], kBaseTip)} fill={kStroke} />
+        </motion.g>
+
+        {/* 直立随动向量标签 */}
+        <motion.g initial={false} animate={{ x: qLblX, y: qLblY }} transition={stepTransition}>
+          <SvgRichLabel
+            x={0}
+            y={0}
+            width={44}
+            height={18}
+            text={`$R_{${m}}q$`}
+            fontSize={10.5}
+            fontWeight={700}
+            color={qStroke}
+          />
+        </motion.g>
+        <motion.g initial={false} animate={{ x: kLblX, y: kLblY }} transition={stepTransition}>
+          <SvgRichLabel
+            x={0}
+            y={0}
+            width={44}
+            height={18}
+            text={`$R_{${n}}k$`}
+            fontSize={10.5}
+            fontWeight={700}
+            color={kStroke}
+          />
+        </motion.g>
+
+        <SvgRichLabel
+          x={cx}
+          y={248}
+          width={236}
+          height={20}
+          text={`相对偏移 $(n-m)\\theta_0=${dist}\\;\\text{rad}$${rawSweepDeg >= 360 ? '（含 $+1$ 圈）' : ''}`}
+          fontSize={10.5}
+          fontWeight={600}
+          color={relStroke}
+        />
+
+        {/* 右上：4 个频段旋转迷你表盘 */}
+        <SectionBox
+          x={300}
+          y={14}
+          w={364}
+          h={154}
+          title={'4 频段旋转速度表盘 ($\\theta_i = 10^{-i}\\;\\text{rad/tok}$)'}
+          tone="active"
+        />
+
+        {THETAS.map((theta, idx) => {
+          const dcx = 346 + idx * 90;
+          const dcy = 92;
+          const dr = 28;
+          const qDialDeg = m * theta * RAD_TO_DEG;
+          const kDialDeg = n * theta * RAD_TO_DEG;
+          const qDialTip = deg2xy(dcx, dcy, dr - 3, Q_BASE_DEG);
+          const kDialTip = deg2xy(dcx, dcy, dr - 3, K_BASE_DEG);
+          return (
+            <g key={theta}>
+              <rect
+                x={dcx - 40}
+                y={40}
+                width={80}
+                height={118}
+                rx={RADIUS}
+                fill="var(--wisp-bg)"
+                stroke="var(--wisp-border)"
+                strokeWidth={1}
+              />
               <SvgRichLabel
-                x={cx}
-                y={248}
-                width={200}
-                height={20}
-                text={arcText}
-                fontSize={10.5}
+                x={dcx}
+                y={52}
+                width={76}
+                height={16}
+                text={`$\\theta_{${idx}}=${theta}$`}
+                fontSize={10}
                 fontWeight={600}
-                color={relStroke}
+                color="var(--wisp-fg)"
+                family="mono"
               />
-            </SvgBeatGroup>
-
-            {/* Vector R_m q */}
-            <DataFlowArrow
-              points={[
-                [cx, cy],
-                [qx, qy],
-              ]}
-              tone="active"
-              active
-              arrowEnd
-              strokeWidth={2.4}
-              draw={beat >= 0}
-            />
-            <SvgRichLabel
-              x={qLblX}
-              y={qy + (qy <= cy ? -8 : 10)}
-              width={46}
-              height={20}
-              text={`$R_{${s.m}} q$`}
-              fontSize={11}
-              fontWeight={700}
-              color={qStroke}
-              anchor={qAnchor}
-            />
-
-            {/* Vector R_n k */}
-            <DataFlowArrow
-              points={[
-                [cx, cy],
-                [kx, ky],
-              ]}
-              tone="highlight"
-              active
-              arrowEnd
-              strokeWidth={2.4}
-              visible={beat >= 1}
-              draw={beat >= 1}
-            />
-            <SvgBeatGroup visible={beat >= 1}>
-              <SvgRichLabel
-                x={kLblX}
-                y={ky + (ky <= cy ? -8 : 10)}
-                width={46}
-                height={20}
-                text={`$R_{${s.n}} k$`}
-                fontSize={11}
-                fontWeight={700}
-                color={kStroke}
-                anchor={kAnchor}
+              <circle
+                cx={dcx}
+                cy={dcy}
+                r={dr}
+                fill="var(--wisp-surface)"
+                fillOpacity={0.5}
+                stroke="var(--wisp-border)"
+                strokeWidth={1}
+                strokeDasharray="3 2"
               />
-            </SvgBeatGroup>
-
-            {/* Right top: Frequency pair phase decay matrix */}
-            <HeatmapMatrix
-              x={304}
-              y={14}
-              title={'各频段累积旋转角 ($\\text{rad},\\; \\bmod 2\\pi$)'}
-              tone="active"
-              values={s.angleMatrix}
-              rowLabels={FREQ_LABELS}
-              colLabels={s.colLabels}
-              selected={s.highlightFreqs ? FREQ_FOCUS_CELLS : undefined}
-              selectedTone="highlight"
-              showSelected={beat >= 2}
-              dimmed={beat < 2 && !s.highlightFreqs}
-              rowLabelW={86}
-              cellW={64}
-              cellH={26}
-              gap={4}
-              min={0}
-              max={6.28}
-              format={(v) => (v === null ? '--' : `${v.toFixed(2)}`)}
-              showLegend={false}
-              fontSize={10.5}
-            />
-
-            {/* Right bottom: NeoX vs GPT-J channel pairing */}
-            <SvgBeatGroup dimmed={beat < 2 && s.highlightPairing}>
-              <TensorBlock
-                x={304}
-                y={198}
-                w={172}
-                h={40}
-                tone="active"
-                name="NeoX 配对 (vLLM 默认)"
-                shape={'前半 $i \\leftrightarrow$ 后半 $i+d/2$'}
-                active={s.highlightPairing}
-                splits={[{ ratio: 0.5, leftLabel: '[0..d/2)', rightLabel: '[d/2..d)' }]}
+              <line
+                x1={dcx - dr}
+                y1={dcy}
+                x2={dcx + dr}
+                y2={dcy}
+                stroke="var(--wisp-border)"
+                strokeWidth={0.8}
               />
-              <TensorBlock
-                x={492}
-                y={198}
-                w={172}
-                h={40}
-                tone="highlight"
-                name="GPT-J / DeepSeek 复数"
-                shape="相邻 $(2i, 2i+1)$ · V4 尾切片"
-                active={s.highlightPairing}
-                splits={[{ ratio: 0.25 }, { ratio: 0.5 }, { ratio: 0.75 }]}
+              <line
+                x1={dcx}
+                y1={dcy - dr}
+                x2={dcx}
+                y2={dcy + dr}
+                stroke="var(--wisp-border)"
+                strokeWidth={0.8}
               />
-              {(['0,1', '2,3', '4,5', '6,7'] as const).map((lbl, idx) => (
-                <text
-                  key={lbl}
-                  x={492 + (idx + 0.5) * 43}
-                  y={218}
-                  textAnchor="middle"
-                  dominantBaseline="central"
-                  style={{
-                    fill: 'var(--wisp-fg)',
-                    fontFamily: 'var(--wisp-font-mono)',
-                    fontSize: 10.5,
-                    fontVariantNumeric: 'tabular-nums',
-                  }}
-                >
-                  {lbl}
-                </text>
-              ))}
-            </SvgBeatGroup>
 
-            {/* Bottom metrics */}
-            <MetricRow
-              x={16}
-              y={286}
-              w={648}
-              h={42}
-              revealed={beat >= 3}
-              metrics={[
-                { label: '查询位置 $m$', value: `$m = ${s.m}$`, tone: 'active' },
-                { label: '键位置 $n$', value: `$n = ${s.n}$`, tone: 'highlight' },
-                {
-                  label: '相对距离 $n - m$',
-                  value: `${s.n - s.m} tokens`,
-                  tone: 'done',
-                  active: true,
-                },
-                { label: '内积不变量', value: s.dotVal, tone: 'done' },
-              ]}
-            />
-          </Stage>
-        );
-      }}
-    </BeatExplainer>
+              <motion.g
+                initial={false}
+                animate={{ rotate: -qDialDeg }}
+                transition={stepTransition}
+                style={{ transformOrigin: `${dcx}px ${dcy}px` }}
+              >
+                <line
+                  x1={dcx}
+                  y1={dcy}
+                  x2={qDialTip[0]}
+                  y2={qDialTip[1]}
+                  stroke={qStroke}
+                  strokeWidth={2}
+                  strokeLinecap="round"
+                />
+              </motion.g>
+              <motion.g
+                initial={false}
+                animate={{ rotate: -kDialDeg }}
+                transition={stepTransition}
+                style={{ transformOrigin: `${dcx}px ${dcy}px` }}
+              >
+                <line
+                  x1={dcx}
+                  y1={dcy}
+                  x2={kDialTip[0]}
+                  y2={kDialTip[1]}
+                  stroke={kStroke}
+                  strokeWidth={2}
+                  strokeLinecap="round"
+                />
+              </motion.g>
+              <circle cx={dcx} cy={dcy} r={2.2} fill="var(--wisp-fg)" />
+
+              <text
+                x={dcx}
+                y={134}
+                textAnchor="middle"
+                dominantBaseline="central"
+                style={{
+                  fill: qStroke,
+                  fontFamily: 'var(--wisp-font-mono)',
+                  fontSize: 10,
+                  fontVariantNumeric: 'tabular-nums',
+                }}
+              >
+                {`m:${(m * theta).toFixed(theta < 0.01 ? 3 : 2)}`}
+              </text>
+              <text
+                x={dcx}
+                y={147}
+                textAnchor="middle"
+                dominantBaseline="central"
+                style={{
+                  fill: 'var(--wisp-muted)',
+                  fontFamily: 'var(--wisp-font-mono)',
+                  fontSize: 10,
+                  fontVariantNumeric: 'tabular-nums',
+                }}
+              >
+                {`Δ:${(dist * theta).toFixed(theta < 0.01 ? 3 : 2)}r`}
+              </text>
+            </g>
+          );
+        })}
+
+        {/* 右下：NeoX vs GPT-J 通道配对等价布局 */}
+        <TensorBlock
+          x={300}
+          y={196}
+          w={174}
+          h={42}
+          tone="active"
+          name="NeoX 配对 (vLLM 默认)"
+          shape={'前半 $i \\leftrightarrow$ 后半 $i+d/2$'}
+          splits={[{ ratio: 0.5, leftLabel: '[0..d/2)', rightLabel: '[d/2..d)' }]}
+        />
+        <TensorBlock
+          x={490}
+          y={196}
+          w={174}
+          h={42}
+          tone="highlight"
+          name="GPT-J / DeepSeek 复数"
+          shape="相邻 $(2i, 2i+1)$ · V4 尾切片"
+          splits={[{ ratio: 0.25 }, { ratio: 0.5 }, { ratio: 0.75 }]}
+        />
+        {(['0,1', '2,3', '4,5', '6,7'] as const).map((lbl, idx) => (
+          <text
+            key={lbl}
+            x={490 + (idx + 0.5) * 43.5}
+            y={217}
+            textAnchor="middle"
+            dominantBaseline="central"
+            style={{
+              fill: 'var(--wisp-fg)',
+              fontFamily: 'var(--wisp-font-mono)',
+              fontSize: 10.5,
+              fontVariantNumeric: 'tabular-nums',
+            }}
+          >
+            {lbl}
+          </text>
+        ))}
+
+        <MetricRow
+          x={16}
+          y={286}
+          w={648}
+          h={44}
+          metrics={[
+            { label: '查询位置 $m$', value: `$m = ${m}$`, tone: 'active' },
+            { label: '键位置 $n$', value: `$n = ${n}$`, tone: 'highlight' },
+            {
+              label: '相对距离 $d = n-m$',
+              value: `$${dist}\\;\\text{tokens}$`,
+              tone: 'done',
+              active: true,
+            },
+            {
+              label: '全 8 维点积 (不变量)',
+              value: `$${dotVal.toFixed(6)}$`,
+              tone: 'done',
+              active: true,
+            },
+          ]}
+        />
+      </Stage>
+    </InteractiveExplainer>
   );
 }

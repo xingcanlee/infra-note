@@ -1,6 +1,6 @@
 ---
 title: '01 Transformer 负载与 Roofline 瓶颈'
-description: '单层前向里的算子性质迥异，为何 Prefill 很快打满算力而 Decode 却卡在显存带宽？本文归类三类计算负载并引入 Roofline 模型，对照 NVIDIA H800 与昇腾剖面推导拐点迁移与算子融合收益。'
+description: '单层前向里的算子性质迥异，为何 Prefill 很快打满算力而 Decode 却卡在显存带宽？本文归类三类计算负载并引入 Roofline 模型，对照 NVIDIA H800 与昇腾硬件规格推导拐点迁移与算子融合收益。'
 series: { id: foundations, order: 2 }
 pubDate: 2026-11-15
 tags: [Roofline, Transformer, Kernel Fusion, NVIDIA, Ascend]
@@ -48,7 +48,7 @@ $$
 
 ## Roofline 模型与阶段瓶颈分化
 
-要将算子开销映射到芯片实际运行速度，需要借助 **Roofline 模型**[^roofline-paper]。设芯片的理论矩阵峰值算力为 $P_{\text{peak}}$，高带宽显存的持续读写带宽为 $BW_{\text{HBM}}$，任意计算的 **Arithmetic Intensity（算术强度）**定义为总浮点运算数与片外总访存字节数之比。由此可写出实测算力上限与 **Ridge Point（算力拐点）** $I^*$：
+要将算子开销映射到芯片实际运行速度，需要借助 **Roofline 模型**[^roofline-paper]。设芯片的理论矩阵峰值算力为 $P_{\text{peak}}$，高带宽显存的持续读写带宽为 $BW_{\text{HBM}}$，任意计算的 **Arithmetic Intensity（算术强度）**定义为总浮点运算数与片外总访存字节数之比。由此可写出可达算力上限与 **Ridge Point（算力拐点）** $I^*$：
 
 $$
 \begin{aligned}
@@ -72,20 +72,20 @@ $$
 
 ![单卡 Roofline 模型几何结构：带宽斜坡 Memory-bound、算力拐点 I*、算力平台 Compute-bound 与两类负载迁移](./diagrams/01-roofline-concept.drawio '图 3：单卡 Roofline 模型几何结构——带宽斜坡、算力拐点 I*、算力平台与负载迁移')
 
-我们选取两个双平台基准来校准曲线。NVIDIA H800 SXM5 标称 990 **TFLOPS（每秒万亿次浮点运算）**与 3.35 TB/s 带宽，拐点 $I^* \approx 295.5\text{ FLOP/B}$[^flashmla-doc]。昇腾示例剖面取 320 TFLOPS 与 1.60 TB/s，拐点为 $I^* = 200\text{ FLOP/B}$。图 4 在对数坐标系上绘制了生产维度 $D = 4096,\,D_{\text{ff}} = 11008$ 的 SwiGLU FFN（BF16 权重 258 MiB）在不同并发下的迁移轨迹。
+我们选取两个双平台基准来校准曲线。NVIDIA H800 SXM5 标称 990 **TFLOPS（每秒万亿次浮点运算）**与 3.35 TB/s 带宽，拐点 $I^* \approx 295.5\text{ FLOP/B}$[^flashmla-doc]。昇腾硬件基准配置取 320 TFLOPS 与 1.60 TB/s，拐点为 $I^* = 200\text{ FLOP/B}$。图 4 在对数坐标系上绘制了生产维度 $D = 4096,\,D_{\text{ff}} = 11008$ 的 SwiGLU FFN（BF16 权重 258 MiB）在不同并发下的迁移轨迹。
 
 <RooflineExplainer
   client:visible
   title="图 4：双硬件对数 Roofline 拐点、Decode/Prefill 状态迁移与 Cube/Vector 重叠"
 />
 
-图 4 的五个步进状态展示了并发规模如何推动瓶颈转移。单请求 Decode（$M = 1$）每吐出 1 个 token 都得把 258 MiB 权重从 HBM 搬进核心算一次就丢掉，算术强度仅 $I = 1.00\text{ FLOP/B}$。此时 H800 与昇腾剖面分别被带宽锁死在 3.35 TFLOPS（占峰值 0.3%）与 1.60 TFLOPS（占峰值 0.5%）。
+图 4 的五个步进状态展示了并发规模如何推动瓶颈转移。单请求 Decode（$M = 1$）每吐出 1 个 token 都得把 258 MiB 权重从 HBM 搬进核心算一次就丢掉，算术强度仅 $I = 1.00\text{ FLOP/B}$。此时 H800 与昇腾基准配置分别被带宽锁死在 3.35 TFLOPS（占峰值 0.3%）与 1.60 TFLOPS（占峰值 0.5%）。
 
-随着连续批处理扩大到 $M = 64$，同一份权重被 64 个 token 摊分复用，算术强度升至 62.86 FLOP/B，双平台吞吐沿带宽斜坡攀升到 210.6 与 100.6 TFLOPS。到 $M = 256$ 时，算术强度达到 238.66 FLOP/B，刚好落在双平台拐点之间。昇腾剖面跨过 $I^* = 200$ 率先封顶 320 TFLOPS，而 H800 仍在带宽斜坡上跑到 799.5 TFLOPS。
+随着连续批处理扩大到 $M = 64$，同一份权重被 64 个 token 摊分复用，算术强度升至 62.86 FLOP/B，双平台吞吐沿带宽斜坡攀升到 210.6 与 100.6 TFLOPS。到 $M = 256$ 时，算术强度达到 238.66 FLOP/B，刚好落在双平台拐点之间。昇腾基准配置跨过 $I^* = 200$ 率先封顶 320 TFLOPS，而 H800 仍在带宽斜坡上跑到 799.5 TFLOPS。
 
-进入长提示词 Prefill（$M = 4096$）后，算术强度跃至 1893.85 FLOP/B，双方全部进入水平算力平台期。此时若昇腾 AI Core 启用异步 Cube/Vector 双流水重叠，还能把 Vector 门控归约掩盖在下一块 Cube 矩阵乘背后。整个重叠区因此压缩到 18 拍，相对串行执行获得 1.50 倍提速[^ascend-prefill]。
+进入长提示词 Prefill（$M = 4096$）后，算术强度跃至 1893.85 FLOP/B，双方全部进入水平算力平台期。此时若昇腾 AI Core 启用异步 Cube/Vector 双流水重叠，还能把 Vector 门控归约掩盖在下一块 Cube 矩阵乘背后。整个重叠区因此压缩到 18 个流水步，相对串行执行获得 1.50 倍提速[^ascend-prefill]。
 
-上式假设硬件总线一直保持满载大块传输。实际服务端若由 Python 主线程逐个提交小算子，CPU 发射间隙会在设备端留下微秒级空泡。因此生产引擎在解码路径上广泛依赖静态图：GPU 侧用 `CUDA Graph`，昇腾侧用 `ACL Graph`（Ascend Computing Language，昇腾设备端执行图）。一次录制后整图下发即可消减发射空泡，详情见[《推理执行图：CUDA Graph 与 ACL Graph》](../../execgraph/)。
+上式假设硬件总线一直保持满载大块传输。实际服务端若由 Python 主线程逐个提交小算子，CPU 发射间隙会在设备端留下微秒级流水线气泡。因此生产引擎在解码路径上广泛依赖静态图：GPU 侧用 `CUDA Graph`，昇腾侧用 `ACL Graph`（Ascend Computing Language，昇腾设备端执行图）。一次录制后整图下发即可消减发射流水线气泡，详情见[《推理执行图：CUDA Graph 与 ACL Graph》](../../execgraph/)。
 
 ## 生产尺度 NumPy 定量校验
 

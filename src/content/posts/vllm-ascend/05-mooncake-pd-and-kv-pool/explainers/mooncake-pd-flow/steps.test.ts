@@ -7,55 +7,41 @@ import { describe, expect, it, vi } from 'vitest';
 vi.mock('virtual:wisp/locale', () => ({ lang: 'zh-CN' }));
 
 import MooncakePdFlowExplainer, { buildMooncakePdFlowSteps } from './index';
-import { BEAT_SCHEDULES } from './steps';
+import { PD_MODES } from './steps';
 
 describe('MooncakePdFlowExplainer', () => {
-  it('defines 6 valid steps with balanced math, >= 3600ms duration, and clean copy', () => {
+  it('defines 4 PD transfer modes with balanced math and clean copy', () => {
+    expect(PD_MODES.map((m) => m.id)).toEqual(['pull', 'push', 'd2rh', 'host-hit']);
+
     const steps = buildMooncakePdFlowSteps();
-    expect(steps).toHaveLength(6);
-    expect(steps.map((s) => s.state.phase)).toEqual([
-      'pull-compute',
-      'pull-drain',
-      'push-prealloc',
-      'push-overlap',
-      'd2rh-stage',
-      'd2rh-hit',
-    ]);
+    expect(steps).toHaveLength(4);
 
-    for (const step of steps) {
-      expect(step.label?.trim().length).toBeGreaterThan(0);
-      expect(step.duration).toBeGreaterThanOrEqual(3600);
-      expect(step.caption).not.toMatch(/`|\*\*|[「」『』!！]/);
-      const unescaped = step.caption.replace(/\\\$/g, '');
+    for (const mode of PD_MODES) {
+      expect(mode.tabLabel.trim().length).toBeGreaterThan(0);
+      expect(mode.caption).not.toMatch(/`|\*\*|[「」『』!！]/);
+      const unescaped = mode.caption.replace(/\\\$/g, '');
       expect((unescaped.match(/\$/g) ?? []).length % 2).toBe(0);
-
-      const schedule = BEAT_SCHEDULES[step.state.phase];
-      expect(schedule.length).toBeGreaterThanOrEqual(4);
-      expect(schedule[0].at).toBe(0);
-      for (let i = 1; i < schedule.length; i++) {
-        expect(schedule[i].at).toBeGreaterThan(schedule[i - 1].at);
-      }
-      for (const beat of schedule) {
-        expect(beat.label.trim().length).toBeGreaterThan(0);
-        expect(beat.label).not.toMatch(/`|\*\*|[「」『』!！]/);
-      }
-      const lastBeat = schedule[schedule.length - 1];
-      expect((step.duration ?? 0) - lastBeat.at).toBeGreaterThanOrEqual(1500);
+      expect(mode.lanes).toHaveLength(4);
     }
   });
 
-  it('renders SSR markup with wisp-kit-banner, progress bar, KaTeX math, and zero hex/rx=2', () => {
+  it('renders SSR markup with InteractiveExplainer LabSegmented, SwimlaneTimeline, and KaTeX math', () => {
     const html = renderToStaticMarkup(
       createElement(MooncakePdFlowExplainer, {
-        title: '图 1：Mooncake Pull、Layerwise Push 与 D2RH 三模式动态推演',
+        title: '图 1：Mooncake PD 分离四模式时序交互实验',
       }),
     );
-    expect(html).toContain('wisp-kit-banner');
-    expect(html).toContain('wisp-kit-banner__progress');
+    expect(html).toContain('wisp-lab__seg');
+    expect(html).toContain('Pull 算完拉取');
+    expect(html).toContain('Push 逐层重叠');
+    expect(html).toContain('D2RH 驻留 Host');
+    expect(html).toContain('Host 前缀命中');
+    expect(html).toContain('<svg');
     expect(html).toMatch(/wisp-tex|katex/);
     expect(html).not.toMatch(/#[0-9a-fA-F]{3,8}\b/);
     expect(html).not.toMatch(/\brx=["']2["']/);
-    expect(html).not.toMatch(/点击上方任意|点击.*聚焦/);
+    expect(html).not.toMatch(/\bNaN\b/);
+    expect(html).not.toContain('undefined');
   });
 
   it('uses @layer utilities and zero hardcoded hex colors in style.css', () => {

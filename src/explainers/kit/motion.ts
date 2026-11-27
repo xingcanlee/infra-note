@@ -1,4 +1,3 @@
-import { useSyncExternalStore } from 'react';
 import type { HueTone, Tone } from 'astro-wisp/explainers';
 
 export const STAGE_W = 680;
@@ -168,71 +167,24 @@ export function resolveToneFill(tone: AnyTone): string {
     : `var(--wisp-hue-${tone}-fill)`;
 }
 
-const REDUCED_MOTION_QUERY = '(prefers-reduced-motion: reduce)';
-const reducedMotionListeners = new Set<() => void>();
-let reducedMotionMql: MediaQueryList | null = null;
-let reducedMotionListening = false;
-
-function getReducedMotionMql(): MediaQueryList | null {
-  if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return null;
-  if (!reducedMotionMql) {
-    reducedMotionMql = window.matchMedia(REDUCED_MOTION_QUERY);
-  }
-  return reducedMotionMql;
-}
-
-function handleReducedMotionChange() {
-  for (const listener of reducedMotionListeners) listener();
-}
-
-function subscribeReducedMotion(listener: () => void): () => void {
-  reducedMotionListeners.add(listener);
-  const mq = getReducedMotionMql();
-  if (mq && !reducedMotionListening) {
-    mq.addEventListener('change', handleReducedMotionChange);
-    reducedMotionListening = true;
-  }
-  return () => {
-    reducedMotionListeners.delete(listener);
-    if (reducedMotionListeners.size === 0 && mq && reducedMotionListening) {
-      mq.removeEventListener('change', handleReducedMotionChange);
-      reducedMotionListening = false;
-    }
-  };
-}
-
-function getReducedMotionSnapshot(): boolean {
-  return getReducedMotionMql()?.matches ?? false;
-}
-
-function getReducedMotionServerSnapshot(): boolean {
-  return false;
-}
-
-/** 统一动效参数：基于模块级单一 matchMedia 订阅同步 prefers-reduced-motion 并控制流式脉冲启停。 */
+/** 统一动效参数：SSR 与客户端保持完全一致，确保教学图解连续流光与步间形变稳定播放（不因宿主系统特效开关静默熄灭）。 */
 export function useDiagramMotion() {
-  const reduced = useSyncExternalStore(
-    subscribeReducedMotion,
-    getReducedMotionSnapshot,
-    getReducedMotionServerSnapshot,
-  );
-  const canAnimateFlow = !reduced;
-
   return {
-    reduced,
-    canAnimateFlow,
+    reduced: false,
+    canAnimateFlow: true,
     stepTransition: {
-      duration: reduced ? 0 : 0.22,
+      duration: 0.52,
       ease: [0.22, 1, 0.36, 1] as const,
     },
     highlightTransition: {
-      duration: reduced ? 0 : 0.16,
+      duration: 0.36,
       ease: 'easeOut' as const,
     },
     packetTransition: {
-      duration: reduced ? 0 : 1.5,
-      repeat: reduced ? 0 : 1,
-      ease: 'linear' as const,
+      duration: 1.3,
+      repeat: Infinity,
+      repeatDelay: 0.35,
+      ease: 'easeInOut' as const,
     },
   };
 }

@@ -1,5 +1,5 @@
 import type { Step } from 'astro-wisp/explainers';
-import { defaultBeats, assertMaxHues, type AnyTone, type BeatSpec } from '@/explainers/kit/motion';
+import { assertMaxHues, type AnyTone } from '@/explainers/kit/motion';
 
 export type GuardEventMode = 'with_reset' | 'miss_reset';
 export type SpecCaseId = 'case_3' | 'case_4' | 'case_1';
@@ -8,14 +8,15 @@ export interface AclGraphDynamicControlState {
   stepIndex: number;
   phaseLabel: string;
   formulaTex: string;
-  beats: BeatSpec[];
   slot2Label: string;
+  slot2Detail: string;
   slot2Tone: AnyTone;
   condTaskLabel: string;
+  condTaskDetail: string;
   condTaskTone: AnyTone;
-  showExtEvent: boolean;
-  showCondHandle: boolean;
-  showSubGraphs: boolean;
+  extActive: boolean;
+  condHandleActive: boolean;
+  subGraphsActive: boolean;
   activeBranch: 'none' | 'left' | 'right' | 'loop';
   hostCpuTrips: string;
   sqPatchMode: string;
@@ -24,6 +25,7 @@ export interface AclGraphDynamicControlState {
   supportsResetToggle: boolean;
   supportsLoopToggle: boolean;
   focusRect: { x: number; y: number; w: number; h: number; label: string; tone: AnyTone };
+  note: string;
 }
 
 export const RESET_GUARD_MODES: Record<
@@ -39,7 +41,7 @@ export const RESET_GUARD_MODES: Record<
 > = {
   with_reset: {
     id: 'with_reset',
-    label: '完整护栏（Wait + Reset）',
+    label: '完整护栏 (Wait + Reset)',
     sqPatchMode: 'ExtEvent 严格保序覆写',
     badgeTone: 'done',
     focusLabel: 'ExternalEvent.reset 清除旧信号后安全更新',
@@ -47,7 +49,7 @@ export const RESET_GUARD_MODES: Record<
   },
   miss_reset: {
     id: 'miss_reset',
-    label: '漏调 Reset（跨步读写冲突）',
+    label: '漏调 Reset (跨步读写冲突)',
     sqPatchMode: '残留信号提前放行',
     badgeTone: 'highlight',
     focusLabel: '残留信号导致第 t+1 步覆盖未读完的 SQE',
@@ -99,26 +101,22 @@ export function buildAclGraphDynamicControlSteps(): Step<AclGraphDynamicControlS
 
   return [
     {
-      label: '静态断点',
+      label: '静态图动态断点',
       duration: 4500,
       state: {
         stepIndex: 0,
-        phaseLabel: 'Step 1 · 纯静态图的两道动态断点',
+        phaseLabel: 'Step 1 · 纯静态图面对变长与分支的两道断点',
         formulaTex:
           '$N_{\\text{sync}} \\ge 1/\\text{步} \\;\\Longrightarrow\\; \\text{重录或退回 CPU}$',
-        beats: defaultBeats([
-          '展开父 ACL Graph 主逻辑流',
-          'seq_kv 增长让 Host Tiling 失效',
-          '动态分支逼迫图退回 CPU 同步',
-          '定位需要动态更新的两处节点',
-        ]),
         slot2Label: 'PA Tiling (已固化)',
+        slot2Detail: 'seq_kv 变化即失效',
         slot2Tone: 'highlight',
         condTaskLabel: '分支截断回 CPU',
+        condTaskDetail: '被迫中断静态执行',
         condTaskTone: 'highlight',
-        showExtEvent: false,
-        showCondHandle: false,
-        showSubGraphs: false,
+        extActive: false,
+        condHandleActive: false,
+        subGraphsActive: false,
         activeBranch: 'none',
         hostCpuTrips: '$\\ge 1$ 次同步',
         sqPatchMode: '整图重录',
@@ -126,73 +124,38 @@ export function buildAclGraphDynamicControlSteps(): Step<AclGraphDynamicControlS
         badgeTone: 'highlight',
         supportsResetToggle: false,
         supportsLoopToggle: false,
-        focusRect: { x: 168, y: 50, w: 342, h: 56, label: '静态假设在此断裂', tone: 'highlight' },
+        focusRect: {
+          x: 168,
+          y: 52,
+          w: 344,
+          h: 62,
+          label: '变长 Tiling 与动态分支迫使静态图断裂',
+          tone: 'highlight',
+        },
+        note: '常规静态图固化了核函数参数与唯一执行路径，无法原地消化每步变化的 KV 长度或条件跳转。',
       },
       caption:
         '变长上下文会让主机预计算的 Tiling 描述符失效，而投机解码的条件循环则迫使传统静态图中断并同步回 CPU 决策。',
     },
     {
-      label: '槽位划定',
-      duration: 4500,
-      state: {
-        stepIndex: 1,
-        phaseLabel: 'Step 2 · TaskGrp 划定可局部覆写槽位',
-        formulaTex: '$\\text{TaskGrp} \\mapsto (\\text{streamId},\\, \\text{taskId})\\text{ 槽}$',
-        beats: defaultBeats([
-          '保留前后不变的投影与 MoE',
-          '用 TaskGrp 包裹可变注意力算子',
-          '插入预取 Nop 登记槽位坐标',
-          '其余静态图节点保持不动',
-        ]),
-        slot2Label: 'TaskGrp[0] (PA)',
-        slot2Tone: 'active',
-        condTaskLabel: '后续静态算子',
-        condTaskTone: 'neutral',
-        showExtEvent: false,
-        showCondHandle: false,
-        showSubGraphs: false,
-        activeBranch: 'none',
-        hostCpuTrips: '$0$ 次重录',
-        sqPatchMode: 'Preload + Slot 标记',
-        condValueText: '未开启条件分支',
-        badgeTone: 'active',
-        supportsResetToggle: false,
-        supportsLoopToggle: false,
-        focusRect: {
-          x: 168,
-          y: 50,
-          w: 142,
-          h: 56,
-          label: 'aclmdlRICaptureTaskGrp',
-          tone: 'active',
-        },
-      },
-      caption:
-        '捕获阶段用 TaskGrpBegin/End 框住少数随序列长度变化的算子，Runtime 在逻辑队列上标出可原地覆写的槽位坐标。',
-    },
-    {
-      label: '防冲突护栏',
+      label: '槽位划定与护栏',
       duration: 4700,
       state: {
-        stepIndex: 2,
-        phaseLabel: 'Step 3 · TaskUpdate 原地补丁与 ExternalEvent 护栏',
+        stepIndex: 1,
+        phaseLabel: 'Step 2 · TaskGrp 槽位划定与 ExternalEvent 护栏防冲突',
         formulaTex:
-          '$\\text{TaskUpdate} \\xrightarrow{\\text{ExtEvent}} \\text{isUpdateSinkSqe}=1$',
-        beats: defaultBeats([
-          'update_stream 重算新 Tiling',
-          '一对一覆写对应 PA SQE 描述符',
-          'ExternalEvent.record 放行主图',
-          '切换对比漏调 Reset 的后果',
-        ]),
-        slot2Label: 'Updated PA SQE',
+          '$\\text{TaskGrp} \\mapsto (\\text{streamId},\\, \\text{taskId}) \\xrightarrow{\\text{ExtEvent}} \\text{isUpdateSinkSqe}=1$',
+        slot2Label: 'TaskGrp[0] 原地覆写',
+        slot2Detail: 'isUpdateSinkSqe=1',
         slot2Tone: 'done',
         condTaskLabel: '后续静态算子',
+        condTaskDetail: '零重录保持不动',
         condTaskTone: 'neutral',
-        showExtEvent: true,
-        showCondHandle: false,
-        showSubGraphs: false,
+        extActive: true,
+        condHandleActive: false,
+        subGraphsActive: false,
         activeBranch: 'none',
-        hostCpuTrips: '零阻塞流水更新',
+        hostCpuTrips: '$0$ 次重录',
         sqPatchMode: RESET_GUARD_MODES.with_reset.sqPatchMode,
         condValueText: '未开启条件分支',
         badgeTone: 'done',
@@ -200,128 +163,90 @@ export function buildAclGraphDynamicControlSteps(): Step<AclGraphDynamicControlS
         supportsLoopToggle: false,
         focusRect: {
           x: 168,
-          y: 120,
-          w: 142,
-          h: 56,
+          y: 52,
+          w: 144,
+          h: 184,
           label: RESET_GUARD_MODES.with_reset.focusLabel,
           tone: 'done',
         },
+        note: RESET_GUARD_MODES.with_reset.note,
       },
       caption:
-        '重放前在非捕获流 update_stream 上重写 Tiling 槽位并用 ExternalEvent 保序。上方可切换对比漏调 Reset 导致的跨步读写冲突。',
+        'TaskGrp 标出可变算子的 SQE 槽位，重放前在 update_stream 原地刷新 Tiling 并用 ExternalEvent 的 Wait 与 Reset 护栏防止跨步读写冲突。',
     },
     {
-      label: '条件复位',
-      duration: 4500,
+      label: '条件复位与切换',
+      duration: 4600,
       state: {
-        stepIndex: 3,
-        phaseLabel: 'Step 4 · CondHandle 8 字节条件字与自动复位',
+        stepIndex: 2,
+        phaseLabel: 'Step 3 · CondHandle 8 字节条件字复位与 IF/SWITCH 切换',
         formulaTex:
           '$\\text{PreExecute}: \\text{defaultValue\\_} \\xrightarrow{\\text{H2D}} *\\text{devAddr\\_}$',
-        beats: defaultBeats([
-          '创建绑定 8 字节 devAddr_ 的句柄',
-          '设 ASSIGN_DEFAULT 复位标志',
-          'PreExecute 自动把默认值写回',
-          '保证多轮重放状态幂等起步',
-        ]),
         slot2Label: 'Updated PA SQE',
+        slot2Detail: 'isUpdateSinkSqe=1',
         slot2Tone: 'done',
-        condTaskLabel: 'CondTask (*devAddr_)',
+        condTaskLabel: 'CondTask (IF/SWITCH)',
+        condTaskDetail: 'SQE+1 notify wait',
         condTaskTone: 'active',
-        showExtEvent: true,
-        showCondHandle: true,
-        showSubGraphs: false,
-        activeBranch: 'none',
+        extActive: true,
+        condHandleActive: true,
+        subGraphsActive: true,
+        activeBranch: 'left',
         hostCpuTrips: '$0$ 次 CPU 读回',
         sqPatchMode: 'TaskGrp 原地更新',
-        condValueText: '自动 H2D 复位 = 1',
+        condValueText: 'H2D 复位 = 1 → True',
         badgeTone: 'active',
         supportsResetToggle: false,
         supportsLoopToggle: false,
         focusRect: {
-          x: 368,
-          y: 50,
-          w: 142,
-          h: 56,
-          label: 'CondHandle (8B devAddr_)',
+          x: 16,
+          y: 172,
+          w: 140,
+          h: 64,
+          label: 'PreExecute 自动 H2D 复位 *devAddr_',
           tone: 'active',
         },
+        note: 'CondHandle 分配 8 字节设备条件字并在每次重放前自动 H2D 写回默认值，随后父流按条件字拉起命中分支子图。',
       },
       caption:
-        'CondHandle 在设备侧分配 8 字节条件字。若带上 ASSIGN_DEFAULT 标志，每次重放前 Runtime 自动把默认值写回设备，保证幂等。',
+        'CondHandle 绑定 8 字节 devAddr_ 并在 ASSIGN_DEFAULT 标志下自动复位默认值；分支点由硬件条件字决定唤醒 SubGraph 0 还是 SubGraph 1。',
     },
     {
-      label: '固件派发',
-      duration: 4500,
-      state: {
-        stepIndex: 4,
-        phaseLabel: 'Step 5 · TS 固件读取 *devAddr_ 派发条件子图',
-        formulaTex:
-          '$\\text{TS} \\;\\text{read}(*\\text{devAddr\\_}) \\;\\longrightarrow\\; \\text{SubGraph}$',
-        beats: defaultBeats([
-          '父流发出 CAPTURE_CONDITION',
-          '父流紧接 notify wait (SQE+1)',
-          'TS 固件直读 HBM 8 字节条件字',
-          '不回退 CPU 直接唤醒命中支路',
-        ]),
-        slot2Label: 'Updated PA SQE',
-        slot2Tone: 'done',
-        condTaskLabel: 'CondTask (IF/SWITCH)',
-        condTaskTone: 'done',
-        showExtEvent: true,
-        showCondHandle: true,
-        showSubGraphs: true,
-        activeBranch: 'left',
-        hostCpuTrips: '$0$ 次往返',
-        sqPatchMode: 'TaskGrp 原地更新',
-        condValueText: 'TS 固件直接判决',
-        badgeTone: 'done',
-        supportsResetToggle: false,
-        supportsLoopToggle: false,
-        focusRect: { x: 356, y: 120, w: 144, h: 56, label: '子图连续运行并唤醒父流', tone: 'done' },
-      },
-      caption:
-        '所有分支子图在硬件侧共享同一枚通知字 subModelNotify_。TS 固件读完条件字后直接拉起命中子图，跑完再唤醒挂起的父流。',
-    },
-    {
-      label: '设备循环',
+      label: '固件派发设备循环',
       duration: 4700,
       state: {
-        stepIndex: 5,
-        phaseLabel: 'Step 6 · 设备侧 WHILE 自循环与投机早退对比',
+        stepIndex: 3,
+        phaseLabel: 'Step 4 · TS 固件直读 *devAddr_ 派发 WHILE 设备自循环',
         formulaTex:
-          '$\\text{while } (*\\text{devAddr\\_} \\neq 0)\\; \\{\\; \\text{DraftVerify} \\;\\}$',
-        beats: defaultBeats([
-          'WHILE 支路单轮校验草稿置信度',
-          '不达标时算子直接写 *devAddr_=0',
-          '达标则经 Notify 回环继续下一轮',
-          '切换不同置信度序列观察迭代次数',
-        ]),
+          '$\\text{TS read}(*\\text{devAddr\\_}) \\;\\longrightarrow\\; \\text{while } (*\\text{devAddr\\_} \\neq 0)\\;\\{\\;\\text{DraftVerify}\\;\\}$',
         slot2Label: 'Updated PA SQE',
+        slot2Detail: 'isUpdateSinkSqe=1',
         slot2Tone: 'done',
-        condTaskLabel: 'WHILE (*devAddr_ != 0)',
+        condTaskLabel: 'WHILE (*devAddr_ ≠ 0)',
+        condTaskDetail: 'TS 固件直判循环',
         condTaskTone: 'done',
-        showExtEvent: true,
-        showCondHandle: true,
-        showSubGraphs: true,
+        extActive: true,
+        condHandleActive: true,
+        subGraphsActive: true,
         activeBranch: 'loop',
-        hostCpuTrips: '$0$ 次 CPU 干预',
+        hostCpuTrips: '$0$ 次 CPU 往返',
         sqPatchMode: 'TaskGrp 原地更新',
         condValueText: SPEC_LOOP_CASES.case_3.condText,
         badgeTone: 'done',
         supportsResetToggle: false,
         supportsLoopToggle: true,
         focusRect: {
-          x: 356,
-          y: 120,
-          w: 300,
-          h: 56,
-          label: '设备自循环零 CPU 往返退出',
+          x: 352,
+          y: 172,
+          w: 314,
+          h: 64,
+          label: 'WHILE 迭代 3 轮后写 0 自动退出',
           tone: 'done',
         },
+        note: SPEC_LOOP_CASES.case_3.summary,
       },
       caption:
-        '开启 WHILE 条件子图后，投机校验在芯片内自动多轮迭代直至置信度跌破阈值写 0 退出。下方可切换三组置信度序列验证退出轮数。',
+        'TS 固件直接在芯片内读取 *devAddr_ 驱动 WHILE 子图多轮校验草稿，置信度跌破阈值时算子写 0 退出并经共享 Notify 唤醒父流。',
     },
   ];
 }

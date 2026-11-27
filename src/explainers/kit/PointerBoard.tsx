@@ -272,7 +272,7 @@ export function PointerArcs({
   arcs: readonly PointerArc[];
   dotToken?: number;
 }) {
-  const { canAnimateFlow, highlightTransition, packetTransition } = useDiagramMotion();
+  const { canAnimateFlow, highlightTransition } = useDiagramMotion();
 
   return (
     <g>
@@ -300,10 +300,15 @@ export function PointerArcs({
         const py = ux * 2.6;
         const tri = `${a.toX},${a.toY} ${bx + px},${by + py} ${bx - px},${by - py}`;
 
+        const effectiveFlow = a.flow ?? a.active;
+        const showContinuousDot = visible && a.active && effectiveFlow && canAnimateFlow;
         const showTimedDot =
-          dotToken !== undefined ? dotToken > 0 && visible && a.active && a.flow : false;
-        const showFallbackDot =
-          dotToken === undefined && visible && a.active && a.flow && canAnimateFlow;
+          !showContinuousDot &&
+          dotToken !== undefined &&
+          dotToken > 0 &&
+          visible &&
+          a.active &&
+          effectiveFlow;
 
         return (
           <motion.g
@@ -318,10 +323,11 @@ export function PointerArcs({
                 fill="none"
                 stroke={stroke}
                 strokeWidth={a.active ? 2 : 1.25}
+                strokeOpacity={showContinuousDot ? 0.36 : 1}
                 strokeDasharray={a.dashed ? '4 3' : undefined}
                 initial={false}
                 animate={{ pathLength: visible ? 1 : 0, opacity: targetOpacity }}
-                transition={{ duration: visible ? 0.28 : 0, ease: DRAW_EASE }}
+                transition={{ duration: visible ? 0.42 : 0, ease: DRAW_EASE }}
               />
             ) : (
               <path
@@ -329,7 +335,20 @@ export function PointerArcs({
                 fill="none"
                 stroke={stroke}
                 strokeWidth={a.active ? 2 : 1.25}
+                strokeOpacity={showContinuousDot ? 0.36 : 1}
                 strokeDasharray={a.dashed ? '4 3' : undefined}
+              />
+            )}
+
+            {showContinuousDot && (
+              <path
+                d={d}
+                fill="none"
+                stroke={stroke}
+                strokeWidth={a.active ? 2.2 : 1.5}
+                strokeDasharray="6 8"
+                strokeLinecap="round"
+                className="wisp-flow-dash"
               />
             )}
 
@@ -339,16 +358,22 @@ export function PointerArcs({
                 fill={stroke}
                 initial={false}
                 animate={{ opacity: visible ? targetOpacity : 0 }}
-                transition={{ duration: visible ? 0.14 : 0, delay: visible ? 0.18 : 0 }}
+                transition={{ duration: visible ? 0.18 : 0, delay: visible ? 0.24 : 0 }}
               />
             ) : (
               <polygon points={tri} fill={stroke} />
             )}
 
+            {showContinuousDot && (
+              <circle r={3.5} fill={stroke} stroke="var(--wisp-bg)" strokeWidth={1.2}>
+                <animateMotion dur="1.35s" repeatCount="indefinite" path={d} />
+              </circle>
+            )}
+
             {showTimedDot && (
               <motion.circle
                 key={`pa-${a.id ?? idx}-${dotToken}`}
-                r={2.8}
+                r={3.2}
                 fill={stroke}
                 initial={{ cx: a.fromX, cy: a.fromY, opacity: 0 }}
                 animate={{
@@ -356,19 +381,7 @@ export function PointerArcs({
                   cy: [a.fromY, ly, a.toY],
                   opacity: [0, 1, 0],
                 }}
-                transition={{ duration: 0.48, ease: DRAW_EASE }}
-              />
-            )}
-            {showFallbackDot && (
-              <motion.circle
-                r={2.8}
-                fill={stroke}
-                initial={{ cx: a.fromX, cy: a.fromY }}
-                animate={{
-                  cx: [a.fromX, (a.fromX + 2 * mx + a.toX) / 4, a.toX],
-                  cy: [a.fromY, ly, a.toY],
-                }}
-                transition={packetTransition}
+                transition={{ duration: 0.56, ease: DRAW_EASE }}
               />
             )}
 

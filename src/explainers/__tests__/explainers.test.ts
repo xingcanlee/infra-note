@@ -1,5 +1,5 @@
-import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { readdirSync, readFileSync, statSync } from 'node:fs';
+import { join, resolve } from 'node:path';
 import type { ComponentType } from 'react';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
@@ -12,6 +12,7 @@ import HeatmapMatrix, {
   HEAT_ALPHA_BASE,
   HEAT_ALPHA_RANGE,
 } from '../kit/HeatmapMatrix';
+import InteractiveExplainer, { LabSegmented, LabSlider } from '../kit/InteractiveExplainer';
 import TensorBlock from '../kit/TensorBlock';
 import { fitTextMetrics } from '../kit/motion';
 
@@ -52,18 +53,27 @@ import RingCollectivesExplainer, {
 import MoeRoutingAlignExplainer, {
   buildMoeRoutingAlignSteps,
 } from '@/content/posts/deepseek/06-moe/explainers/MoeRoutingAlignExplainer';
+import MlaAbsorbExplainer, {
+  buildMlaAbsorbSteps,
+} from '@/content/posts/deepseek/01-mla/explainers/mla-absorb';
+import SinkNsaRouteExplainer, {
+  buildSinkNsaRouteSteps,
+} from '@/content/posts/deepseek/02-swa-and-nsa/explainers/sink-nsa-route';
+import DsaLightningIndexExplainer, {
+  buildDsaLightningIndexSteps,
+} from '@/content/posts/deepseek/03-dsa/explainers/dsa-lightning-index';
 import EngramHashExplainer, {
   buildEngramHashSteps,
-} from '@/content/posts/deepseek/07-engram/explainers/engram-hash';
+} from '@/content/posts/deepseek/08-engram/explainers/engram-hash';
 import MegaMhcPassExplainer, {
   buildMegaMhcPassSteps,
-} from '@/content/posts/deepseek/08-mhc/explainers/mega-mhc-pass';
+} from '@/content/posts/deepseek/07-mhc/explainers/mega-mhc-pass';
 import MhcSinkhornExplainer, {
   buildMhcSinkhornSteps,
-} from '@/content/posts/deepseek/08-mhc/explainers/mhc-sinkhorn';
+} from '@/content/posts/deepseek/07-mhc/explainers/mhc-sinkhorn';
 import ShortConvExplainer, {
   buildShortConvSteps,
-} from '@/content/posts/deepseek/07-engram/explainers/short-conv';
+} from '@/content/posts/deepseek/08-engram/explainers/short-conv';
 import SpecDecVerifyExplainer, {
   buildSpecDecVerifySteps,
 } from '@/content/posts/deepseek/09-mtp-and-dspark/explainers/SpecDecVerifyExplainer';
@@ -97,116 +107,203 @@ import StreamEventPipelineExplainer, {
 
 interface ExplainerEntry {
   name: string;
+  kind: 'step' | 'lab';
   Component: ComponentType<{ title?: string }>;
-  buildSteps: () => Step<unknown>[];
+  buildSteps?: () => Step<unknown>[];
 }
 
 const ALL_EXPLAINERS: ExplainerEntry[] = [
-  { name: 'Roofline', Component: RooflineExplainer, buildSteps: buildRooflineSteps },
+  { name: 'Roofline', kind: 'lab', Component: RooflineExplainer, buildSteps: buildRooflineSteps },
   {
     name: 'ChipArchitectureMap',
+    kind: 'step',
     Component: ChipArchitectureMapExplainer,
     buildSteps: buildChipArchitectureMapSteps,
   },
   {
     name: 'MicroarchLatency',
+    kind: 'lab',
     Component: MicroarchLatencyExplainer,
     buildSteps: buildMicroarchLatencySteps,
   },
   {
     name: 'MemoryCoalescing',
+    kind: 'lab',
     Component: MemoryCoalescingExplainer,
     buildSteps: buildMemoryCoalescingSteps,
   },
   {
     name: 'CausalAttention',
+    kind: 'step',
     Component: CausalAttentionExplainer,
     buildSteps: buildCausalAttentionSteps,
   },
-  { name: 'RopeRotation', Component: RopeRotationExplainer, buildSteps: buildRopeRotationSteps },
-  { name: 'KvCacheStep', Component: KvCacheStepExplainer, buildSteps: buildKvCacheStepSteps },
-  { name: 'OnlineSoftmax', Component: OnlineSoftmaxExplainer, buildSteps: buildOnlineSoftmaxSteps },
+  {
+    name: 'RopeRotation',
+    kind: 'lab',
+    Component: RopeRotationExplainer,
+    buildSteps: buildRopeRotationSteps,
+  },
+  {
+    name: 'KvCacheStep',
+    kind: 'step',
+    Component: KvCacheStepExplainer,
+    buildSteps: buildKvCacheStepSteps,
+  },
+  {
+    name: 'OnlineSoftmax',
+    kind: 'step',
+    Component: OnlineSoftmaxExplainer,
+    buildSteps: buildOnlineSoftmaxSteps,
+  },
   {
     name: 'RingCollectives',
+    kind: 'step',
     Component: RingCollectivesExplainer,
     buildSteps: buildRingCollectivesSteps,
   },
-  { name: 'EpDispatch', Component: EpDispatchExplainer, buildSteps: buildEpDispatchSteps },
+  {
+    name: 'EpDispatch',
+    kind: 'step',
+    Component: EpDispatchExplainer,
+    buildSteps: buildEpDispatchSteps,
+  },
+  {
+    name: 'MlaAbsorb',
+    kind: 'step',
+    Component: MlaAbsorbExplainer,
+    buildSteps: buildMlaAbsorbSteps,
+  },
+  {
+    name: 'SinkNsaRoute',
+    kind: 'lab',
+    Component: SinkNsaRouteExplainer,
+    buildSteps: buildSinkNsaRouteSteps,
+  },
+  {
+    name: 'DsaLightningIndex',
+    kind: 'step',
+    Component: DsaLightningIndexExplainer,
+    buildSteps: buildDsaLightningIndexSteps,
+  },
   {
     name: 'MoeRoutingAlign',
+    kind: 'step',
     Component: MoeRoutingAlignExplainer,
     buildSteps: buildMoeRoutingAlignSteps,
   },
-  { name: 'EngramHash', Component: EngramHashExplainer, buildSteps: buildEngramHashSteps },
-  { name: 'ShortConv', Component: ShortConvExplainer, buildSteps: buildShortConvSteps },
-  { name: 'MhcSinkhorn', Component: MhcSinkhornExplainer, buildSteps: buildMhcSinkhornSteps },
-  { name: 'MegaMhcPass', Component: MegaMhcPassExplainer, buildSteps: buildMegaMhcPassSteps },
-  { name: 'SpecDecVerify', Component: SpecDecVerifyExplainer, buildSteps: buildSpecDecVerifySteps },
+  {
+    name: 'EngramHash',
+    kind: 'step',
+    Component: EngramHashExplainer,
+    buildSteps: buildEngramHashSteps,
+  },
+  {
+    name: 'ShortConv',
+    kind: 'lab',
+    Component: ShortConvExplainer,
+    buildSteps: buildShortConvSteps,
+  },
+  {
+    name: 'MhcSinkhorn',
+    kind: 'lab',
+    Component: MhcSinkhornExplainer,
+    buildSteps: buildMhcSinkhornSteps,
+  },
+  {
+    name: 'MegaMhcPass',
+    kind: 'step',
+    Component: MegaMhcPassExplainer,
+    buildSteps: buildMegaMhcPassSteps,
+  },
+  {
+    name: 'SpecDecVerify',
+    kind: 'lab',
+    Component: SpecDecVerifyExplainer,
+    buildSteps: buildSpecDecVerifySteps,
+  },
   {
     name: 'RequestLifecycle',
+    kind: 'step',
     Component: RequestLifecycleExplainer,
     buildSteps: buildRequestLifecycleSteps,
   },
   {
     name: 'PagedScheduler',
+    kind: 'step',
     Component: PagedSchedulerExplainer,
     buildSteps: buildPagedSchedulerSteps,
   },
   {
     name: 'PrepareInputs',
+    kind: 'step',
     Component: PrepareInputsExplainer,
     buildSteps: buildPrepareInputsSteps,
   },
   {
     name: 'MooncakePdFlow',
+    kind: 'lab',
     Component: MooncakePdFlowExplainer,
     buildSteps: buildMooncakePdFlowSteps,
   },
   {
     name: 'StreamEventPipeline',
+    kind: 'lab',
     Component: StreamEventPipelineExplainer,
     buildSteps: buildStreamEventPipelineSteps,
   },
   {
     name: 'CompileSplitFusion',
+    kind: 'step',
     Component: CompileSplitFusionExplainer,
     buildSteps: buildCompileSplitFusionSteps,
   },
   {
     name: 'AclGraphShadowStream',
+    kind: 'step',
     Component: AclGraphShadowStreamExplainer,
     buildSteps: buildAclGraphShadowStreamSteps,
   },
   {
     name: 'AclGraphDynamicControl',
+    kind: 'step',
     Component: AclGraphDynamicControlExplainer,
     buildSteps: buildAclGraphDynamicControlSteps,
   },
 ];
 
-describe('all 24 interactive SVG explainers', () => {
-  it('covers exact 24 explainers across all 6 series', () => {
-    expect(ALL_EXPLAINERS).toHaveLength(24);
+describe('all 27 interactive SVG explainers', () => {
+  it('covers exact 27 explainers across all 6 series (17 step + 10 lab)', () => {
+    expect(ALL_EXPLAINERS).toHaveLength(27);
+    expect(ALL_EXPLAINERS.filter((e) => e.kind === 'step')).toHaveLength(17);
+    expect(ALL_EXPLAINERS.filter((e) => e.kind === 'lab')).toHaveLength(10);
   });
 
   it.each(ALL_EXPLAINERS)(
-    '$name has 4-24 valid steps, balanced KaTeX delimiters, and clean SSR SVG with math',
-    ({ name, Component, buildSteps }) => {
-      const steps = buildSteps();
-      expect(steps.length, `${name} step count`).toBeGreaterThanOrEqual(4);
-      expect(steps.length, `${name} step count`).toBeLessThanOrEqual(24);
+    '$name ($kind) renders clean SSR SVG with KaTeX math and no inner beat progress chrome',
+    ({ name, kind, Component, buildSteps }) => {
+      if (kind === 'step') {
+        expect(buildSteps, `${name} missing buildSteps`).toBeDefined();
+        const steps = buildSteps!();
+        expect(steps.length, `${name} step count`).toBeGreaterThanOrEqual(2);
+        expect(steps.length, `${name} step count`).toBeLessThanOrEqual(6);
 
-      for (const [idx, step] of steps.entries()) {
-        expect(step.label?.trim().length, `${name} step ${idx} empty label`).toBeGreaterThan(0);
-        expect(step.duration, `${name} step ${idx} duration >= 3600`).toBeGreaterThanOrEqual(3600);
-        expect(step.caption.trim().length, `${name} step ${idx} empty caption`).toBeGreaterThan(0);
-        expect(step.caption, `${name} step ${idx} literal markdown`).not.toMatch(/`|\*\*/);
-        expect(step.caption, `${name} step ${idx} click prompt`).not.toMatch(
-          /点击上方任意|点击.*聚焦/,
-        );
-        const unescaped = step.caption.replace(/\\\$/g, '');
-        const dollars = (unescaped.match(/\$/g) ?? []).length;
-        expect(dollars % 2, `${name} step ${idx} unbalanced $: ${step.caption}`).toBe(0);
+        for (const [idx, step] of steps.entries()) {
+          expect(step.label?.trim().length, `${name} step ${idx} empty label`).toBeGreaterThan(0);
+          expect(step.duration, `${name} step ${idx} duration >= 3600`).toBeGreaterThanOrEqual(
+            3600,
+          );
+          expect(step.caption.trim().length, `${name} step ${idx} empty caption`).toBeGreaterThan(
+            0,
+          );
+          expect(step.caption, `${name} step ${idx} literal markdown`).not.toMatch(/`|\*\*/);
+          expect(step.caption, `${name} step ${idx} click prompt`).not.toMatch(
+            /点击上方任意|点击.*聚焦/,
+          );
+          const unescaped = step.caption.replace(/\\\$/g, '');
+          const dollars = (unescaped.match(/\$/g) ?? []).length;
+          expect(dollars % 2, `${name} step ${idx} unbalanced $: ${step.caption}`).toBe(0);
+        }
       }
 
       const defaultMarkup = renderToStaticMarkup(createElement(Component));
@@ -214,12 +311,26 @@ describe('all 24 interactive SVG explainers', () => {
 
       const markup = renderToStaticMarkup(createElement(Component, { title: `图 1：${name}` }));
       expect(markup).toContain('<svg');
-      expect(markup, `${name} should use shared BeatExplainer kit banner`).toContain(
-        'wisp-kit-banner',
-      );
-      expect(markup, `${name} should include beat progress hairline`).toContain(
+      expect(markup, `${name} should not emit inner fake beat progress bar`).not.toContain(
         'wisp-kit-banner__progress',
       );
+      expect(markup, `${name} should not emit inner sub-beat counter`).not.toContain(
+        'wisp-kit-banner__beat',
+      );
+      if (kind === 'step') {
+        expect(markup, `${name} should use BeatExplainer kit shell`).toContain('wisp-kit-shell');
+        expect(markup, `${name} should use streamlined lab controls bar`).toContain(
+          'wisp-lab__controls',
+        );
+        expect(markup, `${name} should not emit legacy step count`).not.toContain(
+          'wisp-explainer__count',
+        );
+      } else {
+        expect(markup, `${name} should use InteractiveExplainer lab shell`).toContain('wisp-lab');
+        expect(markup, `${name} should expose interactive controls`).toContain(
+          'wisp-lab__controls',
+        );
+      }
       expect(markup, `${name} should not ask user to click deterministic elements`).not.toMatch(
         /点击上方任意|点击.*聚焦/,
       );
@@ -400,5 +511,101 @@ describe('explainer kit primitive invariants', () => {
     expect(visibleRect).not.toMatch(/\bx=["']24["']/);
     expect(visibleRect).not.toMatch(/\by=["']36["']/);
     expect(svg).toMatch(/wisp-tex|katex/);
+  });
+
+  it('InteractiveExplainer renders lab controls, formula, SVG stage, and dynamic caption cleanly in SSR', () => {
+    const html = renderToStaticMarkup(
+      createElement(InteractiveExplainer, {
+        title: '图 1：微实验',
+        formula: '$y = 2x$',
+        caption: '实时说明 $x = 3$。',
+        controls: createElement(
+          'div',
+          null,
+          createElement(LabSegmented, {
+            options: [
+              { id: 'a', label: '模式 A' },
+              { id: 'b', label: '模式 B' },
+            ],
+            value: 'a',
+            onChange: () => {},
+            ariaLabel: '切换模式',
+          }),
+          createElement(LabSlider, {
+            label: '参数 x',
+            min: 1,
+            max: 8,
+            value: 3,
+            valueText: '3',
+            onChange: () => {},
+          }),
+        ),
+        children: createElement('svg', { viewBox: '0 0 100 40' }),
+      }),
+    );
+    expect(html).toContain('wisp-lab');
+    expect(html).toContain('wisp-lab__controls');
+    expect(html).toContain('wisp-lab__seg-btn');
+    expect(html).toContain('wisp-lab__slider');
+    expect(html).toContain('<svg');
+    expect(html).toMatch(/wisp-tex|katex/);
+    expect(html).not.toContain('wisp-kit-banner__progress');
+  });
+
+  it('kit.css preserves content-fitted fullscreen sizing and overrides Stage max-width cap', () => {
+    const kitCss = readFileSync(resolve(import.meta.dirname, '../kit/kit.css'), 'utf8');
+    expect(kitCss).toContain('.wisp-explainer__dialog:has(.wisp-kit-shell)');
+    expect(kitCss).toContain('height: fit-content;');
+    expect(kitCss).toContain('max-width: min(100%, 1100px) !important;');
+  });
+
+  it('all explainer CSS/TSX files across 6 series reference defined --wisp-* tokens and valid formulaTex escaping', () => {
+    function walk(dir: string): string[] {
+      const files: string[] = [];
+      for (const name of readdirSync(dir)) {
+        const full = join(dir, name);
+        if (statSync(full).isDirectory()) {
+          files.push(...walk(full));
+        } else {
+          files.push(full);
+        }
+      }
+      return files;
+    }
+
+    const wispRoot = resolve(import.meta.dirname, '../../../node_modules/astro-wisp');
+    const definedTokens = new Set<string>();
+    for (const file of walk(wispRoot).filter((f) => f.endsWith('.css'))) {
+      const css = readFileSync(file, 'utf8');
+      for (const m of css.matchAll(/(--wisp-[a-z0-9-]+)\s*:/g)) {
+        definedTokens.add(m[1]);
+      }
+    }
+
+    const postsDir = resolve(import.meta.dirname, '../../content/posts');
+    const explainerFiles = walk(postsDir).filter(
+      (f) => f.includes('explainers') && (f.endsWith('.tsx') || f.endsWith('.css')),
+    );
+    expect(explainerFiles.length).toBeGreaterThan(0);
+
+    for (const file of explainerFiles) {
+      const src = readFileSync(file, 'utf8');
+      for (const m of src.matchAll(/var\((--wisp-[a-z0-9-]+)\)/g)) {
+        expect(definedTokens.has(m[1]), `Undefined token ${m[1]} in ${file}`).toBe(true);
+      }
+      if (file.endsWith('.tsx')) {
+        // Double-quoted JSX attributes containing $...$ pass literal \\ to KaTeX instead of \; require {'...'} expressions.
+        const badJsxMath = src.match(/\w+="[^"]*\$[^"]*\\\\[^"]*"/g);
+        expect(badJsxMath, `Double-escaped JSX math attr in ${file}`).toBeNull();
+      }
+    }
+
+    for (const entry of ALL_EXPLAINERS) {
+      if (!entry.buildSteps) continue;
+      for (const step of entry.buildSteps()) {
+        const tex = (step.state as { formulaTex?: string } | undefined)?.formulaTex ?? '';
+        expect(tex, `Unescaped control char in ${entry.name} formulaTex`).not.toMatch(/[\t\r\f\b]/);
+      }
+    }
   });
 });

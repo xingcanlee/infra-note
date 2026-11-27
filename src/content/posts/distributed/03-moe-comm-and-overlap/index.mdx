@@ -33,7 +33,7 @@ flowchart TD
 
 第二是跨机慢网与机内快网混用。专家并行跨越多机时，标准集合通信把跨机低带宽 RDMA 与机内高带宽 NVLink 或 HCCS 视为平坦对等网络。同一个 token 若命中对端节点的多个专家，跨机网卡就会重复发送冗余副本，整组通信还必须等待最重的热点卡与跨机尾延迟一起对齐。
 
-第三是单流串行执行造成计算气泡。在单条计算流上，Attention 算完前 Dispatch 无法发射，而网络飞行期间计算引擎几乎全程空转。随着专家并行规模扩大，通信耗时占比持续上升，计算核心的有效利用率随之走低。
+第三是单流串行执行造成计算气泡。在单条计算流上，Attention 算完前 Dispatch 无法发射，而网络传输在途期间计算引擎几乎全程空转。随着专家并行规模扩大，通信耗时占比持续上升，计算核心的有效利用率随之走低。
 
 ## DeepEP 双模式收敛与统一底座
 
@@ -47,7 +47,7 @@ flowchart TD
 
 低延迟模式对应 `DeepEPLLPrepareAndFinalize`，专攻 Decode 阶段对 $\alpha$ 固定延迟与图捕获的硬性要求。该路径切到 **IBGDA（GPU 侧直驱 RDMA）**模式，让 GPU 线程束跳过 CPU 调度，直接在设备端拼装 RDMA 工作请求并写入对端对称显存槽位。
 
-配合 `return_recv_hook=True` 异步发射与 `dbo_maybe_run_recv_hook` 轮询钩子，系统能在数据飞行期间把算力交还其他算子。同时它以静态容量上限与定长隐藏层校验保持对 CUDA Graph 的兼容[^vllm-ll]。
+配合 `return_recv_hook=True` 异步发射与 `dbo_maybe_run_recv_hook` 轮询钩子，系统能在数据传输在途期间把算力交还其他算子。同时它以静态容量上限与定长隐藏层校验保持对 CUDA Graph 的兼容[^vllm-ll]。
 
 ### 统一 EPBuffer 的双态收敛与显存映射
 
@@ -72,7 +72,7 @@ flowchart TD
 
 在图捕获策略上，非图模式的 Prefill 按实际接收量动态展开激活以节省显存。开启 CUDA Graph 的 Decode 则关闭一切主机同步，并把每卡 token 上限向上取整到 2 的幂，防止长度微调触发 JIT 重新编译[^vllm-v2-cg]。由于关闭了主机同步，CPU 发射阶段不知道实际收到的有效 token 数。GPU 侧为此追加一个轻量 Triton Kernel，直接读取设备端前缀和末尾计数，把越界填充或非本地专家索引就地标为 -1[^vllm-v2-triton]。
 
-同时，分发句柄会缓存目标槽位索引，在 Combine 阶段跳过通知步骤[^deepep-cached]。尾段拷贝启用 PDL（Programmatic Dependent Launch，可编程依赖启动）实现核间尾波重叠，MXFP8 缩放因子也打包进 4 字节整型随 token 一并发送[^vllm-v2-mxfp8]。支撑上述无 CPU 干预直写的是 CUDA 虚拟内存弹性对称显存：通过预留连续虚拟地址并跨进程导出描述符句柄，同机多进程即可直接向对端物理内存写入数据[^deepep-symm]。
+同时，分发句柄会缓存目标槽位索引，在 Combine 阶段跳过通知步骤[^deepep-cached]。尾段拷贝启用 PDL（Programmatic Dependent Launch，可编程依赖启动）实现 Kernel 收尾重叠，MXFP8 缩放因子也打包进 4 字节整型随 token 一并发送[^vllm-v2-mxfp8]。支撑上述无 CPU 干预直写的是 CUDA 虚拟内存弹性对称显存：通过预留连续虚拟地址并跨进程导出描述符句柄，同机多进程即可直接向对端物理内存写入数据[^deepep-symm]。
 
 ## 华为昇腾 MC2 通算融合与编译期通信消除
 
@@ -112,7 +112,7 @@ MC2（Matmul-Communication Fusion，矩阵乘通信融合）把原本首尾相�
 
 在 `vllm` 的执行器实现中，DBO 依靠主控线程交替接力，避免两条主机线程同时向流中并发投放算子导致 Kernel 入队乱序或破坏图捕获。
 
-`UBatchRunner` 固定维护两条微批线程，共享一条计算流与一条通信流[^vllm-ubatch-runner]，但任一时刻只允许一条 CPU 线程活跃发射。当微批 A 算完注意力并抵达 `DeepEP` 分发入口时，它先在计算流记录完成事件，随后交出 CPU 控制权并唤醒微批 B。微批 B 随即在计算流推进注意力算子，与通信流上飞行中的微批 A 分发实现硬件并发[^vllm-ubatch-ctx]。
+`UBatchRunner` 固定维护两条微批线程，共享一条计算流与一条通信流[^vllm-ubatch-runner]，但任一时刻只允许一条 CPU 线程活跃发射。当微批 A 算完注意力并抵达 `DeepEP` 分发入口时，它先在计算流记录完成事件，随后交出 CPU 控制权并唤醒微批 B。微批 B 随即在计算流推进注意力算子，与通信流上正在传输的微批 A 分发实现硬件并发[^vllm-ubatch-ctx]。
 
 这套单控状态机在部署时受两项工程约束。一方面，`DeepEP` 高吞吐模式在通信流打包与中继时会占用部分 GPU SM。运行前因此需通过 `VLLM_DBO_COMM_SMS` 静态划出通信专用 SM 配额，并等额缩减矩阵乘可用 SM，防止两条流互相抢占[^vllm-dbo-sm]。
 
@@ -126,14 +126,14 @@ MC2（Matmul-Communication Fusion，矩阵乘通信融合）把原本首尾相�
 
 ### 双硬件栈 MoE 通信方案对照
 
-| 工程维度         | NVIDIA 栈（`DeepEP` + `vllm`）   | 昇腾栈（`vllm-ascend` + CANN）     |
-| :--------------- | :------------------------------- | :--------------------------------- |
-| **核心通信原语** | 统一 `EPBuffer` 与 IBGDA 直驱    | MC2 核内切片与三合一融合算子       |
-| **通算重叠粒度** | 线程接力切换双微批计算流与通信流 | 核内切片流水配合共享专家异步流     |
-| **显存管理约束** | 虚拟内存对称映射与 2 的幂对齐    | 独占缓冲区与 `Dummy Run` 预占      |
-| **量化协同打包** | 缩放因子打包为四字节整型随传     | 核内边传边量化与量化归约融合       |
-| **静态图兼容性** | 关闭主机同步后支持全图模式捕获   | 静态填充配掩码入图且禁用双微批     |
-| **张量并行融合** | 对称显存直写配合尾波依赖启动     | 编译期融合矩阵乘与 `ReduceScatter` |
+| 工程维度         | NVIDIA 栈（`DeepEP` + `vllm`）        | 昇腾栈（`vllm-ascend` + CANN）     |
+| :--------------- | :------------------------------------ | :--------------------------------- |
+| **核心通信原语** | 统一 `EPBuffer` 与 IBGDA 直驱         | MC2 核内切片与三合一融合算子       |
+| **通算重叠粒度** | 线程接力切换双微批计算流与通信流      | 核内切片流水配合共享专家异步流     |
+| **显存管理约束** | 虚拟内存对称映射与 2 的幂对齐         | 独占缓冲区与 `Dummy Run` 预占      |
+| **量化协同打包** | 缩放因子打包为四字节整型随传          | 核内边传边量化与量化归约融合       |
+| **静态图兼容性** | 关闭主机同步后支持全图模式捕获        | 静态填充配掩码入图且禁用双微批     |
+| **张量并行融合** | 对称显存直写配合可编程依赖启动（PDL） | 编译期融合矩阵乘与 `ReduceScatter` |
 
 ## 专家并行等价性与双流流水仿真
 
@@ -227,7 +227,7 @@ Serial=8.50ms (54.1%) | DBO=5.40ms (85.2%)
 
 [^vllm-v2-triton]: 见 `vllm@bb23c0a8`：`vllm/model_executor/layers/fused_moe/prepare_finalize/deepep_v2.py` L568–612（`_globalize_recv_topk_idx` Triton Kernel 读取设备端 `psum_ptr[P - 1]` 就地筛选合法专家索引）。
 
-[^deepep-cached]: 见 `DeepEP@f6aa38fe`：`csrc/kernels/ep/dispatch.hpp` L64–65（`cached_mode` 将 `num_notify_warps` 置为 0 并复用 `dst_buffer_slot_idx`）及 L207–214（`.enable_pdl = true` 启用尾波依赖启动）。
+[^deepep-cached]: 见 `DeepEP@f6aa38fe`：`csrc/kernels/ep/dispatch.hpp` L64–65（`cached_mode` 将 `num_notify_warps` 置为 0 并复用 `dst_buffer_slot_idx`）及 L207–214（`.enable_pdl = true` 启用可编程依赖启动（PDL））。
 
 [^vllm-v2-mxfp8]: 见 `vllm@bb23c0a8`：`vllm/model_executor/layers/fused_moe/prepare_finalize/deepep_v2.py` L42–70（`_pack_mxfp8_scale` 与 `_unpack_mxfp8_scale` 将 `[M, K/32]` 缩放因子打包为 `[M, K/128]` 的 `int32`）。
 

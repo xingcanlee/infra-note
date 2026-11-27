@@ -13,13 +13,13 @@ toc: true
 
 与此同时，现代推理服务还要在同一套采样管线里叠加惩罚项、思考预算、`logprobs` 回传，以及流式拆出思考链 `<think>` 与工具调用参数。如果把这些约束简单放入主机端 Python 循环，高并发下的 CPU 与 **HBM（High Bandwidth Memory，高带宽显存）**带宽立刻成为瓶颈。
 
-## 一条 JSON 约束请求的位掩码手算
+## JSON 约束请求的位掩码生成
 
 我们先用一组数字看清结构化约束如何在调度端与设备端低成本交接。设模型词表规模 `vocab_size = 128000`，请求要求按 JSON Schema 输出天气查询，且启用 $K = 3$ 的投机解码。
 
-由于每个 token 只需 $1$ 比特表示“当前状态是否合法”，系统按 `int32`（每字 $32$ 比特）打包压缩位掩码。单行 logits 对应的整数词数为 $\lceil 128000 / 32 \rceil = 4000$ 个，占内存 $16,000\text{ B}$。启用投机解码后，调度器需按步长 `mask_stride` $= 1 + K = 4$ 预留草稿与奖励位置，单请求每步共传 $4 \times 16,000 = 64,000\text{ B}$ 位掩码。
+由于每个 token 只需 $1$ 比特表示“当前状态是否合法”，系统按 `int32`（每字 $32$ 比特）打包压缩位掩码。单行 logits 对应的整数词数为 $\lceil 128000 / 32 \rceil = 4000$ 个，占内存 $16,000\text{ B}$。启用投机解码后，调度器需按步长 `mask_stride` $= 1 + K = 4$ 预留草稿与额外生成（bonus）槽位，单请求每步共传 $4 \times 16,000 = 64,000\text{ B}$ 位掩码。
 
-在设备端，`StructuredOutputsWorker` 通过独立 `copy_stream` 异步将位掩码搬进显存。随后算子按分块宽度 `GRAMMAR_BITMASK_BLOCK_SIZE = 8192` 启动 Triton Kernel 执行原地置零屏蔽[^vllm-gpu-struct]：
+在设备端，`StructuredOutputsWorker` 通过独立 `copy_stream` 异步将位掩码搬进显存。随后算子按分块宽度 `GRAMMAR_BITMASK_BLOCK_SIZE = 8192` 启动 Triton Kernel 执行原地置 `-inf` 屏蔽[^vllm-gpu-struct]：
 
 - **掩码解包映射**：每线程块一次读取 $8192 / 32 = 256$ 个 `int32` 整数，按位右移展开成 $8192$ 个布尔过滤位。
 - **跳过裁剪无效位**：当投机长度被动态裁剪后，计算 Kernel 比对真实边界 `cu_num_logits`，超出范围的槽位直接跳过写操作。
@@ -71,7 +71,7 @@ classDiagram
     StructuredOutputManager ..> StructuredOutputsWorker : bitmask
 ```
 
-针对不同复杂度的正则、JSON Schema 与无上下文语法，工程团队可在四类后端之间按需切换[^vllm-struct-backends]：
+针对不同复杂度的正则、JSON Schema 与上下文无关文法（CFG），工程团队可在四类后端之间按需切换[^vllm-struct-backends]：
 
 | 语法后端             | 核心编译引擎与特性         | 适用场景与边界                                                                |
 | :------------------- | :------------------------- | :---------------------------------------------------------------------------- |
@@ -108,7 +108,7 @@ flowchart TB
 - **故障诊断前置采集**：`get_num_nans` 必须在温度与乘法缩放之前执行，以免把上游矩阵溢出的 `NaN` 归因误导成采样参数错误[^vllm-gpu-sampler]。
 - **快路径跳过开销**：通过请求级标记位让无约束请求跳过预处理算子[^vllm-gpu-sampler]。
 
-值得单独关注的是思考预算控制器 `ThinkingBudgetState`[^vllm-think-budget]。推理模型有时会在思考区陷入死循环耗尽上下文。该模块在 **UVA（Unified Virtual Addressing，统一虚拟寻址）**常驻数组中为每条请求登记思考 token 上限。一旦算子扫描确认预算已满，立刻掩码强制当前步采样闭合标签，提前结束思考进入正文。
+思考预算控制器 `ThinkingBudgetState`[^vllm-think-budget] 用于避免推理模型在思考区陷入死循环并耗尽上下文。该模块在 **UVA（Unified Virtual Addressing，统一虚拟寻址）**常驻数组中为每条请求登记思考 token 上限。一旦算子扫描确认预算已满，立刻掩码强制当前步采样闭合标签，提前结束思考进入正文。
 
 ## 思考链、结构化输出与流式工具解析协同
 

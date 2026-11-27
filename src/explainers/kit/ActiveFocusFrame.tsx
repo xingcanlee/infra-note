@@ -35,7 +35,7 @@ export default function ActiveFocusFrame({
   visible = true,
   dashed = false,
 }: ActiveFocusFrameProps) {
-  const { stepTransition } = useDiagramMotion();
+  const { stepTransition, canAnimateFlow } = useDiagramMotion();
   const stroke = resolveToneStroke(tone);
   const labelHasMath = hasInlineMath(label);
   const labelPlain = label ? plainInlineMath(label) : '';
@@ -75,6 +75,9 @@ export default function ActiveFocusFrame({
         stroke={stroke}
         strokeWidth={2}
         strokeDasharray={dashed ? '5 3' : undefined}
+        className={
+          visible && canAnimateFlow ? (dashed ? 'wisp-flow-dash' : 'wisp-focus-pulse') : undefined
+        }
       />
       {label && (
         <motion.g initial={false} animate={{ x: badgeX, y: badgeY }} transition={stepTransition}>

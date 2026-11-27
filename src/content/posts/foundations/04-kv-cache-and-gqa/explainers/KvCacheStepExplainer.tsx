@@ -1,6 +1,6 @@
-import { useMemo } from 'react';
-import { Stage, type Step } from 'astro-wisp/explainers';
-import { BeatExplainer, defaultBeats, type BeatSpec } from '@/explainers/kit';
+import { useMemo, useState } from 'react';
+import { RichText, Stage, type Step } from 'astro-wisp/explainers';
+import { BeatExplainer, LabSegmented } from '@/explainers/kit';
 import ActiveFocusFrame from '@/explainers/kit/ActiveFocusFrame';
 import DataFlowArrow from '@/explainers/kit/DataFlowArrow';
 import HeatmapMatrix from '@/explainers/kit/HeatmapMatrix';
@@ -9,31 +9,14 @@ import { SlotStrip, type SlotItem } from '@/explainers/kit/PointerBoard';
 import TensorBlock from '@/explainers/kit/TensorBlock';
 import { STAGE_W, assertMaxHues, type AnyTone } from '@/explainers/kit/motion';
 
+export type KvCacheMode = 'cache' | 'nocache';
+
 export interface KvCacheStepState {
   stepIndex: number;
+  t: number;
   formulaTex: string;
-  beats: BeatSpec[];
-  qTitle: string;
-  qShape: string;
-  kvTitle: string;
-  kvShape: string;
-  outTitle: string;
-  outShape: string;
-  outTone: AnyTone;
-  kSlots: SlotItem[];
-  vSlots: SlotItem[];
-  matrixTitle: string;
-  matrixTone: AnyTone;
-  selectedTone: AnyTone;
   matrixValues: (number | null)[][];
   matrixMasks: boolean[][];
-  selectedCells: ReadonlySet<string>;
-  softSelectedCells: ReadonlySet<string>;
-  seqLenText: string;
-  stepWorkText: string;
-  cumKvProjText: string;
-  savingText: string;
-  focusRect: { x: number; y: number; w: number; h: number; label: string; tone: AnyTone };
 }
 
 const ROW_LABELS = ['$t=1$', '$t=2$', '$t=3$', '$t=4$'];
@@ -50,12 +33,8 @@ function fmtProb(v: number): string {
   return v.toFixed(2);
 }
 
-function makeSlots(
-  prefix: 'k' | 'v',
-  filledCount: number,
-  activeIdx: number,
-  recomputeAll: boolean,
-): SlotItem[] {
+function makeSlots(prefix: 'k' | 'v', filledCount: number, recomputeAll: boolean): SlotItem[] {
+  const activeIdx = filledCount - 1;
   return [0, 1, 2, 3].map((idx) => {
     const texLbl = `$${prefix}_${idx + 1}$`;
     if (idx >= filledCount) {
@@ -118,9 +97,9 @@ function priorSet(upToRow: number): ReadonlySet<string> {
   return s;
 }
 
-function allLowerSet(): ReadonlySet<string> {
+function lowerTriangleSet(rows: number): ReadonlySet<string> {
   const s = new Set<string>();
-  for (let r = 0; r < 4; r++) {
+  for (let r = 0; r < rows; r++) {
     for (let c = 0; c <= r; c++) s.add(`${r},${c}`);
   }
   return s;
@@ -132,190 +111,58 @@ export function buildKvCacheStepSteps(): Step<KvCacheStepState>[] {
 
   return [
     {
-      label: '第 1 步入槽',
+      label: 't=1 入槽',
       duration: 4600,
       state: {
         stepIndex: 0,
+        t: 1,
         formulaTex: '$t=1:\\; \\text{Write}(k_1,v_1) \\to \\text{Slot }1,\\; 1\\text{ 次点积}$',
-        beats: defaultBeats([
-          '投影首个 Q1 与 k1, v1',
-          '向下写入 KV 槽 1 并喂入矩阵',
-          '聚合写出 O1 [1,d] 并框定槽 1',
-          '记录基线步零节省基准',
-        ]),
-        qTitle: '$Q_1$',
-        qShape: '$[1, d]$',
-        kvTitle: '$k_1, v_1$',
-        kvShape: '写入槽 1',
-        outTitle: '$O_1$',
-        outShape: '$[1, d] \\cdot t=1$',
-        outTone: 'v',
-        kSlots: makeSlots('k', 1, 0, false),
-        vSlots: makeSlots('v', 1, 0, false),
-        matrixTitle: '注意力权重矩阵 (单行增量)',
-        matrixTone: 'q',
-        selectedTone: 'q',
         matrixValues: makeValues(1),
         matrixMasks: makeMasks(1),
-        selectedCells: rowSet(0),
-        softSelectedCells: new Set(),
-        seqLenText: '$t = 1\\;(1/4)$',
-        stepWorkText: '1 KV / 1 点积',
-        cumKvProjText: '1 vs 无Cache 1',
-        savingText: '基线步 (0%)',
-        focusRect: { x: 16, y: 94, w: 224, h: 144, label: '写入 Slot 1', tone: 'k' },
       },
       caption:
-        '第 1 步（$t=1$）：生成单个新 token，投影出 $Q_1, k_1, v_1 \\in \\mathbb{R}^{1 \\times d}$，将 $k_1, v_1$ 写入 KV Cache 第 1 槽位；注意力仅计算第 1 行 $1$ 次点积。',
+        '第 1 步（$t=1$）：生成首个 token，投影出 $Q_1, k_1, v_1 \\in \\mathbb{R}^{1 \\times d}$，将 $k_1, v_1$ 写入槽 1；注意力仅计算第 1 行 $1$ 次点积。切换上方无 Cache 模式可对照全前缀重算行为。',
     },
     {
-      label: '第 2 步复用',
+      label: 't=2 复用',
       duration: 4600,
       state: {
         stepIndex: 1,
+        t: 2,
         formulaTex:
-          '$t=2:\\; \\text{Append }(k_2,v_2),\\; \\text{Reuse } K_{1},\\; \\text{仅算第 2 行}$',
-        beats: defaultBeats([
-          '仅投影当前步 Q2 与 k2, v2',
-          '追加槽 2 并复用历史槽 1',
-          '仅点亮第 2 行算出 O2',
-          '核算累计节省 33.3%',
-        ]),
-        qTitle: '$Q_2$',
-        qShape: '$[1, d]$',
-        kvTitle: '$k_2, v_2$',
-        kvShape: '追加槽 2',
-        outTitle: '$O_2$',
-        outShape: '$[1, d] \\cdot t=2$',
-        outTone: 'v',
-        kSlots: makeSlots('k', 2, 1, false),
-        vSlots: makeSlots('v', 2, 1, false),
-        matrixTitle: '注意力权重矩阵 (复用 $k_1$)',
-        matrixTone: 'q',
-        selectedTone: 'q',
+          '$t=2:\\; \\text{Append }(k_2,v_2),\\; \\text{Reuse } K_1,\\; \\text{仅算第 2 行}$',
         matrixValues: makeValues(2),
         matrixMasks: makeMasks(2),
-        selectedCells: rowSet(1),
-        softSelectedCells: priorSet(1),
-        seqLenText: '$t = 2\\;(2/4)$',
-        stepWorkText: '1 KV / 2 点积',
-        cumKvProjText: '2 vs 无Cache 3',
-        savingText: '已省 33.3% KV',
-        focusRect: { x: 266, y: 20, w: 254, h: 198, label: '仅算第 2 行', tone: 'q' },
       },
       caption:
-        '第 2 步（$t=2$）：仅对新 token 计算 $Q_2, k_2, v_2$ 并追加到第 2 槽位；第 1 槽位 $k_1, v_1$ 直接复用不重算，注意力只需读取 $K_{1:2}$ 计算第 2 行（$2$ 次点积）。',
+        '第 2 步（$t=2$）：启用 KV Cache 时仅计算 $Q_2, k_2, v_2$ 并追加到第 2 槽，历史槽 1 直接复用；若关闭缓存，则必须在第 2 步重算全部 $2$ 组键值并丢弃第 1 行输出。',
     },
     {
-      label: '第 3 步 GEMV',
+      label: 't=3 GEMV',
       duration: 4600,
       state: {
         stepIndex: 2,
-        formulaTex: '$t=3:\\; Q_3 K_{1:3}^\\top \\Rightarrow 3\\text{ vs }6\\; (\\text{省 }50\\%)$',
-        beats: defaultBeats([
-          '投影单步 Q3 与 k3, v3',
-          '追加槽 3 并读出 K_{1:3} 全向量',
-          '框出第 3 行 GEMV 产出 O3',
-          '确认投影量减半 (50%)',
-        ]),
-        qTitle: '$Q_3$',
-        qShape: '$[1, d]$',
-        kvTitle: '$k_3, v_3$',
-        kvShape: '追加槽 3',
-        outTitle: '$O_3$',
-        outShape: '$[1, d] \\cdot t=3$',
-        outTone: 'v',
-        kSlots: makeSlots('k', 3, 2, false),
-        vSlots: makeSlots('v', 3, 2, false),
-        matrixTitle: '注意力权重矩阵 (复用 $k_{1:2}$)',
-        matrixTone: 'q',
-        selectedTone: 'q',
+        t: 3,
+        formulaTex:
+          '$t=3:\\; Q_3 K_{1:3}^\\top \\Rightarrow \\text{累计 }3\\text{ vs }6\\;(\\text{省 }50\\%)$',
         matrixValues: makeValues(3),
         matrixMasks: makeMasks(3),
-        selectedCells: rowSet(2),
-        softSelectedCells: priorSet(2),
-        seqLenText: '$t = 3\\;(3/4)$',
-        stepWorkText: '1 KV / 3 点积',
-        cumKvProjText: '3 vs 无Cache 6',
-        savingText: '已省 50.0% KV',
-        focusRect: { x: 266, y: 20, w: 254, h: 198, label: '仅算第 3 行', tone: 'q' },
       },
       caption:
-        '第 3 步（$t=3$）：前 2 步的历史行已定型且无需再输出，$Q_3 [1, d]$ 与扩展后的 $K_{1:3} [3, d]$ 做 GEMV（General Matrix-Vector Multiply，矩阵向量乘），累计 KV 投影次数降为无缓存的一半（$3$ vs $6$）。',
+        '第 3 步（$t=3$）：前两步历史行已定型，$Q_3 [1,d]$ 只需与 $K_{1:3} [3,d]$ 做单行 GEMV；累计 KV 投影次数降为无缓存的一半（$3$ vs $6$）。',
     },
     {
-      label: '第 4 步成链',
+      label: 't=4 成链',
       duration: 4600,
       state: {
         stepIndex: 3,
+        t: 4,
         formulaTex: '$t=4:\\; \\sum KV = 4\\text{ vs }10\\; (O(T^3) \\to O(T^2))$',
-        beats: defaultBeats([
-          '输入 Q4 与末位增量 k4, v4',
-          '写入槽 4 并聚焦第 4 行',
-          '写出单步特征 O4 [1,d]',
-          '统计节省 60% KV 计算',
-        ]),
-        qTitle: '$Q_4$',
-        qShape: '$[1, d]$',
-        kvTitle: '$k_4, v_4$',
-        kvShape: '追加槽 4',
-        outTitle: '$O_4$',
-        outShape: '$[1, d] \\cdot t=4$',
-        outTone: 'v',
-        kSlots: makeSlots('k', 4, 3, false),
-        vSlots: makeSlots('v', 4, 3, false),
-        matrixTitle: '注意力权重矩阵 (复用 $k_{1:3}$)',
-        matrixTone: 'q',
-        selectedTone: 'q',
         matrixValues: makeValues(4),
         matrixMasks: makeMasks(4),
-        selectedCells: rowSet(3),
-        softSelectedCells: priorSet(3),
-        seqLenText: '$t = 4\\;(4/4)$',
-        stepWorkText: '1 KV / 4 点积',
-        cumKvProjText: '4 vs 无Cache 10',
-        savingText: '已省 60.0% KV',
-        focusRect: { x: 544, y: 84, w: 120, h: 72, label: '$O_4\\;[1, d]$', tone: 'v' },
       },
       caption:
-        '第 4 步（$t=4$）：新写入 $k_4, v_4$ 后缓存增至 $[4, d]$；4 步累计仅执行 $4$ 次 token KV 投影和 $10$ 次点积，而计算复杂度随序列总长 $T$ 从无缓存的 $O(T^3)$ 降至 $O(T^2)$。',
-    },
-    {
-      label: '无缓存对照',
-      duration: 4600,
-      state: {
-        stepIndex: 4,
-        formulaTex: '$\\text{No Cache}:\\; \\text{重算 } [4,d]\\; Q/K/V\\text{ 与 }10\\text{ 格}$',
-        beats: defaultBeats([
-          '退回全量 Q_{1:4} 与 K/V_{1:4}',
-          '全部 4 个槽位被迫红色重算',
-          '下三角 10 格满算且前 3 行丢弃',
-          '量化长序列 S=2048 差距',
-        ]),
-        qTitle: '$Q_{1:4}$',
-        qShape: '$[4, d]$ 重算',
-        kvTitle: '$K_{1:4}, V_{1:4}$',
-        kvShape: '全量重算',
-        outTitle: '$O_{1:4}$',
-        outShape: '$[4, d]$ 丢3留1',
-        outTone: 'k',
-        kSlots: makeSlots('k', 4, 3, true),
-        vSlots: makeSlots('v', 4, 3, true),
-        matrixTitle: '无 Cache 单步重算 (10 格)',
-        matrixTone: 'k',
-        selectedTone: 'k',
-        matrixValues: makeValues(4),
-        matrixMasks: makeMasks(4),
-        selectedCells: allLowerSet(),
-        softSelectedCells: new Set(),
-        seqLenText: '$T = 4$ 累计对照',
-        stepWorkText: '单步 4 KV / 10 格',
-        cumKvProjText: '4 vs 10 (省 $2.5\\times$)',
-        savingText: '$S=2048$ 省 $1024\\times$',
-        focusRect: { x: 266, y: 20, w: 254, h: 198, label: '单步重算下三角', tone: 'k' },
-      },
-      caption:
-        '若关闭 KV Cache，仅在 $t=4$ 这一步就必须重算全部 $[4, d]$ 的 $Q/K/V$ 与下三角 $10$ 格（前 3 行算完即丢弃）。开启缓存大幅节省计算量，同时将 Decode 推向读取 $K_{1:t}, V_{1:t}$ 的 HBM 带宽瓶颈。',
+        '第 4 步（$t=4$）：追加 $k_4, v_4$ 后缓存扩至 $[4, d]$；4 步累计仅算 $4$ 次 KV 投影，而无缓存路径仅本步就要重算 $[4,d]$ 全三角 $10$ 格并丢弃前 3 行，复杂度由 $O(T^3)$ 降至 $O(T^2)$。',
     },
   ];
 }
@@ -326,202 +173,278 @@ export default function KvCacheStepExplainer({
   title?: string;
 }) {
   const steps = useMemo(() => buildKvCacheStepSteps(), []);
+  const [cacheMode, setCacheMode] = useState<KvCacheMode>('cache');
 
   return (
     <BeatExplainer
       title={title}
       label="Decode 阶段 KV Cache 增量追加交互推导"
       steps={steps}
-      stageMinHeight={448}
-      getBeats={(step) => step.state.beats}
+      stageMinHeight={486}
       getFormula={(step) => step.state.formulaTex}
+      replayTrigger={cacheMode}
     >
-      {(step, { beat, dotToken }) => {
+      {(step, { dotToken }) => {
         const s = step.state;
-        const slotRevCount = s.stepIndex < 4 && beat === 0 ? s.stepIndex : 4;
+        const t = s.t;
+        const isNoCache = cacheMode === 'nocache';
+        const triCells = (t * (t + 1)) / 2;
+        const savedPct =
+          t === 1 ? '基线 (0%)' : `已省 ${(((triCells - t) / triCells) * 100).toFixed(1)}%`;
+
+        const qTitle = isNoCache ? `$Q_{1:${t}}$` : `$Q_${t}$`;
+        const qShape = isNoCache ? `$[${t}, d]$ 重算` : '$[1, d]$';
+        const kvTitle = isNoCache ? `$K_{1:${t}}, V_{1:${t}}$` : `$k_${t}, v_${t}$`;
+        const kvShape = isNoCache ? '全量重算' : `追加槽 ${t}`;
+        const outTitle = isNoCache ? `$O_{1:${t}}$` : `$O_${t}$`;
+        const outShape = isNoCache
+          ? t > 1
+            ? `$[${t}, d]$ 丢${t - 1}留1`
+            : '$[1, d]$'
+          : `$[1, d] \\cdot t=${t}$`;
+        const outTone: AnyTone = isNoCache ? 'k' : 'v';
+
+        const kSlots = makeSlots('k', t, isNoCache);
+        const vSlots = makeSlots('v', t, isNoCache);
+        const selectedCells = isNoCache ? lowerTriangleSet(t) : rowSet(t - 1);
+        const softSelectedCells = isNoCache ? new Set<string>() : priorSet(t - 1);
+
+        const qH = isNoCache ? 36 + (t - 1) * 5 : 42;
+        const outH = isNoCache ? 44 + (t - 1) * 6 : 52;
+
+        const focusRect = isNoCache
+          ? {
+              x: 266,
+              y: 20,
+              w: 254,
+              h: 198,
+              label: `全三角重算 ${triCells} 格`,
+              tone: 'k' as AnyTone,
+            }
+          : t === 1
+            ? { x: 16, y: 94, w: 224, h: 144, label: '写入 Slot 1', tone: 'k' as AnyTone }
+            : t < 4
+              ? { x: 266, y: 20, w: 254, h: 198, label: `仅算第 ${t} 行`, tone: 'q' as AnyTone }
+              : { x: 544, y: 84, w: 120, h: 72, label: '$O_4\\;[1, d]$', tone: 'v' as AnyTone };
+
+        const statusEq = isNoCache
+          ? `$t=${t}:\\; \\text{无 Cache 本步算 } ${t}\\text{ KV},\\; \\text{累计 } ${triCells}\\text{ 次}$`
+          : `$t=${t}:\\; \\text{Cache 本步仅算 } 1\\text{ KV},\\; \\text{累计 } ${t}\\text{ vs }${triCells}$`;
 
         return (
-          <Stage width={STAGE_W} height={336} label="Decode 阶段 KV Cache 增量追加与免重算收益">
-            <TensorBlock
-              x={22}
-              y={24}
-              w={100}
-              h={42}
-              tone="q"
-              name={s.qTitle}
-              shape={s.qShape}
-              labelMode="inside"
-              active
-            />
-            <TensorBlock
-              x={134}
-              y={24}
-              w={100}
-              h={42}
-              tone="k"
-              name={s.kvTitle}
-              shape={s.kvShape}
-              labelMode="inside"
-              active
-            />
+          <>
+            <div className="wisp-lab__controls" style={{ marginBottom: '0.35rem' }}>
+              <div className="wisp-lab__controls-main">
+                <LabSegmented
+                  ariaLabel="KV Cache 模式切换"
+                  value={cacheMode}
+                  onChange={setCacheMode}
+                  options={[
+                    { id: 'cache', label: '启用 KV Cache' },
+                    { id: 'nocache', label: '无 Cache 全重算' },
+                  ]}
+                />
+              </div>
+              <div className="wisp-lab__eq">
+                <RichText text={statusEq} />
+              </div>
+            </div>
 
-            {/* Top overhead Q_t -> HeatmapMatrix arrow */}
-            <DataFlowArrow
-              points={[
-                [72, 24],
-                [72, 10],
-                [254, 10],
-                [254, 76],
-                [272, 76],
-              ]}
-              tone="q"
-              active
-              flow={beat >= 1}
-              visible={beat >= 1}
-              draw={beat >= 1}
-              dotToken={beat >= 1 ? dotToken : 0}
-            />
+            <Stage width={STAGE_W} height={336} label="Decode 阶段 KV Cache 增量追加与免重算收益">
+              <TensorBlock
+                x={22}
+                y={24}
+                w={100}
+                h={qH}
+                tone="q"
+                name={qTitle}
+                shape={qShape}
+                labelMode="inside"
+                active
+              />
+              <TensorBlock
+                x={134}
+                y={24}
+                w={100}
+                h={qH}
+                tone="k"
+                name={kvTitle}
+                shape={kvShape}
+                labelMode="inside"
+                active
+              />
 
-            {/* Downward k_t, v_t -> Cache append arrow */}
-            <DataFlowArrow
-              points={[
-                [184, 66],
-                [184, 98],
-              ]}
-              tone="k"
-              active
-              visible={beat >= 1}
-              draw={beat >= 1}
-              dotToken={beat >= 1 ? dotToken : 0}
-            />
+              <DataFlowArrow
+                points={[
+                  [72, 24],
+                  [72, 10],
+                  [254, 10],
+                  [254, 76],
+                  [272, 76],
+                ]}
+                tone="q"
+                active
+                flow
+                continuous
+                draw
+                dotToken={dotToken}
+              />
 
-            <SlotStrip
-              x={22}
-              y={104}
-              slots={s.kSlots}
-              slotW={50}
-              slotH={36}
-              gap={4}
-              revealedCount={slotRevCount}
-              title="$K$ Cache $[t, d]$"
-            />
+              <DataFlowArrow
+                points={[
+                  [184, 24 + qH],
+                  [184, 98],
+                ]}
+                tone="k"
+                active
+                flow
+                continuous
+                draw
+                dotToken={dotToken}
+              />
 
-            <SlotStrip
-              x={22}
-              y={172}
-              slots={s.vSlots}
-              slotW={50}
-              slotH={36}
-              gap={4}
-              revealedCount={slotRevCount}
-              title="$V$ Cache $[t, d]$"
-            />
+              <SlotStrip
+                x={22}
+                y={104}
+                slots={kSlots}
+                slotW={50}
+                slotH={36}
+                gap={4}
+                title="$K$ Cache $[t, d]$"
+              />
 
-            <DataFlowArrow
-              points={[
-                [236, 138],
-                [272, 138],
-              ]}
-              tone="k"
-              active
-              flow={beat >= 1}
-              visible={beat >= 1}
-              draw={beat >= 1}
-              dotToken={beat >= 1 ? dotToken : 0}
-            />
+              <SlotStrip
+                x={22}
+                y={172}
+                slots={vSlots}
+                slotW={50}
+                slotH={36}
+                gap={4}
+                title="$V$ Cache $[t, d]$"
+              />
 
-            <HeatmapMatrix
-              x={276}
-              y={28}
-              values={s.matrixValues}
-              tone={s.matrixTone}
-              selectedTone={s.selectedTone}
-              cellW={46}
-              cellH={32}
-              gap={4}
-              min={0}
-              max={1}
-              format={fmtProb}
-              masks={s.matrixMasks}
-              maskText="--"
-              selected={s.selectedCells}
-              softSelected={s.softSelectedCells}
-              showSelected={beat >= 1}
-              dimmed={beat < 1}
-              rowLabels={ROW_LABELS}
-              colLabels={COL_LABELS}
-              rowLabelW={40}
-              title={s.matrixTitle}
-              showLegend={false}
-              fontSize={11}
-            />
+              <DataFlowArrow
+                points={[
+                  [236, 138],
+                  [272, 138],
+                ]}
+                tone="k"
+                active
+                flow
+                continuous
+                draw
+                dotToken={dotToken}
+              />
 
-            <DataFlowArrow
-              points={[
-                [518, 120],
-                [548, 120],
-              ]}
-              tone={s.outTone}
-              active
-              flow={beat >= 2}
-              visible={beat >= 2}
-              draw={beat >= 2}
-              dotToken={beat >= 2 ? dotToken : 0}
-            />
+              <HeatmapMatrix
+                x={276}
+                y={28}
+                values={s.matrixValues}
+                tone={isNoCache ? 'k' : 'q'}
+                selectedTone={isNoCache ? 'k' : 'q'}
+                cellW={46}
+                cellH={32}
+                gap={4}
+                min={0}
+                max={1}
+                format={fmtProb}
+                masks={s.matrixMasks}
+                maskText="--"
+                selected={selectedCells}
+                softSelected={softSelectedCells}
+                showSelected={true}
+                rowLabels={ROW_LABELS}
+                colLabels={COL_LABELS}
+                rowLabelW={40}
+                title={
+                  isNoCache
+                    ? `无 Cache 全三角重算 (${triCells} 格)`
+                    : t === 1
+                      ? '注意力权重矩阵 (单行增量)'
+                      : `注意力权重矩阵 (复用 $k_{1:${t - 1}}$)`
+                }
+                showLegend={false}
+                fontSize={11}
+              />
 
-            <DataFlowArrow
-              points={[
-                [126, 226],
-                [126, 246],
-                [604, 246],
-                [604, 150],
-              ]}
-              tone="v"
-              active={s.stepIndex < 4}
-              dashed={s.stepIndex === 4}
-              flow={beat >= 2}
-              visible={beat >= 2}
-              draw={beat >= 2}
-              dotToken={beat >= 2 ? dotToken : 0}
-            />
+              <DataFlowArrow
+                points={[
+                  [518, 120],
+                  [548, 120],
+                ]}
+                tone={outTone}
+                active
+                flow
+                continuous
+                draw
+                dotToken={dotToken}
+              />
 
-            <TensorBlock
-              x={552}
-              y={94}
-              w={104}
-              h={52}
-              tone={s.outTone}
-              name={s.outTitle}
-              shape={s.outShape}
-              labelMode="inside"
-              active
-              visible={beat >= 2}
-            />
+              <DataFlowArrow
+                points={[
+                  [126, 226],
+                  [126, 246],
+                  [604, 246],
+                  [604, 94 + outH],
+                ]}
+                tone="v"
+                active={!isNoCache}
+                dashed={isNoCache}
+                flow
+                continuous
+                draw
+                dotToken={dotToken}
+              />
 
-            <ActiveFocusFrame
-              x={s.focusRect.x}
-              y={s.focusRect.y}
-              w={s.focusRect.w}
-              h={s.focusRect.h}
-              tone={s.focusRect.tone}
-              label={s.focusRect.label}
-              visible={beat >= 2}
-            />
+              <TensorBlock
+                x={552}
+                y={94}
+                w={104}
+                h={outH}
+                tone={outTone}
+                name={outTitle}
+                shape={outShape}
+                labelMode="inside"
+                active
+              />
 
-            <MetricRow
-              x={18}
-              y={266}
-              w={644}
-              h={54}
-              revealed={beat >= 3}
-              metrics={[
-                { label: '当前上下文', value: s.seqLenText, tone: 'q' },
-                { label: '本步核心计算', value: s.stepWorkText, tone: 'k' },
-                { label: '累计 KV 投影', value: s.cumKvProjText, tone: 'v', active: true },
-                { label: '免重算收益', value: s.savingText, tone: 'v' },
-              ]}
-            />
-          </Stage>
+              <ActiveFocusFrame
+                x={focusRect.x}
+                y={focusRect.y}
+                w={focusRect.w}
+                h={focusRect.h}
+                tone={focusRect.tone}
+                label={focusRect.label}
+                visible={true}
+              />
+
+              <MetricRow
+                x={18}
+                y={266}
+                w={644}
+                h={54}
+                metrics={[
+                  { label: '当前上下文', value: `$t = ${t}\\;(${t}/4)$`, tone: 'q' },
+                  {
+                    label: '本步核心计算',
+                    value: isNoCache ? `${t} KV / ${triCells} 格` : `1 KV / ${t} 点积`,
+                    tone: 'k',
+                  },
+                  {
+                    label: '累计 KV 投影',
+                    value: isNoCache ? `累计 ${triCells} 次` : `${t} vs 无Cache ${triCells}`,
+                    tone: isNoCache ? 'k' : 'v',
+                    active: true,
+                  },
+                  {
+                    label: '免重算收益',
+                    value: isNoCache ? '无缓存 (重算全前缀)' : savedPct,
+                    tone: isNoCache ? 'neutral' : 'v',
+                  },
+                ]}
+              />
+            </Stage>
+          </>
         );
       }}
     </BeatExplainer>

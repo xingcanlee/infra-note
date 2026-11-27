@@ -8,11 +8,39 @@ category: AI Infra
 toc: true
 ---
 
-在[03 DSA 稀疏注意力](../03-dsa/)中，闪电索引器把主注意力的单步计算量压到了 $O(Lk)$，却没有从显存里删掉任何历史条目。按 `fp8_ds_mla` 格式计，每个 token 在每层仍占 656 B 主缓存与 132 B 索引键。放到百万 token 上下文（$L = 10^6$）与高并发批处理场景下，线性增长的 $O(L)$ 容量依然会迅速耗尽 HBM。
+import Figure from 'astro-wisp/components/Figure.astro';
+import paperFig2V4Arch from './images/paper-fig2-v4-arch.svg';
+import paperFig3Csa from './images/paper-fig3-csa.svg';
+import paperFig4Hca from './images/paper-fig4-hca.svg';
+import paperFig6KvCache from './images/paper-fig6-kv-cache.svg';
+
+在[03 DSA 稀疏注意力](../03-dsa/)中，Lightning Indexer 把主注意力的单步计算量压到了 $O(Lk)$，却没有从显存里删掉任何历史条目。按 `fp8_ds_mla` 格式计，每个 token 在每层仍占 656 B 主缓存与 132 B 索引键。放到百万 token 上下文（$L = 10^6$）与高并发批处理场景下，线性增长的 $O(L)$ 容量依然会迅速耗尽 HBM。
 
 既然 MLA 已经把单条潜向量的宽度压缩到极限，继续打破长文本显存墙的下一步就是直接压缩**序列长度 $L$**。
 
 DeepSeek-V4 交错部署两类互补的序列压缩层。第一类是 **CSA（Compressed Sparse Attention，门控序列压缩稀疏注意力）**，第二类是 **HCA（Heavily Compressed Attention，重度压缩注意力）**。配合 584 B 混合精度缓存，DeepSeek-V4-Flash 在 1M 上下文下的 KV 占用降至 V3.2 的 7%，单 token 推理计算量降至 10%[^dsv4-paper]。
+
+全篇符号沿用[01 MLA 多头潜在注意力](../01-mla/)记法并扩展至 V4 序列压缩维度：
+
+| 符号                               | 含义                                             | 典型维度 / 取值域                                                        |
+| :--------------------------------- | :----------------------------------------------- | :----------------------------------------------------------------------- |
+| $h_t,\; H$                         | 单步输入隐状态与序列隐状态矩阵                   | $h_t \in \mathbb{R}^d,\; H \in \mathbb{R}^{n \times d}$                  |
+| $c_j^{KV},\; c,\; d_h^R$           | V3 历史潜向量、V4 单头压缩潜在维度与末尾 RoPE 维 | $c_j^{KV} \in \mathbb{R}^{d_c},\; c=512,\; d_h^R=64$                     |
+| $m,\; m'$                          | CSA 重叠折叠净步长、HCA 非重叠重度压缩步长       | CSA 取 $m=4$（窗宽 $2m=8$），HCA 取 $m'=128$                             |
+| $n_{\text{win}}$                   | 局部滑动窗口注意力（SWA）窗口长度                | $n_{\text{win}}=128$，保留逐 token 近邻精度                              |
+| $C_j^a,\; C_j^b,\; Z_j^a,\; Z_j^b$ | CSA 前后半窗内容投影与门控打分向量               | 均属于 $\mathbb{R}^c$，对应投影 $W^{a/b KV}$ 与 $W^{a/b Z}$              |
+| $B^a,\; B^b,\; S_j^a,\; S_j^b$     | 块内可学习位置偏置与逐通道 Softmax 折叠权重      | $B^a,B^b \in \mathbb{R}^{m\times c},\; S_j^{a/b} \in (0,1)^c$            |
+| $C_i^{\text{Comp}}$                | 第 $i$ 块闭合折叠潜向量（兼作 Key 与 Value）     | $\mathbb{R}^c$（前 448 维 NoPE + 末 64 维 RoPE，584 B）                  |
+| $n_h^I,\; c^I,\; k$                | Lightning Indexer 头数、单头维与 Top-$k$ 预算    | $n_h^I=64,\; c^I=128$；Flash 取 512，Pro 取 1024                         |
+| $R_{k_{\text{pos}}(j)},\; R_{-t}$  | 历史块绝对 RoPE 旋转与输出端当前查询逆向旋转     | 仅作用末 64 维，$R_{-t} R_{k_{\text{pos}}(j)} = R_{k_{\text{pos}}(j)-t}$ |
+
+图 1 展示了 DeepSeek-V4 的总体框架：残差流升级为 mHC，主干交替堆叠 CSA 与 HCA，FFN 沿用 DeepSeekMoE 并在前序层采用 Hash 路由[^dsv4-paper]。
+
+<Figure
+  src={paperFig2V4Arch}
+  alt="论文图 2：DeepSeek-V4 总体架构，包含 mHC 残差流、CSA 与 HCA 混合注意力及 DeepSeekMoE"
+  caption="图 1：DeepSeek-V4 总体架构：mHC 残差连接、CSA/HCA 混合注意力与 DeepSeekMoE（DeepSeek-V4 论文图 2）"
+/>
 
 ## 分组序列压缩与环形尾缓冲
 
@@ -43,19 +71,27 @@ $$
 
 为此，DeepSeek-V4 在定长 FP32 环形状态槽位（`StateCache`）里暂存未闭合的尾部状态。同时为每层配对局部 **SWA（Sliding Window Attention，滑动窗口注意力，$n_{\text{win}} = 128$）**，保住逐 token 精细依赖[^dsv4-paper]。
 
-图 1 汇总了新 token 进入环形尾槽、凑满 $m=4$ 后双窗折叠写回、HCA 与 SWA 协同以及输出端逆旋转恢复与字节开销。
+CSA 的全局稀疏与局部滑动窗口协同机制见图 2，而图 3 进一步汇总了新 token 进入环形尾槽、凑满 $m=4$ 后双窗折叠写回以及输出端逆旋转的细节流程。
 
-![DeepSeek-V4 CSA 重叠双窗折叠（m=4, 2m=8）、FP32 环形尾缓冲 StateCache、HCA 128 倍压缩、输出逆 RoPE 与 584 B 混合缓存开销](./diagrams/04-csa-ring-fold.drawio '图 1：DeepSeek-V4 CSA 重叠门控折叠、环形尾缓存与输出逆 RoPE 原理')
+<Figure
+  src={paperFig3Csa}
+  alt="论文图 3：CSA 核心架构，序列压缩至 1/m 后经 Lightning Indexer 挑选 Top-k 并与 SWA 局部窗口协同"
+  caption="图 2：CSA 核心架构：序列压缩 1/m 后经 Lightning Indexer 稀疏筛选并结合局部 SWA（DeepSeek-V4 论文图 3）"
+/>
+
+![DeepSeek-V4 CSA 重叠双窗折叠（m=4, 2m=8）、FP32 环形尾缓冲 StateCache、HCA 128 倍压缩、输出逆 RoPE 与 584 B 混合缓存开销](./diagrams/04-csa-ring-fold.drawio '图 3：DeepSeek-V4 CSA 重叠门控折叠、环形尾缓存与输出逆 RoPE 原理')
 
 ## CSA 与 HCA 混合架构及输出逆旋转
 
-在 DeepSeek-V4 技术报告中[^dsv4-paper]，CSA 与 HCA 共同构成同一全局压缩注意力族中的两类互补层，整体结构与堆叠方式如图 2 所示。
+在 DeepSeek-V4 技术报告中[^dsv4-paper]，CSA 与 HCA 共同构成同一全局压缩注意力族中的两类互补层。CSA 以 $m = 4$ 重叠折叠序列后，继续复用一层 FP4 的 Lightning Indexer（$n_h^I = 64$ 头、$c^I = 128$ 维）。它从历史压缩块中筛选 Top-$k$ 条目（V4-Flash 取 512，V4-Pro 取 1024）。
 
-![DeepSeek-V4 CSA 与 HCA 双轨 RoPE 及混合层堆叠架构](./diagrams/04-csa-hca-arch.drawio '图 2：DeepSeek-V4 CSA 与 HCA 双轨 RoPE 及混合层堆叠架构')
+另一类层 **HCA（Heavily Compressed Attention，重度压缩注意力）**同样只在单层内沿序列维度折叠（跨层复用属于下一篇 V4.1 CSA2 的设计）[^dsv4-paper]。如图 4 所示，它将步长拉大到 $m' = 128$ 并取消重叠窗口，使百万上下文经 128 倍压缩后仅剩约 7,812 条单头 KV，省去索引器直接做全块稠密注意力。
 
-CSA 以 $m = 4$ 重叠折叠序列后，继续复用一层 FP4 闪电索引器（$n_h^I = 64$ 头、$c^I = 128$ 维）从历史压缩块中筛选 Top-$k$ 条目（V4-Flash 取 512，V4-Pro 取 1024）。
-
-另一类层 **HCA（Heavily Compressed Attention，重度压缩注意力）**同样只在单层内沿序列维度折叠（跨层复用属于下一篇 V4.1 CSA2 的设计）[^dsv4-paper]。它将步长拉大到 $m' = 128$ 并取消重叠窗口，使百万上下文经 128 倍压缩后仅剩约 7,812 条单头 KV，省去索引器直接做全块稠密注意力。
+<Figure
+  src={paperFig4Hca}
+  alt="论文图 4：HCA 核心架构，以非重叠大步长 m'=128 极重压缩全局 KV 并省去稀疏索引器，搭配 SWA 保持局部细粒度依赖"
+  caption="图 4：HCA 核心架构：非重叠 m'=128 重度压缩省去索引器，并配对 SWA 保留近邻细节（DeepSeek-V4 论文图 4）"
+/>
 
 ### 为什么输出端需要逆向 RoPE
 
@@ -69,9 +105,9 @@ $$
 R_{-t}\, \mathbf{o}_{t,h}^{[-64:]} = \sum_j a_{t,h,j}\, \bigl(R_{k_{\text{pos}}(j) - t}\, \mathbf{v}_j^{[-64:]}\bigr)
 $$
 
-这一步把输出向量末尾 64 维统一拉回以当前查询位置 $t$ 为原点的相对坐标偏移 $k_{\text{pos}}(j) - t$。除此之外，全局压缩支与局部 SWA 支拆开了两组 RoPE 频谱（`deepseek_yarn` 长文本外推与局部 `factor = 1.0` 对齐）。进入核心注意力前，Query 与 KV 会先经 `RMSNorm` 防止 `Attention Logits` 过大，分母则加入可学习 `Sink` 偏置项 $\exp(z'_h)$ 稳住数值尺度。
+这一步把输出向量末尾 64 维统一拉回以当前查询位置 $t$ 为原点的相对坐标偏移 $k_{\text{pos}}(j) - t$。除此之外，全局压缩分支与局部 SWA 分支拆开了两组 RoPE 频谱（`deepseek_yarn` 长文本外推与局部 `factor = 1.0` 对齐）。进入核心注意力前，Query 与 KV 会先经 `RMSNorm` 防止 `Attention Logits` 过大，分母则加入可学习 `Sink` 偏置项 $\exp(z'_h)$ 稳住数值尺度。
 
-输出端同样做了算子裁剪。在吸收态 MLA 里，完整输出投影矩阵 $W^{OA} \in \mathbb{R}^{n_h c \times d}$ 需要把全部 $n_h$ 个 512 维头直接升维到模型隐维度，参数与乘加都正比于 $n_h c d$。为此 V4 设计了分组输出投影 `GroupedWoA`：先将多头均分为 $g$ 组（V4-Flash 取 $g = 8$）分别投影到中间宽度 $d_g = 1024$ 并拼合，再汇总映射回主干宽度 $d$，兼顾跨头交互与参数预算。
+输出端同样做了算子裁剪。在矩阵吸收模式的 MLA 里，完整输出投影矩阵 $W^{OA} \in \mathbb{R}^{n_h c \times d}$ 需要把全部 $n_h$ 个 512 维头直接升维到模型隐维度，参数与乘加都正比于 $n_h c d$。为此 V4 设计了分组输出投影 `GroupedWoA`：先将多头均分为 $g$ 组（V4-Flash 取 $g = 8$）分别投影到中间宽度 $d_g = 1024$ 并拼合，再汇总映射回主干宽度 $d$，兼顾跨头交互与参数预算。
 
 DeepSeek-V4-Flash 采用 43 层交错配置（前 2 层纯 SWA 配后 41 层 CSA/HCA）。这把 1M 上下文推理 FLOPs 降至 V3.2 的 10%、KV 降至 7%。DeepSeek-V4-Pro（61 层）则分别降至 27% 与 10%，仅为 BF16 GQA-8 基线的约 2%[^dsv4-paper]。
 
@@ -81,9 +117,17 @@ DeepSeek-V4-Flash 采用 43 层交错配置（前 2 层纯 SWA 配后 41 层 CSA
 
 为此 DeepSeek-V4 设计了二阶段 CP 通信[^dsv4-paper]：第一阶段各卡把尾部最后的 $m$ 个未压缩条目发往下一张卡，让相邻卡无缝折叠跨界块。第二阶段再全网收集各卡压缩条目并做掩码重排，使整体序列对齐至整倍压缩长度。
 
-在流式推理阶段，压缩状态机需要跨步维护未闭合尾部 token 与周期边界触发，整体控制流如图 3 所示。
+同时为了在 PagedAttention 框架下统一管理异构层，V4 将显存拆为经典 KV 缓存与请求级定长状态缓存两部分（图 5）。经典 KV 缓存按 $\mathrm{lcm}(m, m')$ 对齐物理块粒度，状态缓存则托管近期 SWA 窗口及尚未凑满压缩步长的尾部状态[^dsv4-paper]。
 
-```mermaid caption="图 3：流式环形状态缓存与双端 Kernel 调度链路"
+<Figure
+  src={paperFig6KvCache}
+  alt="论文图 6：DeepSeek-V4 异构 KV 缓存布局，分为按 lcm(m,m') 分块的经典 KV 缓存与托管 SWA 及未闭合尾部状态的 State Cache"
+  caption="图 5：DeepSeek-V4 异构 KV 缓存布局：经典分页缓存按 lcm(m,m') 对齐，State Cache 托管 SWA 与未闭合尾部（DeepSeek-V4 论文图 6）"
+/>
+
+在流式推理阶段，压缩状态机需要跨步维护未闭合尾部 token 与周期边界触发，整体控制流如图 6 所示。
+
+```mermaid caption="图 6：流式环形状态缓存与双端 Kernel 调度链路"
 flowchart TD
     TOK["新到达 token 隐状态 $$H$$"] -->|"投影 KV 与门控分 $$Z$$"| RING["FP32 环形 StateCache"]
     RING -->|"到达周期边界 $$p \bmod m = m - 1$$"| NORM["跨环 Softmax 折叠 + RMSNorm"]
@@ -210,12 +254,12 @@ compressed_kv=(1, 64) nope_drift=0.0e+00 rel_pos_err=4.44e-16
 
 [^dsv4-paper]: DeepSeek-AI，“DeepSeek-V4 Technical Report”，2026。[arXiv:2606.19348](https://arxiv.org/abs/2606.19348)，§2.3（式 (9)–(27)）与 §3.5。
 
-[^vllm-comp41]: `vLLM` 项目，`vllm/models/deepseek_v4/compressor.py`、`vllm/models/deepseek_v41/compressor.py`（`CompressorStateCache`、`CircularBufferManager`、`DeepseekCompressor`）与 `vllm/models/deepseek_v41/common/rope.py`（`build_deepseek_v4_rope`），commit `bb23c0a8`。[GitHub](https://github.com/vllm-project/vllm/tree/bb23c0a81779ba733923a7dab9b840b4e533f6a5)。
+[^vllm-comp41]: `vLLM` 项目，`vllm/models/deepseek_v4/compressor.py`（`CompressorStateCache` L138–195、`DeepseekCompressor` L209–300）、`vllm/models/deepseek_v41/compressor.py`（`CircularBufferManager` L32/L270、`CompressorStateCache` L237–275、`DeepseekCompressor` L278）、`vllm/models/deepseek_v41/common/rope.py`（`build_deepseek_v4_rope` L9–53）与 `vllm/model_executor/layers/rotary_embedding/deepseek_scaling_rope.py`（`DeepseekV4ScalingRotaryEmbedding` L224–337），commit `99b0b0b0`。[GitHub](https://github.com/vllm-project/vllm/tree/99b0b0b0f34adf48122e54396448950d72efb0fe)。
 
-[^vllm-fused]: `vLLM` 项目，`vllm/models/deepseek_v41/common/ops/fused_compress_quant_cache.py`（`fused_save_compress_norm`、`rope_quant_insert`）、`vllm/models/deepseek_v4/common/ops/fused_inv_rope_fp8_quant.py` 与 `vllm/models/deepseek_v4/common/grouped_wo_a.py`（`DeepseekV4GroupedWoA`），commit `bb23c0a8`。
+[^vllm-fused]: `vLLM` 项目，`vllm/models/deepseek_v41/common/ops/fused_compress_quant_cache.py`（`fused_save_compress_norm` L22/L126/L163、`rope_quant_insert` L483）、`vllm/models/deepseek_v4/common/ops/fused_inv_rope_fp8_quant.py`（`fused_inv_rope_fp8_quant` L385–466）与 `vllm/models/deepseek_v4/common/grouped_wo_a.py`（`DeepseekV4GroupedWoA` L15–84），commit `99b0b0b0`。
 
-[^ascend-comp4]: `vllm-ascend` 项目，`vllm_ascend/models/deepseek_v4/compressor.py`（调用 `torch.ops._C_ascend.compressor`）与 `vllm_ascend/attention/dsa_v41.py`（`AscendDSAV41Impl._apply_rotary(..., inverse=True)`），commit `3649b8ff`。[GitHub](https://github.com/vllm-project/vllm-ascend/tree/3649b8ff7fd69e707db2c634073d2b4c40eadf15)。
+[^ascend-comp4]: `vllm-ascend` 项目，`vllm_ascend/models/deepseek_v4/compressor.py`（调用 `torch.ops._C_ascend.compressor` L205–224）与 `vllm_ascend/attention/dsa_v41.py`（`AscendDSAV41Impl._apply_rotary(..., inverse=inverse)` L390–393），commit `b776261e`。[GitHub](https://github.com/vllm-project/vllm-ascend/tree/b776261e32d347095327b77228c6727e001509e8)。
 
-[^ascend-comp41]: `vllm-ascend` 项目，`vllm_ascend/models/deepseek_v41/compressor.py`（`DeepseekV41Compressor`、`AscendCircularBufferSpec`）与 `vllm_ascend/ops/triton/c2_ring_metadata.py`，commit `3649b8ff`。
+[^ascend-comp41]: `vllm-ascend` 项目，`vllm_ascend/models/deepseek_v41/compressor.py`（`DeepseekV41Compressor` L17–78、`AscendCircularBufferSpec` L13/L38）与 `vllm_ascend/ops/triton/c2_ring_metadata.py`（`_build_c2_ring_metadata_kernel` L20、`build_c2_ring_metadata` L143），commit `b776261e`。
 
-[^ascend-triton]: `vllm-ascend` 项目，`vllm_ascend/ops/triton/compressor/compressor_triton.py`（K1 `_proj_kernel`、K2 `_pool_kernel` 与 K3 `_cache_update_kernel` 三段核及读写顺序约束），commit `3649b8ff`。
+[^ascend-triton]: `vllm-ascend` 项目，`vllm_ascend/ops/triton/compressor/compressor_triton.py`（`compress_triton` L550–603 的 K1 `_proj_kernel` L43、K2 `_pool_kernel` L218、K3 `_cache_update_kernel` L359，以及 `compressor_from_projected` L785–827 的读先于写顺序约束），commit `b776261e`。

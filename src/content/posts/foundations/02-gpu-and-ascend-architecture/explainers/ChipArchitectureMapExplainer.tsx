@@ -1,26 +1,25 @@
 import { useMemo } from 'react';
 import { Stage, type Step } from 'astro-wisp/explainers';
 import { motion } from 'motion/react';
-import { BeatExplainer, SvgBeatGroup, defaultBeats, type BeatSpec } from '@/explainers/kit';
+import { BeatExplainer } from '@/explainers/kit';
 import DataFlowArrow from '@/explainers/kit/DataFlowArrow';
 import SvgRichLabel from '@/explainers/kit/SvgRichLabel';
 import {
-  MANIM_EASE,
   RADIUS,
   RADIUS_SM,
   STAGE_W,
   assertMaxHues,
   resolveToneFill,
   resolveToneStroke,
+  useDiagramMotion,
   type AnyTone,
 } from '@/explainers/kit/motion';
 
 export interface ChipArchitectureMapState {
   stepIndex: number;
   formulaTex: string;
-  beats: BeatSpec[];
   platform: 'gpu' | 'ascend';
-  focus: 'gpu_warp' | 'gpu_block' | 'gpu_chip' | 'ascend_core' | 'ascend_bus';
+  focus: 'gpu_warp' | 'gpu_block' | 'ascend_core' | 'ascend_bus';
   rightBadge: string;
   hbmSpecTex: string;
   hbmFooter: string;
@@ -32,84 +31,44 @@ export function buildChipArchitectureMapSteps(): Step<ChipArchitectureMapState>[
 
   return [
     {
-      label: 'Warp 锁步',
+      label: 'Warp 与 SM 阵列',
       duration: 4600,
       state: {
         stepIndex: 0,
-        formulaTex: '$1\\text{ Warp} = 32\\text{ Threads}\\; (\\text{SIMT 单指令同拍锁步})$',
-        beats: defaultBeats([
-          '标定 Thread -> Warp 层级路径',
-          '点亮 Warp 0 内 32 线程锁步执行',
-          '对照 SM 硬件池与 HBM 约束',
-          '落定片外 HBM 延迟基线',
-        ]),
+        formulaTex:
+          '$1\\text{ Warp} = 32\\text{ Threads} \\;\\longleftrightarrow\\; 132\\;\\text{SMs (H100)}$',
         platform: 'gpu',
         focus: 'gpu_warp',
         rightBadge: 'NVIDIA H100 SXM',
         hbmSpecTex: '$80\\;\\text{GB} \\cdot 3.35\\;\\text{TB/s}$',
-        hbmFooter: '约 $400+$ 周期访问延迟；优化首要目标即削减片外 HBM 往返并提高命中复用',
+        hbmFooter: '约 $400+$ 周期片外延迟；Warp 锁步发射并由全卡 132 个 SM 并行吞吐请求',
       },
       caption:
-        'NVIDIA GPU 的最小执行单位是单个 Thread（线程），相邻 $32$ 个线程（$T_0\\dots T_{31}$）组成一个硬件锁步调度的 Warp（线程束），同一个时钟周期执行相同指令、各自读取私有寄存器中的数据。',
+        'NVIDIA GPU 的最小执行单位是单个 Thread（线程），相邻 $32$ 个线程（$T_0\\dots T_{31}$）组成硬件锁步调度的 Warp（线程束）；全卡共有 $132$ 个同类 SM 并行分派不同线程块。',
     },
     {
-      label: 'Block 驻留',
+      label: 'Block 驻留片上',
       duration: 4600,
       state: {
         stepIndex: 1,
         formulaTex:
-          '$1\\text{ Block} \\le 32\\text{ Warps} \\;\\mapsto\\; \\text{共享 } 228\\;\\text{KB SMEM}$',
-        beats: defaultBeats([
-          '聚焦 Thread Block / CTA 聚合边界',
-          '点亮 Reg / SMEM / L1 / 4 调度器',
-          '展示 Block 1 与片上共享层级',
-          '归结 SMEM 降低全局访存',
-        ]),
+          '$1\\text{ Block} \\le 32\\text{ Warps} \\;\\mapsto\\; 228\\;\\text{KB SMEM} \\longleftrightarrow 50\\;\\text{MB L2}$',
         platform: 'gpu',
         focus: 'gpu_block',
         rightBadge: 'NVIDIA H100 SXM',
         hbmSpecTex: '$80\\;\\text{GB} \\cdot 3.35\\;\\text{TB/s}$',
-        hbmFooter: '约 $400+$ 周期访问延迟；Thread Block 在 SM 内借 SMEM 共享输入以减少全局读回',
+        hbmFooter: 'Thread Block 驻留 SM 内借 228 KB SMEM 与 256 KB 寄存器复用数据，减少 HBM 往返',
       },
       caption:
-        '多个 Warp 聚合成 Thread Block（CTA）后整体驻留到单一物理 SM 上直至结束：同块内线程可经 SMEM 共享内存交换数据，SM 再凭 $256\\;\\text{KB}$ 寄存器堆与 $4$ 组调度器分派执行。',
+        '多个 Warp 聚合成 Thread Block（CTA）后整体驻留到单一物理 SM 上直至结束：同块内线程借 SMEM 共享内存与 $256\\;\\text{KB}$ 寄存器交换数据，未命中部分穿过 $50\\;\\text{MB}$ L2 落回 HBM。',
     },
     {
-      label: '全芯 132 SM',
+      label: '昇腾 1C2V 核',
       duration: 4600,
       state: {
         stepIndex: 2,
         formulaTex:
-          '$132\\;\\text{SMs} \\longleftrightarrow 50\\;\\text{MB L2} \\longleftrightarrow 80\\;\\text{GB HBM3}$',
-        beats: defaultBeats([
-          '展开 SM 0..SM 3 与 132 SM 并行池',
-          '高亮跨 SM 共享 50 MB L2 Cache',
-          '激活 32B Sector 总线与 HBM3',
-          '收拢片外带宽约束',
-        ]),
-        platform: 'gpu',
-        focus: 'gpu_chip',
-        rightBadge: 'NVIDIA H100 SXM',
-        hbmSpecTex: '$80\\;\\text{GB} \\cdot 3.35\\;\\text{TB/s}$',
-        hbmFooter:
-          '全卡 $132$ 个 SM 共同面对有限 HBM 带宽；GQA 与权重分块优先命中片上 $50\\;\\text{MB}$ 的 L2 Cache',
-      },
-      caption:
-        '上升到整芯视角，全卡共有 $132$ 个同类 SM 并行消耗 Grid 中独立的 Thread Block，跨 SM 的公共权重与 GQA 键值经 $50\\;\\text{MB}$ 硬件 L2 Cache 汇总复用，未命中的数据再穿过总线落回片外 HBM。',
-    },
-    {
-      label: '昇腾 1C2V',
-      duration: 4600,
-      state: {
-        stepIndex: 3,
-        formulaTex:
           '$1\\text{ AI Core} = \\text{Scalar} + 1\\times\\text{Cube}(16^3) + 2\\times\\text{AIV}(192\\;\\text{KB UB})$',
-        beats: defaultBeats([
-          'Scalar 控制核异步译码派发',
-          '点亮 1x Cube 脉动阵列与 L0',
-          '激活 2x Vector 长向量与 192KB UB',
-          '标出显式容量编排边界',
-        ]),
         platform: 'ascend',
         focus: 'ascend_core',
         rightBadge: '华为昇腾 1C2V',
@@ -117,21 +76,15 @@ export function buildChipArchitectureMapSteps(): Step<ChipArchitectureMapState>[
         hbmFooter: '核内不设透明硬件 L1 Cache，程序员须按 192 KB UB 与 256 KB L0C 容量显式编排分块',
       },
       caption:
-        '切换至华为昇腾 DaVinci AI Core（$1\\text{C}2\\text{V}$ 簇）：芯片取消数十个锁步 Warp 池，改为由 Scalar 核向 $1$ 个 $16\\times 16\\times 16$ Cube 脉动阵列与 $2$ 个各自独占 $192\\;\\text{KB}$ UB 的长向量 Vector 核下发异步指令。',
+        '切换至华为昇腾 DaVinci AI Core（$1\\text{C}2\\text{V}$ 簇）：芯片取消数十个锁步 Warp 池，改为由 Scalar 控制核向 $1$ 个 $16\\times 16\\times 16$ Cube 脉动阵列与 $2$ 个各自独占 $192\\;\\text{KB}$ UB 的长向量 Vector 核派发异步任务。',
     },
     {
-      label: 'MTE 数据环',
+      label: 'MTE 搬运数据环',
       duration: 4600,
       state: {
-        stepIndex: 4,
+        stepIndex: 3,
         formulaTex:
           '$\\text{HBM}\\xrightarrow{\\text{MTE2}}\\text{L1}\\xrightarrow{\\text{MTE1}}\\text{Cube}\\xrightarrow{\\text{Fix}}\\text{UB}\\xrightarrow{\\text{MTE3}}\\text{HBM}$',
-        beats: defaultBeats([
-          '点亮 MTE2/1/FixPipe/MTE3 四大引擎',
-          '沿 MTE2 -> L1 -> L0 馈送 Cube 计算',
-          '经 FixPipe -> UB -> MTE3 回写 HBM',
-          '汇总 BIU 双端连续合并约束',
-        ]),
         platform: 'ascend',
         focus: 'ascend_bus',
         rightBadge: '华为昇腾 1C2V',
@@ -151,7 +104,7 @@ export default function ChipArchitectureMapExplainer({
   title?: string;
 }) {
   const steps = useMemo(() => buildChipArchitectureMapSteps(), []);
-  const highlightTransition = { duration: 0.22, ease: MANIM_EASE };
+  const { highlightTransition } = useDiagramMotion();
 
   return (
     <BeatExplainer
@@ -159,10 +112,9 @@ export default function ChipArchitectureMapExplainer({
       title={title}
       label="芯片级执行模型与物理硬件嵌套地图"
       stageMinHeight={652}
-      getBeats={(step) => step.state.beats}
       getFormula={(step) => step.state.formulaTex}
     >
-      {(step, { beat, dotToken }) => {
+      {(step, { dotToken }) => {
         const s = step.state;
         const isGpu = s.platform === 'gpu';
         const dieTone: AnyTone = s.focus === 'ascend_bus' ? 'activation' : 'neutral';
@@ -197,7 +149,7 @@ export default function ChipArchitectureMapExplainer({
                 id: 's',
                 label: 'SM ×132',
                 tone: 'activation' as AnyTone,
-                on: s.focus === 'gpu_block' || s.focus === 'gpu_chip',
+                on: s.focus === 'gpu_warp' || s.focus === 'gpu_block',
                 x: 308,
                 w: 80,
               },
@@ -205,7 +157,7 @@ export default function ChipArchitectureMapExplainer({
                 id: 'm',
                 label: 'L2 / HBM',
                 tone: 'highlight' as AnyTone,
-                on: s.focus === 'gpu_chip',
+                on: s.focus === 'gpu_block',
                 x: 404,
                 w: 88,
               },
@@ -247,7 +199,6 @@ export default function ChipArchitectureMapExplainer({
 
         return (
           <Stage width={STAGE_W} height={556} label="GPU SM 与昇腾 AI Core 芯片物理与执行层级图">
-            {/* 1. Top hierarchy breadcrumb pills */}
             {breadcrumbs.map((b, bi) => {
               const stroke = b.on ? resolveToneStroke(b.tone) : 'var(--wisp-border)';
               const fill = b.on ? resolveToneFill(b.tone) : 'var(--wisp-surface)';
@@ -303,7 +254,6 @@ export default function ChipArchitectureMapExplainer({
               );
             })}
 
-            {/* Right architecture pill */}
             <rect
               x={542}
               y={10}
@@ -329,7 +279,6 @@ export default function ChipArchitectureMapExplainer({
               {s.rightBadge}
             </text>
 
-            {/* 2. ON-CHIP SILICON DIE OUTER BOX */}
             <rect
               x={12}
               y={42}
@@ -382,9 +331,10 @@ export default function ChipArchitectureMapExplainer({
 
             {isGpu ? (
               <g>
-                {/* Left Expanded SM 0 */}
                 {(() => {
-                  const smActive = s.focus === 'gpu_block' || s.focus === 'gpu_chip';
+                  const smActive = s.focus === 'gpu_block' || s.focus === 'gpu_warp';
+                  const blkActive = s.focus === 'gpu_block';
+                  const warpActive = s.focus === 'gpu_warp';
                   return (
                     <g>
                       <rect
@@ -395,7 +345,7 @@ export default function ChipArchitectureMapExplainer({
                         rx={RADIUS}
                         fill="var(--wisp-bg)"
                         stroke={resolveToneStroke(smActive ? 'activation' : 'neutral')}
-                        strokeWidth={smActive ? 2 : 1.3}
+                        strokeWidth={blkActive ? 2 : 1.4}
                       />
                       <text
                         x={34}
@@ -411,159 +361,139 @@ export default function ChipArchitectureMapExplainer({
                         SM 0 核心计算单元（含 4 个硬件处理块）
                       </text>
 
-                      {/* Thread Block 0 */}
-                      {(() => {
-                        const blkActive = s.focus === 'gpu_block';
-                        const warpActive = s.focus === 'gpu_warp';
+                      <rect
+                        x={34}
+                        y={102}
+                        width={346}
+                        height={140}
+                        rx={RADIUS}
+                        fill={blkActive ? resolveToneFill('active') : 'var(--wisp-surface)'}
+                        fillOpacity={blkActive ? 0.35 : 0.45}
+                        stroke={resolveToneStroke(blkActive || warpActive ? 'active' : 'neutral')}
+                        strokeWidth={blkActive ? 2 : 1.3}
+                      />
+                      <text
+                        x={44}
+                        y={114}
+                        dominantBaseline="central"
+                        style={{
+                          fill: resolveToneStroke('active'),
+                          fontFamily: 'var(--wisp-font-sans)',
+                          fontSize: 11,
+                          fontWeight: 700,
+                        }}
+                      >
+                        Thread Block 0 / CTA（共享 SMEM，块内同步）
+                      </text>
+
+                      <rect
+                        x={44}
+                        y={124}
+                        width={326}
+                        height={66}
+                        rx={RADIUS_SM}
+                        fill={warpActive ? resolveToneFill('active') : 'var(--wisp-bg)'}
+                        fillOpacity={warpActive ? 0.45 : 0.9}
+                        stroke={resolveToneStroke(warpActive ? 'active' : 'neutral')}
+                        strokeWidth={warpActive ? 1.8 : 1.1}
+                        strokeDasharray={warpActive ? undefined : '4 2'}
+                      />
+                      <text
+                        x={54}
+                        y={134}
+                        dominantBaseline="central"
+                        style={{
+                          fill: 'var(--wisp-fg)',
+                          fontFamily: 'var(--wisp-font-sans)',
+                          fontSize: 10,
+                          fontWeight: warpActive ? 700 : 600,
+                        }}
+                      >
+                        Warp 0 · 32 threads，SIMT 同周期锁步执行
+                      </text>
+
+                      {Array.from({ length: 32 }, (_, tid) => {
+                        const row = Math.floor(tid / 16);
+                        const col = tid % 16;
+                        const cx = 56 + col * 19;
+                        const cy = 144 + row * 19;
                         return (
-                          <g>
+                          <g key={tid}>
                             <rect
-                              x={34}
-                              y={102}
-                              width={346}
-                              height={140}
-                              rx={RADIUS}
-                              fill={blkActive ? resolveToneFill('active') : 'var(--wisp-surface)'}
-                              fillOpacity={blkActive ? 0.35 : 0.45}
-                              stroke={resolveToneStroke(
-                                blkActive || warpActive ? 'active' : 'neutral',
-                              )}
-                              strokeWidth={blkActive ? 2 : 1.3}
-                            />
-                            <text
-                              x={44}
-                              y={114}
-                              dominantBaseline="central"
-                              style={{
-                                fill: resolveToneStroke('active'),
-                                fontFamily: 'var(--wisp-font-sans)',
-                                fontSize: 11,
-                                fontWeight: 700,
-                              }}
-                            >
-                              Thread Block 0 / CTA（共享 SMEM，块内同步）
-                            </text>
-
-                            {/* Warp 0 with 32 literal thread boxes 0..31 */}
-                            <rect
-                              x={44}
-                              y={124}
-                              width={326}
-                              height={66}
+                              x={cx}
+                              y={cy}
+                              width={17}
+                              height={16}
                               rx={RADIUS_SM}
-                              fill={warpActive ? resolveToneFill('active') : 'var(--wisp-bg)'}
-                              fillOpacity={warpActive ? 0.45 : 0.9}
+                              fill={warpActive ? resolveToneFill('active') : 'var(--wisp-surface)'}
                               stroke={resolveToneStroke(warpActive ? 'active' : 'neutral')}
-                              strokeWidth={warpActive ? 1.8 : 1.1}
-                              strokeDasharray={warpActive ? undefined : '4 2'}
+                              strokeWidth={warpActive ? 1.3 : 0.9}
                             />
                             <text
-                              x={54}
-                              y={134}
-                              dominantBaseline="central"
-                              style={{
-                                fill: 'var(--wisp-fg)',
-                                fontFamily: 'var(--wisp-font-sans)',
-                                fontSize: 10,
-                                fontWeight: warpActive ? 700 : 600,
-                              }}
-                            >
-                              Warp 0 · 32 threads，SIMT 同周期锁步执行
-                            </text>
-
-                            {Array.from({ length: 32 }, (_, tid) => {
-                              const row = Math.floor(tid / 16);
-                              const col = tid % 16;
-                              const cx = 56 + col * 19;
-                              const cy = 144 + row * 19;
-                              return (
-                                <g key={tid}>
-                                  <rect
-                                    x={cx}
-                                    y={cy}
-                                    width={17}
-                                    height={16}
-                                    rx={RADIUS_SM}
-                                    fill={
-                                      warpActive ? resolveToneFill('active') : 'var(--wisp-surface)'
-                                    }
-                                    stroke={resolveToneStroke(warpActive ? 'active' : 'neutral')}
-                                    strokeWidth={warpActive ? 1.3 : 0.9}
-                                  />
-                                  <text
-                                    x={cx + 8.5}
-                                    y={cy + 8}
-                                    textAnchor="middle"
-                                    dominantBaseline="central"
-                                    style={{
-                                      fill: warpActive ? 'var(--wisp-fg)' : 'var(--wisp-muted)',
-                                      fontFamily: 'var(--wisp-font-mono)',
-                                      fontSize: 10,
-                                      fontWeight: warpActive ? 700 : 500,
-                                    }}
-                                  >
-                                    {tid}
-                                  </text>
-                                </g>
-                              );
-                            })}
-
-                            {/* Warp 1 collapsed */}
-                            <rect
-                              x={44}
-                              y={195}
-                              width={326}
-                              height={22}
-                              rx={RADIUS_SM}
-                              fill="var(--wisp-bg)"
-                              stroke="var(--wisp-border)"
-                              strokeWidth={1}
-                              strokeDasharray="4 3"
-                            />
-                            <text
-                              x={54}
-                              y={206}
-                              dominantBaseline="central"
-                              style={{
-                                fill: 'var(--wisp-muted)',
-                                fontFamily: 'var(--wisp-font-sans)',
-                                fontSize: 10.5,
-                              }}
-                            >
-                              Warp 1 · 32 threads（独立指令流，就绪可 0 拍切入）
-                            </text>
-
-                            <text
-                              x={207}
-                              y={229}
+                              x={cx + 8.5}
+                              y={cy + 8}
                               textAnchor="middle"
                               dominantBaseline="central"
                               style={{
-                                fill: 'var(--wisp-muted)',
-                                fontFamily: 'var(--wisp-font-sans)',
+                                fill: warpActive ? 'var(--wisp-fg)' : 'var(--wisp-muted)',
+                                fontFamily: 'var(--wisp-font-mono)',
                                 fontSize: 10,
+                                fontWeight: warpActive ? 700 : 500,
                               }}
                             >
-                              ⋮ 单块至多 32 Warps（1024 线程） · 单 SM 至多 64 Warps
+                              {tid}
                             </text>
                           </g>
                         );
-                      })()}
+                      })}
 
-                      {/* Thread Block 1 */}
+                      <rect
+                        x={44}
+                        y={195}
+                        width={326}
+                        height={22}
+                        rx={RADIUS_SM}
+                        fill="var(--wisp-bg)"
+                        stroke="var(--wisp-border)"
+                        strokeWidth={1}
+                        strokeDasharray="4 3"
+                      />
+                      <text
+                        x={54}
+                        y={206}
+                        dominantBaseline="central"
+                        style={{
+                          fill: 'var(--wisp-muted)',
+                          fontFamily: 'var(--wisp-font-sans)',
+                          fontSize: 10.5,
+                        }}
+                      >
+                        Warp 1 · 32 threads（独立指令流，就绪可 0 拍切入）
+                      </text>
+
+                      <text
+                        x={207}
+                        y={229}
+                        textAnchor="middle"
+                        dominantBaseline="central"
+                        style={{
+                          fill: 'var(--wisp-muted)',
+                          fontFamily: 'var(--wisp-font-sans)',
+                          fontSize: 10,
+                        }}
+                      >
+                        ⋮ 单块至多 32 Warps（1024 线程） · 单 SM 至多 64 Warps
+                      </text>
+
                       <rect
                         x={34}
                         y={248}
                         width={346}
                         height={24}
                         rx={RADIUS_SM}
-                        fill={
-                          s.focus === 'gpu_block'
-                            ? resolveToneFill('active')
-                            : 'var(--wisp-surface)'
-                        }
-                        fillOpacity={s.focus === 'gpu_block' ? 0.45 : 0.7}
-                        stroke={resolveToneStroke(s.focus === 'gpu_block' ? 'active' : 'neutral')}
+                        fill={blkActive ? resolveToneFill('active') : 'var(--wisp-surface)'}
+                        fillOpacity={blkActive ? 0.45 : 0.7}
+                        stroke={resolveToneStroke(blkActive ? 'active' : 'neutral')}
                         strokeWidth={1.1}
                         strokeDasharray="4 3"
                       />
@@ -580,7 +510,6 @@ export default function ChipArchitectureMapExplainer({
                         Thread Block 1 · 资源余量充足时与 Block 0 同驻该 SM
                       </text>
 
-                      {/* 4 SM Hardware unit cards */}
                       {[
                         { t1: 'Register file', t2: '256 KB/SM', t3: '每线程私有' },
                         { t1: 'Shared mem', t2: '上限 228 KB', t3: '块内显式共享' },
@@ -588,7 +517,7 @@ export default function ChipArchitectureMapExplainer({
                         { t1: 'Warp sched.', t2: '4 个调度器', t3: '每拍发射就绪' },
                       ].map((u, ui) => {
                         const ux = 34 + ui * 88;
-                        const lit = s.focus === 'gpu_block' || s.focus === 'gpu_chip';
+                        const lit = blkActive;
                         return (
                           <g key={u.t1}>
                             <rect
@@ -600,7 +529,7 @@ export default function ChipArchitectureMapExplainer({
                               fill={lit ? resolveToneFill('activation') : 'var(--wisp-surface)'}
                               fillOpacity={lit ? 0.5 : 0.85}
                               stroke={resolveToneStroke(lit ? 'activation' : 'neutral')}
-                              strokeWidth={lit ? 1.4 : 1}
+                              strokeWidth={lit ? 1.5 : 1}
                             />
                             <text
                               x={ux + 41}
@@ -650,13 +579,12 @@ export default function ChipArchitectureMapExplainer({
                   );
                 })()}
 
-                {/* Collapsed Sibling SMs 1..3 */}
                 {[
                   { id: 'SM 1', blk: 'Thread Block 2', y: 76 },
                   { id: 'SM 2', blk: 'Thread Block 3', y: 176 },
                   { id: 'SM 3', blk: 'Thread Block 4', y: 276 },
                 ].map((sm) => {
-                  const chipOn = s.focus === 'gpu_chip';
+                  const chipOn = s.focus === 'gpu_warp' || s.focus === 'gpu_block';
                   return (
                     <g key={sm.id}>
                       <rect
@@ -667,7 +595,7 @@ export default function ChipArchitectureMapExplainer({
                         rx={RADIUS}
                         fill="var(--wisp-bg)"
                         stroke={resolveToneStroke(chipOn ? 'activation' : 'neutral')}
-                        strokeWidth={chipOn ? 1.8 : 1.1}
+                        strokeWidth={s.focus === 'gpu_warp' ? 1.7 : 1.1}
                       />
                       <text
                         x={412}
@@ -734,7 +662,6 @@ export default function ChipArchitectureMapExplainer({
                   );
                 })}
 
-                {/* Far-right 132 SM scale indicator */}
                 {[196, 206, 216].map((cy) => (
                   <circle key={cy} cx={628} cy={cy} r={2.5} fill="var(--wisp-muted)" />
                 ))}
@@ -766,16 +693,15 @@ export default function ChipArchitectureMapExplainer({
                   SMs (H100)
                 </text>
 
-                {/* L2 Cache bar */}
                 <rect
                   x={24}
                   y={376}
                   width={632}
                   height={40}
                   rx={RADIUS}
-                  fill={s.focus === 'gpu_chip' ? resolveToneFill('highlight') : 'var(--wisp-bg)'}
+                  fill={s.focus === 'gpu_block' ? resolveToneFill('highlight') : 'var(--wisp-bg)'}
                   stroke={resolveToneStroke('highlight')}
-                  strokeWidth={s.focus === 'gpu_chip' ? 2 : 1.3}
+                  strokeWidth={s.focus === 'gpu_block' ? 2 : 1.3}
                 />
                 <text
                   x={38}
@@ -790,10 +716,50 @@ export default function ChipArchitectureMapExplainer({
                 >
                   L2 Cache · 50 MB（全卡 SM 共享 · 硬件自动管理 · 复用权重与 GQA 键值 · ~200 周期）
                 </text>
+
+                {/* GPU 数据流脉冲：HBM -> L2 -> SMEM / SM 阵列 */}
+                <DataFlowArrow
+                  points={[
+                    [164, 458],
+                    [164, 416],
+                  ]}
+                  tone="highlight"
+                  active
+                  flow
+                  continuous
+                  draw
+                  dotToken={dotToken}
+                  arrowEnd
+                />
+                <DataFlowArrow
+                  points={[
+                    [164, 376],
+                    [164, 356],
+                  ]}
+                  tone="activation"
+                  active={s.focus === 'gpu_block'}
+                  flow={s.focus === 'gpu_block'}
+                  continuous
+                  draw
+                  dotToken={dotToken}
+                  arrowEnd
+                />
+                <DataFlowArrow
+                  points={[
+                    [495, 376],
+                    [495, 366],
+                  ]}
+                  tone="activation"
+                  active
+                  flow
+                  continuous
+                  draw
+                  dotToken={dotToken}
+                  arrowEnd
+                />
               </g>
             ) : (
               <g>
-                {/* Left Expanded Ascend AI Core 0 (1C2V) */}
                 <rect
                   x={24}
                   y={76}
@@ -818,7 +784,6 @@ export default function ChipArchitectureMapExplainer({
                   AI Core 0 · 达芬奇 1C2V 异构执行簇（1 Cube + 2 Vector）
                 </text>
 
-                {/* Scalar control bar */}
                 <rect
                   x={34}
                   y={101}
@@ -848,7 +813,6 @@ export default function ChipArchitectureMapExplainer({
                   Scalar 控制核 · 译码并向 MTE / Cube / Vector 写入异步队列
                 </text>
 
-                {/* Left 1x Cube Unit with 4x4 literal MAC systolic array */}
                 <rect
                   x={34}
                   y={132}
@@ -874,7 +838,6 @@ export default function ChipArchitectureMapExplainer({
                   1× Cube 矩阵核 (16×16×16)
                 </text>
 
-                {/* L0B top strip & L0A left strip flanking 4x4 MAC systolic array */}
                 <rect
                   x={72}
                   y={154}
@@ -925,7 +888,6 @@ export default function ChipArchitectureMapExplainer({
                   L0A
                 </text>
 
-                {/* 4x4 MAC cells */}
                 {Array.from({ length: 16 }, (_, idx) => {
                   const r = Math.floor(idx / 4);
                   const c = idx % 4;
@@ -961,7 +923,6 @@ export default function ChipArchitectureMapExplainer({
                   );
                 })}
 
-                {/* L1 Buffer & L0C Accumulator */}
                 <rect
                   x={42}
                   y={244}
@@ -1026,7 +987,6 @@ export default function ChipArchitectureMapExplainer({
                   FP32 累加 · 须经 FixPipe 迁出
                 </text>
 
-                {/* Right 2x Vector Cores (AIV 0 & AIV 1) with literal SIMD lanes + UB 192 KB */}
                 <rect
                   x={216}
                   y={132}
@@ -1079,7 +1039,6 @@ export default function ChipArchitectureMapExplainer({
                       >
                         {`AIV ${aivIdx} · SIMD 长向量单元`}
                       </text>
-                      {/* 8 SIMD vector lanes */}
                       {Array.from({ length: 8 }, (_, lane) => {
                         const lx = 230 + lane * 19;
                         return (
@@ -1110,7 +1069,6 @@ export default function ChipArchitectureMapExplainer({
                           </g>
                         );
                       })}
-                      {/* Dedicated UB 192 KB */}
                       <rect
                         x={230}
                         y={ay + 43}
@@ -1146,7 +1104,6 @@ export default function ChipArchitectureMapExplainer({
                   );
                 })}
 
-                {/* 4 Explicit DMA / Data Pipes */}
                 {[
                   { id: 'MTE2', sub: 'HBM→L1/UB', tone: 'highlight' as AnyTone },
                   { id: 'MTE1', sub: 'L1→L0A/B', tone: 'active' as AnyTone },
@@ -1198,7 +1155,37 @@ export default function ChipArchitectureMapExplainer({
                   );
                 })}
 
-                {/* Step 4 explicit DMA & compute pipeline arrows */}
+                {s.focus === 'ascend_core' && (
+                  <g>
+                    <DataFlowArrow
+                      points={[
+                        [121, 125],
+                        [121, 134],
+                      ]}
+                      tone="activation"
+                      active
+                      flow
+                      continuous
+                      draw
+                      dotToken={dotToken}
+                      arrowEnd
+                    />
+                    <DataFlowArrow
+                      points={[
+                        [305, 125],
+                        [305, 134],
+                      ]}
+                      tone="activation"
+                      active
+                      flow
+                      continuous
+                      draw
+                      dotToken={dotToken}
+                      arrowEnd
+                    />
+                  </g>
+                )}
+
                 {s.focus === 'ascend_bus' && (
                   <g>
                     <DataFlowArrow
@@ -1208,9 +1195,10 @@ export default function ChipArchitectureMapExplainer({
                       ]}
                       tone="highlight"
                       active
-                      visible={beat >= 1}
-                      draw={beat >= 1}
-                      dotToken={beat >= 1 ? dotToken : 0}
+                      flow
+                      continuous
+                      draw
+                      dotToken={dotToken}
                       arrowEnd
                     />
                     <DataFlowArrow
@@ -1220,9 +1208,10 @@ export default function ChipArchitectureMapExplainer({
                       ]}
                       tone="highlight"
                       active
-                      visible={beat >= 1}
-                      draw={beat >= 1}
-                      dotToken={beat >= 1 ? dotToken : 0}
+                      flow
+                      continuous
+                      draw
+                      dotToken={dotToken}
                       arrowEnd
                     />
                     <DataFlowArrow
@@ -1232,9 +1221,10 @@ export default function ChipArchitectureMapExplainer({
                       ]}
                       tone="highlight"
                       active
-                      visible={beat >= 1}
-                      draw={beat >= 1}
-                      dotToken={beat >= 1 ? dotToken : 0}
+                      flow
+                      continuous
+                      draw
+                      dotToken={dotToken}
                       arrowEnd
                     />
                     <DataFlowArrow
@@ -1244,8 +1234,10 @@ export default function ChipArchitectureMapExplainer({
                       ]}
                       tone="active"
                       active
-                      visible={beat >= 1}
-                      draw={beat >= 1}
+                      flow
+                      continuous
+                      draw
+                      dotToken={dotToken}
                       arrowEnd
                     />
                     <DataFlowArrow
@@ -1255,8 +1247,10 @@ export default function ChipArchitectureMapExplainer({
                       ]}
                       tone="active"
                       active
-                      visible={beat >= 1}
-                      draw={beat >= 1}
+                      flow
+                      continuous
+                      draw
+                      dotToken={dotToken}
                       arrowEnd
                     />
                     <DataFlowArrow
@@ -1268,9 +1262,10 @@ export default function ChipArchitectureMapExplainer({
                       ]}
                       tone="activation"
                       active
-                      visible={beat >= 2}
-                      draw={beat >= 2}
-                      dotToken={beat >= 2 ? dotToken : 0}
+                      flow
+                      continuous
+                      draw
+                      dotToken={dotToken}
                       arrowEnd
                     />
                     <DataFlowArrow
@@ -1280,9 +1275,10 @@ export default function ChipArchitectureMapExplainer({
                       ]}
                       tone="highlight"
                       active
-                      visible={beat >= 2}
-                      draw={beat >= 2}
-                      dotToken={beat >= 2 ? dotToken : 0}
+                      flow
+                      continuous
+                      draw
+                      dotToken={dotToken}
                       arrowEnd
                     />
                     <DataFlowArrow
@@ -1292,9 +1288,10 @@ export default function ChipArchitectureMapExplainer({
                       ]}
                       tone="highlight"
                       active
-                      visible={beat >= 2}
-                      draw={beat >= 2}
-                      dotToken={beat >= 2 ? dotToken : 0}
+                      flow
+                      continuous
+                      draw
+                      dotToken={dotToken}
                       arrowEnd
                     />
                     <DataFlowArrow
@@ -1304,15 +1301,15 @@ export default function ChipArchitectureMapExplainer({
                       ]}
                       tone="highlight"
                       active
-                      visible={beat >= 2}
-                      draw={beat >= 2}
-                      dotToken={beat >= 2 ? dotToken : 0}
+                      flow
+                      continuous
+                      draw
+                      dotToken={dotToken}
                       arrowEnd
                     />
                   </g>
                 )}
 
-                {/* Collapsed Sibling AI Cores 1..3 */}
                 {[1, 2, 3].map((ci) => {
                   const ay = 76 + (ci - 1) * 100;
                   return (
@@ -1423,7 +1420,6 @@ export default function ChipArchitectureMapExplainer({
                   并行计算
                 </text>
 
-                {/* Shared L2 Cache bar */}
                 <rect
                   x={24}
                   y={376}
@@ -1450,7 +1446,6 @@ export default function ChipArchitectureMapExplainer({
               </g>
             )}
 
-            {/* 3. Memory Bus divider */}
             <line
               x1={12}
               y1={442}
@@ -1485,7 +1480,6 @@ export default function ChipArchitectureMapExplainer({
               {isGpu ? '↕ memory bus (32B Sector)' : '↕ MTE2 / MTE3 memory bus'}
             </text>
 
-            {/* 4. OFF-CHIP HBM Container */}
             <rect
               x={12}
               y={458}
@@ -1493,13 +1487,13 @@ export default function ChipArchitectureMapExplainer({
               height={88}
               rx={RADIUS}
               fill={
-                s.focus === 'gpu_chip' || s.focus === 'ascend_bus'
+                s.focus === 'gpu_block' || s.focus === 'ascend_bus'
                   ? resolveToneFill('highlight')
                   : 'var(--wisp-surface)'
               }
-              fillOpacity={s.focus === 'gpu_chip' || s.focus === 'ascend_bus' ? 0.42 : 0.75}
+              fillOpacity={s.focus === 'gpu_block' || s.focus === 'ascend_bus' ? 0.42 : 0.75}
               stroke={resolveToneStroke('highlight')}
-              strokeWidth={s.focus === 'gpu_chip' || s.focus === 'ascend_bus' ? 2 : 1.3}
+              strokeWidth={s.focus === 'gpu_block' || s.focus === 'ascend_bus' ? 2 : 1.3}
             />
             <rect
               x={24}
@@ -1587,19 +1581,17 @@ export default function ChipArchitectureMapExplainer({
               );
             })}
 
-            <SvgBeatGroup visible={beat >= 3}>
-              <SvgRichLabel
-                x={24}
-                y={531}
-                width={632}
-                height={20}
-                text={s.hbmFooter}
-                fontSize={10.5}
-                fontWeight={500}
-                color="var(--wisp-muted)"
-                anchor="start"
-              />
-            </SvgBeatGroup>
+            <SvgRichLabel
+              x={24}
+              y={531}
+              width={632}
+              height={20}
+              text={s.hbmFooter}
+              fontSize={10.5}
+              fontWeight={500}
+              color="var(--wisp-muted)"
+              anchor="start"
+            />
           </Stage>
         );
       }}

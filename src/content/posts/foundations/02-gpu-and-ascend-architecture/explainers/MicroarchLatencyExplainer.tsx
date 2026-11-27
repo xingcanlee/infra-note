@@ -1,22 +1,27 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { Stage, type Step } from 'astro-wisp/explainers';
-import { BeatExplainer, SvgBeatGroup, defaultBeats, type BeatSpec } from '@/explainers/kit';
+import { motion } from 'motion/react';
+import { InteractiveExplainer, LabSegmented, LabSlider } from '@/explainers/kit';
 import { MetricRow, SectionBox } from '@/explainers/kit/MetricRow';
 import SwimlaneTimeline, {
+  type TimelineBlock,
   type TimelineLane,
   type TimelineSyncEvent,
 } from '@/explainers/kit/SwimlaneTimeline';
 import {
-  RADIUS,
   RADIUS_SM,
   STAGE_W,
   assertMaxHues,
   resolveToneFill,
   resolveToneStroke,
+  useDiagramMotion,
   type AnyTone,
 } from '@/explainers/kit/motion';
 
 type WarpCellState = 'issue' | 'stall' | 'ready';
+
+export type LatencyArchMode = 'gpu' | 'ascend';
+export type AscendBufferMode = 'serial' | 'pingpong';
 
 interface CycleRowCell {
   cycle: number;
@@ -24,29 +29,16 @@ interface CycleRowCell {
 }
 
 export interface MicroarchLatencyState {
-  stepIndex: number;
-  mode: 'gpu' | 'ascend';
-  phaseTitle: string;
+  mode: LatencyArchMode;
+  warpCount: number;
+  ascendMode: AscendBufferMode;
   formulaTex: string;
-  beats: BeatSpec[];
-  warpCount?: number;
-  warpRows?: { label: string; cells: CycleRowCell[] }[];
-  schedulerRow?: (number | null)[];
-  ascendLanes?: readonly TimelineLane[];
-  ascendSync?: readonly TimelineSyncEvent[];
-  metricMode: string;
-  metricConcurrency: string;
-  metricUtil: string;
-  metricTakeaway: string;
 }
 
 const TOTAL_CYCLES = 12;
 const STALL_CYCLES = 5;
+const MAX_WARPS = 9;
 
-/**
- * 确定性单发行 Warp 调度模拟器：
- * 每个 Warp 发射 1 拍 -> 等 HBM 5 拍 -> 重新就绪；调度器每拍至多挑 1 个就绪 Warp 发射。
- */
 function simulateWarpSchedule(numWarps: number): {
   warpRows: { label: string; cells: CycleRowCell[] }[];
   schedulerRow: (number | null)[];
@@ -76,14 +68,7 @@ function simulateWarpSchedule(numWarps: number): {
     schedulerRow.push(picked);
 
     for (let w = 0; w < numWarps; w++) {
-      let state: WarpCellState;
-      if (w === picked) {
-        state = 'issue';
-      } else if (readyAt[w] > c) {
-        state = 'stall';
-      } else {
-        state = 'ready';
-      }
+      const state: WarpCellState = w === picked ? 'issue' : readyAt[w] > c ? 'stall' : 'ready';
       rows[w].push({ cycle: c, state });
     }
   }
@@ -95,266 +80,219 @@ function simulateWarpSchedule(numWarps: number): {
   };
 }
 
+function buildGpuIssueTimeline(schedulerRow: (number | null)[]): TimelineLane[] {
+  const blocks: TimelineBlock[] = schedulerRow.map((picked, c) =>
+    picked !== null
+      ? { start: c, dur: 1, label: `W${picked}`, tone: 'active', active: true }
+      : { start: c, dur: 1, label: '空泡', tone: 'neutral', kind: 'bubble', dashed: true },
+  );
+  return [
+    {
+      id: 'issue',
+      title: 'SM 发射流',
+      subtitle: '每拍至多 1 Warp',
+      blocks,
+    },
+  ];
+}
+
+function buildAscendTimeline(ascendMode: AscendBufferMode): {
+  lanes: TimelineLane[];
+  syncEvents: TimelineSyncEvent[];
+} {
+  if (ascendMode === 'serial') {
+    return {
+      lanes: [
+        {
+          id: 'mte2',
+          title: 'MTE2 搬入',
+          subtitle: 'HBM -> L1 / UB',
+          blocks: [
+            { start: 0, dur: 4, label: 'T0', tone: 'activation', active: true },
+            { start: 4, dur: 10, label: '空泡', tone: 'neutral', kind: 'bubble', dashed: true },
+            { start: 14, dur: 4, label: 'T1', tone: 'activation', active: true },
+            { start: 18, dur: 10, label: '空泡', tone: 'neutral', kind: 'bubble', dashed: true },
+          ],
+        },
+        {
+          id: 'cube',
+          title: 'Cube 矩阵乘',
+          subtitle: '16×16×16 MMAD',
+          blocks: [
+            { start: 0, dur: 4, label: '等数', tone: 'neutral', kind: 'bubble', dashed: true },
+            { start: 4, dur: 6, label: 'T0 GEMM', tone: 'active', active: true },
+            { start: 10, dur: 8, label: '空泡', tone: 'neutral', kind: 'bubble', dashed: true },
+            { start: 18, dur: 6, label: 'T1 GEMM', tone: 'active', active: true },
+            { start: 24, dur: 4, label: '空泡', tone: 'neutral', kind: 'bubble', dashed: true },
+          ],
+        },
+        {
+          id: 'fixpipe',
+          title: 'FixPipe 迁出',
+          subtitle: 'L0C -> UB',
+          blocks: [
+            { start: 0, dur: 10, label: '等待', tone: 'neutral', kind: 'bubble', dashed: true },
+            { start: 10, dur: 2, label: 'T0', tone: 'highlight', active: true },
+            { start: 12, dur: 12, label: '等待', tone: 'neutral', kind: 'bubble', dashed: true },
+            { start: 24, dur: 2, label: 'T1', tone: 'highlight', active: true },
+          ],
+        },
+        {
+          id: 'vector',
+          title: 'Vector 归约',
+          subtitle: '192 KB UB (1C2V)',
+          blocks: [
+            { start: 0, dur: 12, label: '空等前序', tone: 'neutral', kind: 'bubble', dashed: true },
+            { start: 12, dur: 2, label: 'V0', tone: 'highlight', active: true },
+            {
+              start: 14,
+              dur: 12,
+              label: '空等前序',
+              tone: 'neutral',
+              kind: 'bubble',
+              dashed: true,
+            },
+            { start: 26, dur: 2, label: 'V1', tone: 'highlight', active: true },
+          ],
+        },
+      ],
+      syncEvents: [
+        { fromLane: 0, at: 4, toLane: 1, toAt: 4, tone: 'activation', dashed: true },
+        { fromLane: 1, at: 10, toLane: 2, toAt: 10, tone: 'active', dashed: true },
+        { fromLane: 2, at: 12, toLane: 3, toAt: 12, tone: 'highlight', dashed: true },
+      ],
+    };
+  }
+
+  return {
+    lanes: [
+      {
+        id: 'mte2',
+        title: 'MTE2 搬入',
+        subtitle: 'Ping-Pong 双缓冲',
+        blocks: [
+          { start: 0, dur: 4, label: 'T0', tone: 'activation', active: true },
+          { start: 4, dur: 4, label: 'T1 (BufB)', tone: 'activation', active: true },
+          { start: 10, dur: 4, label: 'T2 (BufA)', tone: 'activation', active: true },
+          { start: 16, dur: 4, label: 'T3 (BufB)', tone: 'activation', active: true },
+        ],
+      },
+      {
+        id: 'cube',
+        title: 'Cube 矩阵乘',
+        subtitle: '稳态零空泡连跑',
+        blocks: [
+          { start: 0, dur: 4, label: '等数', tone: 'neutral', kind: 'bubble', dashed: true },
+          { start: 4, dur: 6, label: 'T0 GEMM', tone: 'active', active: true },
+          { start: 10, dur: 6, label: 'T1 GEMM', tone: 'active', active: true },
+          { start: 16, dur: 6, label: 'T2 GEMM', tone: 'active', active: true },
+          { start: 22, dur: 6, label: 'T3 GEMM', tone: 'active', active: true },
+        ],
+      },
+      {
+        id: 'fixpipe',
+        title: 'FixPipe 迁出',
+        subtitle: '与下一块计算并行',
+        blocks: [
+          { start: 0, dur: 10, label: '等首块', tone: 'neutral', kind: 'bubble', dashed: true },
+          { start: 10, dur: 2, label: 'T0', tone: 'highlight', active: true },
+          { start: 16, dur: 2, label: 'T1', tone: 'highlight', active: true },
+          { start: 22, dur: 2, label: 'T2', tone: 'highlight', active: true },
+        ],
+      },
+      {
+        id: 'vector',
+        title: 'Vector 归约',
+        subtitle: '双 AIV 掩盖于 Cube 后',
+        blocks: [
+          { start: 0, dur: 12, label: '预留期', tone: 'neutral', kind: 'bubble', dashed: true },
+          { start: 12, dur: 4, label: 'V0', tone: 'highlight', active: true },
+          { start: 18, dur: 4, label: 'V1', tone: 'highlight', active: true },
+          { start: 24, dur: 4, label: 'V2', tone: 'highlight', active: true },
+        ],
+      },
+    ],
+    syncEvents: [
+      {
+        fromLane: 0,
+        at: 4,
+        toLane: 1,
+        toAt: 4,
+        label: 'BufA 就绪',
+        tone: 'activation',
+        active: true,
+      },
+      {
+        fromLane: 0,
+        at: 8,
+        toLane: 1,
+        toAt: 10,
+        label: 'BufB Prefetch',
+        tone: 'activation',
+        active: true,
+      },
+      { fromLane: 1, at: 10, toLane: 2, toAt: 10, tone: 'active', active: true },
+      {
+        fromLane: 2,
+        at: 12,
+        toLane: 3,
+        toAt: 12,
+        label: 'CV 并行',
+        tone: 'highlight',
+        active: true,
+      },
+    ],
+  };
+}
+
 export function buildMicroarchLatencySteps(): Step<MicroarchLatencyState>[] {
-  const tones: AnyTone[] = ['active', 'highlight', 'activation'];
-  assertMaxHues(tones);
-
-  const sim2 = simulateWarpSchedule(2);
-  const sim6 = simulateWarpSchedule(6);
-  const sim9 = simulateWarpSchedule(9);
-
-  const serialAscendLanes: TimelineLane[] = [
-    {
-      id: 'mte2',
-      title: 'MTE2 搬入',
-      subtitle: 'HBM -> L1 / UB',
-      blocks: [
-        { start: 0, dur: 4, label: 'T0', tone: 'activation', active: true },
-        { start: 4, dur: 10, label: '闲置等待', tone: 'neutral', kind: 'bubble', dashed: true },
-        { start: 14, dur: 4, label: 'T1', tone: 'activation', active: true },
-        { start: 18, dur: 10, label: '闲置等待', tone: 'neutral', kind: 'bubble', dashed: true },
-      ],
-    },
-    {
-      id: 'cube',
-      title: 'Cube 矩阵乘',
-      subtitle: '16x16x16 MMAD',
-      blocks: [
-        { start: 0, dur: 4, label: '等数', tone: 'neutral', kind: 'bubble', dashed: true },
-        { start: 4, dur: 6, label: 'T0 GEMM', tone: 'active', active: true },
-        { start: 10, dur: 8, label: '闲置空等', tone: 'neutral', kind: 'bubble', dashed: true },
-        { start: 18, dur: 6, label: 'T1 GEMM', tone: 'active', active: true },
-        { start: 24, dur: 4, label: '闲置', tone: 'neutral', kind: 'bubble', dashed: true },
-      ],
-    },
-    {
-      id: 'fixpipe',
-      title: 'FixPipe 迁出',
-      subtitle: 'L0C -> UB',
-      blocks: [
-        { start: 0, dur: 10, label: '等待', tone: 'neutral', kind: 'bubble', dashed: true },
-        { start: 10, dur: 2, label: 'T0', tone: 'highlight', active: true },
-        { start: 12, dur: 12, label: '等待', tone: 'neutral', kind: 'bubble', dashed: true },
-        { start: 24, dur: 2, label: 'T1', tone: 'highlight', active: true },
-      ],
-    },
-    {
-      id: 'vector',
-      title: 'Vector 归约',
-      subtitle: '192 KB UB (1C2V)',
-      blocks: [
-        { start: 0, dur: 12, label: '空等前序', tone: 'neutral', kind: 'bubble', dashed: true },
-        { start: 12, dur: 2, label: 'V0', tone: 'highlight', active: true },
-        { start: 14, dur: 12, label: '空等前序', tone: 'neutral', kind: 'bubble', dashed: true },
-        { start: 26, dur: 2, label: 'V1', tone: 'highlight', active: true },
-      ],
-    },
-  ];
-
-  const serialSync: TimelineSyncEvent[] = [
-    { fromLane: 0, at: 4, toLane: 1, toAt: 4, tone: 'activation', dashed: true },
-    { fromLane: 1, at: 10, toLane: 2, toAt: 10, tone: 'active', dashed: true },
-    { fromLane: 2, at: 12, toLane: 3, toAt: 12, tone: 'highlight', dashed: true },
-  ];
-
-  const overlapAscendLanes: TimelineLane[] = [
-    {
-      id: 'mte2',
-      title: 'MTE2 搬入',
-      subtitle: 'Ping-Pong 双缓冲',
-      blocks: [
-        { start: 0, dur: 4, label: 'T0 (Buf A)', tone: 'activation', active: true },
-        { start: 4, dur: 4, label: 'T1 (Buf B)', tone: 'activation', active: true },
-        { start: 10, dur: 4, label: 'T2 (Buf A)', tone: 'activation', active: true },
-        { start: 16, dur: 4, label: 'T3 (Buf B)', tone: 'activation', active: true },
-      ],
-    },
-    {
-      id: 'cube',
-      title: 'Cube 矩阵乘',
-      subtitle: '稳态零空泡连跑',
-      blocks: [
-        { start: 0, dur: 4, label: '启动填充', tone: 'neutral', kind: 'bubble', dashed: true },
-        { start: 4, dur: 6, label: 'T0 GEMM', tone: 'active', active: true },
-        { start: 10, dur: 6, label: 'T1 GEMM', tone: 'active', active: true },
-        { start: 16, dur: 6, label: 'T2 GEMM', tone: 'active', active: true },
-        { start: 22, dur: 6, label: 'T3 GEMM', tone: 'active', active: true },
-      ],
-    },
-    {
-      id: 'fixpipe',
-      title: 'FixPipe 迁出',
-      subtitle: '与下一块计算并行',
-      blocks: [
-        { start: 0, dur: 10, label: '等首块', tone: 'neutral', kind: 'bubble', dashed: true },
-        { start: 10, dur: 2, label: 'T0', tone: 'highlight', active: true },
-        { start: 16, dur: 2, label: 'T1', tone: 'highlight', active: true },
-        { start: 22, dur: 2, label: 'T2', tone: 'highlight', active: true },
-      ],
-    },
-    {
-      id: 'vector',
-      title: 'Vector 归约',
-      subtitle: '双 AIV 掩盖于 Cube 后',
-      blocks: [
-        { start: 0, dur: 12, label: '预留期', tone: 'neutral', kind: 'bubble', dashed: true },
-        { start: 12, dur: 4, label: 'T0 Vec', tone: 'highlight', active: true },
-        { start: 18, dur: 4, label: 'T1 Vec', tone: 'highlight', active: true },
-        { start: 24, dur: 4, label: 'T2 Vec', tone: 'highlight', active: true },
-      ],
-    },
-  ];
-
-  const overlapSync: TimelineSyncEvent[] = [
-    {
-      fromLane: 0,
-      at: 4,
-      toLane: 1,
-      toAt: 4,
-      label: 'BufA 就绪',
-      tone: 'activation',
-      active: true,
-    },
-    {
-      fromLane: 0,
-      at: 8,
-      toLane: 1,
-      toAt: 10,
-      label: 'BufB 预取完成',
-      tone: 'activation',
-      active: true,
-    },
-    { fromLane: 1, at: 10, toLane: 2, toAt: 10, tone: 'active', active: true },
-    { fromLane: 2, at: 12, toLane: 3, toAt: 12, label: 'CV 并行', tone: 'highlight', active: true },
-  ];
-
+  assertMaxHues(['active', 'highlight', 'activation']);
   return [
     {
       label: '2 Warp 饥饿',
       duration: 4600,
       state: {
-        stepIndex: 0,
         mode: 'gpu',
-        phaseTitle: 'NVIDIA SM · 2 个驻留 Warp（就绪池过浅，空转率 67%）',
-        formulaTex: '$W = 2 < 1 + 5 \\;\\Longrightarrow\\; \\text{Util} = 4/12 = 33\\%$',
-        beats: defaultBeats([
-          'C1..C4 双 Warp 轮流发射',
-          'C5..C8 均在等待 HBM 返回',
-          'C9..C12 补齐重演并暴露空闲',
-          '汇总 67% 算力空转结论',
-        ]),
         warpCount: 2,
-        warpRows: sim2.warpRows,
-        schedulerRow: sim2.schedulerRow,
-        metricMode: 'SIMT Warp 切换',
-        metricConcurrency: '$2$ 个活跃 Warp',
-        metricUtil: `$${sim2.busyCount}/12\\;(33\\%)$`,
-        metricTakeaway: '等待间隙暴露算力闲置',
+        ascendMode: 'serial',
+        formulaTex: '$W=2 < 6 \\;\\Longrightarrow\\; \\text{Util}=33\\%$',
       },
-      caption:
-        '仅驻留 $2$ 个 Warp 时，调度器在 C1–C2 依次发射后便面对双双等待访存的空档，其余 $8$ 拍只能空转；此时急需增加驻留线程块来扩充就绪 Warp 池。',
+      caption: '仅驻留 2 个 Warp 时，调度器每轮发射后留出大量空泡。',
     },
     {
       label: '6 Warp 满载',
       duration: 4600,
       state: {
-        stepIndex: 1,
         mode: 'gpu',
-        phaseTitle: 'NVIDIA SM · 6 个驻留 Warp（延迟完全隐藏，调度器 100% 满载）',
-        formulaTex:
-          '$W = 1_{\\text{issue}} + 5_{\\text{stall}} = 6 \\;\\Longrightarrow\\; \\text{Util} = 100\\%$',
-        beats: defaultBeats([
-          'C1..C4 W0..W3 逐拍填满',
-          'C5..C8 W0 回暖无缝接棒',
-          'C9..C12 全 12 拍满载收拢',
-          '核对 0 切换代价 100% 利用',
-        ]),
         warpCount: 6,
-        warpRows: sim6.warpRows,
-        schedulerRow: sim6.schedulerRow,
-        metricMode: 'SIMT Warp 切换',
-        metricConcurrency: '$6$ 个活跃 Warp',
-        metricUtil: `$${sim6.busyCount}/12\\;(100\\%)$`,
-        metricTakeaway: '零开销切换藏住访存等待',
+        ascendMode: 'serial',
+        formulaTex: '$W=1+5=6 \\;\\Longrightarrow\\; \\text{Util}=100\\%$',
       },
-      caption:
-        '驻留增至 $6$ 个 Warp（恰等于 $1$ 拍发射配 $5$ 拍访存延迟）：W1–W5 依次填充等待空档时，W0 恰好完成访存回到就绪态，SM 以零上下文切换代价实现 $100\\%$ 满拍发射。',
-    },
-    {
-      label: '9 Warp 边际',
-      duration: 4600,
-      state: {
-        stepIndex: 2,
-        mode: 'gpu',
-        phaseTitle: 'NVIDIA SM · 9 个驻留 Warp（吞吐不再增加，多余 Warp 进入就绪排队）',
-        formulaTex:
-          '$W = 9 > 6 \\;\\Longrightarrow\\; \\text{吞吐封顶 } 100\\%,\\; \\text{Reg/SMEM 被摊薄}$',
-        beats: defaultBeats([
-          'C1..C4 高并发依次起跑',
-          'C5..C8 橙色 Ready 队列显现',
-          'C9..C12 调度器依然单发 12/12',
-          '揭示 Occupancy 与分块权衡',
-        ]),
-        warpCount: 9,
-        warpRows: sim9.warpRows,
-        schedulerRow: sim9.schedulerRow,
-        metricMode: 'Occupancy 边际权衡',
-        metricConcurrency: '$9$ 个活跃 Warp',
-        metricUtil: `$${sim9.busyCount}/12\\;(100\\%)$`,
-        metricTakeaway: '过多 Warp 挤占寄存器/SMEM',
-      },
-      caption:
-        '超过掩盖延迟所需阈值继续堆高 Warp 数，调度器依旧受限于单拍发射上界；多余 Warp 只能在就绪态排队却平白切薄每线程寄存器与 SMEM 分块预算，这正是 FlashAttention 宁可压低 Occupancy 也要换大分块的根因。',
+      caption: '驻留增至 6 个 Warp 时恰好掩盖 5 拍 HBM 延迟，空泡完全消除。',
     },
     {
       label: '昇腾串行',
       duration: 4600,
       state: {
-        stepIndex: 3,
         mode: 'ascend',
-        phaseTitle: '昇腾 AI Core · 单缓冲串行基线（无 SIMT 池，MTE2/Cube/Vector 依次空等）',
+        warpCount: 6,
+        ascendMode: 'serial',
         formulaTex:
-          '$\\text{Single Buffer}:\\; T = T_{\\text{MTE2}} + T_{\\text{Cube}} + T_{\\text{FixPipe}} + T_{\\text{Vec}}$',
-        beats: defaultBeats([
-          'MTE2 独力搬入 Tile0/T1',
-          'Cube 与 FixPipe 依次等数开工',
-          'Vector 末尾归约形成 57% 空隙',
-          '汇总单缓冲算力闲置代价',
-        ]),
-        ascendLanes: serialAscendLanes,
-        ascendSync: serialSync,
-        metricMode: '显式多队列 (单缓冲)',
-        metricConcurrency: '无并行重叠 ($1$ Tile/轮)',
-        metricUtil: 'Cube $12/28\\;(43\\%)$',
-        metricTakeaway: '57% 周期耗在等搬运与归约',
+          '$T = T_{\\text{MTE2}} + T_{\\text{Cube}} + T_{\\text{FixPipe}} + T_{\\text{Vec}}$',
       },
-      caption:
-        '昇腾 DaVinci 核没有几十个常驻 Warp 互相顶班；若不做软件双缓冲，MTE2 搬数、Cube 矩阵乘与 Vector 归约沿单块依次串行，Cube 计算单元有超过一半时间在等数据。',
+      caption: '昇腾单缓冲下搬运与计算依次空等，Cube 利用率仅 43%。',
     },
     {
       label: '昇腾乒乓',
       duration: 4600,
       state: {
-        stepIndex: 4,
         mode: 'ascend',
-        phaseTitle: '昇腾 AI Core · Ping-Pong 双缓冲 + 1C2V CV 流水线重叠',
+        warpCount: 6,
+        ascendMode: 'pingpong',
         formulaTex:
           '$\\text{Ping-Pong }(A/B) + 1\\text{C}2\\text{V} \\;\\Longrightarrow\\; \\text{Cube 稳态 } 100\\%$',
-        beats: defaultBeats([
-          'MTE2 交替填满 Buf A 与 Buf B',
-          'Cube + FixPipe 无缝吞吐 T0..T3',
-          '双 Vector 核掩盖在前序 Cube 后',
-          '确认显式队列等效满载',
-        ]),
-        ascendLanes: overlapAscendLanes,
-        ascendSync: overlapSync,
-        metricMode: '显式双缓冲 + CV 重叠',
-        metricConcurrency: '$A/B$ 双槽 + $1\\text{C}2\\text{V}$',
-        metricUtil: 'Cube 稳态 $100\\%$',
-        metricTakeaway: '异步队列接力代替 Warp 池',
       },
-      caption:
-        '通过将片上 L1/UB 对半拆分为 Buf A 与 Buf B，Scalar 核向 MTE2、Cube、FixPipe 与双 Vector 核下发异步跨队列接力：算块 $T_0$ 时预取 $T_1$ 并收尾前序 Vector 归约，不用硬件 Warp 池同样跑满 Cube 阵列。',
+      caption: '启用乒乓双缓冲与 CV 并行后，Cube 稳态连续满载消除空泡。',
     },
   ];
 }
@@ -364,320 +302,348 @@ export default function MicroarchLatencyExplainer({
 }: {
   title?: string;
 }) {
-  const steps = useMemo(() => buildMicroarchLatencySteps(), []);
+  assertMaxHues(['active', 'highlight', 'activation']);
+  const { stepTransition } = useDiagramMotion();
+  const [archMode, setArchMode] = useState<LatencyArchMode>('gpu');
+  const [warpCount, setWarpCount] = useState(2);
+  const [ascendMode, setAscendMode] = useState<AscendBufferMode>('serial');
+
+  const gpuSim = useMemo(() => simulateWarpSchedule(warpCount), [warpCount]);
+  const gpuLanes = useMemo(() => buildGpuIssueTimeline(gpuSim.schedulerRow), [gpuSim.schedulerRow]);
+  const ascendTimeline = useMemo(() => buildAscendTimeline(ascendMode), [ascendMode]);
+
+  const utilPct = Math.round((gpuSim.busyCount / TOTAL_CYCLES) * 100);
+  const bubbleCount = TOTAL_CYCLES - gpuSim.busyCount;
+
+  const formulaTex =
+    archMode === 'gpu'
+      ? `$W=${warpCount}\\; (${warpCount < 6 ? '< 1+5' : warpCount === 6 ? '= 1+5' : '> 6'}) \\;\\Longrightarrow\\; \\text{发射率 } ${gpuSim.busyCount}/12\\;(${utilPct}\\%)$`
+      : ascendMode === 'serial'
+        ? '$\\text{串行等待}:\\; T = T_{\\text{MTE2}} + T_{\\text{Cube}} + T_{\\text{FixPipe}} + T_{\\text{Vec}}\\;(43\\%)$'
+        : '$\\text{乒乓双缓冲 }(A/B) + 1\\text{C}2\\text{V} \\;\\Longrightarrow\\; \\text{Cube 稳态 } 100\\%$';
+
+  const caption =
+    archMode === 'gpu'
+      ? warpCount < 6
+        ? `当前驻留 $${warpCount}$ 个 Warp：每 Warp 发射 1 拍后需等 HBM 5 拍，就绪池不足 6 个，12 拍内仍有 ${bubbleCount} 拍处于空闲空泡，SM 发射率仅为 $${utilPct}\\%$。向右拖动滑块扩充 Warp 池可逐步填满流水线。`
+        : warpCount === 6
+          ? '恰等于 $1$ 拍发射配 $5$ 拍访存延迟（$W=6$）：当 W1–W5 依次填充空档时，W0 恰好完成访存回到就绪态，Swimlane 中的空泡彻底归零，SM 达到 $100\\%$ 满拍发射。'
+          : `继续堆高到 $${warpCount}$ 个 Warp，SM 发射率依然封顶 $100\\%$（单拍至多发 1 个 Warp），多余 Warp 只能在橙色 Ready 队列排队，同时平白摊薄每线程寄存器与 SMEM 分块预算。`
+      : ascendMode === 'serial'
+        ? '昇腾 DaVinci 核没有几十个常驻 Warp 互相顶班；单缓冲串行执行时，MTE2 搬数、Cube 矩阵乘、FixPipe 迁出与 Vector 归约依次停等，Cube 计算单元有 $57\\%$ 周期在空等前序。'
+        : '切换到乒乓双缓冲（Buf A/B）：Scalar 核向多条硬件异步队列派发接力，算块 $T_0$ 时 Prefetch $T_1$ 并把前序 Vector 归约掩盖在 Cube 后方，不用硬件 Warp 池同样实现 Cube 稳态零空泡。';
+
+  const gridX = 93;
+  const colW = 44;
+  const colGap = 3;
+  const rowH = 19;
+  const rowGap = 3;
+  const rowStartY = 58;
 
   return (
-    <BeatExplainer
-      steps={steps}
+    <InteractiveExplainer
       title={title}
       label="GPU Warp 调度与昇腾显式流水延迟隐藏交互"
-      stageMinHeight={548}
-      getBeats={(step) => step.state.beats}
-      getFormula={(step) => step.state.formulaTex}
+      stageMinHeight={510}
+      formula={formulaTex}
+      caption={caption}
+      onReset={() => {
+        setArchMode('gpu');
+        setWarpCount(2);
+        setAscendMode('serial');
+      }}
+      controls={
+        <>
+          <LabSegmented
+            ariaLabel="硬件微架构对比模式"
+            value={archMode}
+            onChange={setArchMode}
+            options={[
+              { id: 'gpu', label: 'GPU Warp 切换' },
+              { id: 'ascend', label: '昇腾 Cube-Vector' },
+            ]}
+          />
+          {archMode === 'gpu' ? (
+            <LabSlider
+              label="驻留 Warp 数"
+              min={2}
+              max={MAX_WARPS}
+              step={1}
+              value={warpCount}
+              valueText={`${warpCount} Warps`}
+              onChange={setWarpCount}
+            />
+          ) : (
+            <LabSegmented
+              ariaLabel="昇腾双缓冲开关"
+              value={ascendMode}
+              onChange={setAscendMode}
+              options={[
+                { id: 'serial', label: '串行等待' },
+                { id: 'pingpong', label: '乒乓双缓冲' },
+              ]}
+            />
+          )}
+        </>
+      }
     >
-      {(step, { beat }) => {
-        const s = step.state;
-        const gridX = 93;
-        const colW = 44;
-        const colGap = 3;
-        const rowH = 22;
-        const rowGap = 3;
-        const rowStartY = 60;
-        const warpRows = s.warpRows ?? [];
-        const schedulerRow = s.schedulerRow ?? [];
-        const schedY = rowStartY + 9 * (rowH + rowGap) + 12;
+      <Stage width={STAGE_W} height={452} label="GPU Warp 调度与昇腾双缓冲流水对比">
+        {archMode === 'gpu' ? (
+          <g>
+            <SectionBox
+              x={16}
+              y={12}
+              w={648}
+              h={368}
+              title={`NVIDIA SM · ${warpCount} 个驻留 Warp（1 拍发射 + 5 拍 HBM 延迟，零切换开销）`}
+              tone="active"
+            />
 
-        const visibleCycles = beat === 0 ? 4 : beat === 1 ? 8 : TOTAL_CYCLES;
-        const ascendLanesBeat = (s.ascendLanes ?? []).map((lane, lIdx) => ({
-          ...lane,
-          blocks: lane.blocks.map((blk) => ({
-            ...blk,
-            visible: lIdx === 0 ? true : lIdx <= 2 ? beat >= 1 : beat >= 2,
-          })),
-        }));
-        const ascendSyncBeat = (s.ascendSync ?? []).map((ev) => ({
-          ...ev,
-          visible: ev.toLane <= 2 ? beat >= 1 : beat >= 2,
-        }));
-
-        return (
-          <Stage width={STAGE_W} height={452} label="GPU Warp 调度与昇腾双缓冲流水对比">
-            {s.mode === 'gpu' ? (
-              <g>
-                <SectionBox
-                  x={16}
-                  y={14}
-                  w={648}
-                  h={364}
-                  title="SM 12 拍 Warp 调度状态矩阵"
-                  tone="active"
+            {[
+              { label: '发射 Issue', tone: 'active' as AnyTone, x: 378, dashed: false },
+              { label: '访存等 Stall', tone: 'neutral' as AnyTone, x: 472, dashed: true },
+              { label: '就绪排队 Ready', tone: 'highlight' as AnyTone, x: 566, dashed: false },
+            ].map((item) => (
+              <g key={item.label}>
+                <rect
+                  x={item.x}
+                  y={21}
+                  width={12}
+                  height={12}
+                  rx={RADIUS_SM}
+                  fill={resolveToneFill(item.tone)}
+                  stroke={resolveToneStroke(item.tone)}
+                  strokeWidth={1.2}
+                  strokeDasharray={item.dashed ? '3 2' : undefined}
                 />
+                <text
+                  x={item.x + 17}
+                  y={27}
+                  dominantBaseline="central"
+                  style={{
+                    fill: 'var(--wisp-muted)',
+                    fontFamily: 'var(--wisp-font-sans)',
+                    fontSize: 10.5,
+                  }}
+                >
+                  {item.label}
+                </text>
+              </g>
+            ))}
 
-                {[
-                  { label: '发射 Issue', tone: 'active' as AnyTone, x: 378, dashed: false },
-                  { label: '访存等 Stall', tone: 'neutral' as AnyTone, x: 472, dashed: true },
-                  { label: '就绪排队 Ready', tone: 'highlight' as AnyTone, x: 566, dashed: false },
-                ].map((item) => (
-                  <g key={item.label}>
-                    <rect
-                      x={item.x}
-                      y={22}
-                      width={12}
-                      height={12}
-                      rx={RADIUS_SM}
-                      fill={resolveToneFill(item.tone)}
-                      stroke={resolveToneStroke(item.tone)}
-                      strokeWidth={1.2}
-                      strokeDasharray={item.dashed ? '3 2' : undefined}
-                    />
-                    <text
-                      x={item.x + 17}
-                      y={28}
-                      dominantBaseline="central"
-                      style={{
-                        fill: 'var(--wisp-muted)',
-                        fontFamily: 'var(--wisp-font-sans)',
-                        fontSize: 10.5,
-                      }}
-                    >
-                      {item.label}
-                    </text>
-                  </g>
-                ))}
+            {Array.from({ length: TOTAL_CYCLES }, (_, ci) => {
+              const cx = gridX + ci * (colW + colGap) + colW / 2;
+              return (
+                <text
+                  key={ci}
+                  x={cx}
+                  y={45}
+                  textAnchor="middle"
+                  dominantBaseline="central"
+                  style={{
+                    fill: 'var(--wisp-muted)',
+                    fontFamily: 'var(--wisp-font-mono)',
+                    fontSize: 10.5,
+                    fontVariantNumeric: 'tabular-nums',
+                  }}
+                >
+                  {`C${ci + 1}`}
+                </text>
+              );
+            })}
 
-                {/* Cycle column headers C1..C12 */}
-                {Array.from({ length: TOTAL_CYCLES }, (_, ci) => {
-                  const cx = gridX + ci * (colW + colGap) + colW / 2;
-                  const activeCol = ci < visibleCycles;
-                  return (
-                    <text
-                      key={ci}
-                      x={cx}
-                      y={47}
-                      textAnchor="middle"
-                      dominantBaseline="central"
-                      style={{
-                        fill: activeCol ? 'var(--wisp-muted)' : 'var(--wisp-border)',
-                        fontFamily: 'var(--wisp-font-mono)',
-                        fontSize: 10.5,
-                        fontVariantNumeric: 'tabular-nums',
-                      }}
-                    >
-                      {`C${ci + 1}`}
-                    </text>
-                  );
-                })}
-
-                {/* Warp rows */}
-                {warpRows.map((row, wi) => {
-                  const ry = rowStartY + wi * (rowH + rowGap);
-                  return (
-                    <g key={row.label}>
-                      <text
-                        x={gridX - 10}
-                        y={ry + rowH / 2}
-                        textAnchor="end"
-                        dominantBaseline="central"
-                        style={{
-                          fill: 'var(--wisp-fg)',
-                          fontFamily: 'var(--wisp-font-mono)',
-                          fontSize: 11,
-                          fontWeight: 600,
-                        }}
-                      >
-                        {row.label}
-                      </text>
-                      {row.cells.map((cell) => {
-                        if (cell.cycle >= visibleCycles) return null;
-                        const cx = gridX + cell.cycle * (colW + colGap);
-                        const tone: AnyTone =
-                          cell.state === 'issue'
-                            ? 'active'
-                            : cell.state === 'ready'
-                              ? 'highlight'
-                              : 'neutral';
-                        const lbl =
-                          cell.state === 'issue'
-                            ? 'Issue'
-                            : cell.state === 'ready'
-                              ? 'Ready'
-                              : 'Stall';
-                        return (
-                          <g key={cell.cycle}>
-                            <rect
-                              x={cx}
-                              y={ry}
-                              width={colW}
-                              height={rowH}
-                              rx={RADIUS_SM}
-                              fill={resolveToneFill(tone)}
-                              stroke={resolveToneStroke(tone)}
-                              strokeWidth={cell.state === 'issue' ? 1.5 : 1}
-                              strokeDasharray={cell.state === 'stall' ? '3 2' : undefined}
-                              fillOpacity={cell.state === 'stall' ? 0.45 : 0.95}
-                            />
-                            <text
-                              x={cx + colW / 2}
-                              y={ry + rowH / 2}
-                              textAnchor="middle"
-                              dominantBaseline="central"
-                              style={{
-                                fill:
-                                  cell.state === 'stall' ? 'var(--wisp-muted)' : 'var(--wisp-fg)',
-                                fontFamily: 'var(--wisp-font-mono)',
-                                fontSize: 10,
-                                fontWeight: cell.state === 'issue' ? 700 : 500,
-                              }}
-                            >
-                              {lbl}
-                            </text>
-                          </g>
-                        );
-                      })}
-                    </g>
-                  );
-                })}
-
-                {/* Divider & Bottom Scheduler summary row */}
-                <line
-                  x1={26}
-                  y1={schedY - 8}
-                  x2={654}
-                  y2={schedY - 8}
-                  stroke="var(--wisp-border)"
-                  strokeWidth={1}
-                />
-                <SvgBeatGroup visible={beat >= 2}>
+            {Array.from({ length: MAX_WARPS }, (_, wi) => {
+              const active = wi < warpCount;
+              const row = gpuSim.warpRows[wi];
+              const ry = rowStartY + wi * (rowH + rowGap);
+              return (
+                <motion.g
+                  key={wi}
+                  initial={false}
+                  animate={{ opacity: active ? 1 : 0.14 }}
+                  transition={stepTransition}
+                >
                   <text
                     x={gridX - 10}
-                    y={schedY + 15}
+                    y={ry + rowH / 2}
                     textAnchor="end"
                     dominantBaseline="central"
                     style={{
-                      fill: 'var(--wisp-sem-active)',
-                      fontFamily: 'var(--wisp-font-sans)',
-                      fontSize: 11.5,
-                      fontWeight: 700,
+                      fill: active ? 'var(--wisp-fg)' : 'var(--wisp-muted)',
+                      fontFamily: 'var(--wisp-font-mono)',
+                      fontSize: 10.5,
+                      fontWeight: active ? 600 : 400,
                     }}
                   >
-                    Warp 调度器
+                    {`Warp ${wi}`}
                   </text>
-                  {schedulerRow.map((picked, ci) => {
+                  {Array.from({ length: TOTAL_CYCLES }, (_, ci) => {
                     const cx = gridX + ci * (colW + colGap);
-                    const isBusy = picked !== null;
-                    const tone: AnyTone = isBusy ? 'active' : 'neutral';
+                    const cell = row?.cells[ci];
+                    const st = cell?.state ?? 'stall';
+                    const tone: AnyTone = !active
+                      ? 'neutral'
+                      : st === 'issue'
+                        ? 'active'
+                        : st === 'ready'
+                          ? 'highlight'
+                          : 'neutral';
+                    const lbl = !active
+                      ? '—'
+                      : st === 'issue'
+                        ? 'Issue'
+                        : st === 'ready'
+                          ? 'Ready'
+                          : 'Stall';
                     return (
                       <g key={ci}>
                         <rect
                           x={cx}
-                          y={schedY}
+                          y={ry}
                           width={colW}
-                          height={30}
-                          rx={RADIUS}
+                          height={rowH}
+                          rx={RADIUS_SM}
                           fill={resolveToneFill(tone)}
                           stroke={resolveToneStroke(tone)}
-                          strokeWidth={isBusy ? 1.8 : 1}
-                          strokeDasharray={isBusy ? undefined : '4 3'}
-                          fillOpacity={isBusy ? 1 : 0.35}
+                          strokeWidth={active && st === 'issue' ? 1.5 : 1}
+                          strokeDasharray={!active || st === 'stall' ? '3 2' : undefined}
+                          fillOpacity={!active ? 0.2 : st === 'stall' ? 0.42 : 0.95}
                         />
                         <text
                           x={cx + colW / 2}
-                          y={schedY + 15}
+                          y={ry + rowH / 2}
                           textAnchor="middle"
                           dominantBaseline="central"
                           style={{
-                            fill: isBusy ? 'var(--wisp-fg)' : 'var(--wisp-muted)',
-                            fontFamily: isBusy ? 'var(--wisp-font-mono)' : 'var(--wisp-font-sans)',
-                            fontSize: 10.5,
-                            fontWeight: isBusy ? 700 : 500,
+                            fill:
+                              !active || st === 'stall' ? 'var(--wisp-muted)' : 'var(--wisp-fg)',
+                            fontFamily: 'var(--wisp-font-mono)',
+                            fontSize: 10,
+                            fontWeight: active && st === 'issue' ? 700 : 500,
                           }}
                         >
-                          {isBusy ? `W${picked}` : '空闲'}
+                          {lbl}
                         </text>
                       </g>
                     );
                   })}
-                </SvgBeatGroup>
+                </motion.g>
+              );
+            })}
 
-                <text
-                  x={32}
-                  y={356}
-                  dominantBaseline="central"
-                  style={{
-                    fill: 'var(--wisp-muted)',
-                    fontFamily: 'var(--wisp-font-sans)',
-                    fontSize: 11,
-                  }}
-                >
-                  规则：每 Warp 发射 1 拍后等待 HBM 5 拍；SM 处理块凭寄存器常驻 0 拍切换到就绪 Warp
-                  隐藏延迟。
-                </text>
-              </g>
-            ) : (
-              <g>
-                <SectionBox
-                  x={16}
-                  y={14}
-                  w={648}
-                  h={364}
-                  title="昇腾 DaVinci AI Core · 显式硬件异步队列时序（无硬件 SIMT 线程束池）"
-                  tone="activation"
-                />
-                <SwimlaneTimeline
-                  x={28}
-                  y={48}
-                  w={608}
-                  totalTime={28}
-                  unit="拍"
-                  ticks={[0, 7, 14, 21, 28]}
-                  gutterW={116}
-                  laneH={40}
-                  laneGap={16}
-                  title={
-                    s.stepIndex === 3
-                      ? '单缓冲基线：MTE2 / Cube / FixPipe / Vector 依次串行停等'
-                      : '双缓冲乒乓：Buf A/B 预取与 CV 并行接力，稳态连续喂饱 Cube'
-                  }
-                  lanes={ascendLanesBeat}
-                  syncEvents={ascendSyncBeat}
-                />
-                <text
-                  x={32}
-                  y={354}
-                  dominantBaseline="central"
-                  style={{
-                    fill: 'var(--wisp-muted)',
-                    fontFamily: 'var(--wisp-font-sans)',
-                    fontSize: 11,
-                  }}
-                >
-                  说明：昇腾靠 Scalar 控制核显式排布搬算重叠（受 MTE2 单核 16 个挂起队列项与 UB 192
-                  KB 容量边界约束）。
-                </text>
-              </g>
-            )}
-
-            <MetricRow
-              x={16}
-              y={392}
-              w={648}
-              h={46}
-              revealed={beat >= 3}
-              metrics={[
-                { label: '延迟隐藏机制', value: s.metricMode, tone: 'highlight', active: true },
-                { label: '驻留 / 缓冲拓扑', value: s.metricConcurrency, tone: 'neutral' },
-                {
-                  label: '发射 / 算力利用率',
-                  value: s.metricUtil,
-                  tone: s.mode === 'gpu' ? 'active' : 'activation',
-                  active: true,
-                },
-                { label: '关键微架构约束', value: s.metricTakeaway, tone: 'neutral' },
-              ]}
+            <SwimlaneTimeline
+              x={24}
+              y={266}
+              w={630}
+              totalTime={TOTAL_CYCLES}
+              unit="拍"
+              ticks={[0, 3, 6, 9, 12]}
+              gutterW={69}
+              laneH={34}
+              laneGap={8}
+              title={`SM 调度器发射泳道（发射 ${gpuSim.busyCount}/12 拍，空泡 ${bubbleCount} 拍）`}
+              lanes={gpuLanes}
             />
-          </Stage>
-        );
-      }}
-    </BeatExplainer>
+          </g>
+        ) : (
+          <g>
+            <SectionBox
+              x={16}
+              y={12}
+              w={648}
+              h={368}
+              title="昇腾 DaVinci AI Core · 显式硬件异步队列时序（无硬件 SIMT 线程束池）"
+              tone="activation"
+            />
+            <SwimlaneTimeline
+              x={28}
+              y={48}
+              w={608}
+              totalTime={28}
+              unit="拍"
+              ticks={[0, 7, 14, 21, 28]}
+              gutterW={116}
+              laneH={40}
+              laneGap={16}
+              title={
+                ascendMode === 'serial'
+                  ? '单缓冲基线：MTE2 / Cube / FixPipe / Vector 依次串行停等（57% 空泡）'
+                  : '双缓冲乒乓：Buf A/B Prefetch 与 CV 并行接力，稳态连续喂饱 Cube（零空泡）'
+              }
+              lanes={ascendTimeline.lanes}
+              syncEvents={ascendTimeline.syncEvents}
+            />
+            <text
+              x={32}
+              y={356}
+              dominantBaseline="central"
+              style={{
+                fill: 'var(--wisp-muted)',
+                fontFamily: 'var(--wisp-font-sans)',
+                fontSize: 11,
+              }}
+            >
+              说明：昇腾靠 Scalar 控制核显式排布搬算重叠（受 MTE2 单核 16 个挂起队列项与 UB 192 KB
+              容量约束）。
+            </text>
+          </g>
+        )}
+
+        <MetricRow
+          x={16}
+          y={392}
+          w={648}
+          h={46}
+          metrics={[
+            {
+              label: '延迟隐藏机制',
+              value:
+                archMode === 'gpu'
+                  ? 'SIMT Warp 切换'
+                  : ascendMode === 'serial'
+                    ? '单缓冲串行'
+                    : '乒乓双缓冲 + CV',
+              tone: 'highlight',
+              active: true,
+            },
+            {
+              label: '驻留 / 缓冲拓扑',
+              value:
+                archMode === 'gpu'
+                  ? `$${warpCount}$ 个活跃 Warp`
+                  : ascendMode === 'serial'
+                    ? '单槽 ($1$ Tile/轮)'
+                    : '$A/B$ 双槽 + $1\\text{C}2\\text{V}$',
+              tone: 'neutral',
+            },
+            {
+              label: '发射 / 算力利用率',
+              value:
+                archMode === 'gpu'
+                  ? `$${gpuSim.busyCount}/12\\;(${utilPct}\\%)$`
+                  : ascendMode === 'serial'
+                    ? 'Cube $12/28\\;(43\\%)$'
+                    : 'Cube 稳态 $100\\%$',
+              tone: archMode === 'gpu' ? 'active' : 'activation',
+              active: true,
+            },
+            {
+              label: '关键微架构权衡',
+              value:
+                archMode === 'gpu'
+                  ? warpCount < 6
+                    ? `尚余 ${bubbleCount} 拍空泡`
+                    : warpCount === 6
+                      ? '零成本藏住延迟'
+                      : '挤占 Reg/SMEM'
+                  : ascendMode === 'serial'
+                    ? '57% 周期空等搬运'
+                    : '异步队列等效满载',
+              tone: 'neutral',
+            },
+          ]}
+        />
+      </Stage>
+    </InteractiveExplainer>
   );
 }

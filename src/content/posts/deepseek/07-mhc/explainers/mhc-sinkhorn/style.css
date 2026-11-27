@@ -1,0 +1,10 @@
+/* mHC 2x2 Sinkhorn-Knopp 微实验样式（@layer utilities，仅使用 --wisp-* 令牌）。 */
+@layer utilities {
+  .mhc-sk-svg {
+    display: block;
+    width: 100%;
+    height: auto;
+    overflow: visible;
+    font-variant-numeric: tabular-nums;
+  }
+}

@@ -13,7 +13,7 @@
 | 流程、分层栈、双端对照、状态转换、模块调用、排障决策树                | **Pele（Mermaid）**    | `.mdx` 内联 ` ```mermaid ` 代码块 | 自动布局、零坐标心算；构建期转主题化 SVG                                                                                                                                     |
 | LLM 论文级结构图、硬件泳道、矩阵/掩码网格、等比时间线、频谱图、坐标系 | **单源 `.drawio`**     | `.drawio` + `.wisp.svg`           | 直接写未压缩 XML 或在 Draw.io 桌面端配合 `wisp-drawio-library.xml` 拖拽编辑，再跑 `pnpm diagram lint --fix` 吸附配色与网格；重复格子可用一次性临时脚本算坐标，用完即删不入库 |
 | 局部直觉对照、`<= 3` 跳指针映射、比特位宽对照                         | **单源 `.excalidraw`** | `.excalidraw` + `.wisp.svg`       | 通过 `wisp_diagram.py new` 由骨架生成一次后以 `.excalidraw` 为准                                                                                                             |
-| 矩阵演化、注意力掩码步进、多步离散寻址、`> 3` 拍时序推演              | **交互 `<Explainer>`** | 文章私有 `explainers/*.tsx`       | 用 `BeatExplainer` 因果节拍驱动                                                                                                                                              |
+| 矩阵演化、因果步进、连续参数探索、时序微实验                          | **交互 `<Explainer>`** | 文章私有 `explainers/*.tsx`       | `BeatExplainer`（3–4 步单轴连续形变，禁内层假拍）或 `InteractiveExplainer`（直接操纵微实验）；单图单尺标，严禁同框混写玩具数值与生产维度                                     |
 
 ---
 
@@ -43,7 +43,7 @@ flowchart TB
 
 ## 3. Draw.io 论文配图美学规范
 
-所有静态 `.drawio` 遵循以下 6 条准则（参考 `src/content/posts/deepseek/07-engram/` 标杆图与 `wisp-drawio-library.xml` 元件库）：
+所有静态 `.drawio` 遵循以下 6 条准则（参考 `src/content/posts/deepseek/08-engram/` 标杆图与 `wisp-drawio-library.xml` 元件库）：
 
 1. **画布上下限与纵向扩容**：画布自然宽度严格控制 `<= 704px`（`lint` 上限 `720px`，带目录/系列栏文章 `.wisp-wide` 也会贴齐 ~710px 栏宽），严格对齐 `8px` 网格；**高度没有上限**（推荐 `320–760px`），禁止为了迁就单屏高度而压扁节点或硬塞“二合一”大图，复杂流程拆成两张独立小图。跨区连线走干净外侧走廊，不穿过第三个节点或分组标题栏；正交折线默认使用 `edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=10;`（相邻节点间距 `<= 20px` 的紧凑连接用 `jettySize=6`，避免 `jettySize=auto` 在 `< 40px` 间隙中产生回折倒钩）。
 2. **字号层级、内边距与 MathJax 缩放**：核心节点与分组标题用 `12px`，辅助信息（边标签、坐标刻度、字节条标注、微缩网格字、底部说明）用 `11px`（合法范围 `12 ± 1`）；常规节点使用 `spacing=6`（分组标题 `spacingTop=8`），单行节点最低 `32px`（推荐 `36–40px`），双行卡片 `56–64px`，禁用 `16px`/`24px` 扁框放文字。站点通过 `src/styles/custom.css` 与 `wisp-diagram` 导出器对 `.wisp-diagram-body mjx-container` 设 `font-size: 0.85em`，抵消 Inter 超高 x-height（`0.545em`）相对于 MathJax SVG `ex` 基准（`0.442em`）造成的 `+23%` 视觉放大。

@@ -21,7 +21,7 @@ import RequestLifecycleExplainer from './explainers/request-lifecycle';
 
 ## 从“Hello vLLM”看端到端生命周期
 
-为把过程算明白，我们用一条贯穿全章的微型请求做例子。提示词 `"Hello vLLM"` 经分词切出 $L_{\text{in}} = 4$ 个 token ID `[15496, 2159, 44, 151645]`，设为 `max_tokens = 2` 与贪心采样。
+为把过程算明白，我们用一条贯穿全章的短请求作为示例。提示词 `"Hello vLLM"` 经分词切出 $L_{\text{in}} = 4$ 个 token ID `[15496, 2159, 44, 151645]`，设为 `max_tokens = 2` 与贪心采样。
 
 假设单次分词耗时 $T_{\text{tok}} = 3\text{ ms}$，单步调度耗时 $T_{\text{sched}} = 1\text{ ms}$，设备前向与采样耗时 $T_{\text{gpu}} = 8\text{ ms}$，增量解码耗时 $T_{\text{detok}} = 2\text{ ms}$。在单进程串行循环里，所有环节首尾相接，单步端到端间隔如下：
 
@@ -35,9 +35,9 @@ $$
 T_{\text{step}} \approx \max(T_{\text{sched}},\; T_{\text{gpu}}) = \max(1,\; 8) = 8\text{ ms}
 $$
 
-下面的交互推演按六个因果节拍追踪 `"Hello vLLM"` 如何穿过三层进程边界，并对照 V1 解耦与单进程串行的步时构成。
+下面的交互演示分六个步骤追踪 `"Hello vLLM"` 如何穿过三层进程边界，并对照 V1 解耦与单进程串行的步时构成。
 
-<RequestLifecycleExplainer client:visible title="图 1：vLLM V1 请求全生命周期推演" />
+<RequestLifecycleExplainer client:visible title="图 1：vLLM V1 请求全生命周期演示" />
 
 沿着图 1 的六步路径，单条请求在系统内部依次经历六个交接阶段：
 

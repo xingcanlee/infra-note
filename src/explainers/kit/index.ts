@@ -23,6 +23,16 @@ export {
   type BeatStageRenderCtx,
   type BeatExplainerProps,
 } from './BeatExplainer';
+export {
+  default as InteractiveExplainer,
+  LabSegmented,
+  LabSlider,
+  type InteractiveExplainerCtx,
+  type InteractiveExplainerProps,
+  type LabSegmentedOption,
+  type LabSegmentedProps,
+  type LabSliderProps,
+} from './InteractiveExplainer';
 export { default as DataFlowArrow, type DataFlowArrowProps, type Point2D } from './DataFlowArrow';
 export { default as ActiveFocusFrame, type ActiveFocusFrameProps } from './ActiveFocusFrame';
 export { default as TensorBlock, type TensorBlockProps, type TensorSplit } from './TensorBlock';

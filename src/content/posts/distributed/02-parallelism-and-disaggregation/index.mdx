@@ -1,6 +1,6 @@
 ---
 title: '02 张量、序列、专家并行与 PD 分离架构'
-description: '单靠张量并行在长序列与稀疏 MoE 下会造成严重的 KV Cache 冗余与阶段抢占。本文推演 TP、SP、Ring CP、混合 DP/EP 与 PD 分离架构，并对照 NIXL、Mooncake 与昇腾 MemFabric 传输栈。'
+description: '单靠张量并行在长序列与稀疏 MoE 下会造成严重的 KV Cache 冗余与阶段抢占。本文拆解 TP、SP、Ring CP、混合 DP/EP 与 PD 分离架构，并对照 NIXL、Mooncake 与昇腾 MemFabric 传输栈。'
 series: { id: distributed, order: 3 }
 pubDate: 2026-11-14
 tags: [TP, SP, CP, EP, PD Disaggregation, NIXL, Mooncake, MemFabric, NVIDIA, Ascend]
@@ -10,7 +10,7 @@ toc: true
 
 import EpDispatchExplainer from './explainers/EpDispatchExplainer';
 
-分布式推理的显存压力来自两类开销：一类是静态常驻的模型权重，另一类是随序列长度与并发数线性增长的 KV Cache（Key-Value Cache，键值缓存）。第 01 章算清了单次跨卡传输的物理代价，而**并行维度的切分方式**决定了前向过程一共要支付多少次通信，又真正省下了哪一部分显存。
+分布式推理的显存压力来自两类开销：一类是静态常驻的模型权重，另一类是随序列长度与并发数线性增长的 KV Cache（Key-Value Cache，键值缓存）。第 01 章定量分析了单次跨卡传输的物理代价，而**并行维度的切分方式**决定了前向过程一共要支付多少次通信，又真正省下了哪一部分显存。
 
 在吞吐与时延的权衡里，推理系统同时盯住两个核心指标。**TTFT（Time to First Token，首字延迟）**决定用户看到首字的等待时间，**TPOT（Time per Output Token，逐 token 生成延迟）**则决定后续吐字间隔。当单卡装不下权重或长上下文缓存时，集群设计沿着三条主线展开：算子与序列切分、注意力与专家混合并行，以及预填充与解码两阶段的池化隔离。
 
@@ -67,11 +67,11 @@ $$
 
 到了 MoE 前馈阶段，每张卡如果都存全套上百个路由专家权重同样会撑爆显存。同一组卡于是切换为 EP8（8 卡专家并行），把路由专家拆散到各卡，只通过跨卡 `All-to-All` 把 token 送去对应卡计算。
 
-下面通过一个 4 卡 Top-2 路由的最小模型，观察激活张量如何在 DP 与 EP 两种布局之间切换。初始每张卡在 Attention DP 阶段各持有 1 个 token，激活形状为 $[1, D]$；可以通过图 2 中的步骤切换按钮依次查看门控计数握手、非对称重分发、局部专家矩阵乘以及加权还原五个阶段。
+下面通过一个 4 卡 Top-2 路由最小示例，观察激活张量如何在 DP 与 EP 两种布局之间切换。初始每张卡在 Attention DP 阶段各持有 1 个 token，激活形状为 $[1, D]$，图 2 依次展示了门控计数握手、非对称重分发、局部专家矩阵乘以及加权还原五个阶段。
 
 <EpDispatchExplainer
   client:visible
-  title="图 2：Attention DP + MoE EP 跨卡 Dispatch / Combine 全周期推演"
+  title="图 2：Attention DP + MoE EP 跨卡 Dispatch / Combine 全周期流程"
 />
 
 如图 2 所示，混合并行的数据流沿 `DP -> Dispatch -> Expert GEMM -> Combine -> DP` 往返。注意力阶段各卡独立计算，保持规整的 $[1, D]$ 激活分布。进入 MoE 层后，路由器为每个 token 选出 $K$ 个目标专家，再经变长 `AllToAllV`（变长全对全通信）的 Dispatch 阶段将激活副本发往专家所在卡。

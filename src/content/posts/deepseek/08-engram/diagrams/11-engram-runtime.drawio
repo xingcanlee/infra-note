@@ -1,0 +1,130 @@
+<mxfile host="wisp-diagram">
+  <diagram id="ds-07-engram-prefetch" name="engram-runtime-prefetch">
+    <mxGraphModel dx="800" dy="600" grid="1" gridSize="8" guides="1" page="0" math="1" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="pf__tk_0" value="" style="endArrow=none;startArrow=none;html=1;strokeColor=#e2e2dd;strokeWidth=1.0;dashed=1;dashPattern=4 4;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="120" y="8" as="sourcePoint" />
+            <mxPoint x="120" y="160" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="pf__tl_0" value="0ms" style="text;html=1;whiteSpace=wrap;align=center;verticalAlign=middle;fontFamily=Inter, Noto Sans SC;fontSize=11;fontColor=#5c6067;" vertex="1" parent="1">
+          <mxGeometry x="88" y="160" width="64" height="24" as="geometry" />
+        </mxCell>
+        <mxCell id="pf__tk_25" value="" style="endArrow=none;startArrow=none;html=1;strokeColor=#e2e2dd;strokeWidth=1.0;dashed=1;dashPattern=4 4;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="264" y="8" as="sourcePoint" />
+            <mxPoint x="264" y="160" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="pf__tl_25" value="2.5ms" style="text;html=1;whiteSpace=wrap;align=center;verticalAlign=middle;fontFamily=Inter, Noto Sans SC;fontSize=11;fontColor=#5c6067;" vertex="1" parent="1">
+          <mxGeometry x="232" y="160" width="64" height="24" as="geometry" />
+        </mxCell>
+        <mxCell id="pf__tk_50" value="" style="endArrow=none;startArrow=none;html=1;strokeColor=#e2e2dd;strokeWidth=1.0;dashed=1;dashPattern=4 4;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="408" y="8" as="sourcePoint" />
+            <mxPoint x="408" y="160" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="pf__tl_50" value="5.0ms" style="text;html=1;whiteSpace=wrap;align=center;verticalAlign=middle;fontFamily=Inter, Noto Sans SC;fontSize=11;fontColor=#5c6067;" vertex="1" parent="1">
+          <mxGeometry x="376" y="160" width="64" height="24" as="geometry" />
+        </mxCell>
+        <mxCell id="pf__tk_75" value="" style="endArrow=none;startArrow=none;html=1;strokeColor=#e2e2dd;strokeWidth=1.0;dashed=1;dashPattern=4 4;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="544" y="8" as="sourcePoint" />
+            <mxPoint x="544" y="160" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="pf__tl_75" value="7.5ms" style="text;html=1;whiteSpace=wrap;align=center;verticalAlign=middle;fontFamily=Inter, Noto Sans SC;fontSize=11;fontColor=#5c6067;" vertex="1" parent="1">
+          <mxGeometry x="512" y="160" width="64" height="24" as="geometry" />
+        </mxCell>
+        <mxCell id="pf__tk_100" value="" style="endArrow=none;startArrow=none;html=1;strokeColor=#e2e2dd;strokeWidth=1.0;dashed=1;dashPattern=4 4;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="688" y="8" as="sourcePoint" />
+            <mxPoint x="688" y="160" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="pf__tl_100" value="10.0ms" style="text;html=1;whiteSpace=wrap;align=center;verticalAlign=middle;fontFamily=Inter, Noto Sans SC;fontSize=11;fontColor=#5c6067;" vertex="1" parent="1">
+          <mxGeometry x="656" y="160" width="64" height="24" as="geometry" />
+        </mxCell>
+        <mxCell id="pf__ln0" value="Main Stream&lt;br&gt;主干解码流" style="text;html=1;whiteSpace=wrap;align=right;verticalAlign=middle;fontFamily=Inter, Noto Sans SC;fontSize=12;fontStyle=1;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="0" y="8" width="112" height="64" as="geometry" />
+        </mxCell>
+        <mxCell id="pf__bg0" value="" style="rounded=1;absoluteArcSize=1;arcSize=8;html=1;fillColor=#f4f4f2;strokeColor=#e2e2dd;strokeWidth=1;spacing=6;" vertex="1" parent="1">
+          <mxGeometry x="120" y="8" width="568" height="64" as="geometry" />
+        </mxCell>
+        <mxCell id="pf__b0_0" value="Embed +&lt;br&gt;Hash" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f2fb;strokeColor=#2f5783;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=6;fontFamily=Inter, Noto Sans SC;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="120" y="8" width="80" height="64" as="geometry" />
+        </mxCell>
+        <mxCell id="pf__b0_1" value="Layer 0 全层计算&lt;br&gt;(mHC + Attn + MoE)" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f2fb;strokeColor=#2f5783;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=6;fontFamily=Inter, Noto Sans SC;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="200" y="8" width="200" height="64" as="geometry" />
+        </mxCell>
+        <mxCell id="pf__b0_2" value="wait +&lt;br&gt;L1 Engram" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#fbf2df;strokeColor=#7b5518;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=6;fontFamily=Inter, Noto Sans SC;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="400" y="8" width="80" height="64" as="geometry" />
+        </mxCell>
+        <mxCell id="pf__b0_3" value="L1 Attn+MoE -&amp;gt; L14&lt;br&gt;连续计算窗口" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f2fb;strokeColor=#2f5783;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=6;fontFamily=Inter, Noto Sans SC;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="480" y="8" width="208" height="64" as="geometry" />
+        </mxCell>
+        <mxCell id="pf__ln1" value="Prefetch Stream&lt;br&gt;PCIe / HCCS" style="text;html=1;whiteSpace=wrap;align=right;verticalAlign=middle;fontFamily=Inter, Noto Sans SC;fontSize=12;fontStyle=1;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="0" y="88" width="112" height="64" as="geometry" />
+        </mxCell>
+        <mxCell id="pf__bg1" value="" style="rounded=1;absoluteArcSize=1;arcSize=8;html=1;fillColor=#f4f4f2;strokeColor=#e2e2dd;strokeWidth=1;spacing=6;" vertex="1" parent="1">
+          <mxGeometry x="120" y="88" width="568" height="64" as="geometry" />
+        </mxCell>
+        <mxCell id="pf__b1_0" value="Host DDR Prefetch&lt;br&gt;-&amp;gt; staged_rows" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#fbf2df;strokeColor=#7b5518;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=6;fontFamily=Inter, Noto Sans SC;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="200" y="88" width="160" height="64" as="geometry" />
+        </mxCell>
+        <mxCell id="pf__b1_1" value="Event" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#fbf2df;strokeColor=#7b5518;strokeWidth=1.25;dashed=1;dashPattern=4 4;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter, Noto Sans SC;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="360" y="88" width="40" height="64" as="geometry" />
+        </mxCell>
+        <mxCell id="pf__b1_2" value="L14 Engram 异步 Prefetch&lt;br&gt;掩盖跨总线延迟" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#fbf2df;strokeColor=#7b5518;strokeWidth=1.25;dashed=1;dashPattern=4 4;align=center;verticalAlign=middle;spacing=6;fontFamily=Inter, Noto Sans SC;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="480" y="88" width="208" height="64" as="geometry" />
+        </mxCell>
+        <mxCell id="hw_note" value="掩盖条件 \(t_{\text{prefetch}} \le t_{L_0}\) 与双硬件存储总线" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#f4f4f2;strokeColor=#5c6067;strokeWidth=1.25;dashed=1;verticalAlign=top;align=left;spacingLeft=12;spacingTop=8;fontFamily=Inter, Noto Sans SC;fontSize=12;fontStyle=1;fontColor=#5c6067;container=0;" vertex="1" parent="1">
+          <mxGeometry x="0" y="200" width="688" height="200" as="geometry" />
+        </mxCell>
+        <mxCell id="host_tbl" value="Host DDR&lt;br&gt;196B 大表&lt;br&gt;INT8 / MXFP8" style="shape=datastore;whiteSpace=wrap;html=1;fillColor=#f4f4f2;strokeColor=#5c6067;strokeWidth=1.25;shadow=0;container=0;align=center;verticalAlign=middle;fontFamily=Inter, Noto Sans SC;fontSize=12;fontStyle=1;fontColor=#1d1d1f;spacing=6;" vertex="1" parent="1">
+          <mxGeometry x="16" y="240" width="104" height="144" as="geometry" />
+        </mxCell>
+        <mxCell id="gpu_pf_bg1" value="" style="rounded=1;whiteSpace=wrap;html=1;arcSize=12;fillColor=#e9f2fb;strokeColor=#2f5783;strokeWidth=1.25;opacity=65;shadow=0;container=0;spacing=6;" vertex="1" parent="1">
+          <mxGeometry x="208" y="232" width="208" height="64" as="geometry" />
+        </mxCell>
+        <mxCell id="gpu_pf" value="NVIDIA GPU · vLLM&lt;br&gt;Pinned / cuMem · &amp;gt;4K 回退直查" style="rounded=1;whiteSpace=wrap;html=1;arcSize=12;fillColor=#e9f2fb;strokeColor=#2f5783;strokeWidth=1.25;opacity=100;shadow=0;container=0;align=center;verticalAlign=middle;fontFamily=Inter, Noto Sans SC;fontSize=12;fontColor=#1d1d1f;spacing=6;" vertex="1" parent="1">
+          <mxGeometry x="200" y="240" width="208" height="64" as="geometry" />
+        </mxCell>
+        <mxCell id="gpu_pool" value="EngramPool 卸载池&lt;br&gt;NVLink / IBGDA RDMA" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f2fb;strokeColor=#2f5783;strokeWidth=1.25;dashed=1;dashPattern=4 4;align=center;verticalAlign=middle;spacing=6;fontFamily=Inter, Noto Sans SC;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="464" y="240" width="208" height="64" as="geometry" />
+        </mxCell>
+        <mxCell id="npu_pf_bg1" value="" style="rounded=1;whiteSpace=wrap;html=1;arcSize=12;fillColor=#f5eef9;strokeColor=#4d335c;strokeWidth=1.25;opacity=65;shadow=0;container=0;spacing=6;" vertex="1" parent="1">
+          <mxGeometry x="208" y="320" width="208" height="64" as="geometry" />
+        </mxCell>
+        <mxCell id="npu_pf" value="Huawei Ascend · NPU&lt;br&gt;aclrtHostRegisterV2 (UVA)" style="rounded=1;whiteSpace=wrap;html=1;arcSize=12;fillColor=#f5eef9;strokeColor=#4d335c;strokeWidth=1.25;opacity=100;shadow=0;container=0;align=center;verticalAlign=middle;fontFamily=Inter, Noto Sans SC;fontSize=12;fontColor=#1d1d1f;spacing=6;" vertex="1" parent="1">
+          <mxGeometry x="200" y="328" width="208" height="64" as="geometry" />
+        </mxCell>
+        <mxCell id="npu_pool" value="SharedPool / Hixl&lt;br&gt;Triton 零拷贝 + FULL 图" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#f5eef9;strokeColor=#4d335c;strokeWidth=1.25;dashed=1;dashPattern=4 4;align=center;verticalAlign=middle;spacing=6;fontFamily=Inter, Noto Sans SC;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="464" y="328" width="208" height="64" as="geometry" />
+        </mxCell>
+        <mxCell id="e_hg" value="" style="endArrow=classic;startArrow=none;html=1;strokeColor=#1d1d1f;strokeWidth=1.25;edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=10;exitX=1.0;exitY=0.2;exitDx=0;exitDy=0;entryX=0.0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="host_tbl" target="gpu_pf">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_hg_lbl" value="PCIe" style="text;html=1;whiteSpace=wrap;align=center;verticalAlign=middle;fontFamily=Inter, Noto Sans SC;fontSize=11;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="144" y="240" width="40" height="24" as="geometry" />
+        </mxCell>
+        <mxCell id="e_hn" value="" style="endArrow=classic;startArrow=none;html=1;strokeColor=#1d1d1f;strokeWidth=1.25;edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=10;exitX=1.0;exitY=0.8;exitDx=0;exitDy=0;entryX=0.0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="host_tbl" target="npu_pf">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_hn_lbl" value="HCCS" style="text;html=1;whiteSpace=wrap;align=center;verticalAlign=middle;fontFamily=Inter, Noto Sans SC;fontSize=11;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="144" y="328" width="40" height="24" as="geometry" />
+        </mxCell>
+        <mxCell id="e_gp" value="" style="endArrow=classic;startArrow=none;html=1;strokeColor=#2f5783;strokeWidth=1.25;edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=10;" edge="1" parent="1" source="gpu_pf" target="gpu_pool">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_np" value="" style="endArrow=classic;startArrow=none;html=1;strokeColor=#4d335c;strokeWidth=1.25;edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=10;" edge="1" parent="1" source="npu_pf" target="npu_pool">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

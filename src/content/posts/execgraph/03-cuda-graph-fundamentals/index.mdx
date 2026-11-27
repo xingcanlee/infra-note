@@ -1,6 +1,6 @@
 ---
 title: '03 CUDA Graph 原理：流捕获、四边界与条件节点'
-description: '编译融合后小批量解码仍受制于高频主机发射墙。本文聚焦 CUDA 与 PyTorch 底层静态执行图，拆解流捕获录制、四道硬件硬边界、显存池复用与设备条件节点。'
+description: '编译融合后小批量解码仍受制于主机发射开销瓶颈。本文聚焦 CUDA 与 PyTorch 底层静态执行图，拆解流捕获录制、四道硬件硬边界、显存池复用与设备条件节点。'
 series: { id: execgraph, order: 4 }
 pubDate: 2026-10-18
 draft: false
@@ -11,7 +11,7 @@ import Figure from 'astro-wisp/components/Figure.astro';
 import ptCgLaunch from './images/pytorch-cudagraph-launch.png';
 import ptCgDlrm from './images/pytorch-cudagraph-dlrm-speedup.png';
 
-[第 2 章](../02-torch-compile-fundamentals/)的计算表明，`torch.compile` 就算把算子融到极致，40 层模型单步解码依然需要 CPU 跑完数百次发射循环。要真正消除主机发射墙，就需要引入 **CUDA Graph（设备静态执行图）**[^nv-cg-start][^pytorch-cg-blog]。
+[第 2 章](../02-torch-compile-fundamentals/)的计算表明，`torch.compile` 就算把算子融到极致，40 层模型单步解码依然需要 CPU 跑完数百次发射循环。要真正消除主机发射开销瓶颈，就需要引入 **CUDA Graph（设备静态执行图）**[^nv-cg-start][^pytorch-cg-blog]。
 
 它的思路很直接：预热阶段暂不急着算，让驱动把整串算子的函数指针、网格维度与显存地址录成静态 **DAG（Directed Acyclic Graph，有向无环图）** `cudaGraph_t`。如图 1 所示，驱动随后编译出可执行体 `cudaGraphExec_t`。正式推理时，CPU 只需发一条 `cudaGraphLaunch` 命令，命令处理器就会把整串算子连续跑完。
 
@@ -25,7 +25,7 @@ import ptCgDlrm from './images/pytorch-cudagraph-dlrm-speedup.png';
 
 ## 为什么静态图只用在 Decode 阶段
 
-刚接触推理引擎的读者常会问：既然静态图省发射开销，为什么线上服务不连 **Prefill（预填充）** 一起录成静态图？对比两个阶段的负载特征就能看明白：
+既然静态图能省去发射开销，线上服务为何不连 **Prefill（预填充）** 一起录成静态图？对比两个阶段的负载特征即可明确：
 
 | 对比维度     | Prefill（预填充，Eager 或分段） | Decode（自回归解码，启用静态图） |
 | :----------- | :------------------------------ | :------------------------------- |
@@ -52,7 +52,7 @@ CUDA 提供两条建图路径。第一条是 C++ **Explicit API**，需要程序
 
 ### 捕获零执行与三种安全模式
 
-调用 `cudaStreamBeginCapture(stream, mode)` 后，目标流切入录制态。如果此时别的线程或库偷偷在后台发起非安全异步调用或显存分配，就会污染正在录制的图拓扑。因此 CUDA 定义了三种捕获安全模式：
+调用 `cudaStreamBeginCapture(stream, mode)` 后，目标流切入录制态。如果此时别的线程或库在后台发起非安全异步调用或显存分配，就会污染正在录制的图拓扑。因此 CUDA 定义了三种捕获安全模式：
 
 | 捕获安全模式枚举                   | 同线程跨流约束     | 跨线程容忍度                 | 典型适用场景                 |
 | :--------------------------------- | :----------------- | :--------------------------- | :--------------------------- |
@@ -79,7 +79,7 @@ flowchart TD
 
 ## 静态执行图的四道硬边界
 
-静态图用“冻结运行期灵活度”换取“零 CPU 调度开销”，任何框架接入 CUDA Graph 都必须守住图 4 总结的四项硬件边界。踩中不同的红线，代价也不一样——有的当场报错中止，有的则会一声不响地算出乱码。
+静态图用“冻结运行期灵活度”换取“零 CPU 调度开销”，任何框架接入 CUDA Graph 都必须守住图 4 总结的四项硬件边界。踩中不同的红线，代价也不一样——有的当场报错中止，有的则会静默产出错误数值。
 
 ![静态图四项硬件约束与违规征兆](./diagrams/03-cuda-graph-four-boundaries.excalidraw '图 4：CUDA Graph 四项硬件约束与违规征兆对照')
 
@@ -103,7 +103,7 @@ flowchart TD
 
 ### 多流封闭汇合与对称通信隔离
 
-凡是在捕获期内分叉出去的通信或预取流，收尾前必须经过事件汇回主流。涉及多卡对称通信内存指针的算子，还必须切换进 `nccl_symm_mem_context` 等专用隔离上下文分配内存，保证跨卡映射指针在重放期间恒定不变。
+凡是在捕获期内分叉出去的通信或 Prefetch 流，收尾前必须经过事件汇回主流。涉及多卡对称通信内存指针的算子，还必须切换进 `nccl_symm_mem_context` 等专用隔离上下文分配内存，保证跨卡映射指针在重放期间恒定不变。
 
 ## 静动态边界与地址复用仿真
 
@@ -166,7 +166,7 @@ print(f"[40L Decode] Eager={eager_host_us:.0f}us, FULL_Graph={full_us:.0f}us ({e
 [40L Decode] Eager=11200us, FULL_Graph=4729us (2.37x), PiecewiseLaunches=81 vs Full=1
 ```
 
-掌握 CUDA Graph 的底层机制后，下一步就要面对真实推理引擎里的复杂调度问题。当批次混入 Decode 与 Chunked Prefill，且并非所有注意力后端都支持全图捕获时，引擎该如何统一编排静态图？[第 4 章：vLLM GPU 执行图与 CUDAGraphMode](../04-vllm-cudagraph-modes/)将深入 vLLM 的 GPU 执行图体系。
+掌握 CUDA Graph 的底层机制后，下一步就要面对真实推理引擎里的复杂调度问题。当批次混入 Decode 与 Chunked Prefill，且部分注意力后端不支持全图捕获时，引擎该如何统一编排静态图？[第 4 章：vLLM GPU 执行图与 CUDAGraphMode](../04-vllm-cudagraph-modes/)将深入 vLLM 的 GPU 执行图体系。
 
 [^nv-cg-start]: NVIDIA Technical Blog, [Getting Started with CUDA Graphs](https://developer.nvidia.com/blog/cuda-graphs/)，系统说明 CUDA Graphs 任务图捕获、实例化与重放原理。
 
@@ -176,4 +176,4 @@ print(f"[40L Decode] Eager={eager_host_us:.0f}us, FULL_Graph={full_us:.0f}us ({e
 
 [^nv-cond-blog]: NVIDIA Technical Blog, [Dynamic Control Flow in CUDA Graphs with Conditional Nodes](https://developer.nvidia.com/blog/dynamic-control-flow-in-cuda-graphs-with-conditional-nodes/)，介绍 CUDA 12.4 至 12.8 图内 `IF`/`WHILE`/`SWITCH` 设备侧控制流。
 
-[^v41-cg]: DeepSeek-V4.1-Flash 40 层架构与 CSA2 890 B/token KV 规格，见本站[10 串珠成链：V4.1 单步全链路与双硬件协同](../../deepseek/10-architecture-synthesis/)。
+[^v41-cg]: DeepSeek-V4.1-Flash 40 层架构与 CSA2 890 B/token KV 规格，见本站[10 全链路整合：V4.1 单步执行与双硬件协同](../../deepseek/10-architecture-synthesis/)。

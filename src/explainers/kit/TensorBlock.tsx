@@ -54,7 +54,7 @@ export interface TensorBlockProps {
 
 /**
  * 张量结构基础构件：
- * - 长宽比例真实映射张量尺寸
+ * - 长宽比例与位置支持 Motion 连续插值形变
  * - 切分处自动绘制虚线，多维张量支持 3D 堆叠背页
  * - 维度使用 JetBrains Mono + tabular-nums，与连线零重叠
  */
@@ -90,14 +90,15 @@ export default function TensorBlock({
   const stackLayers = stack > 1 ? Array.from({ length: stack - 1 }, (_, i) => stack - 1 - i) : [];
 
   return (
-    <motion.g initial={false} animate={{ opacity: groupOpacity }} transition={stepTransition}>
+    <motion.g initial={false} animate={{ x, y, opacity: groupOpacity }} transition={stepTransition}>
       {stackLayers.map((layerIdx) => (
-        <rect
+        <motion.rect
           key={layerIdx}
-          x={x + layerIdx * 4}
-          y={y - layerIdx * 4}
-          width={w}
-          height={h}
+          initial={false}
+          x={layerIdx * 4}
+          y={-layerIdx * 4}
+          animate={{ width: w, height: h }}
+          transition={stepTransition}
           rx={RADIUS}
           fill="var(--wisp-surface)"
           stroke={stroke}
@@ -108,11 +109,9 @@ export default function TensorBlock({
 
       <motion.rect
         initial={false}
-        x={x}
-        y={y}
-        width={w}
-        height={h}
-        animate={{ fillOpacity: effectiveAlpha, strokeWidth }}
+        x={0}
+        y={0}
+        animate={{ width: w, height: h, fillOpacity: effectiveAlpha, strokeWidth }}
         transition={stepTransition}
         rx={RADIUS}
         fill={fill}
@@ -123,14 +122,14 @@ export default function TensorBlock({
       {subgrid?.cols &&
         subgrid.cols > 1 &&
         Array.from({ length: subgrid.cols - 1 }, (_, idx) => {
-          const gx = x + ((idx + 1) * w) / subgrid.cols!;
+          const gx = ((idx + 1) * w) / subgrid.cols!;
           return (
             <line
               key={`c${idx}`}
               x1={gx}
-              y1={y + 2}
+              y1={2}
               x2={gx}
-              y2={y + h - 2}
+              y2={h - 2}
               stroke={stroke}
               strokeOpacity={0.28}
               strokeWidth={1}
@@ -141,13 +140,13 @@ export default function TensorBlock({
       {subgrid?.rows &&
         subgrid.rows > 1 &&
         Array.from({ length: subgrid.rows - 1 }, (_, idx) => {
-          const gy = y + ((idx + 1) * h) / subgrid.rows!;
+          const gy = ((idx + 1) * h) / subgrid.rows!;
           return (
             <line
               key={`r${idx}`}
-              x1={x + 2}
+              x1={2}
               y1={gy}
-              x2={x + w - 2}
+              x2={w - 2}
               y2={gy}
               stroke={stroke}
               strokeOpacity={0.28}
@@ -167,13 +166,13 @@ export default function TensorBlock({
           const minRightW = sp.rightLabel
             ? Math.max(38, Math.ceil(estimateTextWidth(sp.rightLabel, 10, rightKind)) + 8)
             : 0;
-          const rawSx = x + w * sp.ratio;
+          const rawSx = w * sp.ratio;
           const sx =
             (sp.leftLabel || sp.rightLabel) && minLeftW + minRightW <= w
-              ? Math.max(x + minLeftW, Math.min(x + w - minRightW, rawSx))
+              ? Math.max(minLeftW, Math.min(w - minRightW, rawSx))
               : rawSx;
-          const lw = sx - x;
-          const rw = x + w - sx;
+          const lw = sx;
+          const rw = w - sx;
 
           const renderSplitLabel = (
             text: string,
@@ -187,7 +186,7 @@ export default function TensorBlock({
               return (
                 <text
                   x={partX + partW / 2}
-                  y={y + h / 2}
+                  y={h / 2}
                   textAnchor="middle"
                   dominantBaseline="central"
                   textLength={fit.textLength}
@@ -205,8 +204,8 @@ export default function TensorBlock({
             }
             const badgeW = Math.max(32, Math.ceil(estimateTextWidth(text, 10, kind)) + 10);
             const anchorX = partX + partW / 2;
-            const badgeY = side === 'left' ? y - 16 : y + h + 16;
-            const tickY0 = side === 'left' ? y : y + h;
+            const badgeY = side === 'left' ? -16 : h + 16;
+            const tickY0 = side === 'left' ? 0 : h;
             const tickY1 = side === 'left' ? badgeY + 7 : badgeY - 7;
             return (
               <g>
@@ -248,38 +247,38 @@ export default function TensorBlock({
 
           return (
             <g key={i}>
-              <line
-                x1={sx}
-                y1={y + 1}
-                x2={sx}
-                y2={y + h - 1}
+              <motion.line
+                initial={false}
+                animate={{ x1: sx, x2: sx, y2: h - 1 }}
+                transition={stepTransition}
+                y1={1}
                 stroke={stroke}
                 strokeWidth={1.25}
                 strokeDasharray="4 3"
               />
-              {sp.leftLabel && renderSplitLabel(sp.leftLabel, x, lw, 'left', leftKind)}
+              {sp.leftLabel && renderSplitLabel(sp.leftLabel, 0, lw, 'left', leftKind)}
               {sp.rightLabel && renderSplitLabel(sp.rightLabel, sx, rw, 'right', rightKind)}
             </g>
           );
         }
-        const sy = y + h * sp.ratio;
-        const th = sy - y;
-        const bh = y + h - sy;
+        const sy = h * sp.ratio;
+        const th = sy;
+        const bh = h - sy;
         return (
           <g key={i}>
-            <line
-              x1={x + 1}
-              y1={sy}
-              x2={x + w - 1}
-              y2={sy}
+            <motion.line
+              initial={false}
+              animate={{ y1: sy, y2: sy, x2: w - 1 }}
+              transition={stepTransition}
+              x1={1}
               stroke={stroke}
               strokeWidth={1.25}
               strokeDasharray="4 3"
             />
             {sp.leftLabel && th >= 18 && w >= 36 && (
               <text
-                x={x + w / 2}
-                y={y + th / 2}
+                x={w / 2}
+                y={th / 2}
                 textAnchor="middle"
                 dominantBaseline="central"
                 style={{
@@ -293,7 +292,7 @@ export default function TensorBlock({
             )}
             {sp.rightLabel && bh >= 18 && w >= 36 && (
               <text
-                x={x + w / 2}
+                x={w / 2}
                 y={sy + bh / 2}
                 textAnchor="middle"
                 dominantBaseline="central"
@@ -314,8 +313,8 @@ export default function TensorBlock({
         <>
           {texName ? (
             <TexLabel
-              x={x + w / 2}
-              y={y - 12 - (stack - 1) * 4}
+              x={w / 2}
+              y={-12 - (stack - 1) * 4}
               width={texWidth}
               height={22}
               tex={texName}
@@ -325,8 +324,8 @@ export default function TensorBlock({
             name &&
             (hasInlineMath(name) ? (
               <SvgRichLabel
-                x={x + w / 2}
-                y={y - 11 - (stack - 1) * 4}
+                x={w / 2}
+                y={-11 - (stack - 1) * 4}
                 width={Math.max(w + 24, 96)}
                 height={22}
                 text={name}
@@ -335,8 +334,8 @@ export default function TensorBlock({
               />
             ) : (
               <text
-                x={x + w / 2}
-                y={y - 10 - (stack - 1) * 4}
+                x={w / 2}
+                y={-10 - (stack - 1) * 4}
                 textAnchor="middle"
                 dominantBaseline="central"
                 style={{
@@ -353,8 +352,8 @@ export default function TensorBlock({
           {shape &&
             (hasInlineMath(shape) ? (
               <SvgRichLabel
-                x={x + w / 2}
-                y={y + h + 11}
+                x={w / 2}
+                y={h + 11}
                 width={Math.max(w + 24, 96)}
                 height={20}
                 text={shape}
@@ -364,8 +363,8 @@ export default function TensorBlock({
               />
             ) : (
               <text
-                x={x + w / 2}
-                y={y + h + 11}
+                x={w / 2}
+                y={h + 11}
                 textAnchor="middle"
                 dominantBaseline="central"
                 style={{
@@ -381,8 +380,8 @@ export default function TensorBlock({
           {detail &&
             (hasInlineMath(detail) ? (
               <SvgRichLabel
-                x={x + w / 2}
-                y={y + h + (shape ? 24 : 11)}
+                x={w / 2}
+                y={h + (shape ? 24 : 11)}
                 width={Math.max(w + 24, 96)}
                 height={20}
                 text={detail}
@@ -392,8 +391,8 @@ export default function TensorBlock({
               />
             ) : (
               <text
-                x={x + w / 2}
-                y={y + h + (shape ? 24 : 11)}
+                x={w / 2}
+                y={h + (shape ? 24 : 11)}
                 textAnchor="middle"
                 dominantBaseline="central"
                 style={{
@@ -412,8 +411,8 @@ export default function TensorBlock({
           {name &&
             (hasInlineMath(name) ? (
               <SvgRichLabel
-                x={x + w / 2}
-                y={y + h / 2 - (shape ? 8 : 0)}
+                x={w / 2}
+                y={h / 2 - (shape ? 8 : 0)}
                 width={Math.max(24, w - 6)}
                 height={20}
                 text={name}
@@ -425,8 +424,8 @@ export default function TensorBlock({
                 const nf = fitTextMetrics(name, Math.max(20, w - 8), 12.5, 10, 'sans');
                 return (
                   <text
-                    x={x + w / 2}
-                    y={y + h / 2 - (shape ? 8 : 0)}
+                    x={w / 2}
+                    y={h / 2 - (shape ? 8 : 0)}
                     textAnchor="middle"
                     dominantBaseline="central"
                     textLength={nf.textLength}
@@ -446,8 +445,8 @@ export default function TensorBlock({
           {shape &&
             (hasInlineMath(shape) ? (
               <SvgRichLabel
-                x={x + w / 2}
-                y={y + h / 2 + (name ? 9 : 0)}
+                x={w / 2}
+                y={h / 2 + (name ? 9 : 0)}
                 width={Math.max(24, w - 6)}
                 height={18}
                 text={shape}
@@ -461,8 +460,8 @@ export default function TensorBlock({
                 const sf = fitTextMetrics(shape, Math.max(20, w - 8), 11, 10, shapeKind);
                 return (
                   <text
-                    x={x + w / 2}
-                    y={y + h / 2 + (name ? 9 : 0)}
+                    x={w / 2}
+                    y={h / 2 + (name ? 9 : 0)}
                     textAnchor="middle"
                     dominantBaseline="central"
                     textLength={sf.textLength}

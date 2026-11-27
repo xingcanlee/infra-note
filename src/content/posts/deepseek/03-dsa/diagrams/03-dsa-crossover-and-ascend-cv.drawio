@@ -1,0 +1,58 @@
+<mxfile host="Electron" agent="wisp" version="24.7.17">
+  <diagram id="dsa-crossover-cv" name="03-dsa-crossover-and-ascend-cv">
+    <mxGraphModel dx="704" dy="512" grid="1" gridSize="8" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="704" pageHeight="512" math="1" shadow="0">
+      <root>
+        <mxCell id="0"/>
+        <mxCell id="1" parent="0"/>
+        <mxCell id="bg-hop" value="NVIDIA Hopper：2-CTA Cluster Crossover 打破 FP8 反量化瓶颈（250 → 410 TFLOPS）" style="rounded=1;whiteSpace=wrap;html=1;verticalAlign=top;align=left;spacingLeft=10;spacingTop=8;fontSize=12;fontStyle=1;fillColor=#f4f4f2;strokeColor=#8b9098;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="16" y="16" width="672" height="232" as="geometry"/>
+        </mxCell>
+        <mxCell id="hop-cta0" value="CTA 0（处理 Query 头 0..63）&#xa;__ldg 读低 256 B FP8 潜块&#xa;CUDA Core 反量化：约 25 周期" style="rounded=1;whiteSpace=wrap;html=1;spacing=6;fontSize=11;fillColor=#e9f2fb;strokeColor=#2f5783;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="32" y="56" width="208" height="72" as="geometry"/>
+        </mxCell>
+        <mxCell id="hop-cta1" value="CTA 1（处理 Query 头 64..127）&#xa;__ldg 读高 256 B FP8 潜块&#xa;CUDA Core 反量化：约 25 周期" style="rounded=1;whiteSpace=wrap;html=1;spacing=6;fontSize=11;fillColor=#e3f5f3;strokeColor=#0f766e;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="32" y="152" width="208" height="72" as="geometry"/>
+        </mxCell>
+        <mxCell id="hop-dsmem" value="st.async 跨 SM 互换&#xa;Cluster Transaction Barrier&#xa;分布式共享内存 (DSMEM)&#xa;拼齐完整 576 维 BF16 键值" style="rounded=1;whiteSpace=wrap;html=1;spacing=6;fontSize=11;fillColor=#fbf2df;strokeColor=#7b5518;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="272" y="88" width="184" height="104" as="geometry"/>
+        </mxCell>
+        <mxCell id="hop-mma" value="Tensor Core BF16 MMA&#xa;每 CTA 64 头需 34 周期&#xa;25 周期反量化完全藏入流水&#xa;实测达 410 TFLOPS (topk=2048)" style="rounded=1;whiteSpace=wrap;html=1;spacing=6;fontSize=11;strokeWidth=2;fillColor=#e3f5f3;strokeColor=#0f766e;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="488" y="88" width="184" height="104" as="geometry"/>
+        </mxCell>
+        <mxCell id="e-c0-ds" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=10;html=1;strokeColor=#2f5783;" edge="1" parent="1" source="hop-cta0" target="hop-dsmem">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e-c1-ds" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=10;html=1;strokeColor=#0f766e;" edge="1" parent="1" source="hop-cta1" target="hop-dsmem">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e-ds-mma" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=10;html=1;strokeColor=#7b5518;" edge="1" parent="1" source="hop-dsmem" target="hop-mma">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="bg-asc" value="华为昇腾 NPU：CV 双流并行掩蔽、闪电索引异步与 skip scale 在线归约" style="rounded=1;whiteSpace=wrap;html=1;verticalAlign=top;align=left;spacingLeft=10;spacingTop=8;fontSize=12;fontStyle=1;fillColor=#f4f4f2;strokeColor=#8b9098;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="16" y="264" width="672" height="232" as="geometry"/>
+        </mxCell>
+        <mxCell id="asc-main" value="主计算流（Cube 矩阵核）&#xa;执行 wq_a / wq_b / wkv 矩阵乘&#xa;等待 Vector 量化事件就绪" style="rounded=1;whiteSpace=wrap;html=1;spacing=6;fontSize=11;fillColor=#e9f2fb;strokeColor=#2f5783;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="32" y="304" width="200" height="72" as="geometry"/>
+        </mxCell>
+        <mxCell id="asc-aux" value="辅助向量流（_q_stream / aux）&#xa;npu_stream_switch 切流执行&#xa;RMSNorm 动态量化与 RoPE 旋转" style="rounded=1;whiteSpace=wrap;html=1;spacing=6;fontSize=11;fillColor=#fbf2df;strokeColor=#7b5518;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="32" y="400" width="200" height="72" as="geometry"/>
+        </mxCell>
+        <mxCell id="asc-idx" value="npu_lightning_indexer&#xa;物理分页按 128 对齐 Cube&#xa;SFA/DSA 选出 Top-k 下标" style="rounded=1;whiteSpace=wrap;html=1;spacing=6;fontSize=11;fillColor=#e9f2fb;strokeColor=#2f5783;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="264" y="344" width="184" height="88" as="geometry"/>
+        </mxCell>
+        <mxCell id="asc-sfa" value="npu_sparse_flash_attention&#xa;逻辑按 1 tok 稀疏 Gather&#xa;skip scale 阈值 RESCALE=6&#xa;Prefill 410 / Decode 360 TFLOPS" style="rounded=1;whiteSpace=wrap;html=1;spacing=6;fontSize=11;strokeWidth=2;fillColor=#e3f5f3;strokeColor=#0f766e;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="480" y="344" width="192" height="88" as="geometry"/>
+        </mxCell>
+        <mxCell id="e-am-idx" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=10;html=1;strokeColor=#2f5783;" edge="1" parent="1" source="asc-main" target="asc-idx">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e-aa-idx" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=10;html=1;strokeColor=#7b5518;" edge="1" parent="1" source="asc-aux" target="asc-idx">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e-idx-sfa" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=10;html=1;strokeColor=#0f766e;" edge="1" parent="1" source="asc-idx" target="asc-sfa">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

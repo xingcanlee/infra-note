@@ -23,7 +23,7 @@ toc: true
 
 借鉴操作系统虚拟内存的分页思想，**PagedAttention（分页注意力）**把连续逻辑 KV 空间切分为固定容量 $B_s$ 的逻辑块[^paper-paged]。每条请求维护独立的页表 `block_table`，映射到物理上可完全不连续的显存块。
 
-先用一个可手算的微型池建立直觉。设物理 KV 池共有 $16$ 个块（$B_0$ 至 $B_{15}$），每块容纳 $B_s = 4$ 个 token，其中 $B_0$ 永久保留为只读零块 `null_block`。请求 A 带着 $7$ 个提示词 token 抵达时，需要 $\lceil 7 / 4 \rceil = 2$ 个逻辑块 $L_0, L_1$，调度器为其分配不连续的物理块，写入 `block_table_A = [7, 1]`[^paper-walkthrough]。
+先用一个小型物理块池示例建立直觉。设物理 KV 池共有 $16$ 个块（$B_0$ 至 $B_{15}$），每块容纳 $B_s = 4$ 个 token，其中 $B_0$ 永久保留为只读零块 `null_block`。请求 A 带着 $7$ 个提示词 token 抵达时，需要 $\lceil 7 / 4 \rceil = 2$ 个逻辑块 $L_0, L_1$，调度器为其分配不连续的物理块，写入 `block_table_A = [7, 1]`[^paper-walkthrough]。
 
 首轮生成第 $8$ 个 token（下标 $t = 7$）时，$L_1$ 尚有 $1$ 个空槽，直接写入 $B_1$ 的末槽；第二轮生成下标 $t = 8$ 时 $L_1$ 已满，调度器新配物理块 $B_3$，页表追加为 `[7, 1, 3]`。整条序列在运行期只需把碎片压在最后一个未满块内，内部浪费严格低于 $B_s - 1$ 个槽位。
 
@@ -126,7 +126,7 @@ V1 混合缓存管理器的核心策略是让所有分组共享同一个物理�
 共享单池后，缓存键空间从单纯的哈希值扩展为 `(block_hash, group_id)`，各组在前缀命中上各自独立检索再求一致前缀长度[^v1-hybrid-coord]。具体到最常见的 Full + SWA 混合模型，`HybridKVCacheCoordinator` 把两类管理器的检索顺序编排为一次双向交集扫描，如图 4 所示：
 
 - **Full 左向右扫描**：遇首个 Miss 即终止，得到公共前缀长度上界 $L_{\text{full}}$。
-- **SWA 右向左扫描**：在 $[0, L_{\text{full}})$ 内凑够 $\lceil (\text{sliding\_window} - 1) / B_s \rceil$ 个连续块即早退。
+- **SWA 右向左扫描**：在 $[0, L_{\text{full}})$ 内凑够 $\lceil (\text{sliding\_window} - 1) / B_s \rceil$ 个连续块即提前终止扫描。
 - **裁剪对齐**：若 SWA 命中更短，则把 Full 已收集的尾部块裁剪到同一 token 边界。
 
 ![V1 链式前缀哈希、逆序 LRU 队列与混合 KV 分组池交互架构](./diagrams/03-hybrid-kv-groups.drawio '图 4：链式前缀哈希、逆序 LRU 队列与混合 KV 分组池')

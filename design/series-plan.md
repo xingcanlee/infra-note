@@ -12,7 +12,7 @@
 
 ## 可复用组件与单源图表（文章就近 `explainers/` + `astro-wisp` + 单源 `.drawio`/`.excalidraw`）
 
-- **交互式讲解架构**：`24` 枚文章专属 `<Explainer>` 组件已随文章就近存放在各自 `src/content/posts/<series>/<slug>/explainers/` 下，复用 `astro-wisp/explainers` 的新版外壳（顶部阶段标签、重播、自动演示与原生 `<dialog>` 全屏推演），其中 `07-engram`、`08-mhc`、`vllm` 与 `vllm-ascend`、`execgraph` 均采用模块化目录结构、`BeatExplainer` 节拍推演、`motion/react` 渐进推导及逻辑单测；存量共享原语保留在 `src/explainers/kit/` 供其余组件使用，全站 `<= 3` 非 slate 色调，全部基于 `var(--wisp-*)` 语义令牌。
+- **交互式讲解架构**：`27` 枚文章专属 `<Explainer>` 组件已随文章就近存放在各自 `src/content/posts/<series>/<slug>/explainers/` 下，复用 `astro-wisp/explainers` 的新版外壳（顶部阶段标签、重播、自动演示与原生 `<dialog>` 全屏推演），其中 `07-mhc`、`08-engram`、`vllm` 与 `vllm-ascend`、`execgraph` 均采用模块化目录结构、`BeatExplainer` 节拍推演、`motion/react` 渐进推导及逻辑单测；存量共享原语保留在 `src/explainers/kit/` 供其余组件使用，全站 `<= 3` 非 slate 色调，全部基于 `var(--wisp-*)` 语义令牌。
 - **静态图表工作流（`design/diagram-workflow.md`）**：流程、分层、双端对照与状态转换优先采用 Pele（Mermaid）；LLM 论文结构图、矩阵网格与等比时间线直接以未压缩 `.drawio` / `.excalidraw` 为唯一真相源，配合 `wisp diagram lint --fix`、`pnpm diagram build` 与明暗 PNG 目视验收交付。
 
 ---
@@ -44,19 +44,19 @@
 
 ## 系列三：DeepSeek 架构演进（`series.id = deepseek`，`order: 1..11`，`pubDate: 2026-11-03..2026-11-13`）
 
-| `order` | 目录 / 篇目                 | 可视化工具组合                        | 核心讲解与硬件对照                                                                                |
-| :-----: | :-------------------------- | :------------------------------------ | :------------------------------------------------------------------------------------------------ |
-|   `1`   | `deepseek/index.mdx`        | Mermaid                               | DeepSeek V2 → V4.1 五代模型核心机制演进路线                                                       |
-|   `2`   | `01-mla`                    | Explainer + Draw.io                   | MLA 矩阵吸收（Absorb）全推导、按字节比例条与 GPU/昇腾运行时双泳道                                 |
-|   `3`   | `02-swa-and-nsa`            | Explainer + Draw.io                   | 滑窗 Sink 热力分布、NSA 三分支融合门控与 $G=16$ GQA 硬件对齐分块                                  |
-|   `4`   | `03-dsa`                    | Explainer + Draw.io                   | V3.2 闪电索引器、Top-K 稀疏收集、$656\text{B}/132\text{B}$ 字节对比                               |
-|   `5`   | `04-csa-and-hca`            | Explainer + Draw.io                   | V4 $m=4$ 条件分组压缩 CSA 与跨层指针复用 HCA                                                      |
-|   `6`   | `05-csa2-and-ced`           | Explainer + Draw.io                   | V4.1 NVFP4 `288 B` CSA2、分层索引与上下文编码解码 CED 前缀重播                                    |
-|   `7`   | `06-moe`                    | Explainer + Draw.io                   | 无辅助损失动态偏置平衡、`moe_align_block_size` 与 GPU/昇腾 MoE 融合                               |
-|   `8`   | `07-engram`                 | Explainer+Draw.io+Mermaid+论文        | 命名与 N-gram/卷积前置概念、互异质数建桶、$1d/4d$ 比例图、`vllm`/`vllm-ascend` 类图与调用链       |
-|   `9`   | `08-mhc`                    | Explainer(×2)+Draw.io(×4)+Merm+论文图 | 三代残差对照、双子层微例、Sinkhorn 投影、论文 Fig.4/5/6/8、`vllm`/`vllm-ascend` V4.1 融合与 `10d` |
-|  `10`   | `09-mtp-and-dspark`         | Explainer + Draw.io                   | 无损拒绝采样分布守恒、MTP/DSpark 验证泳道与 vLLM/昇腾投机框架                                     |
-|  `11`   | `10-architecture-synthesis` | Explainer + Draw.io                   | V4.1 单 Token 6 步全解码、集群级 DBO 全流程（含 `μB1 Combine`）                                   |
+| `order` | 目录 / 篇目                 | 可视化工具组合                                | 核心讲解与硬件对照                                                                                  |
+| :-----: | :-------------------------- | :-------------------------------------------- | :-------------------------------------------------------------------------------------------------- |
+|   `1`   | `deepseek/index.mdx`        | Mermaid                                       | DeepSeek V2 → V4.1 五代模型核心机制演进路线                                                         |
+|   `2`   | `01-mla`                    | Explainer+Draw.io(×3)+Merm(×2)+论文图(×3)     | MLA 矩阵吸收（Absorb）全推导、按字节比例条与 GPU/昇腾运行时双泳道                                   |
+|   `3`   | `02-swa-and-nsa`            | Explainer + Merm(×2) + 论文图(×7)             | Attention Sink 热力分布、NSA 三分支融合门控与 $G=16$ GQA 硬件对齐分块                               |
+|   `4`   | `03-dsa`                    | Explainer+Draw.io(×2)+Merm(×3)+论文图(×3)     | V3.2 Lightning Indexer、Top-K 稀疏收集、$656\text{B}/132\text{B}$ 字节对比                          |
+|   `5`   | `04-csa-and-hca`            | Draw.io + Mermaid + 论文图(×4)                | V4 $m=4$ 条件分组压缩 CSA 与跨层指针复用 HCA                                                        |
+|   `6`   | `05-csa2-and-ced`           | Draw.io + Mermaid(×2)                         | V4.1 NVFP4 `288 B` CSA2、分层索引与上下文编码解码 CED 前缀重播                                      |
+|   `7`   | `06-moe`                    | Explainer + Draw.io + Mermaid                 | 无辅助损失动态偏置平衡、`moe_align_block_size` 与 GPU/昇腾 MoE 融合                                 |
+|   `8`   | `07-mhc`                    | Explainer(×2)+Draw.io(×4)+Merm(×3)+论文图(×4) | 三代残差对照、双子层微例、Sinkhorn 投影、论文 Fig.4/5/6/8、`vllm`/`vllm-ascend` V4.1 融合与 `10d`   |
+|   `9`   | `08-engram`                 | Explainer(×2)+Draw.io(×6)+Merm(×4)+论文图(×5) | 命名与 N-gram/卷积前置概念、互异质数桶与扁平大表、$1d/4d$ 比例图、`vllm`/`vllm-ascend` 类图与调用链 |
+|  `10`   | `09-mtp-and-dspark`         | Explainer + Draw.io + Mermaid                 | 无损拒绝采样分布守恒、MTP/DSpark 验证泳道与 vLLM/昇腾投机框架                                       |
+|  `11`   | `10-architecture-synthesis` | Draw.io(×3) + 论文图                          | V4.1 单 Token 6 步全解码、论文 Fig.1b KV 收敛曲线与集群级 DBO（含 `μB1 Combine`）                   |
 
 ---
 

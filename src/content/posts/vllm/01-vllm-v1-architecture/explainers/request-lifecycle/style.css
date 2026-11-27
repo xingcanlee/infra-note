@@ -20,31 +20,11 @@
     overflow: visible;
   }
 
-  .vllm-lc-mini-text {
-    font-family: var(--wisp-font-mono);
-    font-size: 10.5px;
-  }
-
   .vllm-lc-group-title {
     fill: var(--wisp-muted);
     font-family: var(--wisp-font-sans);
     font-size: 11px;
     font-weight: 600;
-  }
-
-  .vllm-lc-node-title {
-    fill: var(--wisp-fg);
-    font-family: var(--wisp-font-mono);
-    font-size: 11.5px;
-    font-weight: 600;
-    text-anchor: middle;
-  }
-
-  .vllm-lc-node-sub {
-    fill: var(--wisp-muted);
-    font-family: var(--wisp-font-sans);
-    font-size: 10.5px;
-    text-anchor: middle;
   }
 
   .vllm-lc-mono-sm {
@@ -58,35 +38,6 @@
     fill: var(--wisp-muted);
     font-family: var(--wisp-font-sans);
     font-size: 10px;
-  }
-
-  .vllm-lc-strip-label {
-    fill: var(--wisp-fg);
-    font-family: var(--wisp-font-sans);
-    font-size: 11px;
-    font-weight: 600;
-  }
-
-  .vllm-lc-tok-text {
-    fill: var(--wisp-fg);
-    font-family: var(--wisp-font-sans);
-    font-size: 11.5px;
-    font-weight: 600;
-    text-anchor: middle;
-  }
-
-  .vllm-lc-tok-id {
-    fill: var(--wisp-muted);
-    font-family: var(--wisp-font-mono);
-    font-size: 10.5px;
-    text-anchor: middle;
-    font-variant-numeric: tabular-nums;
-  }
-
-  .vllm-lc-strip-meta {
-    fill: var(--wisp-muted);
-    font-family: var(--wisp-font-mono);
-    font-size: 10.5px;
   }
 
   .vllm-lc-footer {
@@ -202,7 +153,7 @@
       flex-direction: column;
     }
     .vllm-lc-bar-seg {
-      width: 100% !important;
+      min-width: 100%;
     }
   }
 }

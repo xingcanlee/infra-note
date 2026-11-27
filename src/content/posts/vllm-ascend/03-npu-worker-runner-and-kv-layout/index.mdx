@@ -17,9 +17,9 @@ toc: true
 - **块粒度与分形排布**：融合算子依赖更细物理块与五维 `PA_NZ` 视图，以贴合 Cube 阵列。
 - **跨卡缓存冗余**：`MLA` 与 `SFA` 在多个并行卡上重复保存相同历史缓存[^kvpp-doc]。
 
-## 一个微型案例：从块展开到层并行
+## 数据通路示例：块展开、分形排布与 KVPP
 
-我们先用同一组可手算的数字串联全章三条主线。设一条请求持有逻辑块 `[3, 7]`，调度器逻辑块尺寸为 $128$，底层注意力 Kernel 物理块尺寸为 $64$。
+下面用同一组数据通路示例串联全章三条主线。设一条请求持有逻辑块 `[3, 7]`，调度器逻辑块尺寸为 $128$，底层注意力 Kernel 物理块尺寸为 $64$。
 
 此时切分比例为 $128 / 64 = 2$。每个逻辑块展开为 $2$ 个连续物理块，物理块表变成 `[6, 7, 14, 15]`。若 token 位置为 `[0, 63, 64, 129, 255]`，由块表索引和块内偏移即可算出 `int32` 槽位为 `[384, 447, 448, 897, 1023]`。
 
@@ -37,7 +37,7 @@ toc: true
 
 `NPUWorker` 与 `NPUModelRunner` 分别继承上游 `GPUWorker` 与 `GPUModelRunner`，类扩展与核心适配点如图 2 所示[^npu-worker-init][^npu-mr-init]。
 
-```mermaid caption="图 2：NPUWorker 与 NPUModelRunner 对上游 Worker 体系的拓展类图"
+```mermaid caption="图 2：NPUWorker 与 NPUModelRunner 对上游 Worker 体系的扩展类图"
 classDiagram
     direction TB
     class GPUWorker {
@@ -68,7 +68,7 @@ classDiagram
 
 ## 注意力后端路由与分形缓存
 
-昇腾线上支持 **GQA（Grouped-Query Attention，分组查询注意力）** 与 `MLA` 等多种结构。它同时兼容 **SFA（Sparse Flash Attention，稀疏闪电注意力）** 及 DeepSeek V4 系列变体，并在平台层集中完成静态路由，决策树如图 3 所示。
+昇腾线上支持 **GQA（Grouped-Query Attention，分组查询注意力）** 与 `MLA` 等多种结构。它同时兼容 **SFA（Sparse Flash Attention，稀疏 FlashAttention）** 及 DeepSeek V4 系列变体，并在平台层集中完成静态路由，决策树如图 3 所示。
 
 ```mermaid caption="图 3：NPUPlatform 注意力后端静态路由决策树"
 flowchart TB
@@ -121,7 +121,7 @@ $$(B_n,\; N_{\text{kv}},\; B_s,\; D) \;\longrightarrow\; \left(B_n,\; N_{\text{k
 
 运行时通过三项机制把通信延迟隐藏在计算流水内，双流重叠泳道如图 5 所示[^kvpp-placement][^kvpp-cache][^kvpp-runtime][^kvpp-transport]：
 
-```mermaid caption="图 5：KVPP 双流泳道——计算流与 KV 预取流层间重叠"
+```mermaid caption="图 5：KVPP 双流泳道——计算流与 KV Prefetch 流层间重叠"
 flowchart TB
     subgraph COMP["计算流 Compute Stream"]
         direction TB
@@ -131,15 +131,15 @@ flowchart TB
         direction TB
         T1["经 HCCS 或 RDMA 广播第 l+1 层 KV"] --> T2["写入奇偶交替暂存区并触发 Event"]
     end
-    L1 -.->|"发射超前预取"| T1
+    L1 -.->|"发射超前 Prefetch"| T1
     T2 -.->|"跨流事件同步"| L2
 ```
 
 - **层打包归属**：同层主 KV、索引与量化因子打包广播，Draft 与 MTP 缓存独立本地保留[^kvpp-placement]。
 - **双暂存缓冲交替**：每卡仅划出 $2$ 块最大目标层尺寸的暂存区，按层序奇偶交替复用[^kvpp-cache]。
-- **单层超前预取**：后台传输流在算第 $i$ 层时提前广播第 $i+1$ 层，空跑与显存探测跳过广播[^kvpp-runtime][^kvpp-transport]。
+- **单层超前 Prefetch**：后台传输流在算第 $i$ 层时提前广播第 $i+1$ 层，Dummy Run 与显存探测跳过广播[^kvpp-runtime][^kvpp-transport]。
 
-根据上述分配结构，`KVPPPhysicalCachePlan.get_num_blocks` 严格核算每卡单块消耗的物理字节数与可容纳块数上限[^kvpp-budget]：
+根据上述分配结构，`KVPPPhysicalCachePlan.get_num_blocks` 精确核算每卡单块消耗的物理字节数与可容纳块数上限[^kvpp-budget]：
 
 $$B_{\text{kvpp}} = B_{\text{owned}} + B_{\text{draft}} + 2 \cdot B_{\max}, \quad N_{\text{blocks}} = \left\lfloor \frac{M_{\text{avail}}}{B_{\text{kvpp}}} \right\rfloor$$
 
@@ -147,7 +147,7 @@ $$B_{\text{kvpp}} = B_{\text{owned}} + B_{\text{draft}} + 2 \cdot B_{\max}, \qua
 
 ## 块展开、分形坐标与 KVPP 验证
 
-下面这段 $53$ 行纯 Python 脚本复现了微型案例的全部计算。它涵盖 1 对 $2$ 块展开与 `int32` 槽位映射、`PA_NZ` 五维坐标及跨 token 步长校验，以及 $4$ 卡 `KVPP` 下的显存块数对比。
+下面这段 $53$ 行纯 Python 脚本复现了上述数据通路示例的全部计算。它涵盖 1 对 $2$ 块展开与 `int32` 槽位映射、`PA_NZ` 五维坐标及跨 token 步长校验，以及 $4$ 卡 `KVPP` 下的显存块数对比。
 
 ```python
 def expand_kernel_blocks(logical_blocks: list[int], sched_bs: int, kernel_bs: int) -> list[int]:
@@ -226,7 +226,7 @@ kvpp_rank_0: persistent=221184, 2x_scratch=147456, total_per_block=368640, avail
 
 [^fia-tnd-pad]: `vllm-ascend@b776261`, `vllm_ascend/attention/attention_v1.py:338-390`, `actual_seq_lengths_q` 与虚拟请求填充防 561002 报错 (Apache-2.0).
 
-[^kvpp-doc]: `vllm-ascend@b776261`, `docs/source/developer_guide/Design_Documents/kvpp.md:1-80`, KVPP 架构设计、广播预取与支持范围说明 (Apache-2.0).
+[^kvpp-doc]: `vllm-ascend@b776261`, `docs/source/developer_guide/Design_Documents/kvpp.md:1-80`, KVPP 架构设计、广播 Prefetch 与支持范围说明 (Apache-2.0).
 
 [^npu-internal-fmt]: `vllm-ascend@b776261`, `vllm_ascend/worker/worker.py:151-152`, `torch.npu.config.allow_internal_format = True` (Apache-2.0).
 
@@ -268,7 +268,7 @@ kvpp_rank_0: persistent=221184, 2x_scratch=147456, total_per_block=368640, avail
 
 [^kvpp-cache]: `vllm-ascend@b776261`, `vllm_ascend/worker/kvpp_cache.py:30-57`, `allocate_kvpp_cache` 双暂存缓冲复用 (Apache-2.0).
 
-[^kvpp-runtime]: `vllm-ascend@b776261`, `vllm_ascend/worker/v2/kvpp.py:33-139` 与 `vllm_ascend/worker/v2/model_states/default.py:503-512`, `KVPPRuntime` 与 `KVPPScheduler` 超前预取 (Apache-2.0).
+[^kvpp-runtime]: `vllm-ascend@b776261`, `vllm_ascend/worker/v2/kvpp.py:33-139` 与 `vllm_ascend/worker/v2/model_states/default.py:503-512`, `KVPPRuntime` 与 `KVPPScheduler` 超前 Prefetch (Apache-2.0).
 
 [^kvpp-transport]: `vllm-ascend@b776261`, `vllm_ascend/distributed/kvpp.py:9-36`, `BroadcastKVPPTransport.prefetch` 跨卡广播流同步 (Apache-2.0).
 

@@ -1,0 +1,64 @@
+<mxfile host="Electron" agent="wisp" version="24.7.17">
+  <diagram id="mla-seesaw-panz" name="01-mla-seesaw-and-panz">
+    <mxGraphModel dx="704" dy="512" grid="1" gridSize="8" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="704" pageHeight="512" math="1" shadow="0">
+      <root>
+        <mxCell id="0"/>
+        <mxCell id="1" parent="0"/>
+        <mxCell id="bg-gpu" value="NVIDIA Hopper FlashMLA：单输出矩阵 Seesaw 交错调度（660 TFLOPS / 3 TB/s）" style="rounded=1;whiteSpace=wrap;html=1;verticalAlign=top;align=left;spacingLeft=10;spacingTop=8;fontSize=12;fontStyle=1;fillColor=#f4f4f2;strokeColor=#8b9098;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="16" y="16" width="672" height="232" as="geometry"/>
+        </mxCell>
+        <mxCell id="gpu-tma" value="9× TMA 异步搬运&#xa;每块 64×64（总 64×576）&#xa;EVICT_FIRST 护住 L2" style="rounded=1;whiteSpace=wrap;html=1;spacing=6;fontSize=11;fillColor=#e9f2fb;strokeColor=#2f5783;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="32" y="56" width="160" height="72" as="geometry"/>
+        </mxCell>
+        <mxCell id="gpu-wg0" value="Warpgroup 0（Tensor + CUDA）&#xa;维护左半输出 O_L [64×256]&#xa;先算 p0=qK0^T → exp → oL·scale0+p0V0L" style="rounded=1;whiteSpace=wrap;html=1;spacing=6;fontSize=11;fillColor=#e3f5f3;strokeColor=#0f766e;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="224" y="56" width="216" height="72" as="geometry"/>
+        </mxCell>
+        <mxCell id="gpu-wg1" value="Warpgroup 1（Tensor + CUDA）&#xa;维护右半输出 O_R [64×256]&#xa;交错算 p1=qK1^T → p0V0R 与 oR 更新" style="rounded=1;whiteSpace=wrap;html=1;spacing=6;fontSize=11;fillColor=#fbf2df;strokeColor=#7b5518;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="224" y="144" width="216" height="72" as="geometry"/>
+        </mxCell>
+        <mxCell id="gpu-reg" value="SM 寄存器硬约束&#xa;单份 64×512 FP32 输出&#xa;占 32,768 / 65,536 寄存器&#xa;纵向切分方能双 WG 掩蔽" style="rounded=1;whiteSpace=wrap;html=1;spacing=6;fontSize=11;strokeWidth=2;fillColor=#e9f2fb;strokeColor=#2f5783;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="472" y="56" width="200" height="160" as="geometry"/>
+        </mxCell>
+        <mxCell id="gpu-note" value="共享运行最大值 m 协同更新；两半输出均写回后再上投影 W_UV" style="rounded=1;whiteSpace=wrap;html=1;spacing=6;fontSize=11;dashed=1;fillColor=#f4f4f2;strokeColor=#8b9098;fontColor=#5c6067;" vertex="1" parent="1">
+          <mxGeometry x="32" y="144" width="160" height="72" as="geometry"/>
+        </mxCell>
+        <mxCell id="e-tma-wg0" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=10;html=1;strokeColor=#2f5783;" edge="1" parent="1" source="gpu-tma" target="gpu-wg0">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e-wg0-reg" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=10;html=1;strokeColor=#0f766e;" edge="1" parent="1" source="gpu-wg0" target="gpu-reg">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e-wg1-reg" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=10;html=1;strokeColor=#7b5518;" edge="1" parent="1" source="gpu-wg1" target="gpu-reg">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="bg-npu" value="华为昇腾 NPU：FRACTAL_NZ 分形权重、PA_NZ 5D 缓存与参数可更新静态图" style="rounded=1;whiteSpace=wrap;html=1;verticalAlign=top;align=left;spacingLeft=10;spacingTop=8;fontSize=12;fontStyle=1;fillColor=#f4f4f2;strokeColor=#8b9098;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="16" y="264" width="672" height="232" as="geometry"/>
+        </mxCell>
+        <mxCell id="npu-prolog" value="npu_mla_prolog_v3&#xa;融合 Q/KV 投影、RoPE&#xa;与双路缓存写入" style="rounded=1;whiteSpace=wrap;html=1;spacing=6;fontSize=11;fillColor=#e9f2fb;strokeColor=#2f5783;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="32" y="304" width="160" height="72" as="geometry"/>
+        </mxCell>
+        <mxCell id="npu-panz" value="PA_NZ 5D 分形视图&#xa;k_nope: [B, N_kv, 512/16, BS, 16]&#xa;k_pe: [B, N_kv, 64/16, BS, 16]&#xa;（仅 PD 分离 Decode 启用）" style="rounded=1;whiteSpace=wrap;html=1;spacing=6;fontSize=11;fillColor=#fbf2df;strokeColor=#7b5518;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="224" y="304" width="224" height="80" as="geometry"/>
+        </mxCell>
+        <mxCell id="npu-fia" value="npu_fused_infer_attention_v2&#xa;512 维潜空间归约&#xa;输出 TND_NTD 转置直出" style="rounded=1;whiteSpace=wrap;html=1;spacing=6;fontSize=11;strokeWidth=2;fillColor=#e3f5f3;strokeColor=#0f766e;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="480" y="304" width="192" height="80" as="geometry"/>
+        </mxCell>
+        <mxCell id="npu-graph" value="ACLGraph 静态图约束：每步序列长变化通过 update_stream 调用 graph_task_update_begin/end 更新" style="rounded=1;whiteSpace=wrap;html=1;spacing=6;fontSize=11;dashed=1;fillColor=#f4f4f2;strokeColor=#8b9098;fontColor=#5c6067;" vertex="1" parent="1">
+          <mxGeometry x="32" y="408" width="416" height="64" as="geometry"/>
+        </mxCell>
+        <mxCell id="npu-vup" value="npu_transpose_batchmatmul&#xa;完成 W_UV 上投影恢复多头" style="rounded=1;whiteSpace=wrap;html=1;spacing=6;fontSize=11;fillColor=#e3f5f3;strokeColor=#0f766e;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="480" y="408" width="192" height="64" as="geometry"/>
+        </mxCell>
+        <mxCell id="e-npu-1" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=10;html=1;strokeColor=#2f5783;" edge="1" parent="1" source="npu-prolog" target="npu-panz">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e-npu-2" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=10;html=1;strokeColor=#7b5518;" edge="1" parent="1" source="npu-panz" target="npu-fia">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e-npu-3" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=10;html=1;strokeColor=#0f766e;" edge="1" parent="1" source="npu-fia" target="npu-vup">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

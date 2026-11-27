@@ -172,7 +172,7 @@ flowchart TB
 | PD 分离抽象接口    | `KVConnectorBase_V1` 双角色与 HMA 混入    | 继承同接口体系拓展 Mooncake 与主机中转连接器        |
 | 传输模式与逐层流水 | `NixlPullConnector` / `NixlPushConnector` | Mooncake Pull / `MooncakeLayerwiseConnector` / D2RH |
 
-当 DP 共识锁住跨卡形状对称、双角色连接器接管好跨实例显存交接后，在线推理集群的运行骨架已经完整落地。接下来要解决的则是单步生成带宽受限与智能体输出可控性两道高阶问题，下一章[08 投机解码引擎、拒绝采样与异步回退](../08-speculative-decoding-engine/)将展开多步 Draft 提名与异步验证机制。
+当 DP 共识锁住跨卡形状对称、双角色连接器接管好跨实例显存交接后，在线推理集群的运行骨架已经完整落地。接下来要解决的则是单步生成带宽受限与智能体输出可控性两道高阶问题，下一章[08 投机解码引擎、拒绝采样与异步回退](../08-speculative-decoding-engine/)将展开多步草稿生成（Propose / Draft）与异步验证机制。
 
 [^vllm-dp-utils]: `vllm` 项目（commit `99b0b0b0`），`vllm/v1/worker/gpu/dp_utils.py:49-369` 中的 `sync_cudagraph_and_dp_padding` 与 `dispatch_cg_and_sync_dp`（通过 `cpu_all_reduce_` 聚合 7 项调度状态并取保守图模式与最大 token 上限），Apache-2.0。
 

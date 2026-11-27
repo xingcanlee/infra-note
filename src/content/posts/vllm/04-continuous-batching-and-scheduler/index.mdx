@@ -17,7 +17,7 @@ import PagedSchedulerExplainer from './explainers/PagedSchedulerExplainer';
 
 ## 从静态批到统一配额的四代演进
 
-设想一个可用手算追踪的微型负载：共有 $3$ 条请求先后到达。其中 $R_0$ 在第 $0$ 步到达（提示词 $4$、输出 $4$），$R_1$ 同在 $0$ 步到达（提示词 $8$、输出 $7$），$R_2$ 在第 $2$ 步到达（提示词 $32$、输出 $2$）。每步算子耗时按线性近似 $1.0 + 0.25 \cdot N_{\text{exec}}$ 毫秒计。
+考虑一个便于手动追踪的三请求小规模负载：共有 $3$ 条请求先后到达。其中 $R_0$ 在第 $0$ 步到达（提示词 $4$、输出 $4$），$R_1$ 同在 $0$ 步到达（提示词 $8$、输出 $7$），$R_2$ 在第 $2$ 步到达（提示词 $32$、输出 $2$）。每步算子耗时按线性近似 $1.0 + 0.25 \cdot N_{\text{exec}}$ 毫秒计。
 
 第一代 **Static Batching（静态批处理）**以整批请求为粒度设置执行屏障。第 $0$ 步同时启动 $R_0$ 与 $R_1$ 时，较短的 $R_0$ 必须在输入侧补齐 $4$ 个 `Padding` 槽位；当 $R_0$ 在第 $3$ 步提前生成结束符后，仍被锁在批内空转 $3$ 步，直到第 $6$ 步 $R_1$ 收尾才一起退出。第 $2$ 步到达的 $R_2$ 只能全程在队列外干等，批利用率跌至 $88.5\%$。
 
@@ -25,23 +25,23 @@ import PagedSchedulerExplainer from './explainers/PagedSchedulerExplainer';
 
 连续批处理必须与第 3 章拆解的分页 **KV Cache（Key-Value Cache，键值缓存）**配对，才能真正把并发批大小推高。若沿用早期系统的连续显存预留，即便能步级进出，每条请求锁死的预留尾部仍会快速耗尽显存。PagedAttention 论文图 13 表明，在 OPT-13B 与 ShareGPT 负载下，vLLM 的平均并发批大小达到 Orca（Oracle）的 $2.2\times$、Orca（Max）的 $4.3\times$[^paged-attention-paper]。
 
-第三代架构则为了消除预填充与解码之间的互相踩踏。早期 V0 引擎把 **Prefill（预填充）**与 **Decode（解码）**拆成互斥阶段：第 $2$ 步 $R_2$ 携带 $32$ 个提示词到达时，整批会挂起 $R_0$ 与 $R_1$ 去独占执行 $R_2$ 的全量预填充。线上出现上万 token 的长提示词时，正在解码的用户会遭遇明显的 **TPOT（Time Per Output Token，单 token 生成延迟）**毛刺。
+第三代架构则为了消除预填充与解码之间的资源抢占。早期 V0 引擎把 **Prefill（预填充）**与 **Decode（解码）**拆成互斥阶段：第 $2$ 步 $R_2$ 携带 $32$ 个提示词到达时，整批会挂起 $R_0$ 与 $R_1$ 去独占执行 $R_2$ 的全量预填充。线上出现上万 token 的长提示词时，正在解码的用户会遭遇明显的 **TPOT（Time Per Output Token，单 token 生成延迟）**毛刺。
 
-**Chunked Prefill（分块预填充）**通过单步 token 上限打破这一阻塞。以上述微例设单步上限为 $16$：第 $2$ 步先为 $R_0$ 与 $R_1$ 各分配 $1$ 个解码槽，再切出 $14$ 个预算执行 $R_2$ 的首块提示词。高算力密度的预填充矩阵乘与访存密集型的解码读取同批执行，将峰值 TPOT 从 $10.75$ 毫秒压半至 $5.00$ 毫秒。
+**Chunked Prefill（分块预填充）**通过单步 token 上限打破这一阻塞。以上述示例设单步上限为 $16$：第 $2$ 步先为 $R_0$ 与 $R_1$ 各分配 $1$ 个解码槽，再切出 $14$ 个预算执行 $R_2$ 的首块提示词。高算力密度的预填充矩阵乘与访存密集型的解码读取同批执行，将峰值 TPOT 从 $10.75$ 毫秒压半至 $5.00$ 毫秒。
 
 第四代 **vLLM V1 统一调度器**进一步删掉了预填充与解码的阶段标签[^vllm-arch-doc][^vllm-scheduler-loop]。调度器内部只记录每条请求已完成的 `num_computed_tokens` 以及含投机草稿的总目标长度 `num_tokens_with_spec`[^vllm-request]。每步围绕唯一配额 `token_budget`（来自 `max_num_scheduled_tokens`）拉平两者差值。同一循环即可同时打包解码、分块预填充、前缀缓存与 **Speculative Decoding（投机解码）**验证[^vllm-arch-doc]。
 
 ![静态批、阶段隔离连续批、分块预填充与 V1 统一配额调度对比](./diagrams/04-batching-evolution.drawio '图 1：静态批、阶段隔离连续批、分块预填充与 V1 统一配额调度对比')
 
-图 1 按比例对比了四代调度器在 $R_0, R_1, R_2$ 微例上的时间线。静态批因屏障浪费 $11.5\%$ 有效算力，阶段隔离在 $t_2$ 触发长停顿，而 V1 用单一配额循环把全部形态纳入平坦的步长预算之内。
+图 1 按比例对比了四代调度器在 $R_0, R_1, R_2$ 示例上的时间线。静态批因屏障浪费 $11.5\%$ 有效算力，阶段隔离在 $t_2$ 触发长停顿，而 V1 用单一配额循环把全部形态纳入平坦的步长预算之内。
 
-## 十六块显存池与统一配额推演
+## 分页显存池与统一配额调度
 
 理解统一调度如何与分页显存联动，可以先看一个更紧凑的 $16$ 块物理池案例。每块容量为 $4$ 个 token，初始时 `BlockPool` 弹出 $B_0$ 永久保留为安全哨兵 `null_block`。其余 $B_1\text{–}B_{15}$ 共 $15$ 个块可供分配，单步预算 `token_budget` 仍为 $16$。
 
 请求 A 率先完成 $9$ 个 token 预填充，占用 $B_1\text{–}B_3$ 并将写满的 $B_1$ 登记进前缀缓存。随后的请求 B 共享相同系统前缀，直接复用 $B_1$ 省去重复计算。接着新到的请求 C 在同一 $16$ token 预算内与进入解码阶段的 A、B（各 $1$ 个 token）混排，分块消耗余下的 $14$ 个预算。当突发请求占满 $B_9\text{–}B_{15}$ 引发块枯竭时，调度器驱逐低优的请求 C，并把静态图补齐槽位指向 $B_0$ 与负槽位 `-1`。
 
-<PagedSchedulerExplainer client:visible title="图 2：V1 调度器、Prefix Caching 与抢占交互推演" />
+<PagedSchedulerExplainer client:visible title="图 2：V1 调度器、Prefix Caching 与抢占交互演示" />
 
 ## 统一调度主循环与源码路径
 
@@ -54,7 +54,7 @@ flowchart TD
     S3 --> S4{"allocate_slots 成功？"}
     S4 -->|"是"| S5["扣减预算继续"]
     S5 --> S2
-    S4 -->|"否"| S6["驱逐牺牲请求释放全块<br/>重置进度回 waiting 队首"]
+    S4 -->|"否"| S6["驱逐被抢占请求释放全块<br/>重置进度回 waiting 队首"]
     S6 --> S4
     S2 -->|"遍历完成或耗尽"| S8{"未抢占且有余量？"}
     S8 -->|"是"| S9["准入 waiting 请求"]
@@ -64,13 +64,13 @@ flowchart TD
 
 在第一段循环中，调度器优先保证已经进入 `running` 的请求推进[^vllm-scheduler-loop]。每条请求的待调度 token 数先由 `num_tokens_with_spec + num_output_placeholders - num_computed_tokens` 算出。若配置了长预填充单步阈值，调度器还会做一次上限裁剪，再与剩余 `token_budget` 及投机草稿预留槽取最小值。
 
-随后调度器调用 `KVCacheManager.allocate_slots` 申请物理块。当空闲块不足以容纳新 token 时，系统在内部循环中不断挑选牺牲请求执行抢占，直到腾出足够物理块或当前请求自身也被驱逐[^vllm-scheduler-preempt]。
+随后调度器调用 `KVCacheManager.allocate_slots` 申请物理块。当空闲块不足以容纳新 token 时，系统在内部循环中不断挑选淘汰目标请求（victim request）执行抢占，直到腾出足够物理块或当前请求自身也被驱逐[^vllm-scheduler-preempt]。
 
 只要本轮触发过任意一次抢占（`preempted_reqs` 非空），调度器在第二段就会直接跳过等待队列准入[^vllm-scheduler-wait]。这能防止刚驱逐旧请求释放的物理块立刻被新请求抢走，导致系统陷入反复颠簸。对于未被阻塞的等待请求，调度器会先查询本地与外部前缀缓存命中长度，再把剩余未算部分作为新调度步纳入 `running`。
 
 ## 调度策略与全量抢占权衡
 
-vLLM 支持两种队列调度策略[^vllm-arch-doc][^vllm-request-queue]，决定等待队列的准入次序以及显存耗尽时的牺牲人选：
+vLLM 支持两种队列调度策略[^vllm-arch-doc][^vllm-request-queue]，决定等待队列的准入次序以及显存耗尽时的被抢占请求人选：
 
 - **FCFS（First-Come First-Served，先到先服务）**：默认策略，按到达顺序服务，显存耗尽时淘汰最晚加入的 `running[-1]`。
 - **Priority（优先级调度）**：按整数优先级与到达时间 `(priority, arrival_time)` 排序，优先淘汰优先级最低且最晚到达的请求。
@@ -128,7 +128,7 @@ flowchart TB
 3. 主体精力放在 `scheduler.py` 的 `schedule` 主循环，对照图 3 验证准入裁剪与抢占分支。
 4. 最后对比 `async_scheduler.py`，观察异步模式如何仅通过覆写少数钩子就实现占位步进。
 
-`Scheduler.schedule()` 在主机进程内算完配额与块映射后，并不直接拼装显存张量。它只输出一份轻量的 `SchedulerOutput` 计划，包含首调请求列表 `scheduled_new_reqs`、已缓存请求增量与配额字典 `num_scheduled_tokens`[^vllm-sched-output]。这份指令如何跨越进程边界，被 `Worker` 与 `ModelRunner V2` 转化为设备侧输入缓冲与槽位映射，将在[下一章](../05-worker-and-model-runner-v2/)详细展开。
+`Scheduler.schedule()` 在主机进程内算完配额与块映射后，并不直接拼装显存张量。它只输出一份轻量的 `SchedulerOutput` 计划，包含首次调度的请求列表 `scheduled_new_reqs`、已缓存请求增量与配额字典 `num_scheduled_tokens`[^vllm-sched-output]。这份指令如何跨越进程边界，被 `Worker` 与 `ModelRunner V2` 转化为设备侧输入缓冲与槽位映射，将在[下一章](../05-worker-and-model-runner-v2/)详细展开。
 
 [^paged-attention-paper]: Woosuk Kwon et al., _Efficient Memory Management for Large Language Model Serving with PagedAttention_ (SOSP '23), `arXiv:2309.06180`, §2.3, §4.5, §6.2 (Fig. 13), §7.3 (Fig. 19), CC BY 4.0。
 

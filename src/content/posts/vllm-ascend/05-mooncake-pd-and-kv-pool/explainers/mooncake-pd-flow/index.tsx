@@ -1,7 +1,7 @@
-import { useMemo } from 'react';
-import { BeatExplainer } from '@/explainers/kit';
+import { useMemo, useState } from 'react';
+import { InteractiveExplainer, LabSegmented } from '@/explainers/kit';
 import PdFlowStage from './PdFlowStage';
-import { BEAT_SCHEDULES, buildMooncakePdFlowSteps } from './steps';
+import { PD_MODES, buildMooncakePdFlowSteps, type PdModeId } from './steps';
 import './style.css';
 
 export { buildMooncakePdFlowSteps };
@@ -10,26 +10,39 @@ export interface MooncakePdFlowExplainerProps {
   title?: string;
 }
 
-export default function MooncakePdFlowExplainer({ title }: MooncakePdFlowExplainerProps) {
-  const steps = useMemo(() => buildMooncakePdFlowSteps(), []);
+export default function MooncakePdFlowExplainer({
+  title = '图 1：Mooncake PD 分离四模式时序交互实验',
+}: MooncakePdFlowExplainerProps) {
+  const [mode, setMode] = useState<PdModeId>('pull');
+  const [flowToken, setFlowToken] = useState(0);
+
+  const modeSpec = useMemo(() => PD_MODES.find((m) => m.id === mode) ?? PD_MODES[0], [mode]);
+  const options = useMemo(() => PD_MODES.map((m) => ({ id: m.id, label: m.tabLabel })), []);
+
+  const handleSelectMode = (next: PdModeId) => {
+    setMode(next);
+    setFlowToken((t) => t + 1);
+  };
 
   return (
-    <BeatExplainer
-      steps={steps}
+    <InteractiveExplainer
       title={title}
-      label={title}
+      label="Mooncake PD 分离四模式时序实验"
+      wide
       stageMinHeight={390}
-      getBeats={(step) => BEAT_SCHEDULES[step.state.phase]}
-      getFormula={(step) => step.state.formulaTex}
-    >
-      {(step, { beat, dotToken, reducedMotion }) => (
-        <PdFlowStage
-          state={step.state}
-          beat={beat}
-          playToken={dotToken}
-          reducedMotion={reducedMotion}
+      formula={modeSpec.formulaTex}
+      caption={modeSpec.caption}
+      onReset={() => handleSelectMode('pull')}
+      controls={
+        <LabSegmented
+          ariaLabel="Mooncake PD 传输模式切换"
+          options={options}
+          value={mode}
+          onChange={handleSelectMode}
         />
-      )}
-    </BeatExplainer>
+      }
+    >
+      <PdFlowStage modeSpec={modeSpec} flowToken={flowToken} />
+    </InteractiveExplainer>
   );
 }

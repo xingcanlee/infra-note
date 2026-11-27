@@ -1,0 +1,114 @@
+<mxfile host="wisp-diagram">
+  <diagram id="ds-09-dflash-arch" name="DFlash Parallel Feature Injection Architecture">
+    <mxGraphModel dx="900" dy="620" grid="1" gridSize="8" guides="1" page="0" math="1" shadow="0">
+      <root>
+        <mxCell id="0"/>
+        <mxCell id="1" parent="0"/>
+        <mxCell id="ctx_grp" value="目标模型特征注入 (KV Injection)" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#f4f4f2;strokeColor=#5c6067;strokeWidth=1.25;verticalAlign=top;align=center;spacingLeft=8;spacingRight=8;spacingTop=8;fontFamily=Inter, Noto Sans SC;fontSize=12;fontStyle=1;fontColor=#1d1d1f;container=0;" vertex="1" parent="1">
+          <mxGeometry x="0" y="8" width="224" height="328" as="geometry"/>
+        </mxCell>
+        <mxCell id="tgt_layers" value="目标模型代表层隐状态&#xa;\([H^{(l_1)};\,\dots;\,H^{(l_m)}] \in \mathbb{R}^{T\times md}\)" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#5c6067;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=6;fontFamily=Inter, Noto Sans SC;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="16" y="48" width="192" height="56" as="geometry"/>
+        </mxCell>
+        <mxCell id="tgt_proj" value="共享投影 \(W_c \in \mathbb{R}^{d\times md}\)&#xa;+ RMSNorm" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f2fb;strokeColor=#2f5783;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=6;fontFamily=Inter, Noto Sans SC;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="16" y="136" width="192" height="56" as="geometry"/>
+        </mxCell>
+        <mxCell id="h_ctx" value="上下文特征 \(H_{\text{ctx}}\)&#xa;拼接至各草稿层 \(K_i, V_i\) 序列端" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f2fb;strokeColor=#2f5783;strokeWidth=2;align=center;verticalAlign=middle;spacing=6;fontFamily=Inter, Noto Sans SC;fontSize=12;fontStyle=1;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="16" y="232" width="192" height="64" as="geometry"/>
+        </mxCell>
+        <mxCell id="e_ctx1" value="" style="endArrow=classic;html=1;edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=6;strokeColor=#5c6067;strokeWidth=1.5;" edge="1" parent="1" source="tgt_layers" target="tgt_proj">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e_ctx2" value="" style="endArrow=classic;html=1;edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=6;strokeColor=#2f5783;strokeWidth=1.5;" edge="1" parent="1" source="tgt_proj" target="h_ctx">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="df_grp" value="DFlash 单次前向并行草稿生成 (1-Pass Parallel Drafter)" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#f4f4f2;strokeColor=#5c6067;strokeWidth=1.25;verticalAlign=top;align=center;spacingLeft=8;spacingRight=8;spacingTop=8;fontFamily=Inter, Noto Sans SC;fontSize=12;fontStyle=1;fontColor=#1d1d1f;container=0;" vertex="1" parent="1">
+          <mxGeometry x="264" y="8" width="424" height="328" as="geometry"/>
+        </mxCell>
+        <mxCell id="in_anchor" value="锚点&#xa;\(x_0\)" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f5e9;strokeColor=#2c522d;strokeWidth=1.5;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter, Noto Sans SC;fontSize=11;fontStyle=1;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="280" y="272" width="64" height="48" as="geometry"/>
+        </mxCell>
+        <mxCell id="in_m1" value="[MASK]&#xa;位置 1" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#fbf2df;strokeColor=#7b5518;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter, Noto Sans SC;fontSize=11;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="352" y="272" width="72" height="48" as="geometry"/>
+        </mxCell>
+        <mxCell id="in_m2" value="[MASK]&#xa;位置 2" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#fbf2df;strokeColor=#7b5518;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter, Noto Sans SC;fontSize=11;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="432" y="272" width="72" height="48" as="geometry"/>
+        </mxCell>
+        <mxCell id="in_dots" value="\(\cdots\)" style="text;html=1;whiteSpace=wrap;align=center;verticalAlign=middle;fontFamily=Inter, Noto Sans SC;fontSize=12;fontStyle=1;fontColor=#5c6067;" vertex="1" parent="1">
+          <mxGeometry x="512" y="280" width="40" height="32" as="geometry"/>
+        </mxCell>
+        <mxCell id="in_mk" value="[MASK]&#xa;位置 \(K\)" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#fbf2df;strokeColor=#7b5518;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter, Noto Sans SC;fontSize=11;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="560" y="272" width="112" height="48" as="geometry"/>
+        </mxCell>
+        <mxCell id="emb_bar" value="共享冻结 Embedding 层 → 草稿输入隐状态 \(H_d\)" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#5c6067;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=6;fontFamily=Inter, Noto Sans SC;fontSize=11;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="280" y="216" width="392" height="32" as="geometry"/>
+        </mxCell>
+        <mxCell id="bidir_blk" value="DFlash 双向注意力草稿层（块内全双向交互 + 跨层 KV 注入）&#xa;\(K_i = [W_i^K H_{\text{ctx}};\; W_i^K H_d],\quad V_i = [W_i^V H_{\text{ctx}};\; W_i^V H_d]\)" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f5e9;strokeColor=#2c522d;strokeWidth=2;align=center;verticalAlign=middle;spacing=6;fontFamily=Inter, Noto Sans SC;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="280" y="136" width="392" height="64" as="geometry"/>
+        </mxCell>
+        <mxCell id="lm_head" value="共享冻结 LM Head（一次前向输出 \(K\) 组独立分布）" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#5c6067;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=6;fontFamily=Inter, Noto Sans SC;fontSize=11;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="280" y="88" width="392" height="32" as="geometry"/>
+        </mxCell>
+        <mxCell id="out_k1" value="并行 \(q_1\)" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f5e9;strokeColor=#2c522d;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter, Noto Sans SC;fontSize=11;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="352" y="40" width="72" height="32" as="geometry"/>
+        </mxCell>
+        <mxCell id="out_k2" value="并行 \(q_2\)" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f5e9;strokeColor=#2c522d;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter, Noto Sans SC;fontSize=11;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="432" y="40" width="72" height="32" as="geometry"/>
+        </mxCell>
+        <mxCell id="out_dots" value="\(\cdots\)" style="text;html=1;whiteSpace=wrap;align=center;verticalAlign=middle;fontFamily=Inter, Noto Sans SC;fontSize=12;fontStyle=1;fontColor=#5c6067;" vertex="1" parent="1">
+          <mxGeometry x="512" y="40" width="40" height="32" as="geometry"/>
+        </mxCell>
+        <mxCell id="out_kk" value="并行 \(q_K\)（独立）" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#fbf2df;strokeColor=#7b5518;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=4;fontFamily=Inter, Noto Sans SC;fontSize=11;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="560" y="40" width="112" height="32" as="geometry"/>
+        </mxCell>
+        <mxCell id="e_kv_inj" value="KV 注入" style="endArrow=classic;html=1;edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=6;strokeColor=#2f5783;strokeWidth=2;fontFamily=Inter, Noto Sans SC;fontSize=11;fontStyle=1;fontColor=#2f5783;labelBackgroundColor=#f4f4f2;" edge="1" parent="1" source="h_ctx" target="bidir_blk">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="244" y="264"/>
+              <mxPoint x="244" y="168"/>
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e_emb" value="" style="endArrow=classic;html=1;strokeColor=#5c6067;strokeWidth=1.5;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="476" y="272" as="sourcePoint"/>
+            <mxPoint x="476" y="248" as="targetPoint"/>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e_attn" value="" style="endArrow=classic;html=1;strokeColor=#2c522d;strokeWidth=1.5;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="476" y="216" as="sourcePoint"/>
+            <mxPoint x="476" y="200" as="targetPoint"/>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e_head" value="" style="endArrow=classic;html=1;strokeColor=#2c522d;strokeWidth=1.5;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="476" y="136" as="sourcePoint"/>
+            <mxPoint x="476" y="120" as="targetPoint"/>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e_out1" value="" style="endArrow=classic;html=1;strokeColor=#2c522d;strokeWidth=1.5;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="388" y="88" as="sourcePoint"/>
+            <mxPoint x="388" y="72" as="targetPoint"/>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e_out2" value="" style="endArrow=classic;html=1;strokeColor=#2c522d;strokeWidth=1.5;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="468" y="88" as="sourcePoint"/>
+            <mxPoint x="468" y="72" as="targetPoint"/>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e_outk" value="" style="endArrow=classic;html=1;strokeColor=#7b5518;strokeWidth=1.5;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="616" y="88" as="sourcePoint"/>
+            <mxPoint x="616" y="72" as="targetPoint"/>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="summary_bar" value="单次前向并行产出全部 K 个草稿分布（耗时几乎与 K 无关），但后位缺乏对前序已采样 token 的条件依赖" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#fbf2df;strokeColor=#7b5518;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=6;fontFamily=Inter, Noto Sans SC;fontSize=11;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="0" y="352" width="688" height="40" as="geometry"/>
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

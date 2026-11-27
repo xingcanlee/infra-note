@@ -1,6 +1,6 @@
 ---
 title: '05 Worker 启动与 ModelRunner V2'
-description: '调度器只输出配额与物理块号，不触碰显存。本文剖析 Worker 冷启动四步显存探测与 ModelRunner V2 的永久行、稀疏差量写入及无锁异步组装机制。'
+description: '调度器只输出配额与物理块号，不触碰显存。本文剖析 Worker 冷启动四步显存探测与 ModelRunner V2 的常驻请求行、稀疏差量写入及无锁异步组装机制。'
 series: { id: vllm, order: 6 }
 pubDate: 2026-10-30
 draft: false
@@ -31,11 +31,11 @@ import PrepareInputsExplainer from './explainers/prepare-inputs';
 
 其中 `memory_profiling` 通过设备剩余显存差值统计持久消费 `total_consumed`，再单独叠加未释放的瞬态峰值差量，避免对权重和常驻通信缓冲重复扣减[^vllm-mem-prof]。自 v0.21.0 起，vLLM 默认在建池前加入 `profile_cudagraph_memory` 预估，消除后续静态图捕获阶段的 **OOM（Out of Memory，显存溢出）**风险[^vllm-gpu-worker]。
 
-## 永久行与两步输入元数据手算
+## 常驻请求行与输入元数据组装
 
-显存池就绪后，执行器每步要把 `SchedulerOutput` 转化为模型输入。我们沿用一个可手算追踪的微型案例：设最大并发槽位 `max_num_reqs` 为 $4$，最大长度 $M = 12$，物理块尺寸 $B = 2$，每请求最大块数 $K = 6$，单步预算 `token_budget` $= 10$[^vllm-ascend-prep]。
+显存池就绪后，执行器每步要把 `SchedulerOutput` 转化为模型输入。下面以一组小规模配置追踪整个组装过程：设最大并发槽位 `max_num_reqs` 为 $4$，最大长度 $M = 12$，物理块尺寸 $B = 2$，每请求最大块数 $K = 6$，单步预算 `token_budget` $= 10$[^vllm-ascend-prep]。
 
-`RequestState` 预分配形状为 $[4, 12]$ 的 `all_token_ids` 常驻 token 表，`BlockTables` 预分配形状为 $[4, 6]$ 的块表并保留 $0$ 号空块为哨兵。此时有 $3$ 条请求到达，提示词长度分别为 $[3, 2, 8]$，依次占用永久行 $r \in \{0, 1, 2\}$，初始物理块分别为 $[1, 2]$、$[3]$ 与 $[4, 5, 6]$。
+`RequestState` 预分配形状为 $[4, 12]$ 的 `all_token_ids` 常驻 token 表，`BlockTables` 预分配形状为 $[4, 6]$ 的块表并保留 $0$ 号空块为哨兵。此时有 $3$ 条请求到达，提示词长度分别为 $[3, 2, 8]$，依次占用常驻请求行（Persistent Row）$r \in \{0, 1, 2\}$，初始物理块分别为 $[1, 2]$、$[3]$ 与 $[4, 5, 6]$。
 
 在首步中，调度器切出配额 `{'0': 3, '1': 2, '2': 5}`，总计 $10$ 个 token，请求 $2$ 触发 **Chunked Prefill（分块预填充）**并留下最后 $3$ 个提示词。各请求已算长度 `num_computed_tokens` 均为 $0$。
 
@@ -49,20 +49,20 @@ import PrepareInputsExplainer from './explainers/prepare-inputs';
 
 第二步无需改动其他行。请求 $0$ 的位置 $3$ 落在物理块 $2$ 偏移 $1$（槽位 $5$）；请求 $1$ 的位置 $2$ 写入新块 $7$ 偏移 $0$（槽位 $14$）。请求 $2$ 的位置 $5,6,7$ 依次落入块 $6$ 偏移 $1$ 与块 $8$ 偏移 $0,1$（槽位 $13,16,17$），`query_start_loc` 更新为 `[0, 1, 2, 5]`，`seq_lens` 推进为 `[4, 3, 8]`。
 
-图 2 分六拍推演了上述两步中永久行状态、块表稀疏差量与无锁异步组装的联动过程。
+图 2 分六个步骤展示了上述两步中常驻行状态、块表稀疏差量与无锁异步组装的联动过程。
 
 <PrepareInputsExplainer
   client:visible
-  title="图 2：ModelRunner V2 永久行状态与输入元数据组装推演"
+  title="图 2：ModelRunner V2 常驻行状态与输入元数据组装演示"
 />
 
-## 永久行解耦与稀疏差量写入
+## 常驻行解耦与稀疏差量写入
 
 早期 V1 把持久张量直接充当模型输入，只要新请求插队或旧请求退出，CPU 就必须重排整块张量并保留冗余备份[^vllm-mrv2-design]。官方 **ModelRunner V2（简称 MRV2）** 博客将其核心重构原则概括为 **模块化、GPU 原生状态管理与异步优先**（可通过 `VLLM_USE_V2_MODEL_RUNNER=1` 启用）[^vllm-mrv2-blog]。如图 3 与图 4 所示，MRV2 仅按 `req_order` 收集活动行构成输入块表，彻底免除了 CPU 重排[^vllm-mrv2-design][^vllm-states]。
 
-![vLLM MRV2 永久块表按 req_order Gather 映射示意](./images/vllm-mrv2-persistent-batch.png '图 3：MRV2 永久行 Block Table State 通过 Gather 与 req_order 映射为 Input Block Table（来源 vLLM 官方文档，Apache-2.0）')
+![vLLM MRV2 常驻块表按 req_order Gather 映射示意](./images/vllm-mrv2-persistent-batch.png '图 3：MRV2 常驻行 Block Table State 通过 Gather 与 req_order 映射为 Input Block Table（来源 vLLM 官方文档，Apache-2.0）')
 
-```mermaid caption="图 4：ModelRunner V2 永久行状态与分阶段输入张量类图"
+```mermaid caption="图 4：ModelRunner V2 常驻行状态与暂存写入（StagedWrite）张量类图"
 classDiagram
     direction TB
     class GPUModelRunner {
@@ -88,7 +88,7 @@ classDiagram
     BlockTables *-- StagedWriteTensor
 ```
 
-系统预分配 `max_num_reqs` 行常驻张量，每条请求保留不变的永久行号[^vllm-mrv2-design][^vllm-mrv2-finish]；前向时只传轻量 `idx_mapping` 给设备侧收集输入行[^vllm-block-table]。块表改动改由 `StagedWriteTensor` 仅打包 `(row, start, values)` 稀疏差量，多组缓存由 `FusedStagedWriter` 合并为单次 Kernel 原地更新[^vllm-block-table][^vllm-buffer-utils]。
+系统预分配 `max_num_reqs` 行常驻张量，每条请求保留不变的常驻行号[^vllm-mrv2-design][^vllm-mrv2-finish]；前向时只传轻量 `idx_mapping` 给设备侧收集输入行[^vllm-block-table]。块表改动改由 `StagedWriteTensor` 仅打包 `(row, start, values)` 稀疏差量，多组缓存由 `FusedStagedWriter` 合并为单次 Kernel 原地更新[^vllm-block-table][^vllm-buffer-utils]。
 
 ## 临时锁页隔离与设备侧组装
 
@@ -124,7 +124,7 @@ sequenceDiagram
 
 ## 两步输入组装与差量写入验证
 
-下面这段 $80$ 行纯 Python 标准库脚本完整复现了上文 3 请求、单步预算 $10$ 与块尺寸 $2$ 的两步推演过程。脚本同时验证了 `StagedWriteTensor` 在两步中各自打包的稀疏差量元素计数：
+下面这段 $80$ 行纯 Python 标准库脚本完整复现了上文 3 请求、单步预算 $10$ 与块尺寸 $2$ 的两步执行过程。脚本同时验证了 `StagedWriteTensor` 在两步中各自打包的稀疏差量元素计数：
 
 ```python
 class StagedWriteTensor:

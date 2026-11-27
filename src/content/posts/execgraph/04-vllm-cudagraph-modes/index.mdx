@@ -9,7 +9,7 @@ tags: [vLLM, CUDA Graph, CUDAGraphMode, Piecewise, AttentionCGSupport, Padding]
 
 [第 3 章](../03-cuda-graph-fundamentals/)拆解了驱动与 PyTorch 层的纯 CUDA Graph 原理，它要求整张图的输入形状与控制流在捕获时完全锁定。进入真实推理服务后，请求流量并不总是整整齐齐的纯解码。引擎常开启 **`Chunked Prefill`（分块预填充）** 把长提示词切小块与解码混排，或采用 **`PD 分离`** 把预填充实例和解码实例拆开部署[^vllm-cg-doc]。
 
-因此，**`CUDAGraphMode`** 并非 CUDA 驱动的原语，而是 vLLM 为 GPU 执行图设计的一整套上层编排体系。它统一定义了全图、分段与降级规则，再在昇腾后端由 `vllm-ascend` 通过 `NPUPlatform` 复用到 NPU 侧。
+因此，vLLM 设计了 **`CUDAGraphMode`** 上层编排体系。它统一定义了全图、分段与降级规则，再在昇腾后端由 `vllm-ascend` 通过 `NPUPlatform` 复用到 NPU 侧。
 
 ## 五种图模式与混合批分流
 
@@ -35,7 +35,7 @@ flowchart TD
 
 ## 注意力能力分级与自动降级
 
-全图 `FULL` 虽快，但并非所有注意力算子都能在变长批次下安全录制。vLLM 将注意力后端对静态图的支持划分为四级枚举 **`AttentionCGSupport`**，优先级从高到低依次为[^vllm-cg-doc][^vllm-attn-backend]：
+全图 `FULL` 虽快，但部分注意力算子无法在变长批次下安全录制。vLLM 将注意力后端对静态图的支持划分为四级枚举 **`AttentionCGSupport`**，优先级从高到低依次为[^vllm-cg-doc][^vllm-attn-backend]：
 
 - **`ALWAYS`**：任意混批与预填充都能录成整图，全模式畅通。
 - **`UNIFORM_BATCH`**：仅均一批量可走全图，混批需分段执行或退回 Eager。
@@ -83,7 +83,7 @@ flowchart TD
 
 这三层包装互不冲突，靠一条简洁的透传不变量：`CUDAGraphWrapper` 每次调用都会检查当前上下文模式[^vllm-cg-src]。只要上下文等于 `NONE` 或与自身绑定模式不匹配，包装器就直接原样透传内部 `self.runnable`（图 3 与图 4）。
 
-因此，当运行 `FULL` 整图时（哪怕处于首次整图捕获期），外层管理器会把内层上下文设为 `NONE`[^vllm-cg-utils]。内层分段包装器自动让道透传到融合算子，彻底避免触发嵌套 `Stream Capture` 错误；若退回 `PIECEWISE`，外层跳过拦截，由内层逐段接管投影子图。
+因此，当运行 `FULL` 整图时（哪怕处于首次整图捕获期），外层管理器会把内层上下文设为 `NONE`[^vllm-cg-utils]。内层分段包装器自动让道透传到融合算子，避免触发嵌套 `Stream Capture` 错误；若退回 `PIECEWISE`，外层跳过拦截，由内层逐段接管投影子图。
 
 ![vLLM 中 FULL 与 PIECEWISE 双模式执行图与动态分派总架构](./images/vllm-cudagraph-piecewise-design.png '图 3：vLLM 模型同时配合 PIECEWISE 分段编译图与 FULL 整图两种形态执行（来源 vLLM 官方文档，Apache-2.0）')
 

@@ -1,0 +1,70 @@
+/* Engram 多头哈希分桶交互组件样式（@layer utilities，仅使用 --wisp-* 令牌）。 */
+@layer utilities {
+  .engram-stage {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    min-width: 0;
+  }
+
+  .engram-switcher {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+    padding: 0.4375rem 0.6875rem;
+    border: 1px solid var(--wisp-border);
+    border-radius: 4px;
+    background: var(--wisp-surface);
+  }
+
+  .engram-banks-title {
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: var(--wisp-muted);
+  }
+
+  .engram-switcher__group {
+    display: inline-flex;
+    flex-wrap: wrap;
+    gap: 0.25rem;
+  }
+
+  .engram-switcher__btn {
+    min-height: 1.75rem;
+    padding: 0.1875rem 0.5625rem;
+    border: 1px solid var(--wisp-border);
+    border-radius: 3px;
+    background: var(--wisp-bg);
+    color: var(--wisp-muted);
+    font: inherit;
+    font-size: 0.75rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition:
+      background-color 150ms,
+      border-color 150ms,
+      color 150ms;
+  }
+
+  .engram-switcher__btn:hover {
+    color: var(--wisp-fg);
+    border-color: var(--wisp-muted);
+  }
+
+  .engram-switcher__btn[aria-pressed='true'] {
+    background: var(--wisp-accent);
+    border-color: var(--wisp-accent);
+    color: var(--wisp-accent-fg);
+    font-weight: 600;
+  }
+
+  .engram-unified-svg {
+    display: block;
+    width: 100%;
+    height: auto;
+    overflow: visible;
+    font-variant-numeric: tabular-nums;
+  }
+}

@@ -1,0 +1,45 @@
+@layer utilities {
+  .mla-exp-root {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .mla-exp-stage-stack {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .mla-exp-toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    min-height: 36px;
+    padding: 4px 10px;
+    border: 1px solid var(--wisp-border);
+    border-radius: 4px;
+    background: var(--wisp-surface);
+  }
+
+  .mla-exp-mode-hint {
+    font-size: 12px;
+    color: var(--wisp-muted);
+  }
+
+  .mla-exp-summary {
+    border: 1px solid var(--wisp-border);
+    background: var(--wisp-surface);
+    border-radius: 4px;
+    padding: 8px 12px;
+    font-size: 12px;
+    line-height: 1.55;
+    color: var(--wisp-muted);
+  }
+
+  .mla-exp-summary strong {
+    color: var(--wisp-fg);
+  }
+}

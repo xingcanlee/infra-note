@@ -9,7 +9,7 @@ category: AI Infra
 toc: true
 ---
 
-通过 **OOT（Out-of-Tree，树外扩展）** 接口接入调度与执行流后，把 vLLM 部署到真实的昇腾服务器上，还会面对三类硬件层难题。
+通过 **OOT（Out-of-Tree，独立硬件插件）** 接口接入调度与执行流后，把 vLLM 部署到真实的昇腾服务器上，还会面对三类硬件层难题。
 
 机箱内可能部署着指令集与显存层级各异的四代昇腾卡。多路 ARM 处理器上的进程调度迁移会引发跨节点访存抖动。同时，**NPU（Neural Processing Unit，神经网络处理器）** 显存管理在休眠、通信缓冲与加载上也有独特规则。
 
@@ -17,7 +17,7 @@ toc: true
 
 ## 四代昇腾芯片规格与能力抽象
 
-现网运行的昇腾卡跨越四代微架构，覆盖中心推理标卡、单机多卡服务器到大型超节点系统[^hiascend-hw][^hc2025-roadmap]。表 1 汇总了昇腾官方公开的四代代表产品与芯片硬件规格，用于解释插件层为何采取分层语义抽象：
+现网运行的昇腾卡跨越四代微架构，覆盖中心推理标卡、单机多卡服务器到大型超节点系统[^hiascend-hw][^hc2025-roadmap]。表 1 汇总了昇腾官方公开的四代代表产品与芯片硬件规格，用于解释插件层为何采用分层能力抽象：
 
 | 代表产品与芯片               | 芯片/整机内存与带宽                                                             | 理论峰值算力                                      | 互联拓扑与推理精度边界                                                                                 |
 | :--------------------------- | :------------------------------------------------------------------------------ | :------------------------------------------------ | :----------------------------------------------------------------------------------------------------- |
@@ -26,9 +26,9 @@ toc: true
 | Atlas A3（910C，如 800I A3） | 双 Die 模组 HBM3 $128\text{ GB}$ / ~$3.2\text{ TB/s}$                           | 8 模组整机 $4.48\text{ PFLOPS}$ FP16              | 双向 D2D $784\text{ GB/s}$，最大 384 卡超节点；$8 \times 400\text{GE}$ RoCE[^hiascend-800i-a3]         |
 | Atlas A5（950PR / 950DT）    | PR $128\text{ GB}$ ($1.6\text{ TB/s}$) · DT $144\text{ GB}$ ($4.0\text{ TB/s}$) | $1\text{ PFLOPS}$ FP8 · $2\text{ PFLOPS}$ MXFP4   | Scale-up $2.0\text{ TB/s}$；支持 `HiF8` / `MXFP8` / `MXFP4`；超节点最高 $8192$ 卡[^hc2025-roadmap]     |
 
-针对这些差异巨大的物理芯片，插件把硬件识别拆为构建期识别 `AscendDeviceType` 与运行期 **SoC（System on Chip，片上系统）** 校对两步[^ascend-hw-id][^ascend-dev-cfg]。上层业务不准直接判断型号名，统一查询不可变的 `HardwareProfile` 语义画像（如图 1 所示）[^ascend-hw-profile][^ascend-dev-op][^ascend-310p]。
+针对这些差异巨大的物理芯片，插件把硬件识别拆为构建期识别 `AscendDeviceType` 与运行期 **SoC（System on Chip，片上系统）** 校对两步[^ascend-hw-id][^ascend-dev-cfg]。上层业务不准直接判断型号名，统一查询不可变的 `HardwareProfile` 硬件能力配置（如图 1 所示）[^ascend-hw-profile][^ascend-dev-op][^ascend-310p]。
 
-```mermaid caption="图 1：AscendDeviceType 硬件代际与 HardwareProfile 语义能力抽象类图"
+```mermaid caption="图 1：AscendDeviceType 硬件代际与 HardwareProfile 硬件能力配置类图"
 classDiagram
     direction TB
     class AscendDeviceType {
@@ -48,9 +48,9 @@ classDiagram
     HardwareProfile ..> NPUWorker310 : 310P 兼容目录隔离
 ```
 
-对照源码 `vllm_ascend/device/hardware_profile.py`，四代硬件画像的原生格式、调度策略与核心契约如下表所示[^ascend-hw-profile][^ascend-supported]：
+对照源码 `vllm_ascend/device/hardware_profile.py`，四代硬件能力配置的原生格式、调度策略与核心契约如下表所示[^ascend-hw-profile][^ascend-supported]：
 
-| 芯片代际（SoC 编号）     | 原生权重格式                         | CPU 亲和与寻址模式                | 专属语义契约与执行栈路由                                                 |
+| 芯片代际（SoC 编号）     | 原生权重格式                         | CPU 亲和与寻址模式                | 专属能力契约与执行栈路由                                                 |
 | :----------------------- | :----------------------------------- | :-------------------------------- | :----------------------------------------------------------------------- |
 | 310P（$200\text{–}205$） | `BF16`, `FP16`, `INT8`               | `TOPO_AFFINITY` / `DIRECT`        | 强制 `FRACTAL_NZ` 与 `ALLGATHER`，转入 `NPUWorker310` 兼容栈             |
 | A2（$220\text{–}225$）   | 在上表基础上增加 `INT4`              | `TOPO_AFFINITY` / `DIRECT`        | 支持 `FLASH_ATTN_NPU_3` 与 `CANN_MEGAMOE`（W4A8 等整数路径）             |
@@ -65,9 +65,9 @@ classDiagram
 
 因此，上游面向 x86 的 `--numa-bind-nodes` 与 `--numa-bind-cpus` 参数在昇腾平台会被忽略。主机侧改由 `cpu_binding.py` 接管，并从 `v0.18.0rc1` 起仅在 ARM 宿主默认启用[^ascend-cpu-doc]。
 
-决定如何切分 CPU 核心池的依据，正是硬件画像里的 `cpu_binding_mode`。A3 采用 `global_slice` 全局切片，而 A2、310P 与 Ascend 950 采用 `topo_affinity` 拓扑亲和策略[^ascend-cpu-bind]。
+决定如何切分 CPU 核心池的依据，正是硬件能力配置（`HardwareProfile`）里的 `cpu_binding_mode`。A3 采用 `global_slice` 全局切片，而 A2、310P 与 Ascend 950 采用 `topo_affinity` 拓扑亲和策略[^ascend-cpu-bind]。
 
-先看一个可手算的 A3 例子。假设一台 A3 服务器拥有 $640$ 个逻辑 CPU 核与 $16$ 个逻辑 NPU 设备，可用核心列表为 `allowed_cpus`（`[0..639]`）。HCCS 高速互联让每个 NPU 到各 NUMA 节点的访问延迟相近，拓扑亲和信号不再明显。
+以典型 A3 节点为例，假设整机拥有 $640$ 个逻辑 CPU 核与 $16$ 个逻辑 NPU 设备，可用核心列表为 `allowed_cpus`（`[0..639]`）。HCCS 高速互联让每个 NPU 到各 NUMA 节点的访问延迟相近，拓扑亲和信号不再明显。
 
 于是系统按全局逻辑设备编号切分 CPU 核心池：$640 / 16 = 40$ 核/设备，余数 $0$ 核[^ascend-cpu-doc]。最终设备 $0$ 分得 `[0..39]`，设备 $15$ 分得 `[600..639]`。
 
@@ -90,7 +90,7 @@ classDiagram
 
 针对不同代际与宿主环境，亲和性配置还包含三处条件细节。A3 属于双芯模组（`DUAL_CHIP_CARD`），配置中断亲和时需把逻辑设备 ID 换算为板卡编号 `npu // 2` 与芯片编号 `npu % 2`[^ascend-cpu-irq]。
 
-Ascend 950 跳过中断亲和与独立 ACL 核心切分，改为把 `uvb_poll_window_thread` 固定到 NUMA 0（容器需 `--pid=host`）。同时它按每集群 $8$ 核乘超线程数分配整块集群[^ascend-cpu-950]。线程绑定完成后，若宿主存在 `migratepages` 且未开启 Engram 跨节点卸载，系统还会把内存页迁至目标 NUMA 节点[^ascend-cpu-migrate]。
+Ascend 950 跳过中断亲和与独立 ACL 核心切分，改为把 `uvb_poll_window_thread` 固定到 NUMA 0（容器需 `--pid=host`）。同时它按每个 CPU 核簇（Cluster，8 核 × 超线程数）分配整块核心簇[^ascend-cpu-950]。线程绑定完成后，若宿主存在 `migratepages` 且未开启 Engram 跨节点卸载，系统还会把内存页迁至目标 NUMA 节点[^ascend-cpu-migrate]。
 
 ## CaMemAllocator 与睡眠唤醒生命周期
 
@@ -220,7 +220,7 @@ A2 ProcB NPU2: 168-191 (24 CPUs)
 KV budget: with MC2=19.0 GiB (safe) vs without MC2=20.5 GiB (risk OOM)
 ```
 
-把多代昇腾芯片抽象为语义画像、为每张卡锁定专属 CPU 集合并在 HBM 中留出确定性边界后，硬件层的准备工作已经就绪。接下来，`NPUWorker` 与 `NPUModelRunner` 如何接管前向执行、对齐算子查询边界并把 KV 缓存重排为 `PA_NZ` 分形排布？我们将在[03 NPUWorker、分形缓存与 KV 层并行](../03-npu-worker-runner-and-kv-layout/)中继续拆解。
+把多代昇腾芯片抽象为硬件能力配置（`HardwareProfile`）、为每张卡锁定专属 CPU 集合并在 HBM 中留出确定性边界后，硬件层的准备工作已经就绪。接下来，`NPUWorker` 与 `NPUModelRunner` 如何接管前向执行、对齐算子查询边界并把 KV 缓存重排为 `PA_NZ` 分形排布？我们将在[03 NPUWorker、分形缓存与 KV 层并行](../03-npu-worker-runner-and-kv-layout/)中继续拆解。
 
 [^ascend-hw-id]: 源码 `vllm-ascend@b776261`：`setup.py#L74-L166` 与 `vllm_ascend/device/hardware.py#L16-L76`。
 

@@ -21,7 +21,7 @@ toc: true
 2. **上游 `vllm serve` 参数**：与 GPU 共享的 `-tp` / `-dp` / `--quantization` 等标志，汇总入全局 `VllmConfig`。
 3. **插件扩展 JSON 配置**：经 `--additional-config` 传入 `AscendConfig`[^ascend-cfg-cls]，统一管理亲和性、分形布局、通算融合与均衡开关。
 
-值得特别留意的是，自 `vllm-ascend` PR #9064 起，官方正把原先零散的 `VLLM_ASCEND_*` 插件环境变量全面迁移进 `--additional-config`[^ascend-add-doc][^ascend-env-doc]。新部署应一律优先使用 `--additional-config`，旧环境变量将在未来版本彻底移除。
+自 `vllm-ascend` PR #9064 起，官方正把原先零散的 `VLLM_ASCEND_*` 插件环境变量全面迁移进 `--additional-config`[^ascend-add-doc][^ascend-env-doc]。新部署应一律优先使用 `--additional-config`，旧环境变量将在未来版本移除。
 
 图 1 展示了进程初始化时三层配置如何汇总到 `NPUPlatform.check_and_update_config` 完成验证：
 
@@ -94,7 +94,7 @@ classDiagram
 | `ASCEND_RT_VISIBLE_DEVICES`        | 如 `0,1,2,3`               | 运行期隔离可见 NPU 设备编号，与 `--device-ids` 协同[^ascend-env-doc] |
 | `HCCL_BUFFSIZE`                    | 如 $200$ 或更大（MB）      | 决定 `mc2` 通信组缓冲窗；组配置主动旁路让位于它                      |
 | `ASCEND_LAUNCH_BLOCKING`           | $0$（排障设 $1$）          | 强迫同步发射算子，定位 $507011$ / $507015$ 首出错算子                |
-| `VLLM_ASCEND_ENABLE_BATCH_MEMCPY`  | `None`（严格 $0$/$1$）     | 控制 KV 卸载批量异步拷贝路径，由布尔解析器校验[^ascend-envs]         |
+| `VLLM_ASCEND_ENABLE_BATCH_MEMCPY`  | `None`（布尔 $0$/$1$）     | 控制 KV 卸载批量异步拷贝路径，由布尔解析器校验[^ascend-envs]         |
 | `SOC_VERSION` / `ASCEND_HOME_PATH` | `npu-smi` 探测 / CANN 路径 | 编译安装期指定芯片家族（如 910B/910C）与工具链位置[^ascend-envs]     |
 | `COMPILE_CUSTOM_KERNELS`           | `True`（$1$/$0$）          | 控制是否编译 `csrc/` 下 AscendC 与 ACLNN 扩展算子[^ascend-envs]      |
 | `HCCL_SO_PATH`                     | `libhccl.so`               | 指定 `PyHcclCommunicator` 动态加载的底层通信库路径[^ascend-envs]     |
@@ -167,7 +167,7 @@ vllm serve /models/DeepSeek-V3-W8A8 \
 
 ```text
 vllm_ascend/
-├── envs.py                     # 编译期与运行时底层布尔环境变量严格解析
+├── envs.py                     # 编译期与运行时底层布尔环境变量精确解析
 ├── ascend_config.py            # AscendConfig 及 EPLB/KVPP/RL/MC2 六大子配置树
 ├── platform.py                 # check_and_update_config 注入 Worker 与静态图模式
 ├── cpu_binding.py              # enable_cpu_binding 驱动 ARM global_slice / topo 亲和性绑定
@@ -185,7 +185,7 @@ flowchart TB
   PL -->|"注入"| WK["cpu_binding & NPUWorker 启动"]
 ```
 
-至此，[《vLLM-Ascend 昇腾插件与硬件拓展》](../)全系列七章全部完结。前六章依次剖析了 OOT 插件、芯片与 CPU 亲和性、分形缓存、MC2 通算融合、Mooncake PD 传输及自定义算子开发。本终章则落地为生产集群的启动配置与参数实战。
+至此，[《vLLM-Ascend 昇腾插件与硬件扩展》](../)全系列七章全部完结。前六章依次剖析了 OOT 插件、芯片与 CPU 亲和性、分形缓存、MC2 通算融合、Mooncake PD 传输及自定义算子开发。本终章则落地为生产集群的启动配置与参数实战。
 
 需要回顾上游通用引擎调度与配置体系时，可随时查阅[《vLLM 推理引擎：架构与核心组件》](../../vllm/)及其[第 10 章](../../vllm/10-launch-config-and-tuning/)。若想继续深挖影子流、可更新槽位与静态图捕获机制，欢迎前往[《推理执行图：CUDA Graph 与 ACL Graph》](../../execgraph/)第 5 至第 7 章。
 
@@ -197,7 +197,7 @@ flowchart TB
 
 [^ascend-eplb-cfg]: `vllm-ascend`（commit `b776261`），`vllm_ascend/ascend_config.py:288-346`（`EplbConfig` `dynamic_eplb` 与 `eplb_policy_type` $0\text{–}3$ 校验），Apache-2.0。
 
-[^ascend-envs]: `vllm-ascend`（commit `b776261`），`vllm_ascend/envs.py:26-97`（布尔环境变量严格 $0$/$1$ 解析与全部构建/运行时环境变量表），Apache-2.0。
+[^ascend-envs]: `vllm-ascend`（commit `b776261`），`vllm_ascend/envs.py:26-97`（布尔环境变量 $0$/$1$ 解析与全部构建/运行时环境变量表），Apache-2.0。
 
 [^ascend-spec-align]: `vllm-ascend`（commit `b776261`），`docs/source/user_guide/feature_guide/speculative_decoding.md:64, 154-158`（`FIA` 算子 `K + 1 <= 16` 上限与捕获档位 `n * (K + 1)` 对齐要求），Apache-2.0。
 

@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { BeatExplainer } from '@/explainers/kit';
 import LifecycleStage from './LifecycleStage';
-import { BEAT_SCHEDULES, buildRequestLifecycleSteps, type ModeKey } from './steps';
+import { buildRequestLifecycleSteps, type ModeKey } from './steps';
 import './style.css';
 
 export { buildRequestLifecycleSteps };
@@ -19,15 +19,13 @@ export default function RequestLifecycleExplainer({ title }: RequestLifecycleExp
       steps={steps}
       title={title}
       label={title}
-      stageMinHeight={396}
-      getBeats={(step) => BEAT_SCHEDULES[step.state.phase]}
+      stageMinHeight={410}
       getFormula={(step) => step.state.formulaTex}
       replayTrigger={mode}
     >
-      {(step, { beat, dotToken }) => (
+      {(step, { dotToken }) => (
         <LifecycleStage
           state={step.state}
-          beat={beat}
           playToken={dotToken}
           mode={mode}
           onSelectMode={setMode}

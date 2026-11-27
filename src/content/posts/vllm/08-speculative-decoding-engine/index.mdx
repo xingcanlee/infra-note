@@ -13,9 +13,9 @@ toc: true
 
 但把“先猜 $K$ 个 token、目标模型一次验证 $1 + K$ 个位置”落地到在线引擎时，真正的挑战才刚刚开始。统一调度器如何扣减配额与物理块？被拒绝的草稿后缀如何在异步占位与 HBM 状态表中回退？本章回到 `vllm` 与 `vllm-ascend` 运行时本身，拆解整条引擎链路。
 
-## 四槽单步验证与回退手算
+## 单步草稿验证与回退机制
 
-先用一组可手算的小数字跟踪单步验证。设目标模型配置 `num_speculative_tokens` 为 $3$，已算长度 `num_computed_tokens` 为 $10$。本步需验证基准输入及 $3$ 个 Draft token `[d1, d2, d3]`，共计 $1 + 3 = 4$ 个 token。
+先用一组小规模参数跟踪单步验证过程。设目标模型配置 `num_speculative_tokens` 为 $3$，已算长度 `num_computed_tokens` 为 $10$。本步需验证基准输入及 $3$ 个 Draft token `[d1, d2, d3]`，共计 $1 + 3 = 4$ 个 token。
 
 在统一调度循环 `Scheduler.schedule()` 中，系统先为该请求预留 $4$ 槽计算配额，并确保 KV 块表能容纳推进后的全部物理槽位[^vllm-sched-spec]。目标模型一次前向只需搬运一次完整权重，并行产出 $4$ 组概率分布向量。
 
@@ -27,9 +27,9 @@ toc: true
 - **未命中后缀作废**：`d3` 对应的 KV 槽位无需昂贵清零，留在旧游标外侧由下轮新 token 自然覆写。
 - **权重带宽摊销**：单次权重读取产出了 $2$ 个合法 token，若下一轮 Draft 全中，单步最多推进 $1 + K = 4$ 个 token。
 
-图 1 展示了单步内从 Draft 提名、目标批量前向到拒绝重采样与下轮生成的完整交互时序。
+图 1 展示了单步内从草稿生成（Propose / Draft）、目标批量前向到拒绝重采样与下轮生成的完整交互时序。
 
-```mermaid caption="图 1：vLLM V1 投机解码单步提名、批量验证与回退时序"
+```mermaid caption="图 1：vLLM V1 投机解码草稿生成、批量验证与回退时序"
 sequenceDiagram
     participant SCH as Scheduler
     participant TGT as Target
@@ -74,21 +74,21 @@ classDiagram
 
 围绕无权重规则、隐藏特征复用与独立并行生成三条设计方向，五类方案在工程代价上各有取舍[^vllm-spec-ngram][^vllm-spec-suffix][^vllm-spec-eagle]：
 
-| 候选生成器家族 | 典型代表类                  | 额外权重开销      | 起草耗时特征      | 适用负载与关键约束                                           |
-| :------------- | :-------------------------- | :---------------- | :---------------- | :----------------------------------------------------------- |
-| 前缀查找类     | `NgramGPUSpeculator`        | 零权重、零 KV 占  | 微秒级 token 匹配 | 适合 RAG 引用与代码补全等高重复上下文[^vllm-spec-ngram]      |
-| 后缀树统计     | `SuffixSpeculator`          | 零权重、纯主存树  | 短前缀局部查询    | 适合多轮对话与格式化文本，无需训练[^vllm-spec-suffix]        |
-| 特征复用 AR    | `EagleSpeculator` / MTP     | 轻量单层或双层头  | $K$ 步串行小模型  | 通用加速主力，EAGLE-3 直接融合多层特征[^vllm-spec-eagle]     |
-| 独立小模型     | `StandaloneARSpeculator`    | 独立完整词表与 KV | 独立自回归小步    | 异构大小模型配对，独立维护 Draft 页表[^vllm-spec-standalone] |
-| 半自回归并行   | `DFlashSpeculator` / DSpark | 窄瓶颈与并行 SWA  | 一次前向出多槽    | 大幅压缩生成步数，配合自适应校验[^vllm-spec-dspark]          |
+| 候选生成器家族 | 典型代表类                  | 额外权重开销      | Draft 推理耗时特征 | 适用负载与关键约束                                           |
+| :------------- | :-------------------------- | :---------------- | :----------------- | :----------------------------------------------------------- |
+| 前缀查找类     | `NgramGPUSpeculator`        | 零权重、零 KV 占  | 微秒级 token 匹配  | 适合 RAG 引用与代码补全等高重复上下文[^vllm-spec-ngram]      |
+| 后缀树统计     | `SuffixSpeculator`          | 零权重、纯主存树  | 短前缀局部查询     | 适合多轮对话与格式化文本，无需训练[^vllm-spec-suffix]        |
+| 特征复用 AR    | `EagleSpeculator` / MTP     | 轻量单层或双层头  | $K$ 步串行小模型   | 通用加速主力，EAGLE-3 直接融合多层特征[^vllm-spec-eagle]     |
+| 独立小模型     | `StandaloneARSpeculator`    | 独立完整词表与 KV | 独立自回归小步     | 异构大小模型配对，独立维护 Draft 页表[^vllm-spec-standalone] |
+| 半自回归并行   | `DFlashSpeculator` / DSpark | 窄瓶颈与并行 SWA  | 一次前向出多槽     | 大幅压缩生成步数，配合自适应校验[^vllm-spec-dspark]          |
 
 对于无权重查找路径，`NgramGPUSpeculator` 直接在设备端比对近期序列窗口，无需额外模型参数[^vllm-spec-ngram]。而依赖隐藏态的 `EagleSpeculator` 与 MTP 同归入 `TargetDependentARSpeculator`[^vllm-spec-tdar]，直接借用主模型特征省去了重算整网底层表示的开销。
 
 ## 拒绝采样与融合多步草稿静态图
 
-在模型运行器 MRV2 中，验证端与起草端都围绕“消除 CPU 同步与步间发射墙”设计，双侧流水泳道如图 3 所示[^vllm-rej-sampler][^vllm-spec-cg]。
+在模型运行器 MRV2 中，验证端与 Draft 推理端都围绕“消除 CPU 同步与步间发射墙”设计，双侧流水泳道如图 3 所示[^vllm-rej-sampler][^vllm-spec-cg]。
 
-```mermaid caption="图 3：验证端分块拒绝采样与起草端融合多步静态图双泳道"
+```mermaid caption="图 3：验证端分块拒绝采样与 Draft 融合多步静态图双泳道"
 flowchart TB
     subgraph VER["Target 验证与拒绝采样泳道"]
         direction TB
@@ -96,10 +96,10 @@ flowchart TB
         V2 --> V3["Triton 拒绝采样与 _flatten 输出"]
         V3 --> V4["AdaptiveVerification 动态裁剪长尾"]
     end
-    subgraph DRF["起草端融合多步静态图泳道"]
+    subgraph DRF["Draft 融合多步静态图泳道"]
         direction TB
         D1["接收有效前缀与隐状态切片"] --> D2["SpeculatorCudaGraphManager 重放"]
-        D2 --> D3["单张静态图内循环完成 K 步起草"]
+        D2 --> D3["单张静态图内循环完成 K 步 Draft 推理"]
         D3 --> D4["原地写回下轮 spec_token_ids"]
     end
     V3 -.->|"有效步长与末位 token"| D1
@@ -108,17 +108,17 @@ flowchart TB
 左侧验证泳道有四处工程细节直接决定稳定性与显存峰值[^vllm-rej-sampler]：
 
 1. **占位符屏蔽**：`gather_draft_sampled` 检测尚未越过预填充边界的 Padding 槽位，将其置为 `-1` 交由算子拒绝。
-2. **十亿字节分块保护**：`_verify_in_chunks` 按 `1 GiB` FP32 缓冲上限切分批验证，防止大词表高并发验证时爆发显存尖峰。
+2. **1 GiB 分块保护**：`_verify_in_chunks` 按 `1 GiB` FP32 缓冲上限切分批验证，防止大词表高并发验证时爆发显存尖峰。
 3. **验证模式扩展**：除逐槽校验外，`RejectionSampler` 还支持整块校准验证与基于窗口熵的 `fly` 策略分流。
 4. **自适应长度裁剪**：`AdaptiveVerificationManager` 联合估计接收率曲线与批量拥挤度，在拥堵时动态收窄下步 Draft 长度[^vllm-adaptive]。
 
-右侧起草泳道则解决了小模型多步起草的发射墙难题。传统做法每猜 $1$ 步就重放一次微秒级小图，Python 调度和图重放开销成倍累加。`AutoRegressiveSpeculator` 与 `SpeculatorCudaGraphManager` 直接把 $K$ 步循环压进同一张复合计算图，步间仅原地刷新位置与元数据[^vllm-spec-ar][^vllm-spec-cg]。
+右侧 Draft 泳道则解决了小模型多步 Draft 推理的发射墙难题。传统做法每生成 $1$ 步草稿就重放一次微秒级小图，Python 调度和图重放开销成倍累加。`AutoRegressiveSpeculator` 与 `SpeculatorCudaGraphManager` 直接把 $K$ 步循环压进同一张复合计算图，步间仅原地刷新位置与元数据[^vllm-spec-ar][^vllm-spec-cg]。
 
 ## 异步调度占位与草稿回退状态机
 
-开启第 6 章拆解的跨步异步调度后，CPU 编排第 $N+1$ 步时并不知道第 $N$ 步究竟接受了几个 Draft token。为此，`AsyncScheduler` 与 `Request` 状态对象建立了一套两阶段占位与对账协议，请求状态流转如图 4 所示[^vllm-async-sched][^vllm-sched-spec]。
+开启第 6 章拆解的跨步异步调度后，CPU 编排第 $N+1$ 步时并不知道第 $N$ 步究竟接受了几个 Draft token。为此，`AsyncScheduler` 与 `Request` 状态对象建立了一套两阶段占位与校验回退协议，请求状态流转如图 4 所示[^vllm-async-sched][^vllm-sched-spec]。
 
-```mermaid caption="图 4：异步调度下投机草稿乐观占位与验证对账回退状态机"
+```mermaid caption="图 4：异步调度下投机草稿乐观占位与校验回退状态机"
 stateDiagram-v2
     [*] --> DECODE_READY : 预填充待解码
     DECODE_READY --> ASYNC_PLACEHOLDER : 填 K 个 -1 占位
@@ -134,7 +134,7 @@ stateDiagram-v2
 
 ## 投机解码源码目录与昇腾双端适配
 
-在源码仓库中，投机解码按“调度占位、运行器起草与拒绝验证、昇腾硬件融合与图适配”分层落位：
+在源码仓库中，投机解码按“调度占位、运行器 Draft 推理与拒绝验证、昇腾硬件融合与图适配”分层落位：
 
 ```text
 vllm/v1/
@@ -162,7 +162,7 @@ vllm_ascend/
 flowchart TB
   SCH["scheduler.py & async_scheduler.py"] -->|"配额与占位"| MR["gpu/model_runner.py"]
   MR -->|"验证拒绝"| REJ["rejection_sampler.py & adaptive"]
-  MR -->|"起草分发"| SPC["spec_decode/: ngram/eagle/mtp/dspark"]
+  MR -->|"Draft 推理分发"| SPC["spec_decode/: ngram/eagle/mtp/dspark"]
   SPC -->|"GPU 静态图"| CG["SpeculatorCudaGraphManager"]
   SPC -->|"昇腾混入适配"| ASC["vllm_ascend: AutoRegressiveAclGraphManager"]
   ASC -->|"lm_head 与算子"| OPS["lmhead_tp_utils & triton/spec_decode"]

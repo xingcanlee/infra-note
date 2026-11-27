@@ -1,0 +1,31 @@
+@layer utilities {
+  .dsa-exp-root {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .dsa-exp-stage-stack {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .dsa-exp-toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    min-height: 36px;
+    padding: 4px 10px;
+    border: 1px solid var(--wisp-border);
+    border-radius: 4px;
+    background: var(--wisp-surface);
+  }
+
+  .dsa-exp-mode-hint {
+    font-size: 12px;
+    color: var(--wisp-muted);
+  }
+}

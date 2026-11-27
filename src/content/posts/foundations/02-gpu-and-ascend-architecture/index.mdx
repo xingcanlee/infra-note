@@ -1,6 +1,6 @@
 ---
 title: '02 GPU SM 与昇腾 AI Core 微架构'
-description: '同样的理论算力与带宽下，为何同一套 Kernel 优化口诀在 GPU 与昇腾上会截然不同？本文解耦软件执行模型与硅片硬件，对照 NVIDIA SM 与昇腾 AI Core 的调度、片上存储、矩阵引擎及跨后端算子分发。'
+description: '同样的理论算力与带宽下，为何同一套 Kernel 优化策略在 GPU 与昇腾上会截然不同？本文解耦软件执行模型与硅片硬件，对照 NVIDIA SM 与昇腾 AI Core 的调度、片上存储、矩阵引擎及跨后端算子分发。'
 series: { id: foundations, order: 3 }
 pubDate: 2026-11-15
 tags: [CUDA, NVIDIA, Ascend, AI Core, Kernel Optimization, Roofline, vLLM]
@@ -12,7 +12,7 @@ import ChipArchitectureMapExplainer from './explainers/ChipArchitectureMapExplai
 import MemoryCoalescingExplainer from './explainers/MemoryCoalescingExplainer';
 import MicroarchLatencyExplainer from './explainers/MicroarchLatencyExplainer';
 
-如果不先弄清芯片内部的调度机制与存储层级，“调高 Occupancy（占用率）”“消除 Bank Conflict（存储体冲突）”或“防止片上缓冲溢出”就只是一堆孤立的口诀。离开微架构语境，我们很难判断某条规则何时加速、何时反过来拖慢吞吐[^modular-gpu]。
+如果不先弄清芯片内部的调度机制与存储层级，“调高 Occupancy（占用率）”“消除 Bank Conflict（存储体冲突）”或“防止片上缓冲溢出”就只是一堆孤立的经验规则。离开微架构语境，我们很难判断某条规则何时加速、何时反过来拖慢吞吐[^modular-gpu]。
 
 理解底层行为，先要区分两个维度：**Execution Model（软件执行模型）**规定程序员如何把并行工作划成协作块；**Hardware（物理芯片硬件）**决定这些任务最终落到哪类计算单元和片上暂存。
 
@@ -65,9 +65,9 @@ $$
 
 高 Occupancy 只有在调度器缺乏就绪 Warp 时才带来收益。当驻留 Warp 已足以填满流水线空窗时，继续堆高驻留数反而会摊薄每块分到的寄存器和 SMEM。在 FlashAttention 等高性能算子中，开发者宁可把 Occupancy 压到 25%，也要多申请片上空间把累加器留在核心内，省下反复读写 HBM 的时间依然合算。
 
-相比之下，华为昇腾 AI Core 靠软件编排 **Ping-Pong（乒乓双缓冲）**与 `1C2V` 异步流水重叠来掩盖延迟。因为没有几十个驻留线程束交替顶班，Scalar 核会把搬运与计算拆开，异步推入 **MTE（Memory Transfer Engine，数据搬运引擎）**和算力队列[^ascend-prefill]。
+相比之下，华为昇腾 AI Core 靠软件编排 **Ping-Pong（乒乓双缓冲）**与 `1C2V` 异步流水重叠来掩盖延迟。因为没有几十个驻留线程束交替掩盖停顿，Scalar 核会把搬运与计算拆开，异步推入 **MTE（Memory Transfer Engine，数据搬运引擎）**和算力队列[^ascend-prefill]。
 
-一条完整的矩阵算子流水分六步推进：MTE2 从 HBM 读入片上，MTE1 从 L1 送入 L0A/L0B，Cube 乘累加进 L0C。随后 **FixPipe（矩阵后处理与直通搬运管线）**迁出至 UB，最后由 Vector 归约并经 MTE3 写回。为防止同一缓冲既读又算而空等，开发者把 L1 或 UB 对半切为 Buf A 与 Buf B；Cube 计算 Buf A 时，MTE2 并行预取下一块到 Buf B。
+一条完整的矩阵算子流水分六步推进：MTE2 从 HBM 读入片上，MTE1 从 L1 送入 L0A/L0B，Cube 乘累加进 L0C。随后 **FixPipe（矩阵后处理与直通搬运管线）**迁出至 UB，最后由 Vector 归约并经 MTE3 写回。为防止同一缓冲既读又算而空等，开发者把 L1 或 UB 对半切为 Buf A 与 Buf B；Cube 计算 Buf A 时，MTE2 并行 Prefetch 下一块到 Buf B。
 
 与此同时，两个 Vector 核把上一块留在 `UB` 里的 Softmax 归约掩盖在当前矩阵乘窗口内执行，即 **CV 重叠**。这里还要兼顾硬件队列深度：昇腾 950 的单个 Vector 核最多只允许 16 个未完成 `MTE2` 请求。配成 `1C2V` 双向量核，正是为了分摊搬运发射、反量化与 `FixPipe` 迁出压力[^flashmla-ascend]。图 3 用交互时序演示了这两套微架构掩盖延迟的过程。
 
@@ -89,7 +89,7 @@ $$
 
 这张金字塔里有两个细节直接决定代码能否跑出纸面带宽。第一处要分清硬件自动管理的 L1/L2 Cache 与软件显式管理的片上暂存。在 GPU 上，SMEM 与 L1 共用同一片 256 KB 物理 SRAM，L1 由硬件按局部性透明缓存，生命周期不受程序控制。
 
-SMEM 则由程序员按 Thread Block 显式申请管理，并组织成 32 个并行存储 **Bank（存储体）**。若同一 Warp 内多个线程同拍访问同一 Bank 的不同地址，硬件只能串行化，即 **Bank Conflict（存储体冲突）**。高吞吐 Kernel 常通过 **Swizzling（异或地址交错重排）**打散地址，多线程同读同一地址则会触发硬件广播而不冲突。
+SMEM 则由程序员按 Thread Block 显式申请管理，并组织成 32 个并行存储 **Bank（存储体）**。若同一 Warp 内多个线程在同一时钟周期访问同一 Bank 的不同地址，硬件只能串行化，即 **Bank Conflict（存储体冲突）**。高吞吐 Kernel 常通过 **Swizzling（异或地址交错重排）**打散地址，多线程同读同一地址则会触发硬件广播而不冲突。
 
 昇腾 AI Core 内部没有透明的硬件 L1 Cache。所有在 Vector 中参与非线性运算的数据，都必须提前算好字节数并向 192 KB `UB` 申请槽位。只要内循环常驻的浮点中间张量超出余量，编译或运行时就会直接报 `UB overflow` 错误[^ascend-rope]。
 
@@ -120,11 +120,11 @@ NVIDIA Tensor Core 历经三代演进，早期在 Ampere 上采用 Warp 级指�
 
 对照图 5 下方的内存重排，双平台在形状对齐与片上排布上分歧明显。NVIDIA Tensor Core 依托 `TMA` 读取行或列主序的 **ND（N-Dimensional，标准多维）**张量。硬件要求指针与跨步对齐到 16 字节，且矩阵维整除 `m16n8k16` 等分块。数据进入 SMEM 后，再通过 Swizzle 重排躲避 32-Bank 冲突。
 
-昇腾 Cube 单元则要求权重采用 **`FRACTAL_NZ`（16×16 Z 字形分形布局）**，推理引擎通常在加载权重时就把 `FRACTAL_ND` 离线重排为 16×16 连续分形块[^ascend-nz]。前向时把矩阵 $M$ 维凑够 64，Ascend 950 就能以 4096 次 **FMA（Fused Multiply-Add，融合乘加）**/周期吃满 Cube 阵列。若关闭 **HF32（High-Precision Float32，19 比特高速融合浮点）**模式，算力则会退回慢速精确路径[^flashmla-ascend]。
+昇腾 Cube 单元则要求权重采用 **`FRACTAL_NZ`（16×16 Z 字形分形布局）**，推理引擎通常在加载权重时就把 `FRACTAL_ND` 离线重排为 16×16 连续分形块[^ascend-nz]。前向时把矩阵 $M$ 维凑够 64，Ascend 950 就能以每周期 4096 次 **FMA（Fused Multiply-Add，融合乘加）**跑满 Cube 阵列。若关闭 **HF32（High-Precision Float32，19 比特高速融合浮点）**模式，算力则会退回慢速精确路径[^flashmla-ascend]。
 
 更深层的分水岭落在硬件代际的非对称缩放上。Blackwell B200 将矩阵乘算力再次倍增，但 **MUFU（Multi-Function Unit，特殊函数单元）**的指数吞吐仍停在每周期 16 次，SMEM 读带宽也停在每周期 128 字节。为此 GPU 专门引入 256 KB **TMEM（Tensor Memory，张量内存）**接管巨型累加器，为寄存器减压[^fa4-paper]。
 
-昇腾 AI Core 的 FP32 累加结果存放在 256 KB `L0C` 缓冲内。硬件上 `L0C` 只支持作下一拍 **MMAD（Matrix Multiply-Add，Cube 矩阵乘累加指令）**的累加器，或经 `FixPipe` 单向迁出。它无法像 GPU 寄存器那样就地乘以标量系数[^flashmla-ascend]。遇到在线 Softmax 等需要动态重缩放的场景，必须由 `FixPipe` 迁往 `UB`，再由双 Vector 核并肩分摊归约与重缩放带宽。
+昇腾 AI Core 的 FP32 累加结果存放在 256 KB `L0C` 缓冲内。硬件上 `L0C` 只支持作下一个流水步 **MMAD（Matrix Multiply-Add，Cube 矩阵乘累加指令）**的累加器，或经 `FixPipe` 单向迁出。它无法像 GPU 寄存器那样就地乘以标量系数[^flashmla-ascend]。遇到在线 Softmax 等需要动态重缩放的场景，必须由 `FixPipe` 迁往 `UB`，再由双 Vector 核并肩分摊归约与重缩放带宽。
 
 ## 微架构定量建模与双端分发
 
@@ -223,16 +223,16 @@ class AscendSiluAndMul(SiluAndMul):
         return out
 ```
 
-| 微架构维度   | NVIDIA GPU SM             | 华为昇腾 DaVinci AI Core   | Kernel 工程影响                     |
-| :----------- | :------------------------ | :------------------------- | :---------------------------------- |
-| 并行执行单元 | 32 线程 SIMT Warp         | Scalar 派发 + `1C2V` 核组  | Warp 避免分支发散；NPU 避免流水空泡 |
-| 延迟隐藏手段 | 寄存器常驻高 Occupancy    | Ping-Pong 双缓冲 + CV 重叠 | 权衡大分块复用与片上缓冲深度        |
-| 片上缓冲管理 | SMEM + 硬件 L1/L2 Cache   | 显式 L1/L0 与 192 KB `UB`  | 防 32-Bank 冲突 / `UB` 溢出         |
-| 访存合并契约 | 32 字节 Sector 对齐       | BIU 源与目的双端连续合并   | 跨步直写拉低 L2 带宽，先经 UB 转置  |
-| 矩阵硬件引擎 | Tensor Core（MMA/WGMMA）  | Cube（16×16×16 MMAD）      | 需 `FRACTAL_NZ` 与 16 维对齐        |
-| 累加限制差异 | 寄存器 / B200 TMEM 重缩放 | `L0C` 不可就地乘标量       | 在线归并经 FixPipe 迁往 UB          |
+| 微架构维度   | NVIDIA GPU SM             | 华为昇腾 DaVinci AI Core   | Kernel 工程影响                       |
+| :----------- | :------------------------ | :------------------------- | :------------------------------------ |
+| 并行执行单元 | 32 线程 SIMT Warp         | Scalar 派发 + `1C2V` 核组  | Warp 避免分支发散；NPU 避免流水线气泡 |
+| 延迟隐藏手段 | 寄存器常驻高 Occupancy    | Ping-Pong 双缓冲 + CV 重叠 | 权衡大分块复用与片上缓冲深度          |
+| 片上缓冲管理 | SMEM + 硬件 L1/L2 Cache   | 显式 L1/L0 与 192 KB `UB`  | 防 32-Bank 冲突 / `UB` 溢出           |
+| 访存合并契约 | 32 字节 Sector 对齐       | BIU 源与目的双端连续合并   | 跨步直写拉低 L2 带宽，先经 UB 转置    |
+| 矩阵硬件引擎 | Tensor Core（MMA/WGMMA）  | Cube（16×16×16 MMAD）      | 需 `FRACTAL_NZ` 与 16 维对齐          |
+| 累加限制差异 | 寄存器 / B200 TMEM 重缩放 | `L0C` 不可就地乘标量       | 在线归并经 FixPipe 迁往 UB            |
 
-有了第一、二章铺好的“计算类型 + Roofline + 双硬件微架构”标尺，接下来我们把焦点收回到单层前向唯一打破 token 独立性的算子——自注意力。下一章[03 自注意力与 RoPE 旋转位置编码](../03-attention-and-rope/)将从零推演因果注意力与 RoPE，并实操如何围绕昇腾 192 KB `UB` 设计不溢出的旋转 Kernel。
+有了第一、二章铺好的“计算类型 + Roofline + 双硬件微架构”标尺，接下来我们把焦点收回到单层前向唯一打破 token 独立性的算子——自注意力。下一章[03 自注意力与 RoPE 旋转位置编码](../03-attention-and-rope/)将推导因果注意力与 RoPE，并演示如何围绕昇腾 192 KB `UB` 设计不溢出的旋转 Kernel。
 
 [^modular-gpu]: Modular LLM Inference Handbook，[GPU architecture](https://handbook.modular.com/kernel-optimization/gpu-architecture-fundamentals/)（`threads-warps-blocks`、`streaming-multiprocessors`、`gpu-memory`、`tensor-cores` 与 `kernel-optimization-for-llm-inference`）。对照抽象了执行模型与物理硬件解耦、Warp 调度延迟隐藏、32 字节 Sector 合并与 Tensor Core 激活契约框架。
 

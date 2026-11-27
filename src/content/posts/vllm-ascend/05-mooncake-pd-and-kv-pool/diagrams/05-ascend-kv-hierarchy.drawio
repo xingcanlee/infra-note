@@ -76,7 +76,7 @@
         <mxCell id="as_hbm" value="AscendStore 逐层缓冲&#xa;\(I + \min(B, R)\) 共享页&#xa;多逻辑层按槽位轮转复用" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#2f5783;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=6;fontFamily=Inter, Noto Sans SC;fontSize=11;fontColor=#1d1d1f;container=0;" vertex="1" parent="1">
           <mxGeometry x="144" y="344" width="168" height="80" as="geometry"/>
         </mxCell>
-        <mxCell id="as_dram" value="GVA / BlockKey 数据面&#xa;预填充边算边存与预取&#xa;与远端 D2H 共用复用门控" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#fbf2df;strokeColor=#7b5518;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=6;fontFamily=Inter, Noto Sans SC;fontSize=11;fontColor=#1d1d1f;container=0;" vertex="1" parent="1">
+        <mxCell id="as_dram" value="GVA / BlockKey 数据面&#xa;Prefill 边存边 Prefetch&#xa;与远端 D2H 共用复用门控" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#fbf2df;strokeColor=#7b5518;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=6;fontFamily=Inter, Noto Sans SC;fontSize=11;fontColor=#1d1d1f;container=0;" vertex="1" parent="1">
           <mxGeometry x="144" y="440" width="168" height="88" as="geometry"/>
         </mxCell>
         <mxCell id="as_pool" value="AscendStore 外部存储池&#xa;Memcache / MooncakeStore&#xa;跨实例全局前缀命中" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f5e9;strokeColor=#2c522d;strokeWidth=1.25;align=center;verticalAlign=middle;spacing=6;fontFamily=Inter, Noto Sans SC;fontSize=11;fontColor=#1d1d1f;container=0;" vertex="1" parent="1">

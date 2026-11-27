@@ -1,7 +1,7 @@
 import { useMemo } from 'react';
 import { Stage, toneFill, toneStroke, type Step } from 'astro-wisp/explainers';
 import { motion } from 'motion/react';
-import { BeatExplainer, RADIUS_SM, defaultBeats, type BeatSpec } from '@/explainers/kit';
+import { BeatExplainer, RADIUS_SM } from '@/explainers/kit';
 import ActiveFocusFrame from '@/explainers/kit/ActiveFocusFrame';
 import { MetricRow, SectionBox, type MetricItem } from '@/explainers/kit/MetricRow';
 import {
@@ -28,14 +28,13 @@ export interface SchedulerReq {
 export interface PagedSchedulerState {
   stepTag: string;
   formulaTex: string;
-  beats: BeatSpec[];
   tokenBudget: number;
   usedBudget: number;
   freeBlocks: number;
   sharedPrefixHits: number;
   blocks: SlotItem[];
   reqs: SchedulerReq[];
-  focusArea: 'pool' | 'prefix' | 'mixed' | 'preempt' | 'null';
+  focusArea: 'prefix' | 'hit' | 'preempt' | 'null';
   focusLabel: string;
   focusBadge: string;
 }
@@ -61,70 +60,12 @@ function makePool(overrides: Record<number, Partial<SlotItem>>): SlotItem[] {
 export function buildPagedSchedulerSteps(): Step<PagedSchedulerState>[] {
   const steps: Step<PagedSchedulerState>[] = [
     {
-      label: '初始化池',
-      duration: 4800,
-      state: {
-        stepTag: 'Init',
-        formulaTex:
-          '$B_{\\text{pool}} = 16,\\; B_0 = \\text{null\\_block},\\; |\\text{free}| = 15$',
-        beats: defaultBeats([
-          '划分 2x8 物理块池',
-          '检查就绪请求队列',
-          '保留 B0 作 null_block',
-          '统计 15 个可用块',
-        ]),
-        tokenBudget: 16,
-        usedBudget: 0,
-        freeBlocks: 15,
-        sharedPrefixHits: 0,
-        blocks: makePool({}),
-        reqs: [
-          {
-            id: 'req-a',
-            label: 'Req A',
-            phase: 'Idle',
-            status: 'waiting',
-            scheduledTokens: 0,
-            blockIds: [],
-          },
-          {
-            id: 'req-b',
-            label: 'Req B',
-            phase: 'Idle',
-            status: 'waiting',
-            scheduledTokens: 0,
-            blockIds: [],
-          },
-          {
-            id: 'req-c',
-            label: 'Req C',
-            phase: 'Idle',
-            status: 'waiting',
-            scheduledTokens: 0,
-            blockIds: [],
-          },
-        ],
-        focusArea: 'pool',
-        focusLabel: 'BlockPool 初始化：$B_0$ 保留为 null_block，可用 15 块',
-        focusBadge: 'null_block 保留',
-      },
-      caption:
-        '第 1 步：BlockPool 初始化 16 块（$B_0\\text{–}B_{15}$，每块容量 4 token）时先弹出 $B_0$ 作为永久保留的 null_block，其余 15 个物理块按 FIFO 进入 free_block_queue。',
-      focus: ['blk-0'],
-    },
-    {
-      label: '前缀入池',
+      label: '前缀入池映射',
       duration: 4800,
       state: {
         stepTag: 'Prefill + Cache',
         formulaTex:
-          '$\\text{Prefill}_A = 9\\text{ tok} \\Rightarrow B_1(\\text{0x9a}) + B_2 + B_3$',
-        beats: defaultBeats([
-          '出队分配 B1..B3',
-          '建立 Req A 页表映射',
-          '满块 B1 登记 0x9a',
-          '核算预算 9/16',
-        ]),
+          '$B_0 = \\text{null\\_block},\\; \\text{Prefill}_A = 9\\text{ tok} \\Rightarrow B_1(\\text{0x9a}) + B_2 + B_3$',
         tokenBudget: 16,
         usedBudget: 9,
         freeBlocks: 12,
@@ -162,26 +103,20 @@ export function buildPagedSchedulerSteps(): Step<PagedSchedulerState>[] {
           },
         ],
         focusArea: 'prefix',
-        focusLabel: 'Req A 写入系统前缀 $B_1$ (hash=0x9a, ref=1)',
+        focusLabel: '$B_0$ 保留为 null_block；Req A 写入系统前缀 $B_1$ (hash=0x9a, ref=1)',
         focusBadge: 'Prefix 登记 B1',
       },
       caption:
-        '第 2 步：Req A 完成 9 token Prefill（每块 4 token），消耗 $B_1\\text{–}B_3$；其中满块 $B_1$ 按前缀哈希 0x9a 登记进 Prefix Cache（ref_cnt=1）。',
+        '第 1 步（前缀入池映射）：16 块物理池保留 $B_0$ 为安全哨兵 null_block；Req A 完成 9 token 预填充，占用 $B_1\\text{–}B_3$ 并将满块 $B_1$ 按前缀哈希 0x9a 登记进 Prefix Cache（ref=1）。',
       focus: ['blk-1', 'blk-2', 'blk-3'],
     },
     {
-      label: '共享命中',
+      label: 'Prefix 共享命中',
       duration: 4800,
       state: {
         stepTag: 'Prefix Hit',
         formulaTex:
           '$\\text{hash}_B(0\\text{–}3)=\\text{0x9a} \\Rightarrow \\text{ref}(B_1): 1\\to 2$',
-        beats: defaultBeats([
-          '检视 B4 新分配块',
-          '连接 Req B 共享指针',
-          '聚焦 B1 零重算命中',
-          '统计前缀命中 +1',
-        ]),
         tokenBudget: 16,
         usedBudget: 3,
         freeBlocks: 11,
@@ -219,89 +154,23 @@ export function buildPagedSchedulerSteps(): Step<PagedSchedulerState>[] {
             blockIds: [],
           },
         ],
-        focusArea: 'prefix',
-        focusLabel: 'Req B 命中共享前缀 $B_1$ (ref=2)，零重复计算',
+        focusArea: 'hit',
+        focusLabel: 'Req B 命中共享前缀 $B_1$ (ref=2)，零重复计算并仅新配 $B_4$',
         focusBadge: '共享复用 ref=2',
       },
       caption:
-        '第 3 步：Req B 共享相同系统提示，KVCacheManager 直接复用指向 $B_1$（ref_cnt=2）并跳过其 Prefill，仅需分配 $B_4$ 写入后 2 个新 token。',
+        '第 2 步（Prefix 共享命中）：Req B 共享相同系统提示，KVCacheManager 直接将页表指向 $B_1$（ref=2）跳过预填充，仅从空闲队列分配 $B_4$ 写入后 2 个新 token。',
       focus: ['blk-1', 'blk-4'],
     },
     {
-      label: '混排打满',
+      label: '混批打满与抢占',
       duration: 4800,
       state: {
-        stepTag: 'Unified Batch',
-        formulaTex: '$\\sum \\text{num\\_scheduled\\_tokens} = 1_A + 1_B + 14_C = 16$',
-        beats: defaultBeats([
-          '分配 B5..B8 切片块',
-          '双向建立 A/B/C 页表',
-          '框选 Chunked Prefill',
-          '预算满载 16/16',
-        ]),
+        stepTag: 'Mix + Preempt',
+        formulaTex:
+          '$\\sum \\text{sched} = 1_A + 1_B + 14_C = 16 \\;\\xrightarrow{|\\text{free}|=0}\\; \\text{Evict(Req C)} \\Rightarrow +4\\text{ free}$',
         tokenBudget: 16,
         usedBudget: 16,
-        freeBlocks: 7,
-        sharedPrefixHits: 1,
-        blocks: makePool({
-          1: { sub: '0x9a·r2', topTag: 'HIT', tone: 'highlight', status: 'selected' },
-          2: { sub: 'A[4..7]', tone: 'active', status: 'active' },
-          3: { sub: 'A[8..10]', tone: 'active', status: 'active' },
-          4: { sub: 'B[4..6]', tone: 'active', status: 'active' },
-          5: { sub: 'C[0..3]', tone: 'highlight', status: 'active' },
-          6: { sub: 'C[4..7]', tone: 'highlight', status: 'active' },
-          7: { sub: 'C[8..11]', tone: 'highlight', status: 'active' },
-          8: { sub: 'C12-13', tone: 'highlight', status: 'active' },
-        }),
-        reqs: [
-          {
-            id: 'req-a',
-            label: 'Req A',
-            phase: 'Decode +1',
-            status: 'running',
-            scheduledTokens: 1,
-            blockIds: [1, 2, 3],
-          },
-          {
-            id: 'req-b',
-            label: 'Req B',
-            phase: 'Decode +1',
-            status: 'running',
-            scheduledTokens: 1,
-            blockIds: [1, 4],
-          },
-          {
-            id: 'req-c',
-            label: 'Req C',
-            phase: 'Chunk +14',
-            status: 'running',
-            scheduledTokens: 14,
-            blockIds: [5, 6, 7, 8],
-          },
-        ],
-        focusArea: 'mixed',
-        focusLabel: 'V1 无阶段墙：同一步配额内混排 Decode (+1/+1) 与 Chunked Prefill (+14)',
-        focusBadge: 'Chunked B5..B7 (+B8)',
-      },
-      caption:
-        '第 4 步：V1 消除 Prefill/Decode 阶段墙，用统一字典 num_scheduled_tokens 将 Req A（1）、Req B（1）和 Req C 切片（14）打满 16 token 预算。',
-      focus: ['blk-5', 'blk-6', 'blk-7', 'blk-8'],
-    },
-    {
-      label: '满池抢占',
-      duration: 4800,
-      state: {
-        stepTag: 'Preemption',
-        formulaTex:
-          '$|\\text{free}| = 0 \\;\\Longrightarrow\\; \\text{Evict(Req C)} \\Rightarrow +4\\text{ free}$',
-        beats: defaultBeats([
-          'B9..B15 耗尽空闲池',
-          '保留 A/B 并冻结 Req C',
-          '标红回收 B5..B8',
-          '确认空闲池回升到 4',
-        ]),
-        tokenBudget: 16,
-        usedBudget: 2,
         freeBlocks: 4,
         sharedPrefixHits: 1,
         blocks: makePool({
@@ -349,25 +218,19 @@ export function buildPagedSchedulerSteps(): Step<PagedSchedulerState>[] {
           },
         ],
         focusArea: 'preempt',
-        focusLabel: '空闲块归零触发 LIFO 抢占：驱逐 Req C 释放 $B_5\\text{–}B_8$',
-        focusBadge: 'LIFO 驱逐 B5..B7 (+B8)',
+        focusLabel: '统一配额打满 $16$ tok 后池枯竭，LIFO 抢占 Req C 回收 $B_5\\text{–}B_8$',
+        focusBadge: 'LIFO 驱逐 B5..B8',
       },
       caption:
-        '第 5 步：突发请求占满 $B_9\\text{–}B_{15}$ 后，新槽位分配失败；调度器按抢占策略驱逐低优先级的 Req C，回收 $B_5\\text{–}B_8$ 保障 Req A/B 推进（$B_3/B_4$ 各自填满第 4 槽）。',
+        '第 3 步（混批打满与抢占）：V1 用 num_scheduled_tokens 将 Decode（A/B 各 +1）与 Chunked Prefill（C +14）混排打满 16 预算；当 $B_9\\text{–}B_{15}$ 耗尽空闲池时，LIFO 抢占驱逐 Req C 并回收 $B_5\\text{–}B_8$。',
       focus: ['blk-5', 'blk-6', 'blk-7', 'blk-8'],
     },
     {
-      label: '空块防护',
+      label: '零号空块防护',
       duration: 4800,
       state: {
         stepTag: 'Null Guard',
         formulaTex: '$\\text{Dummy / PAD} \\to B_0\\;(\\text{slot\\_mapping} = -1)$',
-        beats: defaultBeats([
-          'Req A 复用 B5 续写',
-          'Dummy 槽连向 B0 安全块',
-          '锁定 B0 负槽跳过写',
-          '核算有效与空闲状态',
-        ]),
         tokenBudget: 16,
         usedBudget: 3,
         freeBlocks: 3,
@@ -415,11 +278,11 @@ export function buildPagedSchedulerSteps(): Step<PagedSchedulerState>[] {
           },
         ],
         focusArea: 'null',
-        focusLabel: '占位/被驱逐请求指回 $B_0$ (null_block) 并写 PAD=-1',
+        focusLabel: '占位/被驱逐请求全部指向 $B_0$ (null_block) 并写入 PAD=-1',
         focusBadge: 'PAD_SLOT_ID 安全哨兵',
       },
       caption:
-        '第 6 步：Req A 申请被抢占腾出的 $B_5$ 写入第 13 个 token，同时 Graph 补齐的 Dummy request 全部指向 $B_0$（null_block）并将 slot_mapping 置为 $-1$；写入算子遇到负槽直接跳过。',
+        '第 4 步（零号空块防护）：Req A 申请被释放的 $B_5$ 写入第 13 个 token，同时静态图补齐的 Dummy request 全部指向 $B_0$（null_block）并将 slot_mapping 置为 $-1$，KV 写入算子遇到负槽直接跳过。',
       focus: ['blk-0'],
     },
   ];
@@ -429,7 +292,6 @@ export function buildPagedSchedulerSteps(): Step<PagedSchedulerState>[] {
   return steps;
 }
 
-/* 三明治分层布局：B0..B7 在上，请求块表在正中，B8..B15 在下，确保连线绝不穿越任何物理块 */
 const POOL_X = 24;
 const POOL_SLOT_W = 72;
 const POOL_GAP = 8;
@@ -457,7 +319,7 @@ function reqCenterX(reqIdx: number): number {
 }
 
 function focusRect(area: PagedSchedulerState['focusArea']) {
-  if (area === 'pool' || area === 'null') {
+  if (area === 'null') {
     return {
       x: POOL_X - 6,
       y: POOL_ROW0_Y - 14,
@@ -466,7 +328,7 @@ function focusRect(area: PagedSchedulerState['focusArea']) {
       tone: 'mask' as const,
     };
   }
-  if (area === 'prefix') {
+  if (area === 'prefix' || area === 'hit') {
     return {
       x: POOL_X + (POOL_SLOT_W + POOL_GAP) - 6,
       y: POOL_ROW0_Y - 14,
@@ -478,9 +340,9 @@ function focusRect(area: PagedSchedulerState['focusArea']) {
   return {
     x: POOL_X + 5 * (POOL_SLOT_W + POOL_GAP) - 6,
     y: POOL_ROW0_Y - 14,
-    w: 3 * POOL_SLOT_W + 2 * POOL_GAP + 12,
+    w: 4 * POOL_SLOT_W + 3 * POOL_GAP + 12,
     h: POOL_SLOT_H + 20,
-    tone: (area === 'preempt' ? 'error' : 'highlight') as 'error' | 'highlight',
+    tone: 'error' as const,
   };
 }
 
@@ -498,17 +360,15 @@ export default function PagedSchedulerExplainer({
       label="vLLM V1 PagedAttention 调度器交互图"
       wide
       stageMinHeight={516}
-      getBeats={(step) => step.state.beats}
       getFormula={(step) => step.state.formulaTex}
     >
-      {(step, { beat, dotToken }) => {
+      {(step, { dotToken }) => {
         const s = step.state;
         const row0Blocks = s.blocks.slice(0, 8).map((blk, i) => {
           const coveredByFrame =
-            beat >= 2 &&
-            ((i === 0 && (s.focusArea === 'pool' || s.focusArea === 'null')) ||
-              (i === 1 && s.focusArea === 'prefix') ||
-              (i >= 5 && i <= 7 && (s.focusArea === 'mixed' || s.focusArea === 'preempt')));
+            (i === 0 && s.focusArea === 'null') ||
+            (i === 1 && (s.focusArea === 'prefix' || s.focusArea === 'hit')) ||
+            (i >= 5 && i <= 8 && s.focusArea === 'preempt');
           return coveredByFrame ? { ...blk, topTag: undefined } : blk;
         });
         const row1Blocks = s.blocks.slice(8, 16);
@@ -520,7 +380,7 @@ export default function PagedSchedulerExplainer({
             const isUpper = blkIdx < 8;
             const isShared = blkIdx === 1;
             const isNull = blkIdx === 0;
-            const spread = total > 1 ? (aIdx - (total - 1) / 2) * 26 : 0;
+            const spread = total > 1 ? (aIdx - (total - 1) / 2) * 24 : 0;
             const fromY = isUpper ? REQ_BOX_Y - 2 : REQ_BOX_Y + REQ_BOX_H + 2;
             const arcOffset = !isUpper
               ? 12
@@ -544,8 +404,9 @@ export default function PagedSchedulerExplainer({
               tone: isNull ? 'mask' : isShared ? 'highlight' : rIdx === 2 ? 'highlight' : 'active',
               active: req.status === 'running' || req.status === 'pad',
               dashed: isNull || isShared,
-              visible: beat >= 1,
-              draw: beat >= 1,
+              flow: req.status === 'running' || req.status === 'pad',
+              visible: true,
+              draw: true,
               arcOffset,
               label: isNull ? 'slot=-1' : isShared && rIdx === 1 ? 'shared' : undefined,
             };
@@ -590,7 +451,9 @@ export default function PagedSchedulerExplainer({
               y={8}
               w={STAGE_W - 24}
               h={86}
-              title="Physical KV Block Pool · 上半区 B0–B7 (4 tok/块，$B_0 = \text{null\_block}$)"
+              title={
+                'Physical KV Block Pool · 上半区 B0–B7 (4 tok/块，$B_0 = \\text{null\\_block}$)'
+              }
               tone="neutral"
               dashed
             />
@@ -610,18 +473,17 @@ export default function PagedSchedulerExplainer({
               h={frame.h}
               tone={frame.tone}
               label={s.focusBadge}
-              visible={beat >= 2}
-              dashed={s.focusArea === 'pool' || s.focusArea === 'null'}
+              visible={true}
+              dashed={s.focusArea === 'null'}
             />
 
-            {/* 中间区：Request Block Tables（上连 B0..B7，下连 B8..B15，零穿块） */}
+            {/* 中间区：Request Block Tables */}
             <SectionBox
               x={12}
               y={144}
               w={STAGE_W - 24}
               h={68}
               tone={s.focusArea === 'preempt' ? 'error' : 'neutral'}
-              dimmed={beat < 1}
               dashed
             />
             {s.reqs.map((req, idx) => {
@@ -661,7 +523,6 @@ export default function PagedSchedulerExplainer({
                   slotW={REQ_BOX_W}
                   slotH={REQ_BOX_H}
                   gap={0}
-                  dimmed={beat < 1}
                   fontSize={11}
                 />
               );
@@ -679,10 +540,10 @@ export default function PagedSchedulerExplainer({
               fontSize={10.5}
             />
 
-            {/* 页表映射弧线：完全运行在上下空白走廊，绝不穿越任何物理块 */}
-            <PointerArcs arcs={arcs} dotToken={beat >= 1 ? dotToken : 0} />
+            {/* 页表映射弧线 */}
+            <PointerArcs arcs={arcs} dotToken={dotToken} />
 
-            {/* 动态 token_budget 配额条 + 状态说明 */}
+            {/* 动态 token_budget 配额条 */}
             <g>
               <SvgRichLabel
                 x={14}
@@ -690,7 +551,7 @@ export default function PagedSchedulerExplainer({
                 width={STAGE_W - 28}
                 anchor="start"
                 fontSize={10.5}
-                color="var(--wisp-fg-muted)"
+                color="var(--wisp-muted)"
                 text={`Request Block Tables · ${s.focusLabel}`}
               />
               <rect
@@ -702,36 +563,29 @@ export default function PagedSchedulerExplainer({
                 fill="var(--wisp-surface)"
                 stroke="var(--wisp-border)"
               />
-              {usedW > 0 && (
-                <motion.g
-                  initial={false}
-                  animate={{ scaleX: beat >= 3 ? 1 : 0.45 }}
-                  style={{ transformOrigin: '14px 346px' }}
-                  transition={MORPH_SPRING}
-                >
-                  <rect
-                    x={14}
-                    y={338}
-                    width={usedW}
-                    height={16}
-                    rx={RADIUS_SM}
-                    fill={
-                      s.usedBudget === s.tokenBudget
-                        ? toneFill('highlight')
-                        : s.focusArea === 'preempt'
-                          ? toneFill('error')
-                          : toneFill('active')
-                    }
-                    stroke={
-                      s.usedBudget === s.tokenBudget
-                        ? toneStroke('highlight')
-                        : s.focusArea === 'preempt'
-                          ? toneStroke('error')
-                          : toneStroke('active')
-                    }
-                  />
-                </motion.g>
-              )}
+              <motion.rect
+                initial={false}
+                animate={{ width: Math.max(0, usedW) }}
+                transition={MORPH_SPRING}
+                x={14}
+                y={338}
+                height={16}
+                rx={RADIUS_SM}
+                fill={
+                  s.usedBudget === s.tokenBudget
+                    ? toneFill('highlight')
+                    : s.focusArea === 'preempt'
+                      ? toneFill('error')
+                      : toneFill('active')
+                }
+                stroke={
+                  s.usedBudget === s.tokenBudget
+                    ? toneStroke('highlight')
+                    : s.focusArea === 'preempt'
+                      ? toneStroke('error')
+                      : toneStroke('active')
+                }
+              />
               <text
                 x={STAGE_W / 2}
                 y={349.5}
@@ -745,14 +599,7 @@ export default function PagedSchedulerExplainer({
               </text>
             </g>
 
-            <MetricRow
-              x={12}
-              y={368}
-              w={STAGE_W - 24}
-              h={42}
-              revealed={beat >= 3}
-              metrics={metrics}
-            />
+            <MetricRow x={12} y={368} w={STAGE_W - 24} h={42} metrics={metrics} />
           </Stage>
         );
       }}

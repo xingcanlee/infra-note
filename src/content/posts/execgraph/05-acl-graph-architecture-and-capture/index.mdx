@@ -1,6 +1,6 @@
 ---
 title: '05 ACL Graph 录制架构：影子流与参数备份'
-description: '昇腾 NPU 受制于易变参数区与 1024 物理队列池，静态图不能直接照搬 CUDA 做法。本文面向零基础开发者，拆解影子模型流录制、D2D 参数备份、EndGraph Notify 握手与多流校验源码。'
+description: '昇腾 NPU 受制于易变参数区与 1024 物理队列池，静态图不能直接照搬 CUDA 做法。本文拆解影子模型流录制、D2D 参数备份、EndGraph Notify 握手与多流校验源码。'
 series: { id: execgraph, order: 6 }
 pubDate: 2026-10-20
 draft: false
@@ -19,7 +19,7 @@ import AclGraphShadowStreamExplainer from './explainers/aclgraph-shadow-stream';
 
 ## 阶段取舍：Prefill 与 Decode
 
-和 GPU 一样，昇腾生产推理也把静态图严格限制在 Decode 阶段。以 40 层 **DeepSeek-V4.1-Flash** 为例，每层含约 28 个算子，再加上第 1、14 层的异步 Engram 注入，单步共需提交超过 1120 次算子[^v41-cap]。
+和 GPU 一样，昇腾生产推理也将静态图限制在 Decode 阶段。以 40 层 **DeepSeek-V4.1-Flash** 为例，每层含约 28 个算子，再加上第 1、14 层的异步 Engram 注入，单步共需提交超过 1120 次算子[^v41-cap]。
 
 小批量解码时单算子只跑几微秒，主机下发算子时间远大于设备计算时间。Prefill 阶段长序列计算饱和且长度剧变，保持 Eager 更省 Padding 与图捕获开销。请求进入 Decode 后，框架再按 `CUDAGraphMode` 切入 ACL Graph[^cann-acl-api]。
 
@@ -40,24 +40,24 @@ ACL Graph 将静态图生命周期拆成隔离的两个阶段。**Capture（图�
 | 动作 5   | 严守调用序列与跨流先后关系 | 按原始顺序追加进逻辑流任务表                           |
 | 动作 6   | 捕获期不实际下发硬件执行   | `IsSoftwareSqEnable` 只记录不真正下发硬件              |
 
-其中最容易被初学者忽略的是动作 2。昇腾主机发算子时，会把输入地址、张量维度等元数据放进 **`comm.args`** 参数结构体。这类结构体默认落在主机与设备共用的临时缓冲区里，下一轮算子一旦复写这块内存，静态图就会读到错位维度。
+动作 2 是静态图正确重放的关键前提。昇腾主机发算子时，会把输入地址、张量维度等元数据放进 **`comm.args`** 参数结构体。这类结构体默认落在主机与设备共用的临时缓冲区里，下一轮算子一旦复写这块内存，静态图就会读到错位维度。
 
-因此，`CaptureModel::CopyTaskArgsDeviceBuffer` 会申请持久化设备显存[^args-backup]。随后发出一笔 **D2D（Device-to-Device，设备显存内部高速拷贝）**，把每份参数快照锁进影子流专属副本区，彻底与图外内存隔离。
+因此，`CaptureModel::CopyTaskArgsDeviceBuffer` 会申请持久化设备显存[^args-backup]。随后发出一笔 **D2D（Device-to-Device，设备显存内部高速拷贝）**，把每份参数快照锁进影子流专属副本区，完全与图外内存隔离。
 
 到了 **Replay 阶段**，流程简化为两步[^cap-model]。初次调用 `aclmdlRIExecuteAsync` 时，`PreModelExecute` 触发 `BuildSqCq` 延迟申请物理队列并分配硬同步信号 **`Notify`（芯片内部硬件同步信号）**。此后日常重放只需向用户流塞一条触发指令，调度器就会顺着影子队列连续跑完上千算子。
 
 ## 单流影子流与 EndGraph 握手
 
-很多开发者初次听到“影子流”，会以为硬件另外开了一条神秘算力核心。其实在逻辑上，它是专门承载“静态图内部任务链”的隔离通道，让用户流里图外与图内的算子互不干扰。图 2 用 6 步交互推演了这套重定向与 D2D 防覆盖效果。
+逻辑上，“影子流”是专门承载静态图内部任务链的隔离通道，使主用户流中图外与图内算子互不干扰。图 2 分阶段展示了这套重定向与 D2D 参数备份流程。
 
 <AclGraphShadowStreamExplainer
   client:visible
-  title="图 2：ACL Graph 影子模型流重定向、D2D 参数备份与 EndGraph Notify 握手 6 步推演"
+  title="图 2：ACL Graph 影子模型流重定向、D2D 参数备份与 EndGraph Notify 握手时序对比"
 />
 
 单流重放的关键在于收尾同步。调用 `aclmdlRICaptureEnd` 结束捕获时，Runtime 会在影子流末端追加 EndGraph 通知，对应硬件任务 `TS_TASK_TYPE_NOTIFY_RECORD`。随后冻结图句柄 `modelRI`[^cap-model]。
 
-正式推理重放时，用户流 `Stream 1` 会在 `task 3` 之后紧贴写入 `model exe` 与 `notify wait` 两条轻指令，时序见图 3。前者点燃影子流全速执行，后者让硬件在芯片内挂起用户流，直到影子流算完发回 `Notify` 才继续后面的 `task n`。全过程都在设备内部完成，不惊动 CPU。
+正式推理重放时，用户流 `Stream 1` 会在 `task 3` 之后紧贴写入 `model exe` 与 `notify wait` 两条轻指令，时序见图 3。前者触发影子流开始执行，后者让硬件在芯片内挂起用户流，直到影子流算完发回 `Notify` 才继续后面的 `task n`。全过程都在设备内部完成，不惊动 CPU。
 
 ```mermaid caption="图 3：Replay 阶段用户流下发 model exe 与 notify wait 触发影子流硬件握手时序"
 sequenceDiagram
@@ -73,7 +73,7 @@ sequenceDiagram
 
 ## 多流汇合校验与捕获模式
 
-实际推理常要开启副流做通信或 Engram 异步预取，与主流构成并行的 **Fork-Join** 拓扑。在 CANN Runtime 中，多流捕获必须通过原生 **Event Record / Wait** 形成有始有终的封闭圈，标准写法与官方例程一致[^model-ri-doc]：
+实际推理常要开启副流做通信或 Engram 异步 Prefetch，与主流构成并行的 **Fork-Join** 拓扑。在 CANN Runtime 中，多流捕获必须通过原生 **Event Record / Wait** 形成完整的 Fork-Join 闭合拓扑，标准写法与官方例程一致[^model-ri-doc]：
 
 ```cpp
 // 1. 从 stream1 开启全局捕获
@@ -95,7 +95,7 @@ CHECK_ERROR(aclrtStreamWaitEvent(stream1, event2));
 CHECK_ERROR(aclmdlRICaptureEnd(stream1, &modelRI));
 ```
 
-到了 `aclmdlRICaptureEnd`，`CaptureSession::CheckCaptureModelValidity` 会强制核对两条铁律[^cap-session]。只要有任何旁路流没通过反向事件汇回原点流 `origCaptureStream`，或者误用了图间通信用的 `RT_EVENT_EXTERNAL`，系统就会立刻拒绝生成静态图。此时报错 **`RT_ERROR_STREAM_UNJOINED`**，对应十六进制错误码 `0x0703001F` 与日志标记 EE1017。
+到了 `aclmdlRICaptureEnd`，`CaptureSession::CheckCaptureModelValidity` 会强制核对两条约束[^cap-session]。只要有任何旁路流没通过反向事件汇回原点流 `origCaptureStream`，或者误用了图间通信用的 `RT_EVENT_EXTERNAL`，系统就会立刻拒绝生成静态图。此时报错 **`RT_ERROR_STREAM_UNJOINED`**，对应十六进制错误码 `0x0703001F` 与日志标记 EE1017。
 
 为了配合多线程调度（如后台监控线程），`aclmdlRICaptureBegin` 提供三种与 CUDA 语义一致的安全模式。捕获期间还可用 `aclmdlRICaptureThreadExchangeMode` 动态切换：
 
@@ -227,7 +227,7 @@ print(f"[Replay #2] {sess.execute_async('stream_1')}")
 [Replay #2] ['stream_1<-model_exe(trigger shadow_model_s0)', 'stream_1<-notify_wait(EndGraph)']
 ```
 
-至此我们掌握了静态图的“静止态”。但长序列 KV 增长会改变 Attention 的 Host Tiling 切分参数，投机解码又需要循环跳出控制流。[第 6 章：ACL Graph 动态更新：参数槽位与条件子图](../06-acl-graph-task-update-and-conditional-subgraph/)将说明如何在静态骨架内部“原地更新参数槽位”并下沉条件跳转。
+至此我们掌握了静态图的捕获与基础重放机制。但长序列 KV 增长会改变 Attention 的 Host Tiling 切分参数，投机解码又需要循环跳出控制流。[第 6 章：ACL Graph 动态更新：参数槽位与条件子图](../06-acl-graph-task-update-and-conditional-subgraph/)将说明如何在静态骨架内部“原地更新参数槽位”并下沉条件跳转。
 
 [^cann-acl-api]: 参阅 `cann/runtime`（提交 `1954820a`）文档 `docs/zh/api_ref/15_model_running_instance_management.md`，完整说明 `aclmdlRICaptureBegin`、`aclmdlRICaptureEnd` 与 `aclmdlRIExecuteAsync` 约束。
 
@@ -241,4 +241,4 @@ print(f"[Replay #2] {sess.execute_async('stream_1')}")
 
 [^model-ri-doc]: 参阅 `cann/runtime`（提交 `1954820a`）示例 `example/2_advanced_features/model_ri/0_simple_model/main.cpp` 与多流捕获例程。
 
-[^v41-cap]: DeepSeek-V4.1-Flash 40 层 CED 与异步 Engram 在昇腾生产栈的算子分布见本站[10 串珠成链：V4.1 单步全链路与双硬件协同](../../deepseek/10-architecture-synthesis/)。
+[^v41-cap]: DeepSeek-V4.1-Flash 40 层 CED 与异步 Engram 在昇腾生产栈的算子分布见本站[10 全链路整合：V4.1 单步执行与双硬件协同](../../deepseek/10-architecture-synthesis/)。

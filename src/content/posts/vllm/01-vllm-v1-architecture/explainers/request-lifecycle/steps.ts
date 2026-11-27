@@ -1,8 +1,7 @@
 import type { Step, Tone } from 'astro-wisp/explainers';
-import type { BeatSpec } from '@/explainers/kit/motion';
-export { MANIM_EASE, MORPH_SPRING, type BeatSpec } from '@/explainers/kit/motion';
+export { MANIM_EASE, MORPH_SPRING } from '@/explainers/kit/motion';
 
-export type LifecyclePhase = 'tokenize' | 'pack' | 'ipc' | 'schedule' | 'worker' | 'stream';
+export type LifecyclePhase = 'tokenize_pack' | 'ipc' | 'schedule_worker' | 'stream';
 
 export type ModeKey = 'v1' | 'single';
 
@@ -15,14 +14,17 @@ export interface TokenCell {
 export interface LifecycleStepState {
   phase: LifecyclePhase;
   stepNum: number;
-  activeTier: 'frontend' | 'ipc' | 'core' | 'worker';
+  activeCol: 'api' | 'core' | 'worker';
   direction: 'forward' | 'return';
   formulaTex: string;
-  v1StepMs: number;
-  singleStepMs: number;
-  gpuStallMs: number;
+  tokenBadge: string;
+  tokenPos: { x: number; y: number };
+  focusRect: { x: number; y: number; w: number; h: number };
+  ipcForwardActive: boolean;
+  rpcForwardActive: boolean;
+  rpcReturnActive: boolean;
+  ipcReturnActive: boolean;
   payloadSummary: string;
-  activeDetail: string;
   tone: Tone;
 }
 
@@ -39,45 +41,6 @@ export const OUTPUT_TOKENS: readonly TokenCell[] = [
   { idx: 0, text: ' world', id: 9906 },
   { idx: 1, text: '.', id: 0 },
 ];
-
-export const BEAT_SCHEDULES: Record<LifecyclePhase, readonly BeatSpec[]> = {
-  tokenize: [
-    { at: 0, label: 'HTTP 请求抵达' },
-    { at: 750, label: '卸载至线程池' },
-    { at: 1550, label: '切出 4 枚词元' },
-    { at: 2400, label: '生成输入校验' },
-  ],
-  pack: [
-    { at: 0, label: '构造 Request 结构体' },
-    { at: 800, label: '转成 int32 ndarray' },
-    { at: 1650, label: '计算 16 B 连续载荷' },
-    { at: 2550, label: 'msgspec 编码就绪' },
-  ],
-  ipc: [
-    { at: 0, label: 'ROUTER 发出多帧' },
-    { at: 800, label: 'DEALER 后台收帧' },
-    { at: 1650, label: '零拷贝解码视图' },
-    { at: 2550, label: '投递入 input_queue' },
-  ],
-  schedule: [
-    { at: 0, label: '主循环取走请求' },
-    { at: 850, label: '统一 token_budget 配额' },
-    { at: 1750, label: '分配 KV 物理块' },
-    { at: 2650, label: 'RPC 派发执行批' },
-  ],
-  worker: [
-    { at: 0, label: 'ModelRunner 备批' },
-    { at: 850, label: '1/16 分片前向计算' },
-    { at: 1750, label: '采样产出 9906' },
-    { at: 2650, label: '写回 output_queue' },
-  ],
-  stream: [
-    { at: 0, label: 'PUSH 回传输出帧' },
-    { at: 800, label: 'PULL 唤醒输出协程' },
-    { at: 1650, label: 'DecodeStream 增量拼词' },
-    { at: 2550, label: 'SSE 推送 “ world”' },
-  ],
-};
 
 export const MODE_SPECS: Record<
   ModeKey,
@@ -102,122 +65,94 @@ export const MODE_SPECS: Record<
 export function buildRequestLifecycleSteps(): Step<LifecycleStepState>[] {
   return [
     {
-      label: 'HTTP 与分词',
-      duration: 5000,
+      label: 'HTTP 分词打包',
+      duration: 4800,
       caption:
-        'FastAPI 收到提示词 “Hello vLLM” 后，AsyncLLM 将阻塞的 BPE 分词卸载至 renderer 线程池，切出长度 $L_{\\text{in}} = 4$ 的词元序列 $[15496, 2159, 44, 151645]$，主事件循环保持非阻塞。',
+        'FastAPI 收到提示词 “Hello vLLM” 后，将阻塞的 BPE 分词卸载至 renderer 线程池切出 $[15496, 2159, 44, 151645]$，并构造关闭 GC 的 EngineCoreRequest 与 16 B 连续 int32 ndarray。',
       state: {
-        phase: 'tokenize',
+        phase: 'tokenize_pack',
         stepNum: 1,
-        activeTier: 'frontend',
+        activeCol: 'api',
         direction: 'forward',
         formulaTex:
-          '$\\text{"Hello vLLM"} \\;\\xrightarrow{\\text{Tokenizer}}\\;[15496,\\; 2159,\\; 44,\\; 151645],\\; L_{\\text{in}}=4$',
-        v1StepMs: 3,
-        singleStepMs: 3,
-        gpuStallMs: 0,
-        payloadSummary: 'prompt_token_ids = [15496, 2159, 44, 151645]',
-        activeDetail: 'InputProcessor 在线程池完成分词与参数校验',
+          '$\\text{"Hello vLLM"} \\;\\xrightarrow{\\text{Tokenizer}}\\; 4 \\times \\text{int32} = 16\\text{ B OOB}$',
+        tokenBadge: '16 B ndarray',
+        tokenPos: { x: 109, y: 118 },
+        focusRect: { x: 8, y: 26, w: 202, h: 220 },
+        ipcForwardActive: false,
+        rpcForwardActive: false,
+        rpcReturnActive: false,
+        ipcReturnActive: false,
+        payloadSummary: 'EngineCoreRequest(bytes=16B, gc=False)',
         tone: 'active',
       },
     },
     {
-      label: '载荷打包',
-      duration: 5200,
+      label: 'ZMQ 零拷贝投递',
+      duration: 4800,
       caption:
-        'InputProcessor 构造 EngineCoreRequest（关闭循环 GC 且启用数组紧凑布局）；发送前把 Python int 列表转为连续 int32 ndarray（$4 \\times 4 = 16\\text{ B}$）随帧带外传输。',
-      state: {
-        phase: 'pack',
-        stepNum: 2,
-        activeTier: 'frontend',
-        direction: 'forward',
-        formulaTex:
-          '$4 \\times \\text{int32} = 16\\text{ B}\\;\\text{连续内存（替代逐个 Python int 对象）}$',
-        v1StepMs: 0.2,
-        singleStepMs: 3,
-        gpuStallMs: 0,
-        payloadSummary: 'EngineCoreRequest(array_like=True, gc=False, bytes=16B)',
-        activeDetail: '构造紧凑结构体与连续 int32 缓冲',
-        tone: 'active',
-      },
-    },
-    {
-      label: 'ZMQ 投递',
-      duration: 5200,
-      caption:
-        'AsyncMPClient 通过 zmq.ROUTER 发送多帧消息，EngineCoreProc 的独立 input_thread（zmq.DEALER）在后台线程解码并推入 input_queue，不打断主调度循环。',
+        'AsyncMPClient 通过 zmq.ROUTER 发出三帧消息（ADD、msgspec 主体、16 B 带外缓冲），EngineCoreProc 的独立 input_thread（DEALER）以 copy=False 零拷贝解码并推入 input_queue。',
       state: {
         phase: 'ipc',
-        stepNum: 3,
-        activeTier: 'ipc',
+        stepNum: 2,
+        activeCol: 'core',
         direction: 'forward',
         formulaTex:
           '$\\text{ROUTER} \\;\\xrightarrow{\\text{copy=False}}\\; \\text{DEALER} \\;\\longrightarrow\\; \\text{input\\_queue}$',
-        v1StepMs: 0.3,
-        singleStepMs: 0,
-        gpuStallMs: 0,
-        payloadSummary: 'Frame 0: ADD(0x00) | Frame 1: msgspec | Frame 2: 16B OOB',
-        activeDetail: '后台 I/O 线程接管跨进程解码与入队',
+        tokenBadge: '3 Frames OOB',
+        tokenPos: { x: 225, y: 98 },
+        focusRect: { x: 240, y: 26, w: 200, h: 98 },
+        ipcForwardActive: true,
+        rpcForwardActive: false,
+        rpcReturnActive: false,
+        ipcReturnActive: false,
+        payloadSummary: 'Frame 0: ADD | Frame 1: msgspec | Frame 2: 16B OOB',
         tone: 'done',
       },
     },
     {
-      label: '调度派发',
-      duration: 5400,
+      label: '调度与前向采样',
+      duration: 5000,
       caption:
-        'EngineCore 主循环从 input_queue 取出请求，调用统一配额调度器扣减 $4$ 个 token 预算并分配 KV 物理块，再经 MultiprocExecutor 向各 Worker 下发本步批描述。',
+        'EngineCore 扣除 $4$ 预算并分配 KV 块 B1 后经 MultiprocExecutor 下发任务；Worker 驱动 GPUModelRunner 执行 $1/16$ 分片前向（$8\\text{ ms}$）并采样新词元 9906 写回 output_queue。',
       state: {
-        phase: 'schedule',
-        stepNum: 4,
-        activeTier: 'core',
+        phase: 'schedule_worker',
+        stepNum: 3,
+        activeCol: 'worker',
         direction: 'forward',
         formulaTex:
-          '$T_{\\text{sched}} = 1\\text{ ms},\\; \\text{budget} \\leftarrow \\text{budget} - 4$',
-        v1StepMs: 1,
-        singleStepMs: 1,
-        gpuStallMs: 0,
-        payloadSummary: 'SchedulerOutput(req_0: 4 tok) -> Executor.execute_model',
-        activeDetail: 'Scheduler 分配 KV 块并经 Executor 下发 RPC',
-        tone: 'done',
-      },
-    },
-    {
-      label: '前向采样',
-      duration: 5400,
-      caption:
-        '每张卡上的 Worker 驱动 GPUModelRunner 执行模型前向（如 405B 模型按 $810\\text{ GiB}/16 = 50.625\\text{ GiB}$ 本地分片计算）并采样得到新 token 9906，结果写入 output_queue。',
-      state: {
-        phase: 'worker',
-        stepNum: 5,
-        activeTier: 'worker',
-        direction: 'return',
-        formulaTex:
-          '$M_{\\text{shard}} = \\frac{810\\text{ GiB}}{16} = 50.625\\text{ GiB/卡},\\; T_{\\text{gpu}} = 8\\text{ ms}$',
-        v1StepMs: 8,
-        singleStepMs: 8,
-        gpuStallMs: 0,
-        payloadSummary: 'ModelRunner -> sample_tokens() => new_token_ids=[9906]',
-        activeDetail: 'Worker 完成分片前向、KV 写入与采样回传',
+          '$T_{\\text{sched}}=1\\text{ ms},\\; M_{\\text{shard}}=\\frac{810\\text{ GiB}}{16}=50.625\\text{ GiB},\\; T_{\\text{gpu}}=8\\text{ ms}$',
+        tokenBadge: 'sched -> [9906]',
+        tokenPos: { x: 571, y: 144 },
+        focusRect: { x: 470, y: 26, w: 202, h: 220 },
+        ipcForwardActive: false,
+        rpcForwardActive: true,
+        rpcReturnActive: true,
+        ipcReturnActive: false,
+        payloadSummary: 'SchedulerOutput -> sample_tokens() => [9906]',
         tone: 'highlight',
       },
     },
     {
-      label: '增量推送',
-      duration: 5200,
+      label: '增量流式推送',
+      duration: 4800,
       caption:
-        'EngineCoreProc 的 output_thread 通过 zmq.PUSH 将 EngineCoreOutputs 送回前端 PULL 套接字；OutputProcessor 调用 DecodeStream 把 token 9906 增量解码为 “ world” 并经 SSE 推出。',
+        'output_thread 经 zmq.PUSH 回传 4 B 标量 9906，Frontend 的 DecodeStream 增量解码出 “ world” 并经 SSE 推出；与此同时 EngineCore 与 Worker 已并行启动 Step N+1（CPU 停顿 0 ms）。',
       state: {
         phase: 'stream',
-        stepNum: 6,
-        activeTier: 'frontend',
+        stepNum: 4,
+        activeCol: 'api',
         direction: 'return',
         formulaTex:
-          '$9906 \\;\\xrightarrow{\\text{DecodeStream}}\\; \\text{" world"} \\;\\xrightarrow{\\text{SSE}}\\; \\text{Client}$',
-        v1StepMs: 2,
-        singleStepMs: 2,
-        gpuStallMs: 0,
+          '$9906 \\;\\xrightarrow{\\text{PUSH/PULL}}\\; \\text{DecodeStream} \\;\\xrightarrow{\\text{SSE}}\\; \\text{" world"}$',
+        tokenBadge: 'delta: " world"',
+        tokenPos: { x: 109, y: 202 },
+        focusRect: { x: 16, y: 170, w: 186, h: 68 },
+        ipcForwardActive: false,
+        rpcForwardActive: false,
+        rpcReturnActive: false,
+        ipcReturnActive: true,
         payloadSummary: 'EngineCoreOutputs -> RequestOutput(delta=" world")',
-        activeDetail: 'OutputProcessor 与设备下一步执行并行推进',
         tone: 'highlight',
       },
     },

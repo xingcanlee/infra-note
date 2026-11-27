@@ -2,76 +2,40 @@
   "version": 1,
   "generator": "wisp-diagram@1",
   "entries": {
-    "src/content/posts/deepseek/01-mla/diagrams/01-mla-arch.drawio": {
-      "source": "sha256-78188788fcd1cf1aef419672dc1bbd5ced45a33ec9600189c23e4fbf2c2bebe9",
-      "style": "clean",
-      "exporter": "drawio-cli",
-      "embedFonts": false,
-      "outputs": {
-        "src/content/posts/deepseek/01-mla/diagrams/01-mla-arch.wisp.svg": "sha256-e310cd27190dd725a3892f2bc9418ae096e59db3bb9a8cc44fc6c3ab07cf3795"
-      },
-      "pages": [
-        "01-mla-arch"
-      ]
-    },
     "src/content/posts/deepseek/01-mla/diagrams/01-mla-kv-byte-ledger.drawio": {
       "source": "sha256-dc9f41b0fb8075d5e634406eb1df75f20486358dcd178c42d37656f87adcfb00",
       "style": "clean",
       "exporter": "drawio-cli",
       "embedFonts": false,
       "outputs": {
-        "src/content/posts/deepseek/01-mla/diagrams/01-mla-kv-byte-ledger.wisp.svg": "sha256-c436a25bd51620b7492bdfc8895bfa9b66ba2bf625e54d9cac818a9eba5e2687"
+        "src/content/posts/deepseek/01-mla/diagrams/01-mla-kv-byte-ledger.wisp.svg": "sha256-b7c1b70f0017e1bc4bc715840d2c645a5e92301ab7d7c9b0c798c46e64636082"
       },
       "pages": [
         "MLA KV Byte Comparison"
       ]
     },
     "src/content/posts/deepseek/01-mla/diagrams/01-mla-matrix-absorption.drawio": {
-      "source": "sha256-81991d0ba725fffafc2b71a7569308d29b2d3bb380f684fd7ff5680312cf9758",
+      "source": "sha256-27ec2fef38466bad371cbd4620b23df3eef8e5d5038b81d2581e14551f4bb796",
       "style": "clean",
       "exporter": "drawio-cli",
       "embedFonts": false,
       "outputs": {
-        "src/content/posts/deepseek/01-mla/diagrams/01-mla-matrix-absorption.wisp.svg": "sha256-d28605c0a117fa1d32a32d7a1b72965c1c00df8e5022b4d08aaf8beaf35a666e"
+        "src/content/posts/deepseek/01-mla/diagrams/01-mla-matrix-absorption.wisp.svg": "sha256-1f6b4e496bb4f7a6976053ebb8709a77be0707d0fa3f467a726b42d53b55a391"
       },
       "pages": [
         "MLA Matrix Absorption"
       ]
     },
-    "src/content/posts/deepseek/02-swa-and-nsa/diagrams/02-nsa-gqa-tile-arch.drawio": {
-      "source": "sha256-fbbc467f7b1ae8dbe28bb3fe7729309d89173a394029b1cbbc940689cae7794f",
+    "src/content/posts/deepseek/01-mla/diagrams/01-mla-seesaw-and-panz.drawio": {
+      "source": "sha256-797bb36a52cf6fb73c502e92084ea7ceba963fbf2eb27dc8ef06a171231bdd54",
       "style": "clean",
       "exporter": "drawio-cli",
       "embedFonts": false,
       "outputs": {
-        "src/content/posts/deepseek/02-swa-and-nsa/diagrams/02-nsa-gqa-tile-arch.wisp.svg": "sha256-f83fd381da84df58ea3413b3035b1d9524be0dcdfe1cefb56801dc8b546efc8e"
+        "src/content/posts/deepseek/01-mla/diagrams/01-mla-seesaw-and-panz.wisp.svg": "sha256-b761c1592a0c04013674bdae8bf183990a4d5247f8a6af796790104aa7e7d5a8"
       },
       "pages": [
-        "02-nsa-gqa-tile"
-      ]
-    },
-    "src/content/posts/deepseek/02-swa-and-nsa/diagrams/02-nsa-three-branch.drawio": {
-      "source": "sha256-9c70489d703f266f01e452c7b1d0ddd08f87fa911fbf461bf359bb596ed401ee",
-      "style": "clean",
-      "exporter": "drawio-cli",
-      "embedFonts": false,
-      "outputs": {
-        "src/content/posts/deepseek/02-swa-and-nsa/diagrams/02-nsa-three-branch.wisp.svg": "sha256-c86ccd4d31e1541ea752649342a5b5a65e66d18ac194c9101b14b4017949e68b"
-      },
-      "pages": [
-        "DeepSeek NSA Three-Branch Sparse Attention"
-      ]
-    },
-    "src/content/posts/deepseek/02-swa-and-nsa/diagrams/02-sink-swa-masks.drawio": {
-      "source": "sha256-241e93b545132f8719c90e517afc9c9fe4a36288f2156dfe7771d2b8442a2385",
-      "style": "clean",
-      "exporter": "drawio-cli",
-      "embedFonts": false,
-      "outputs": {
-        "src/content/posts/deepseek/02-swa-and-nsa/diagrams/02-sink-swa-masks.wisp.svg": "sha256-0f34dd68569dd9eb71c325a3e1dd3507ec587ad5a6b46c2a6f3ed7f51b38f1d7"
-      },
-      "pages": [
-        "Attention Sink vs Pure SWA Masks"
+        "01-mla-seesaw-and-panz"
       ]
     },
     "src/content/posts/deepseek/03-dsa/diagrams/03-dsa-cache-byte-ledger.drawio": {
@@ -80,34 +44,22 @@
       "exporter": "drawio-cli",
       "embedFonts": false,
       "outputs": {
-        "src/content/posts/deepseek/03-dsa/diagrams/03-dsa-cache-byte-ledger.wisp.svg": "sha256-c9b0e95618c4ff11749360c85722147c8003ec83660c30f5355dfd65573e2c8a"
+        "src/content/posts/deepseek/03-dsa/diagrams/03-dsa-cache-byte-ledger.wisp.svg": "sha256-ddc04a2d121c39325da3cfd78a7ce2ac99bddd4a51c7bcc34f886d375740263e"
       },
       "pages": [
         "DeepSeek-V3.2 DSA Cache Comparison"
       ]
     },
-    "src/content/posts/deepseek/03-dsa/diagrams/03-dsa-indexer-flow.drawio": {
-      "source": "sha256-0402d1a03ae7f2b0776c13a41c784140c712c31de035cb609b2870c0ce6e0cf6",
+    "src/content/posts/deepseek/03-dsa/diagrams/03-dsa-crossover-and-ascend-cv.drawio": {
+      "source": "sha256-9474faa6e9cc949c0deaf9eef071dff6e798d027eb6bfe67568c2337a55bbd58",
       "style": "clean",
       "exporter": "drawio-cli",
       "embedFonts": false,
       "outputs": {
-        "src/content/posts/deepseek/03-dsa/diagrams/03-dsa-indexer-flow.wisp.svg": "sha256-3155de81d5b6c6eb268ff6942cfea023c5fdc7d84d75751d49f201b498652497"
+        "src/content/posts/deepseek/03-dsa/diagrams/03-dsa-crossover-and-ascend-cv.wisp.svg": "sha256-5af3a78c1b9cfcd5148e023d8b2a5ba4787cd073ea68e8d73674b0b2e024532a"
       },
       "pages": [
-        "DeepSeek-V3.2 DSA Indexer Flow"
-      ]
-    },
-    "src/content/posts/deepseek/04-csa-and-hca/diagrams/04-csa-hca-arch.drawio": {
-      "source": "sha256-914cb77c0b497849782c466493ad7050cbfac77dc0ba547f65d57625e25f3a43",
-      "style": "clean",
-      "exporter": "drawio-cli",
-      "embedFonts": false,
-      "outputs": {
-        "src/content/posts/deepseek/04-csa-and-hca/diagrams/04-csa-hca-arch.wisp.svg": "sha256-21d22a7e8b54e0268a2e71e6127303f3f43ce7ae862c762183f50a745482dceb"
-      },
-      "pages": [
-        "04-csa-hca"
+        "03-dsa-crossover-and-ascend-cv"
       ]
     },
     "src/content/posts/deepseek/04-csa-and-hca/diagrams/04-csa-ring-fold.drawio": {
@@ -122,148 +74,124 @@
         "DeepSeek-V4 CSA Ring Cache and Inverse RoPE"
       ]
     },
-    "src/content/posts/deepseek/05-csa2-and-ced/diagrams/05-csa2-hsi-arch.drawio": {
-      "source": "sha256-8f03ec00b6db70b788f449bb679bd0196cc72c44a9002a110db5fff8d0072a82",
-      "style": "clean",
-      "exporter": "drawio-cli",
-      "embedFonts": false,
-      "outputs": {
-        "src/content/posts/deepseek/05-csa2-and-ced/diagrams/05-csa2-hsi-arch.wisp.svg": "sha256-b0187abb4e2747589bd6368d89fdfceb0a4b09e97ac5353d12d9d8a5d3f12d95"
-      },
-      "pages": [
-        "DeepSeek-V4.1 CSA2 and HSI Architecture"
-      ]
-    },
-    "src/content/posts/deepseek/06-moe/diagrams/06-deepseekmoe-arch.drawio": {
-      "source": "sha256-d9493517cf2f5dbab4bd660322f7e08ad0a09ea0e2833a65f8dad013d4d723c9",
-      "style": "clean",
-      "exporter": "drawio-cli",
-      "embedFonts": false,
-      "outputs": {
-        "src/content/posts/deepseek/06-moe/diagrams/06-deepseekmoe-arch.wisp.svg": "sha256-686d8e1a0e34446219c8587ef25752130eb62c47bae2f04f33c8205818e718ed"
-      },
-      "pages": [
-        "deepseekmoe-arch"
-      ]
-    },
-    "src/content/posts/deepseek/07-engram/diagrams/11-engram-arch.drawio": {
-      "source": "sha256-c4088c6f63a29fcc886f76e6dd3171f22748f51ee666bebe8ddf52436bb98c06",
-      "style": "clean",
-      "exporter": "drawio-cli",
-      "embedFonts": false,
-      "outputs": {
-        "src/content/posts/deepseek/07-engram/diagrams/11-engram-arch.wisp.svg": "sha256-456dd0f00e6e71fbad6ee838d79a4ea22fa657ac3cb830ad3d3b3b512d043dff"
-      },
-      "pages": [
-        "engram-arch"
-      ]
-    },
-    "src/content/posts/deepseek/07-engram/diagrams/11-engram-gate-disambig.drawio": {
-      "source": "sha256-b07c016f227e9c45fda5a9932940906d1f0192816dad2ea497d09d4b0526c2c2",
-      "style": "clean",
-      "exporter": "drawio-cli",
-      "embedFonts": false,
-      "outputs": {
-        "src/content/posts/deepseek/07-engram/diagrams/11-engram-gate-disambig.wisp.svg": "sha256-50dc638afc93166af6a0343d30c3481e8cde03c8465a4920b644b594d4c234d3"
-      },
-      "pages": [
-        "engram-gate-disambig"
-      ]
-    },
-    "src/content/posts/deepseek/07-engram/diagrams/11-engram-hash.drawio": {
-      "source": "sha256-49460d438e287b3b55c7a5b1d070abcd0b53fc3066d77288e829a2ad2f845d74",
-      "style": "clean",
-      "exporter": "drawio-cli",
-      "embedFonts": false,
-      "outputs": {
-        "src/content/posts/deepseek/07-engram/diagrams/11-engram-hash.wisp.svg": "sha256-08ed7c9d7c11ba2a9eec54f63c1248803180875189be6e2a7b382cfbe111a95f"
-      },
-      "pages": [
-        "engram-hash"
-      ]
-    },
-    "src/content/posts/deepseek/07-engram/diagrams/11-engram-layer.drawio": {
-      "source": "sha256-44d0a732039830cd0974edd4f3e753a66bd4d5147c79b19ce33c3b76dea2149f",
-      "style": "clean",
-      "exporter": "drawio-cli",
-      "embedFonts": false,
-      "outputs": {
-        "src/content/posts/deepseek/07-engram/diagrams/11-engram-layer.wisp.svg": "sha256-4911cbaff13f1c7241175fa88fe9edff41fb42a87fbd56f83bc3b4251c81185a"
-      },
-      "pages": [
-        "engram-layer"
-      ]
-    },
-    "src/content/posts/deepseek/07-engram/diagrams/11-engram-runtime.drawio": {
-      "source": "sha256-4dd15fa6233567071e1d6126729d5890280b274b0b5f13f033833e6dc4919622",
-      "style": "clean",
-      "exporter": "drawio-cli",
-      "embedFonts": false,
-      "outputs": {
-        "src/content/posts/deepseek/07-engram/diagrams/11-engram-runtime.wisp.svg": "sha256-353457fa493d71403795ed0082d8306e06e080aadbd18df9f3a9828808ab3e11"
-      },
-      "pages": [
-        "engram-runtime-prefetch"
-      ]
-    },
-    "src/content/posts/deepseek/07-engram/diagrams/11-shortconv-dilation.drawio": {
-      "source": "sha256-de0ee9e4d450795dcd7c7923358bec7e82e7a2664386e51f0e9c7c13ce15a9d4",
-      "style": "clean",
-      "exporter": "drawio-cli",
-      "embedFonts": false,
-      "outputs": {
-        "src/content/posts/deepseek/07-engram/diagrams/11-shortconv-dilation.wisp.svg": "sha256-886176697f9498092c3b97ea947bdfede1763f37146c93ba321ef6feedf727c5"
-      },
-      "pages": [
-        "shortconv-dilation"
-      ]
-    },
-    "src/content/posts/deepseek/08-mhc/diagrams/08-mhc-arch-comp.drawio": {
-      "source": "sha256-29379e478c949da65b5b4300099813906f333a2c0d1723a3248d451d10034615",
-      "style": "clean",
-      "exporter": "drawio-cli",
-      "embedFonts": false,
-      "outputs": {
-        "src/content/posts/deepseek/08-mhc/diagrams/08-mhc-arch-comp.wisp.svg": "sha256-bdaa46fd464dea29c615452d0a3cf54d8585d866086ce8d0d8fcc980c1c3b3c4"
-      },
-      "pages": [
-        "mhc-arch-comp"
-      ]
-    },
-    "src/content/posts/deepseek/08-mhc/diagrams/08-mhc-block-trace.drawio": {
+    "src/content/posts/deepseek/07-mhc/diagrams/08-mhc-block-trace.drawio": {
       "source": "sha256-a84be3adf0cded9878e2a8fd28c51a1b51f60f0075b03a132e7ef633baa475b8",
       "style": "clean",
       "exporter": "drawio-cli",
       "embedFonts": false,
       "outputs": {
-        "src/content/posts/deepseek/08-mhc/diagrams/08-mhc-block-trace.wisp.svg": "sha256-3152f4960587591a5cc1103a148d20e670a58fe61ba0d19fa138a61e1aea70d7"
+        "src/content/posts/deepseek/07-mhc/diagrams/08-mhc-block-trace.wisp.svg": "sha256-3152f4960587591a5cc1103a148d20e670a58fe61ba0d19fa138a61e1aea70d7"
       },
       "pages": [
         "mhc-block-trace"
       ]
     },
-    "src/content/posts/deepseek/08-mhc/diagrams/08-mhc-single-pass.drawio": {
+    "src/content/posts/deepseek/07-mhc/diagrams/08-mhc-single-pass.drawio": {
       "source": "sha256-03ca5a3358aa8bb3b9461ef593e521b22599acf08d8d939822d3272fed27edbd",
       "style": "clean",
       "exporter": "drawio-cli",
       "embedFonts": false,
       "outputs": {
-        "src/content/posts/deepseek/08-mhc/diagrams/08-mhc-single-pass.wisp.svg": "sha256-2594a644789e39ec2420ccd6f9249fb82061ee2629236ff85dce89f0f7bf7016"
+        "src/content/posts/deepseek/07-mhc/diagrams/08-mhc-single-pass.wisp.svg": "sha256-2594a644789e39ec2420ccd6f9249fb82061ee2629236ff85dce89f0f7bf7016"
       },
       "pages": [
         "mhc-single-pass"
       ]
     },
-    "src/content/posts/deepseek/08-mhc/diagrams/08-mhc-sinkhorn-stability.drawio": {
+    "src/content/posts/deepseek/07-mhc/diagrams/08-mhc-sinkhorn-stability.drawio": {
       "source": "sha256-dd78c4cd11302e0a94d0f6a0ecfd855533b3b4034b7807c4c21dc84c94929f0a",
       "style": "clean",
       "exporter": "drawio-cli",
       "embedFonts": false,
       "outputs": {
-        "src/content/posts/deepseek/08-mhc/diagrams/08-mhc-sinkhorn-stability.wisp.svg": "sha256-8c92b12533fac3ee5f9b1611c8333ff8491d96c139303e0f4bb37ec3acac988b"
+        "src/content/posts/deepseek/07-mhc/diagrams/08-mhc-sinkhorn-stability.wisp.svg": "sha256-8c92b12533fac3ee5f9b1611c8333ff8491d96c139303e0f4bb37ec3acac988b"
       },
       "pages": [
         "mhc-sinkhorn-stability"
+      ]
+    },
+    "src/content/posts/deepseek/08-engram/diagrams/08-engram-flat-table.drawio": {
+      "source": "sha256-add274860d9b84829fcbfd8edcde65b6fcd0204d5a802181a0111fda64153e87",
+      "style": "clean",
+      "exporter": "drawio-cli",
+      "embedFonts": false,
+      "outputs": {
+        "src/content/posts/deepseek/08-engram/diagrams/08-engram-flat-table.wisp.svg": "sha256-878da4fa773e9857395815b8502b562d623dcbe69f36375492a893188980f0d7"
+      },
+      "pages": [
+        "engram-flat-table"
+      ]
+    },
+    "src/content/posts/deepseek/08-engram/diagrams/11-engram-gate-disambig.drawio": {
+      "source": "sha256-b07c016f227e9c45fda5a9932940906d1f0192816dad2ea497d09d4b0526c2c2",
+      "style": "clean",
+      "exporter": "drawio-cli",
+      "embedFonts": false,
+      "outputs": {
+        "src/content/posts/deepseek/08-engram/diagrams/11-engram-gate-disambig.wisp.svg": "sha256-50dc638afc93166af6a0343d30c3481e8cde03c8465a4920b644b594d4c234d3"
+      },
+      "pages": [
+        "engram-gate-disambig"
+      ]
+    },
+    "src/content/posts/deepseek/08-engram/diagrams/11-engram-hash.drawio": {
+      "source": "sha256-49460d438e287b3b55c7a5b1d070abcd0b53fc3066d77288e829a2ad2f845d74",
+      "style": "clean",
+      "exporter": "drawio-cli",
+      "embedFonts": false,
+      "outputs": {
+        "src/content/posts/deepseek/08-engram/diagrams/11-engram-hash.wisp.svg": "sha256-08ed7c9d7c11ba2a9eec54f63c1248803180875189be6e2a7b382cfbe111a95f"
+      },
+      "pages": [
+        "engram-hash"
+      ]
+    },
+    "src/content/posts/deepseek/08-engram/diagrams/11-engram-layer.drawio": {
+      "source": "sha256-44d0a732039830cd0974edd4f3e753a66bd4d5147c79b19ce33c3b76dea2149f",
+      "style": "clean",
+      "exporter": "drawio-cli",
+      "embedFonts": false,
+      "outputs": {
+        "src/content/posts/deepseek/08-engram/diagrams/11-engram-layer.wisp.svg": "sha256-4911cbaff13f1c7241175fa88fe9edff41fb42a87fbd56f83bc3b4251c81185a"
+      },
+      "pages": [
+        "engram-layer"
+      ]
+    },
+    "src/content/posts/deepseek/08-engram/diagrams/11-engram-runtime.drawio": {
+      "source": "sha256-52c19d15ccd8893a8c48f6c13b67991ad3d318af6bfceb00b5c411981318e894",
+      "style": "clean",
+      "exporter": "drawio-cli",
+      "embedFonts": false,
+      "outputs": {
+        "src/content/posts/deepseek/08-engram/diagrams/11-engram-runtime.wisp.svg": "sha256-97a838d2dae548796dcad321c28c67fc88e2f24c40dda3dded9a0c11a82ec719"
+      },
+      "pages": [
+        "engram-runtime-prefetch"
+      ]
+    },
+    "src/content/posts/deepseek/08-engram/diagrams/11-shortconv-dilation.drawio": {
+      "source": "sha256-de0ee9e4d450795dcd7c7923358bec7e82e7a2664386e51f0e9c7c13ce15a9d4",
+      "style": "clean",
+      "exporter": "drawio-cli",
+      "embedFonts": false,
+      "outputs": {
+        "src/content/posts/deepseek/08-engram/diagrams/11-shortconv-dilation.wisp.svg": "sha256-886176697f9498092c3b97ea947bdfede1763f37146c93ba321ef6feedf727c5"
+      },
+      "pages": [
+        "shortconv-dilation"
+      ]
+    },
+    "src/content/posts/deepseek/09-mtp-and-dspark/diagrams/09-dflash-arch.drawio": {
+      "source": "sha256-885679866d98c923d5eddeba12bd90ce3ae8c6724db38658969c8ed08af4fd93",
+      "style": "clean",
+      "exporter": "drawio-cli",
+      "embedFonts": false,
+      "outputs": {
+        "src/content/posts/deepseek/09-mtp-and-dspark/diagrams/09-dflash-arch.wisp.svg": "sha256-6b698562c06f645c222de67eaa647322dae86566a66d0b8ef14e1509d6365ec0"
+      },
+      "pages": [
+        "DFlash Parallel Feature Injection Architecture"
       ]
     },
     "src/content/posts/deepseek/09-mtp-and-dspark/diagrams/09-dspark-vs-mtp.drawio": {
@@ -272,19 +200,19 @@
       "exporter": "drawio-cli",
       "embedFonts": false,
       "outputs": {
-        "src/content/posts/deepseek/09-mtp-and-dspark/diagrams/09-dspark-vs-mtp.wisp.svg": "sha256-4149f0324b66b687bed4eb4ea7c8135aeec51ca90456a79fd49bbc77cc29b7f5"
+        "src/content/posts/deepseek/09-mtp-and-dspark/diagrams/09-dspark-vs-mtp.wisp.svg": "sha256-5b95da3223ef70bad3b51f63d106f36218e499e20dfdf49565482026a89dd73a"
       },
       "pages": [
         "DeepSeek-V3 Serial MTP vs V4.1 DSpark"
       ]
     },
     "src/content/posts/deepseek/10-architecture-synthesis/diagrams/10-cluster-dbo-engram.drawio": {
-      "source": "sha256-6cf1c9c4ebe05b00129876f5d646fc5eecf80bd8224ae299e9bc641fb3608a09",
+      "source": "sha256-0638f61fc642899d56941b601ec9550629c5f98d9e3187484eb0962b79e14882",
       "style": "clean",
       "exporter": "drawio-cli",
       "embedFonts": false,
       "outputs": {
-        "src/content/posts/deepseek/10-architecture-synthesis/diagrams/10-cluster-dbo-engram.wisp.svg": "sha256-27b2ed0bfdfdd16cd81a95961fa3311232cf031aa07577a9d0c6f561ed8c65f9"
+        "src/content/posts/deepseek/10-architecture-synthesis/diagrams/10-cluster-dbo-engram.wisp.svg": "sha256-b37255446a79cac85c24eb97cd76209538867002559f1594f4857eb5de7d16fa"
       },
       "pages": [
         "Cluster DBO and Async Engram Timeline"
@@ -296,19 +224,19 @@
       "exporter": "drawio-cli",
       "embedFonts": false,
       "outputs": {
-        "src/content/posts/deepseek/10-architecture-synthesis/diagrams/10-five-gen-ledger.wisp.svg": "sha256-336c15f6167843522c81942e3a8636e77a1adfce86f9d219b755b11999796880"
+        "src/content/posts/deepseek/10-architecture-synthesis/diagrams/10-five-gen-ledger.wisp.svg": "sha256-b43488481fb5086d58e23fe21cb040ca40a644d9a13b77d9d376d26419449887"
       },
       "pages": [
         "five-gen-ledger"
       ]
     },
     "src/content/posts/deepseek/10-architecture-synthesis/diagrams/10-v41-layer-panoramic.drawio": {
-      "source": "sha256-b23c6445fe773279505609096e246133b4bc0ea98b2862418346f636238cc870",
+      "source": "sha256-4248434875582977207d9692d4529fba04c7ba52e15f00817c81c21326d00dec",
       "style": "clean",
       "exporter": "drawio-cli",
       "embedFonts": false,
       "outputs": {
-        "src/content/posts/deepseek/10-architecture-synthesis/diagrams/10-v41-layer-panoramic.wisp.svg": "sha256-f8309d3ed2739c2640dca131ee68fc890be9b9ab0b4d907104bb16fab88d35f9"
+        "src/content/posts/deepseek/10-architecture-synthesis/diagrams/10-v41-layer-panoramic.wisp.svg": "sha256-9c9e8634bbfef7ebcbc3586d97dc5632ab8ba7eadc382379766f582532d6df1e"
       },
       "pages": [
         "DeepSeek-V4.1 Full Decode Step"
@@ -332,7 +260,7 @@
       "exporter": "drawio-cli",
       "embedFonts": false,
       "outputs": {
-        "src/content/posts/distributed/03-moe-comm-and-overlap/diagrams/03-dbo-vs-mc2-timeline.wisp.svg": "sha256-e2ca3881eed68657d6c93be740d1ca9f2afb631a139b1ca05b7f42e4b3effebc"
+        "src/content/posts/distributed/03-moe-comm-and-overlap/diagrams/03-dbo-vs-mc2-timeline.wisp.svg": "sha256-b6bd604da507480820a2e73273316b1bc1f08cd3f41485a75d7b52af0df0bc67"
       },
       "pages": [
         "DBO Dual-Microbatch vs Ascend MC2 Timeline"
@@ -449,7 +377,7 @@
       "exporter": "drawio-cli",
       "embedFonts": false,
       "outputs": {
-        "src/content/posts/foundations/01-workload-and-roofline/diagrams/01-roofline-concept.wisp.svg": "sha256-726779d584d67d4ec192b8c781374a3610171c8379309ac7423ee9809ee70294"
+        "src/content/posts/foundations/01-workload-and-roofline/diagrams/01-roofline-concept.wisp.svg": "sha256-5fd43d2aea0e5cd93f0b66038d2d5ec02108bfba26a922a2eab75a54bac12ac0"
       },
       "pages": [
         "Single-Chip Roofline Concept"
@@ -516,12 +444,12 @@
       ]
     },
     "src/content/posts/foundations/05-flash-attention/diagrams/05-flashmla-hardware-pipelines.drawio": {
-      "source": "sha256-d0f55b08077fcbda08d33fb3d0629d611c4b3c5b316b42b42d06db2232b25c56",
+      "source": "sha256-a8ae4bd5476ff9e7c9268e32160550ae0b7f1e655ba9835f467a6ee310c82093",
       "style": "clean",
       "exporter": "drawio-cli",
       "embedFonts": false,
       "outputs": {
-        "src/content/posts/foundations/05-flash-attention/diagrams/05-flashmla-hardware-pipelines.wisp.svg": "sha256-98a1f2c31449c2eb62133ef33bf48eca3e5ebe1aad22124e985385ac9b136db4"
+        "src/content/posts/foundations/05-flash-attention/diagrams/05-flashmla-hardware-pipelines.wisp.svg": "sha256-14cdf2849d7d9df15d0caf6ce1677fff5fec780fffbae817fc9631e741f790fe"
       },
       "pages": [
         "FlashMLA Multi-Hardware Pipeline Evolution"
@@ -554,7 +482,7 @@
       "exporter": "drawio-cli",
       "embedFonts": false,
       "outputs": {
-        "src/content/posts/foundations/06-quantization/diagrams/06-outlier-quant-comparison.wisp.svg": "sha256-3f7858781ccbc68baadf36e129ec01670b6d0356df71fcab82aa93fbc08f3b97"
+        "src/content/posts/foundations/06-quantization/diagrams/06-outlier-quant-comparison.wisp.svg": "sha256-9c610d794855e697f0f6e64be19f944dd9d6e26fa7a166b619404e0a8036753a"
       },
       "pages": [
         "Outlier Channel Trap and SQNR Recovery"
@@ -597,12 +525,12 @@
       ]
     },
     "src/content/posts/vllm-ascend/03-npu-worker-runner-and-kv-layout/diagrams/03-panz-and-kvpp.drawio": {
-      "source": "sha256-4393b4e6d0cfa9b8e2ed721cbdd8daf35d485fa0087e5c06ad349ad35f8d6d93",
+      "source": "sha256-d86a6d00b85694817547487d8ed3145f56a5e82f226d80410b9e22ba0c1c4c76",
       "style": "clean",
       "exporter": "drawio-cli",
       "embedFonts": false,
       "outputs": {
-        "src/content/posts/vllm-ascend/03-npu-worker-runner-and-kv-layout/diagrams/03-panz-and-kvpp.wisp.svg": "sha256-afff6b2601d569fb45a91ec07cf664990860d73ede51db657509895f8b8da878"
+        "src/content/posts/vllm-ascend/03-npu-worker-runner-and-kv-layout/diagrams/03-panz-and-kvpp.wisp.svg": "sha256-8b0ef5a45588006bd8cce416509a36c696003e30e2c2fc9eb38fad021f98eb12"
       },
       "pages": [
         "panz-and-kvpp"
@@ -621,12 +549,12 @@
       ]
     },
     "src/content/posts/vllm-ascend/05-mooncake-pd-and-kv-pool/diagrams/05-ascend-kv-hierarchy.drawio": {
-      "source": "sha256-c182a28a93c0bd871d253814b5f8208f60652962c4842024ae75857a3644e558",
+      "source": "sha256-95346baebc5b31cd91ade09bcb1b5a684fe82388f33410c6343043ca719cdd1a",
       "style": "clean",
       "exporter": "drawio-cli",
       "embedFonts": false,
       "outputs": {
-        "src/content/posts/vllm-ascend/05-mooncake-pd-and-kv-pool/diagrams/05-ascend-kv-hierarchy.wisp.svg": "sha256-b8906ed64e87d5cc858e380d7dae892c042e3d351a4abe2bf55f117b6b0737aa"
+        "src/content/posts/vllm-ascend/05-mooncake-pd-and-kv-pool/diagrams/05-ascend-kv-hierarchy.wisp.svg": "sha256-cb17c2a09d3fcc59d3f49604f140b7b2d949df3053b47c84b227bd62be036837"
       },
       "pages": [
         "ascend-kv-hierarchy"

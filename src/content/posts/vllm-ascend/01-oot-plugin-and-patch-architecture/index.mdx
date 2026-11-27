@@ -11,7 +11,7 @@ toc: true
 
 直接分叉修改 vLLM 源码并在热点路径硬编码设备判断分支，在短期内看似省事，一旦面对 vLLM V1 架构的高频重构便会陷入无休止的合并冲突。
 
-上游的调度器、模型执行器与 **MoE（Mixture of Experts，混合专家）** 接口仍在快速演进。例如 MoE 工厂函数已重构为 `FusedMoEFactory`，旧版注意力枚举与开关参数也已退场[^vllm-doc]。为此，华为昇腾选择了 **OOT（Out-of-Tree，树外扩展）** 硬件插件路线，在不改动上游 `vllm` 仓库的前提下接管全链路推理。
+上游的调度器、模型执行器与 **MoE（Mixture of Experts，混合专家）** 接口仍在快速演进。例如 MoE 工厂函数已重构为 `FusedMoEFactory`，旧版注意力枚举与开关参数也已退场[^vllm-doc]。为此，华为昇腾选择了 **OOT（Out-of-Tree，独立硬件插件）** 扩展路线，在不改动上游 `vllm` 仓库的前提下接管全链路推理。
 
 ## 从四进程拓扑看插件自动发现
 
@@ -49,7 +49,7 @@ classDiagram
 - **CANN 与 NNAL**：包含基础算子库 Ops、开发工具链 Toolkit 与大模型加速库 NNAL，统一管理图优化与通信原语。
 - **Ascend HDK**：包含芯片 Kernel 态驱动与设备固件，直接管理物理队列、HBM 显存页表与硬件中断。
 
-## 六大树外接口如何接管推理链路
+## 六大 OOT 接口如何接管推理链路
 
 在插件发现与算子路由的基础上，`vllm-ascend` 通过六组官方 OOT 接口接管推理全链路，并在官方接口尚未覆盖的场景划出补丁边界，如图 3 所示。
 
@@ -59,13 +59,13 @@ classDiagram
 
 配置初始化阶段，vLLM 调用 `NPUPlatform.check_and_update_config` 校验并改写运行参数[^ascend-platform-cfg]。该方法会加载昇腾专属配置、校验并行与量化参数，并将所有可启用算子标记为开启状态。
 
-最关键的一步发生在计算工作类的注入上。当用户保持默认 `worker_cls = "auto"` 时，平台插件根据当前芯片画像写入 `"vllm_ascend.worker.worker.NPUWorker"`[^ascend-worker-sel]。若运行在 310P 或 Xlite 模式下，该字段会切换为对应子类，把设备初始化与前向执行权交给昇腾侧实现。
+最关键的一步发生在计算工作类的注入上。若用户保持默认 `worker_cls = "auto"`，平台插件按当前硬件能力配置（`HardwareProfile`）决定工作类[^ascend-worker-sel]。标准芯片写入 `"vllm_ascend.worker.worker.NPUWorker"`，310P 或 Xlite 模式则切换为对应子类，将前向执行权交给昇腾侧实现。
 
 ### 注意力后端路由
 
 不同模型与稀疏策略需要不同的注意力实现。`NPUPlatform.get_attn_backend_cls` 根据多头潜注意力、稀疏注意力、压缩索引以及长序列上下文并行标志，经内部查找表路由到对应后端[^ascend-attn-sel]。
 
-标准芯片默认在常规注意力、MLA、SFA 与 DSA 后端之间切换，兼容性硬件档案则回落到 310P 专用后端。选定后端类后，平台接口还会复核其声明的 KV Cache 数据类型集合，提前拦截不匹配的缓存精度配置。
+标准芯片默认在常规注意力、MLA、SFA 与 DSA 后端之间切换，310P 硬件能力配置则回落到专用后端。选定后端类后，平台接口还会复核其声明的 KV Cache 数据类型集合，提前拦截不匹配的缓存精度配置。
 
 ### 算子分发与图模式注册
 
@@ -73,7 +73,7 @@ classDiagram
 
 针对基础算子层，`NPUWorker` 初始化时调用 `register_ascend_customop` 注册 `RMSNorm`、`SiluAndMul` 与 `RotaryEmbedding` 等子类[^ascend-reg-ops]。
 
-这些子类批量写入 `CustomOp` 的树外注册表 `op_registry_oot`；当上游实例化层对象时，基类自动返回昇腾子类[^vllm-customop]。前向绑定阶段只要检测到 `is_out_of_tree()` 为真，便路由到 `forward_oot`。
+这些子类批量写入 `CustomOp` 的 OOT 注册表 `op_registry_oot`；当上游实例化层对象时，基类自动返回昇腾子类[^vllm-customop]。前向绑定阶段只要检测到 `is_out_of_tree()` 为真，便路由到 `forward_oot`。
 
 对于 `quantize` 与 `npu_rotary_embedding` 等纯张量算子，插件使用 `direct_register_custom_op` 注册到 `vllm` 算子库[^ascend-direct-reg]。调用时显式传入 `dispatch_key="PrivateUse1"`，同时提供元信息推导函数供 `torch.compile` 推演输出形状。
 
@@ -85,7 +85,7 @@ classDiagram
 
 借由该机制，`vllm-ascend` 将 `MoERunner` 与 `RoutedExperts` 整体替换为 `AscendMoERunner` 与 `AscendRoutedExperts`[^ascend-moe-runner]。替换后的类完全掌控路由器调用、多张量合并与流水线状态。
 
-需要注意一个工程边界：`PluggableLayer` 严格按类名字面量精确匹配[^vllm-doc]。当模型显式传入自定义子类 `GptOssRoutedExperts` 时，基类注册条目不会自动命中该子类。同样，对于工厂创建的 `FusedTopKRouter`，也需要通过昇腾路由工厂或显式派生组合补齐替换[^ascend-router-fac]。
+需要注意一个工程边界：`PluggableLayer` 按类名字面量精确匹配[^vllm-doc]。当模型显式传入自定义子类 `GptOssRoutedExperts` 时，基类注册条目不会自动命中该子类。同样，对于工厂创建的 `FusedTopKRouter`，也需要通过昇腾路由工厂或显式派生组合补齐替换[^ascend-router-fac]。
 
 ### 设备通信器与图编译器
 
@@ -101,7 +101,7 @@ classDiagram
 
 六大 OOT 接口覆盖了主流扩展需求，但上游 `vllm` 的发版节奏往往快于官方扩展点的补齐速度。例如上游曾将显存查询切到 `torch.accelerator` 命名空间，却未将该接口接入 NPU 后端；部分调度器分块逻辑、混合缓存协调器或并行校验也尚未留出平台回调钩子[^ascend-patch-doc]。
 
-针对这些暂缺接口的场景，`vllm-ascend` 在源码中划分了严格的进程隔离补丁目录 `platform/` 与 `worker/`。如图 4 所示，这套机制之所以不能只靠一个入口函数打完所有补丁，根源在于 vLLM V1 的三进程隔离模型。
+针对这些暂缺接口的场景，`vllm-ascend` 在源码中划分了进程隔离的补丁目录 `platform/` 与 `worker/`。如图 4 所示，这套机制之所以不能只靠一个入口函数打完所有补丁，根源在于 vLLM V1 的三进程隔离模型。
 
 ```mermaid caption="图 4：vLLM V1 三进程启动与 OOT 插件及双层补丁加载时序"
 sequenceDiagram
@@ -124,7 +124,7 @@ sequenceDiagram
 - **全局补丁防重入**：3 个通用插件入口均先调防重入保护函数，确保单进程只执行 1 次 `platform/` 补丁。
 - **Worker 独立隔离**：`NPUWorker` 初始化时调用 `adapt_patch`，仅在计算子进程注入 `worker/` 补丁[^ascend-worker-init]。
 
-回到开头 `TP = 2` 的 4 进程案例：主进程在参数解析阶段会先加载 4 个通用插件，再执行 `pre_register_and_update`。若缺少模块级幂等标记，这 4 次入口调用会重复改写同一个上游函数，引发包装函数多层套娃。加上全局防重入标记后，4 个进程各自恰好只应用 1 次 `platform/` 补丁，而 `worker/` 补丁仅在 2 个计算子进程中各加载 1 次。
+回到开头 `TP = 2` 的 4 进程案例：主进程在参数解析阶段会先加载 4 个通用插件，再执行 `pre_register_and_update`。若缺少模块级幂等标记，这 4 次入口调用会重复改写同一个上游函数，引发包装函数多层嵌套。加上全局防重入标记后，4 个进程各自恰好只应用 1 次 `platform/` 补丁，而 `worker/` 补丁仅在 2 个计算子进程中各加载 1 次。
 
 面对不得不写的运行时补丁，设计文档确立了三条工程守则[^ascend-patch-doc]：
 
@@ -142,14 +142,14 @@ vllm-ascend/
 └── vllm_ascend/
     ├── __init__.py                # register()、全局防重入标记与通用插件入口函数
     ├── platform.py                # NPUPlatform 元数据与六大 OOT 钩子派发中枢
-    ├── device/                    # 芯片档案（A2/A3/A5/310P）、设备配置与操作抽象
+    ├── device/                    # 硬件能力配置（A2/A3/A5/310P）、设备配置与操作抽象
     ├── core/                      # 昇腾侧调度器变体与 KV Cache 配置辅助
     ├── worker/                    # NPUWorker、MRV2 适配与 NPU 计算执行主干
     ├── _310p/ & xlite/            # 310P 与 XLite 轻量运行时专用执行后端
     ├── attention/ & ops/          # Ascend 注意力后端、CustomOp 与融合算子实现
     ├── quantization/              # ModelSlim 量化配置解析与量化线性层适配
     ├── distributed/ & eplb/       # HCCL/MC2 通信组、Mooncake PD 与动态 EPLB
-    ├── compilation/               # ACL Graph 图捕获后端、阴影流与融合 Pass
+    ├── compilation/               # ACL Graph 图捕获后端、影子流与融合 Pass
     └── patch/
         ├── platform/              # Main 与 EngineCore 共用的全局平台补丁
         └── worker/                # NPUWorker 计算子进程专用补丁
@@ -187,7 +187,7 @@ flowchart TB
 
 [^ascend-platform-cfg]: `vllm-ascend@b776261`：`vllm_ascend/platform.py:398-441, 621-716, 1460-1594`（Apache-2.0），`pre_register_and_update` 与 `check_and_update_config` 完成全局补丁注入、配置校验及编译模式设置。
 
-[^ascend-worker-sel]: `vllm-ascend@b776261`：`vllm_ascend/platform.py:1596-1636` 与 `vllm_ascend/device/hardware_profile.py:417, 478`（Apache-2.0），`_setup_worker_and_scheduler` 按硬件档案选择 `NPUWorker`、`NPUWorker310` 或 `XliteWorker`。
+[^ascend-worker-sel]: `vllm-ascend@b776261`：`vllm_ascend/platform.py:1596-1636` 与 `vllm_ascend/device/hardware_profile.py:417, 478`（Apache-2.0），`_setup_worker_and_scheduler` 按硬件能力配置选择 `NPUWorker`、`NPUWorker310` 或 `XliteWorker`。
 
 [^ascend-attn-sel]: `vllm-ascend@b776261`：`vllm_ascend/platform.py:281-379`（Apache-2.0），`get_attn_backend_cls` 与 `_select_attn_backend_cls` 根据稀疏/MLA/PCP/芯片类型路由并校验 `supported_kv_cache_dtypes`。
 

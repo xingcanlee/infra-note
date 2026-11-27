@@ -1,5 +1,5 @@
 ---
-title: 'vLLM-Ascend 昇腾插件与硬件拓展导览'
+title: 'vLLM-Ascend 昇腾插件与硬件扩展导览'
 description: '华为昇腾以独立硬件插件形态接入 vLLM 主干。本系列对照 vllm-ascend 源码，拆解 OOT 插件接入、CPU 亲和性绑定、分形缓存、MC2 通算融合、Mooncake PD 传输与自定义算子开发。'
 series: { id: vllm-ascend, order: 1 }
 pubDate: 2026-10-23
@@ -11,13 +11,13 @@ toc: true
 
 把通用大模型推理引擎部署到华为昇腾 NPU 时，工程团队面对的第一个选择不是算子怎么写，而是代码仓库怎么接。如果直接拷贝上游 `vLLM` 主仓修改维护分叉分支，每次上游重构调度器或 Model Runner V2 都会引发大规模合并冲突。
 
-为此，`vllm-ascend` 选择了一条 **Out-of-Tree（OOT，树外硬件插件）**路线[^ascend-repo][^ascend-docs]。它不改动上游安装源码，而是借助 Python `entry_points`、PyTorch `PrivateUse1` 分发键以及可控的进程级补丁完成挂载。四代昇腾硬件、多路 ARM 主机资源调度、分形显存布局、集合通信与量化算子由此整套接入通用推理引擎之下。
+为此，`vllm-ascend` 选择了一条 **Out-of-Tree（OOT，独立硬件插件）**路线[^ascend-repo][^ascend-docs]。它不改动上游安装源码，而是借助 Python `entry_points`、PyTorch `PrivateUse1` 分发键以及可控的进程级补丁完成挂载。四代昇腾硬件、多路 ARM 主机资源调度、分形显存布局、集合通信与量化算子由此整套接入通用推理引擎之下。
 
-## 昇腾插件的七大硬件拓展版图
+## vllm-ascend 七大核心模块
 
-在学习本系列之前，建议先在[《vLLM 推理引擎：架构与核心组件》](../vllm/)中掌握通用的进程拓扑、PagedAttention、连续批调度与 ModelRunner V2。本系列在此基础上展开昇腾栈专属的七章拓展与落地能力，如图 1 所示。
+在学习本系列之前，建议先在[《vLLM 推理引擎：架构与核心组件》](../vllm/)中掌握通用的进程拓扑、PagedAttention、连续批调度与 ModelRunner V2。本系列在此基础上展开昇腾栈专属的七章扩展与落地能力，如图 1 所示。
 
-```mermaid caption="图 1：vllm-ascend 在 vLLM 主干之下的七层硬件拓展版图"
+```mermaid caption="图 1：vllm-ascend 在 vLLM 主干之下的七层硬件扩展架构"
 flowchart TB
     UP["vLLM 上游主干<br/>AsyncLLM · Scheduler · MRV2"] --> P1["01 OOT 插件与双进程 Patch<br/>entry_points · PrivateUse1 · NPUPlatform"]
     P1 --> P2["02 芯片抽象、CPU 亲和性与显存<br/>A2/A3/A5/310P · cpu_binding · CaMem"]
@@ -34,7 +34,7 @@ flowchart TB
 
 ## 七章目录与跨系列衔接
 
-本系列聚焦硬件插件架构、通信拓展、传输存储、算子开发与部署配置。至于 ACL Graph 影子流、可更新槽位 `TaskUpdate` 与条件子图，可衔接阅读[《推理执行图：CUDA Graph 与 ACL Graph》](../execgraph/)第 5 至第 7 章。全系列共七章：
+本系列聚焦硬件插件架构、通信扩展、传输存储、算子开发与部署配置。至于 ACL Graph 影子流、可更新槽位 `TaskUpdate` 与条件子图，可衔接阅读[《推理执行图：CUDA Graph 与 ACL Graph》](../execgraph/)第 5 至第 7 章。全系列共七章：
 
 | 章节                                                                                   | 核心机制                                | 解决痛点                   |
 | -------------------------------------------------------------------------------------- | --------------------------------------- | -------------------------- |

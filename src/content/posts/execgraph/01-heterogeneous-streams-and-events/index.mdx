@@ -1,6 +1,6 @@
 ---
-title: '01 异构算力流：硬件队列、跨流同步与发射墙'
-description: '小批量解码时 CPU 逐算子等待会阻塞硬件流水。本文面向零基础开发者，拆解 SQ/CQ 与 Doorbell 硬件队列、TS 调度器、单流保序、多流竞态与发射气泡仿真。'
+title: '01 异构执行流：硬件队列、跨流同步与发射瓶颈'
+description: '小批量解码时 CPU 逐算子等待会阻塞硬件流水。本文拆解 SQ/CQ 与 Doorbell 硬件队列、TS 调度器、单流保序、多流竞态与发射气泡仿真。'
 series: { id: execgraph, order: 2 }
 pubDate: 2026-10-16
 draft: false
@@ -11,9 +11,9 @@ import StreamEventPipelineExplainer from './explainers/stream-event-pipeline';
 
 大模型推理机器中，主机 CPU 负责跑 Python 调度代码。设备侧 GPU（图形处理器）或 NPU（神经网络处理器）负责矩阵运算，两者分居总线两侧，单次跨总线控制往返以微秒计。
 
-若 CPU 每发一个算子都原地等它算完再发下一个，主机和设备就会轮流空转。为解决该问题，异构运行时软件栈普遍采用 **Asynchronous Execution Model（异步执行模型）**。CPU 只需把任务填进队列并敲门铃通知设备，即可立刻返回执行后续 Python 代码。
+若 CPU 每发一个算子都原地等它算完再发下一个，主机和设备就会轮流空转。为解决该问题，异构运行时软件栈普遍采用 **Asynchronous Execution Model（异步执行模型）**。CPU 只需把任务填进队列并写入门铃寄存器通知设备，即可立刻返回执行后续 Python 代码。
 
-## 主机敲门铃，设备拉队列：异步通道怎么运转
+## 主机写门铃与设备拉队列：异步通道运转
 
 CUDA Runtime 与 CANN Runtime 在主从两侧各维护一套环形任务通道。整个流程按“主机填单、门铃通知、设备消费、回写回执”四步推进，如图 1 和图 2 所示[^cann-model]。
 
@@ -24,7 +24,7 @@ sequenceDiagram
     participant D as TS 调度器
     participant CQ as CQ 队列
     H->>Q: 1. 写入 Args 与 SQE
-    H->>Q: 2. 敲 Doorbell 立刻返回
+    H->>Q: 2. 写 Doorbell 立刻返回
     Note over H: 继续执行后续 Python
     Q-->>D: 3. 按 FIFO 拉取 SQE
     D->>D: 4. 派发计算或 DMA
@@ -65,17 +65,17 @@ sequenceDiagram
 
 - 多线程共用默认流时，算子先后次序受主机线程调度抢占影响，极易出现偶发竞态。
 - 无论是 CUDA Graph 还是 ACL Graph，默认都禁止把全局默认流直接纳入静态图捕获域。
-- 工程初始化时应当用 `aclrtCreateStream` 或 `torch.npu.Stream()` 显式创建计算流、通信流与预取流。
+- 工程初始化时应当用 `aclrtCreateStream` 或 `torch.npu.Stream()` 显式创建计算流、通信流与 Prefetch 流。
 
 ## 单流保序与多流竞态：Event 如何接力
 
-为演示多流何时需要手工同步，下文取 4 个连续算子作为微型层：`K1 RMSNorm` 耗时 $4\,\mu\text{s}$、`K2 QKV` 耗时 $6\,\mu\text{s}$、`K3 Attention` 耗时 $8\,\mu\text{s}$、`K4 OutProj` 耗时 $5\,\mu\text{s}$。同时设想一条跑在旁路的通信或预取任务 `S1`，耗时 $26\,\mu\text{s}$。
+为演示多流何时需要手工同步，下文取 4 个连续算子作为示例子层：`K1 RMSNorm` 耗时 $4\,\mu\text{s}$、`K2 QKV` 耗时 $6\,\mu\text{s}$、`K3 Attention` 耗时 $8\,\mu\text{s}$、`K4 OutProj` 耗时 $5\,\mu\text{s}$。同时设想一条跑在旁路的通信或 Prefetch 任务 `S1`，耗时 $26\,\mu\text{s}$。
 
-### 单流天然保序，双流为何读到脏数据
+### 单流顺序执行，双流为何读到脏数据
 
-**同一条 Stream 内部严格保证 FIFO（First-In First-Out，先进先出）顺序**。只要 `K1` 到 `K4` 先后投入同一队列 `SQ0`，设备调度器就会等 `K1` 写回显存再启动 `K2`，算子之间无需插入同步屏障。
+**同一条 Stream 内部按 FIFO（First-In First-Out，先进先出）顺序执行**。只要 `K1` 到 `K4` 先后投入同一队列 `SQ0`，设备调度器就会等 `K1` 写回显存再启动 `K2`，算子之间无需插入同步屏障。
 
-一旦把计算与通信拆进两条队列，情况就不同了。例如 DeepSeek-V4.1-Flash 在第 1、14 层用副流异步搬运 `Engram` 记忆表，或主干与 `AllReduce` 并行，两条独立 SQ 会按各自空闲状态抢跑[^v41-stream]。若 `K4` 依赖 `S1` 的结果却缺少屏障，`SQ0` 就会在 $44\,\mu\text{s}$ 提前读走未写完的旧显存。
+一旦把计算与通信拆进两条队列，情况就不同了。例如 DeepSeek-V4.1-Flash 在第 1、14 层用副流异步搬运 `Engram` 记忆表，或主干与 `AllReduce` 并行，两条独立 SQ 会按各自调度进度并发推进[^v41-stream]。若 `K4` 依赖 `S1` 的结果却缺少屏障，`SQ0` 就会在 $44\,\mu\text{s}$ 提前读走未写完的旧显存。
 
 ### 四种同步原语取舍与 Fork-Join 拓扑
 
@@ -88,11 +88,11 @@ sequenceDiagram
 | Notify        | `aclrtRecordNotify` / `WaitAndResetNotify`  | 8192 / 65535       | 纯设备级轻量任务握手信号 |
 | ExternalEvent | `torch_npu.npu.ExternalEvent`               | 捕获绑定后复用     | 跨静态图与外部更新流等待 |
 
-图 3 按 5 步推演了异步入队、单流保序、双流并发竞态以及发射气泡，支持在第 3 步切换“无屏障”与“加 Event 屏障”对照时序差异。
+图 3 交互对比单流排队、多流并行与 Event 同步、小批量发射气泡以及主机同步陷阱 4 种调度状态下的 Host 与双流泳道时序。
 
 <StreamEventPipelineExplainer
   client:visible
-  title="图 3：主机异步入队、单流保序、双流竞态与 Event 跨流协同 5 步推演"
+  title="图 3：单流排队、多流 Event 同步、发射气泡与主机同步陷阱时序对比"
 />
 
 工程上，多流并发几乎都收拢为封闭的 **Fork-Join 有向无环图**，如图 4 所示。主流算出前置结果后发射 `Record(E_fork)` 放行副流，副流收尾前发 `Record(E_join)`，主流 `Wait(E_join)` 汇合后再继续执行 `DownProj`。这种封闭结构也是静态图录制唯一放行的多流形态。
@@ -109,11 +109,11 @@ flowchart TD
     WJ --> DP["S0: DownProj"]
 ```
 
-## Host-bound 发射墙与纯 CPU 仿真
+## 主机发射开销瓶颈与纯 CPU 仿真
 
 Horace He 在性能综述[^horace-brrr]中把深度学习耗时拆成三类约束：算力受限、带宽受限与 **Overhead（发射开销受限）**。
 
-在 **Prefill（预填充）** 阶段，大矩阵乘法动辄运行数百微秒到数毫秒，算子耗时远超 CPU 发射耗时，系统处于算力或带宽主导区间。进入小批量 **Decode（解码）** 后，单算子缩水到 $4$–$8\,\mu\text{s}$，主机每次组装参数并写队列却仍要 $10$–$15\,\mu\text{s}$，系统彻底退化为 Overhead 主导[^pytorch-cg-blog]。
+在 **Prefill（预填充）** 阶段，大矩阵乘法动辄运行数百微秒到数毫秒，算子耗时远超 CPU 发射耗时，系统处于算力或带宽主导区间。进入小批量 **Decode（解码）** 后，单算子缩水到 $4$–$8\,\mu\text{s}$，主机每次组装参数并写队列却仍要 $10$–$15\,\mu\text{s}$，系统退化为 Overhead 主导[^pytorch-cg-blog]。
 
 对包含 $K$ 个算子的顺序单流，单步端到端耗时与硬件有效占空比满足：
 
@@ -126,7 +126,7 @@ $$
 
 只要 $T_{\text{launch}} > T_{\text{kernel}}$，硬件跑完一个算子就只能暴露出空闲气泡等下一条指令。放大到 40 层 DeepSeek-V4.1-Flash 单步，整网约 1120 次发射按每次 $10\,\mu\text{s}$ 算，CPU 发射总耗时高达 11.2 毫秒，直接把 4.7 毫秒设备计算淹没在气泡里。
 
-下面的纯 CPU 仿真脚本按事件时钟核算出微型层单流气泡与双流 Fork-Join 的重叠收益：
+下面的纯 CPU 仿真脚本按事件时钟核算出示例子层单流气泡与双流 Fork-Join 的重叠收益：
 
 ```python
 from dataclasses import dataclass
@@ -217,7 +217,7 @@ classDiagram
     Event <|-- ExternalEvent : graph-safe resettable variant
 ```
 
-异步队列解决了 CPU 原地干等的问题，但算子数量太多时依旧逃不出“发射一次算一小步”的泥潭。很多开发者自然会想：打开 `torch.compile` 把零碎算子编成一张图，是不是就一劳永逸了？[第 2 章：PyTorch 编译栈：分段融合与发射上限](../02-torch-compile-fundamentals/)将拆解编译器的工作流与它的真实极限。
+异步队列解决了 CPU 原地干等的问题，但算子数量太多时依旧逃不出“发射一次算一小步”的泥潭。工程上常有一个直接思路：打开 `torch.compile` 将零散算子编译成整图，是否就能一劳永逸消除发射开销？[第 2 章：PyTorch 编译栈：分段融合与发射上限](../02-torch-compile-fundamentals/)将拆解编译器的工作流与它的真实极限。
 
 [^cann-model]: 参阅 `cann/runtime`（提交 `1954820a`）官方文档 `docs/zh/quick_start/Runtime_programming_model.md`，描述主机异步入队、Stream 队列 FIFO 保证及 Event/Notify 同步。
 
@@ -231,7 +231,7 @@ classDiagram
 
 [^torch-streams]: 参阅 `Ascend/pytorch`（提交 `d09e29e4`）源码 `torch_npu/npu/streams.py` 第 179–365 行对 `Event(external=True)` 及 `ExternalEvent.reset()` 复用的说明。
 
-[^v41-stream]: 关于 DeepSeek-V4.1-Flash 在第 1、14 层利用后台预取流与跨流事件注入 Engram 静态记忆的具体时序，见本站[10 串珠成链：V4.1 单步全链路与双硬件协同](../../deepseek/10-architecture-synthesis/)。
+[^v41-stream]: 关于 DeepSeek-V4.1-Flash 在第 1、14 层利用后台 Prefetch 流与跨流事件注入 Engram 静态记忆的具体时序，见本站[10 全链路整合：V4.1 单步执行与双硬件协同](../../deepseek/10-architecture-synthesis/)。
 
 [^horace-brrr]: Horace He, [Making Deep Learning Go Brrrr From First Principles](https://horace.io/brrr_intro.html)，提出 Compute、Bandwidth 与 Overhead 三类耗时受限框架。
 

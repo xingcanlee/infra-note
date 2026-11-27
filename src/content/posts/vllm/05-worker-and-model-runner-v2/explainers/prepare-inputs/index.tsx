@@ -1,7 +1,7 @@
 import { useMemo } from 'react';
 import { BeatExplainer } from '@/explainers/kit';
 import PrepareInputsStage from './PrepareInputsStage';
-import { BEAT_SCHEDULES, buildPrepareInputsSteps } from './steps';
+import { buildPrepareInputsSteps } from './steps';
 import './style.css';
 
 export { buildPrepareInputsSteps };
@@ -18,13 +18,11 @@ export default function PrepareInputsExplainer({ title }: PrepareInputsExplainer
       steps={steps}
       title={title}
       label={title}
+      wide
       stageMinHeight={430}
-      getBeats={(step) => BEAT_SCHEDULES[step.state.phase]}
       getFormula={(step) => step.state.formulaTex}
     >
-      {(step, { beat, dotToken }) => (
-        <PrepareInputsStage state={step.state} beat={beat} playToken={dotToken} />
-      )}
+      {(step, { dotToken }) => <PrepareInputsStage state={step.state} playToken={dotToken} />}
     </BeatExplainer>
   );
 }

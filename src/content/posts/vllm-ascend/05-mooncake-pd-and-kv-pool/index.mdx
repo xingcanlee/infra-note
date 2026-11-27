@@ -23,7 +23,7 @@ import MooncakePdFlowExplainer from './explainers/mooncake-pd-flow';
 
 ## 从四层请求看三类传输模式
 
-我们先用同一组可手算的数字串联三种昇腾 PD 传输方案。设一个请求经过 $4$ 层模型，每层 Prefill 计算耗时 $t_{\text{comp}} = 2.0\text{ ms}$，全层计算共 $8.0\text{ ms}$。
+我们用同一条 $4$ 层请求对比三种昇腾 PD 传输方案。设一个请求经过 $4$ 层模型，每层 Prefill 计算耗时 $t_{\text{comp}} = 2.0\text{ ms}$，全层计算共 $8.0\text{ ms}$。
 
 跨节点单层网络传输耗时 $t_{\text{net}} = 1.5\text{ ms}$，整批 $4$ 层传输为 $6.0\text{ ms}$。Decode 节点控制面路由耗时 $t_{\text{route}} = 0.5\text{ ms}$，主机到显存拷贝每层 $t_{\text{h2d}} = 1.0\text{ ms}$，首字解码耗时 $1.0\text{ ms}$。
 
@@ -31,12 +31,9 @@ import MooncakePdFlowExplainer from './explainers/mooncake-pd-flow';
 - **逐层推送模式**：D 节点先预分配，P 节点每算完一层即推写，与后续计算重叠，P 端持块降至 $9.5\text{ ms}$。
 - **远端主机中转**：若 D 端 HBM 排队拥堵 $3.0\text{ ms}$，第一跳入驻 D 端内存后即解锁 P 端，持块守在 $14.5\text{ ms}$。
 
-若后续请求命中 D 端主机缓存，整个 P 节点计算与跨机拉取都会被跳过，仅剩 $4.0\text{ ms}$ 本地加载与 $1.0\text{ ms}$ 解码。下面的交互图解以同一条 $4$ 层请求为例，按时间步对比三类模式在代理、源显存、主机内存与目标显存之间的流转。
+若后续请求命中 D 端主机缓存，整个 P 节点计算与跨机拉取都会被跳过，仅剩 $4.0\text{ ms}$ 本地加载与 $1.0\text{ ms}$ 解码。图 1 以同一条 $4$ 层请求为例，按时间步对比三类模式在代理、源显存、主机内存与目标显存之间的流转。
 
-<MooncakePdFlowExplainer
-  client:visible
-  title="图 1：Mooncake Pull、Layerwise Push 与 D2RH 三模式动态推演"
-/>
+<MooncakePdFlowExplainer client:visible title="图 1：Mooncake PD 分离四模式时序对比" />
 
 ## Mooncake 三种 PD 传输机制
 
@@ -98,13 +95,13 @@ $$\text{pd\_tp\_ratio} = \frac{P_{\text{tp}}}{D_{\text{tp}}}, \quad \text{num\_h
 
 $$N_{\text{buf}} = I + \min(B,\; N - I)$$
 
-Prefill 阶段只需保留少量物理页轮转使用，计算第 $l$ 层时异步把第 $l-1$ 层存入 `Memcache` 池并预取第 $l+1$ 层（图 5）[^ascend-sparse-doc]。当 `AscendStore` 通过 `AscendMultiConnector` 与远程 D2H 混用时，物理槽位必须等待存储保存与远端读取双重完成门控同时放行才能覆写[^ascend-sparse-doc][^mooncake-v2-push]。
+Prefill 阶段只需保留少量物理页轮转使用，计算第 $l$ 层时异步把第 $l-1$ 层存入 `Memcache` 池并 Prefetch 第 $l+1$ 层（图 5）[^ascend-sparse-doc]。当 `AscendStore` 通过 `AscendMultiConnector` 与远程 D2H 混用时，物理槽位必须等待存储写入与远端读取两项完成事件均就绪后才能覆写[^ascend-sparse-doc][^mooncake-v2-push]。
 
-![昇腾逐层 KV 卸载（Offload）与回迁（Onload）流水掩盖示意](./images/vllm-ascend-layerwise-offload.png '图 5：四层推理计算中 Layer0 卸载至 Host 与 Layer2 预取回迁 Device 的时间片重叠（来源 vllm-ascend 官方文档，Apache-2.0）')
+![昇腾逐层 KV 卸载（Offload）与回迁（Onload）流水掩盖示意](./images/vllm-ascend-layerwise-offload.png '图 5：四层推理计算中 Layer0 卸载至 Host 与 Layer2 Prefetch 回迁 Device 的时间片重叠（来源 vllm-ascend 官方文档，Apache-2.0）')
 
 其次是面向单机突发拥塞的 `PreemptOffloadConnectorV1`[^preempt-offload]。传统调度在显存不足时直接驱逐抢占请求并丢弃缓存，恢复时只能重算整段提示词；该连接器在抢占发生前截留物理块，按每卡配额异步批量卸载至本机固定 CPU 内存，并支持可选的卸载前缀复用[^preempt-offload]。
 
-最后针对超长序列的 **SFA（Sparse Flash Attention，稀疏闪电注意力）** 与 MLA 解码阶段，全层同步加载会拖垮低计算密度的解码步[^ascend-sparse-doc]。为此，`sparse_kv_offload` 将全量 BF16 主键值历史留在已注册的 Host DRAM，仅在 NPU HBM 保留量化索引缓存与每层热 `Top-k` 槽位缓冲[^ascend-sparse-doc][^sparse-kv-offload]。
+最后针对超长序列的 **SFA（Sparse Flash Attention，稀疏 FlashAttention）** 与 MLA 解码阶段，全层同步加载会拖垮低计算密度的解码步[^ascend-sparse-doc]。为此，`sparse_kv_offload` 将全量 BF16 主键值历史留在已注册的 Host DRAM，仅在 NPU HBM 保留量化索引缓存与每层热 `Top-k` 槽位缓冲[^ascend-sparse-doc][^sparse-kv-offload]。
 
 解码前向中，索引器选出重要位置后由 **LRU（Least Recently Used，最近最少使用淘汰策略）** 驻留表筛选未命中槽位，仅把缺失行拷贝回显存并交由融合算子完成读取[^ascend-sparse-doc]。`copy_sfa_topk_slots` 则以单调递增代际编号管理请求独占槽位，防止流水线并发复用时读到前任请求的残留数据[^sparse-kv-offload]。
 

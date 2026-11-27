@@ -79,7 +79,7 @@ export default function SwimlaneTimeline({
   playhead,
   title,
 }: SwimlaneTimelineProps) {
-  const { stepTransition } = useDiagramMotion();
+  const { stepTransition, canAnimateFlow } = useDiagramMotion();
   const trackX = x + gutterW;
   const trackW = Math.max(120, w - gutterW);
   const topPad = title ? 24 : 14;
@@ -281,6 +281,8 @@ export default function SwimlaneTimeline({
         const tri = `${ex},${y1} ${bx + px},${by + py} ${bx - px},${by - py}`;
         const evVisible = ev.visible ?? true;
 
+        const syncPath = `M ${sx.toFixed(1)} ${y0.toFixed(1)} L ${ex.toFixed(1)} ${y1.toFixed(1)}`;
+
         return (
           <motion.g
             key={`ev-${ei}`}
@@ -298,6 +300,11 @@ export default function SwimlaneTimeline({
               strokeDasharray={ev.dashed ? '3 2' : undefined}
             />
             <polygon points={tri} fill={stroke} />
+            {evVisible && ev.active && canAnimateFlow && (
+              <circle r={3.2} fill={stroke} stroke="var(--wisp-bg)" strokeWidth={1.1}>
+                <animateMotion dur="1.15s" repeatCount="indefinite" path={syncPath} />
+              </circle>
+            )}
             {ev.label &&
               (() => {
                 const evKind = fontKindFor(ev.label, 'mono');
@@ -348,6 +355,7 @@ export default function SwimlaneTimeline({
           stroke="var(--wisp-accent)"
           strokeWidth={2}
           strokeDasharray="4 2"
+          className={canAnimateFlow ? 'wisp-playhead-glow' : undefined}
         />
       )}
     </g>

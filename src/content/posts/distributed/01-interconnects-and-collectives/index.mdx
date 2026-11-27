@@ -28,11 +28,11 @@ $$
 
 紧接着进入 `AllGather` 阶段，各卡同样走过 $P - 1$ 步，把刚算得的完整分片继续顺时针传递并直接覆写下游槽位。走完这轮接力后，全组每张卡都集齐了完整的归约向量。
 
-设 4 张卡的初始向量分别为 $[1, 2, 0, 4]$、$[3, 1, 2, 0]$、$[0, 4, 1, 2]$ 与 $[2, 1, 3, 2]$，目标全局求和结果为 $[6, 8, 6, 8]$。可以通过图 1 的步进按钮依次查看各卡在两阶段 6 跳传输中的分片变化与累计耗时。
+设 4 张卡的初始向量分别为 $[1, 2, 0, 4]$、$[3, 1, 2, 0]$、$[0, 4, 1, 2]$ 与 $[2, 1, 3, 2]$，目标全局求和结果为 $[6, 8, 6, 8]$。图 1 展示了各卡在两阶段 6 跳传输中的分片变化与累计耗时。
 
 <RingCollectivesExplainer
   client:visible
-  title="图 1：4 卡 Ring AllReduce（ReduceScatter + AllGather）分步推演"
+  title="图 1：4 卡 Ring AllReduce（ReduceScatter + AllGather）分步演示"
 />
 
 如图 1 所示，4 卡环形归约在每个阶段各走 $P - 1$ 跳，每跳传输 $S / P$ 字节数据，其总延迟为：
@@ -97,7 +97,7 @@ flowchart TD
     A2 --> A3["PyHccl 与 AIV 核展开"]
 ```
 
-### NVIDIA GPU：小消息对称显存短路
+### NVIDIA GPU：小消息对称显存快速路径
 
 跟踪 `vllm` 中 `CudaCommunicator.all_reduce` 的分发逻辑，可以看到一条优先抢占低 $\alpha$ 通道的级联路径[^vllm-cuda-ar]：
 
@@ -120,7 +120,7 @@ if symm_mem_comm is not None and symm_mem_comm.should_use_symm_mem(input_):
 return pynccl_comm.all_reduce(input_)
 ```
 
-在 Decode 小消息下，常规 NCCL（NVIDIA Collective Communications Library，NVIDIA 集合通信库）通信延迟较高。它的 Kernel 启动与多卡控制面协调本身就要消耗数十微秒。框架因此优先探测对称显存 `SymmMem` 或 `CustomAllreduce` 通路，通过 NVLink 在设备 Kernel 中直写对端缓冲区，绕开标准调度。当消息增大到带宽主导区或超出对等共享域时，再回落到 `PyNcclCommunicator`。
+在 Decode 小消息下，常规 NCCL（NVIDIA Collective Communications Library，NVIDIA 集合通信库）通信延迟较高。它的 Kernel 启动与多卡控制面协调本身就要消耗数十微秒。框架因此优先探测对称显存 `SymmMem` 或 `CustomAllreduce` 快速路径（Fast Path），通过 NVLink 在设备 Kernel 中直写对端缓冲区，绕开标准调度。当消息增大到带宽主导区或超出对等共享域时，再回落到 `PyNcclCommunicator`。
 
 ### 华为昇腾 NPU：分代量化归约与向量核展开
 

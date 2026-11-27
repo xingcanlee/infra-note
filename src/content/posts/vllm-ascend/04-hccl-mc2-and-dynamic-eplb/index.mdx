@@ -19,7 +19,7 @@ toc: true
 
 在此之上，`init_ascend_model_parallel` 先将 `world_size` 塑形为五维网格 `[-1, DP, PP, PCP, TP]`[^parallel-state]。随后它切分出专属 **HCCL（Huawei Collective Communication Library，华为集合通信库）** 组与细粒度域，分组对照如图 1 所示[^kvpp-pg][^p-tp-pg][^fine-tp]。
 
-```mermaid caption="图 1：昇腾拓展并行组与默认 TP/PP/DP 通信域切分"
+```mermaid caption="图 1：昇腾扩展并行组与默认 TP/PP/DP 通信域切分"
 flowchart TB
     BASE["上游默认: TP / PP / DP / PCP"] --> EXT1["专属子域: MC2 / KVPP / P_TP / EPLB"]
     EXT1 --> EXT2["细粒度 TP (otp/mlptp) + ReplicatedGroup"]
@@ -30,7 +30,7 @@ flowchart TB
 
 ## 通信后端与缓冲区陷阱
 
-在设备通信器层，`NPUCommunicator` 继承了 vLLM 的通信基类，并挂入空实现的门面管理器以跳过仅适用于 CUDA 的容错检查[^npu-comm]。开启量化归约且组规模大于 $1$ 时，它的 `all_reduce` 会根据硬件代际自动分流到 INT8 的 `QuantizedAllReduce` 或 MXFP8 的 `Mxfp8AllReduce`。
+在设备通信器层，`NPUCommunicator` 继承了 vLLM 的通信基类，并挂入空实现的占位管理器以跳过仅适用于 CUDA 的容错检查[^npu-comm]。开启量化归约且组规模大于 $1$ 时，它的 `all_reduce` 会根据硬件代际自动分流到 INT8 的 `QuantizedAllReduce` 或 MXFP8 的 `Mxfp8AllReduce`。
 
 当需要脱离 PyTorch `c10d` 进程组执行集合操作时，`PyHcclCommunicator` 通过 `ctypes` 直接封装底层动态库[^pyhccl]。
 
@@ -50,15 +50,15 @@ flowchart TB
 
 ## 四路 MoE 通信路径与通算融合
 
-理解四路 MoE 通信实现之前，先看一个可手算的 $4$ 卡最小集群样例。设 `EP = 4`，全局共 $8$ 个逻辑专家，每张卡持有 $2$ 个本地专家。每个 token 选 `top_k = 2` 个专家，每卡当前输入 $B = 8$ 个 token，即每卡产生 $16$ 条路由激活。
+理解四路 MoE 通信实现之前，先以一个 $4$ 卡最小集群为例。设 `EP = 4`，全局共 $8$ 个逻辑专家，每张卡持有 $2$ 个本地专家。每个 token 选 `top_k = 2` 个专家，每卡当前输入 $B = 8$ 个 token，即每卡产生 $16$ 条路由激活。
 
 若走 `AllGather` 路径，每张卡先把本卡 $8$ 个 token 广播并聚合成 $4 \times 8 = 32$ 个 token 的全量激活。本地算子再过滤出属于本卡 $2$ 个专家的条目参与计算，通信量随卡数线性放大。
 
-若走 `AllToAllV` 或 `MC2` 点对点分发，每张卡只把路由目标在远程卡上的激活发送出去。在均衡负载下，每卡仅收发约 $16$ 条激活，彻底消除全集结带来的冗余数据。
+若走 `AllToAllV` 或 `MC2` 点对点分发，每张卡只把路由目标在远程卡上的激活发送出去。在均衡负载下，每卡仅收发约 $16$ 条激活，消除了全收集（AllGather）带来的冗余数据。
 
 `setup_moe_comm_method` 在初始化阶段注册了最多四套通信实现[^moe-comm-setup]，在执行期按数据规模与硬件代际切换。
 
-全集结路径 `AllGatherCommImpl` 面向单卡 EP 或昇腾 310P 等兼容硬件。它调用 `npu_moe_init_routing` 完成重排与可选量化，计算后经 `npu_moe_token_unpermute` 恢复形状与加权[^ag-dispatcher]。
+`AllGather` 路径 `AllGatherCommImpl` 面向单卡 EP 或昇腾 310P 等兼容硬件。它调用 `npu_moe_init_routing` 完成重排与可选量化，计算后经 `npu_moe_token_unpermute` 恢复形状与加权[^ag-dispatcher]。
 
 异步分发路径 `AlltoAllCommImpl` 面向超出融合算子容量的大批量或开启 LoRA 的场景。它借助锁页内存异步拷出 `input_splits` 与 `output_splits`，再通过 `async_all_to_all` 交换激活。每次 `wait()` 完成后，算子立刻调用 `.untyped_storage().resize_(0)` 释放临时显存[^a2a-dispatcher]。
 
@@ -74,7 +74,7 @@ flowchart TB
 
 ### 通信路径路由与缓冲区旁路
 
-每次前向进入模型上下文时，`select_moe_comm_method` 会依据芯片画像 `HardwareProfile` 中的 `moe_comm_policy` 决策本步路径[^moe-selector]：
+每次前向进入模型上下文时，`select_moe_comm_method` 会依据硬件能力配置（`HardwareProfile`）中的 `moe_comm_policy` 决策本步路径[^moe-selector]：
 
 - **A2 策略**：未开融合且单卡专家不大于 $24$、EP 不小于 $16$、不超容量时选 `MC2`，否则回退 `AllGather`[^moe-policies]。
 - **A3 策略**：优先走 `FusedMC2`（EP 不大于 $32$ 时），否则在容量上限内选 `MC2`，超限切入 `AllToAll`。
@@ -247,7 +247,7 @@ after_slots=[[0, 1, 6], [0, 1, 7], [0, 2, 4], [0, 3, 5]], after_loads=[32, 32, 2
 
 [^fused-mc2]: `vllm-ascend@b776261`, `vllm_ascend/ops/fused_moe/moe_comm_method.py:275-331,554-697`, `FusedMC2CommImpl`、`dispatch_ffn_combine` 与 `MegaMoe` 共享专家融合 (Apache-2.0).
 
-[^mega-moe-symm]: `vllm-ascend@b776261`, `vllm_ascend/ops/fused_moe/moe_comm_method.py:384-480`, `_init_mega_moe_symm_buffer` 编译期秩不变容量约束 (Apache-2.0).
+[^mega-moe-symm]: `vllm-ascend@b776261`, `vllm_ascend/ops/fused_moe/moe_comm_method.py:384-480`, `_init_mega_moe_symm_buffer` 各 Rank 一致的编译期容量约束 (Apache-2.0).
 
 [^mega-moe-refresh]: `vllm-ascend@b776261`, `vllm_ascend/ops/fused_moe/moe_comm_method.py:333-382`, `prepare_hccl_teardown` 与 `refresh_hccl_runtime_state` (Apache-2.0).
 

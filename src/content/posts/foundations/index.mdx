@@ -1,6 +1,6 @@
 ---
 title: '推理与异构硬件基础：GPU 与昇腾单卡底座'
-description: '单卡推理常出现算力闲置却卡在显存带宽，跨卡与引擎优化也受制于芯片底层边界。本系列围绕 NVIDIA GPU 与华为昇腾 NPU，用可手算例程和双仓源码串联负载建模、微架构、注意力融合与量化底座。'
+description: '单卡推理常出现算力闲置却卡在显存带宽，跨卡与引擎优化也受制于芯片底层边界。本系列围绕 NVIDIA GPU 与华为昇腾 NPU，用微型数值示例和双仓源码串联负载建模、微架构、注意力融合与量化底座。'
 series: { id: foundations, order: 1 }
 pubDate: 2026-11-15
 tags: [AI Infra, Roofline, NVIDIA, Ascend, Attention, Quantization]
@@ -34,7 +34,7 @@ flowchart TD
 
 华为昇腾 DaVinci AI Core 则取消了硬件 **SIMT（Single Instruction, Multiple Threads，单指令多线程）**线程束池。它在 `1C2V` 核组内把 Scalar 标量核、Cube 矩阵单元与两个独立 Vector 长向量核解耦为异步流水线，由软件显式编排数据搬运与计算重叠。
 
-具体到片上搬运通路，昇腾由软件调度 **MTE（Memory Transfer Engine，数据搬运引擎）**双缓冲乒乓。同时在 L1/L0 缓存与 **UB（Unified Buffer，片上统一缓存）**之间显式管理分块，配合权重 `FRACTAL_NZ` 分形排布喂饱矩阵单元。
+具体到片上搬运通路，昇腾由软件调度 **MTE（Memory Transfer Engine，数据搬运引擎）**双缓冲乒乓。同时在 L1/L0 缓存与 **UB（Unified Buffer，片上统一缓存）**之间显式管理分块，配合权重 `FRACTAL_NZ` 分形排布打满矩阵单元。
 
 建立负载与微架构标尺后，第 03 至 04 章聚焦序列维度的计算与显存开销。我们先推导因果自注意力、**RoPE（Rotary Position Embedding，旋转位置编码）**与 **YaRN（Yet another RoPE extensioN，长上下文分频外推）**。随后从显存与带宽开销出发，剖析头共享折中方案 **MQA（Multi-Query Attention，多查询注意力）**与 GQA。
 
@@ -49,7 +49,7 @@ flowchart TD
 3. [03 自注意力与 RoPE 旋转位置编码](./03-attention-and-rope/)：从检索直觉推导因果自注意力，用二维旋转解释 RoPE 相对不变性，并展开布局等价性与 YaRN 分频外推。
 4. [04 KV Cache 与 MQA / GQA](./04-kv-cache-and-gqa/)：解释增量解码为何必须缓存历史键值，量化分析 64 层多头显存与带宽压力，并对比 MQA、GQA 与双端分页排布。
 5. [05 FlashAttention 与硬件对齐 Kernel](./05-flash-attention/)：用最小分块例子推导在线 Softmax，梳理 FA-2 到 FA-4 演进、Split-KV 归并，以及昇腾 `UB` 在线归并。
-6. [06 模型与 KV 低比特量化](./06-quantization/)：从离群通道零桶截断讲起，对比平滑旋转恢复、块缩放与微缩放格式，以及 KV 量化与双端路由差异。
+6. [06 模型与 KV 低比特量化](./06-quantization/)：从离群通道量化归零讲起，对比平滑旋转恢复、块缩放与微缩放格式，以及 KV 量化与双端路由差异。
 
 ## 后续延伸
 

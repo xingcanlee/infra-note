@@ -5,7 +5,7 @@ import { describe, expect, it, vi } from 'vitest';
 vi.mock('virtual:wisp/locale', () => ({ lang: 'zh-CN' }));
 
 import PrepareInputsExplainer, { buildPrepareInputsSteps } from './index';
-import { BEAT_SCHEDULES, STAGED_DIFFS_STEP2, TRACE_STEP1, TRACE_STEP2 } from './steps';
+import { STAGED_DIFFS_STEP2, TRACE_STEP1, TRACE_STEP2 } from './steps';
 
 describe('PrepareInputsExplainer steps and SSR', () => {
   it('computes exact Step 1 and Step 2 tensor indices and slot mappings', () => {
@@ -35,16 +35,14 @@ describe('PrepareInputsExplainer steps and SSR', () => {
     expect(TRACE_STEP2.seqLens).toEqual([4, 3, 8]);
   });
 
-  it('produces 6 ordered steps with valid beats, captions, and balanced KaTeX', () => {
+  it('produces 4 ordered steps with valid captions and balanced KaTeX', () => {
     const steps = buildPrepareInputsSteps();
-    expect(steps).toHaveLength(6);
+    expect(steps).toHaveLength(4);
     expect(steps.map((s) => s.state.phase)).toEqual([
       'init',
-      'step1_tokens',
-      'step1_slots',
+      'step1_map',
       'staged_write',
-      'step2_mixed',
-      'mrv2_async',
+      'async_gather',
     ]);
 
     for (const step of steps) {
@@ -53,30 +51,22 @@ describe('PrepareInputsExplainer steps and SSR', () => {
       expect(step.caption).not.toMatch(/`|\*\*|[「」『』!！]/);
       const unescaped = step.caption.replace(/\\\$/g, '');
       expect((unescaped.match(/\$/g) ?? []).length % 2).toBe(0);
-
-      const schedule = BEAT_SCHEDULES[step.state.phase];
-      expect(schedule.length).toBeGreaterThanOrEqual(4);
-      expect(schedule[0].at).toBe(0);
-      for (let i = 1; i < schedule.length; i++) {
-        expect(schedule[i].at).toBeGreaterThan(schedule[i - 1].at);
-      }
-      for (const beat of schedule) {
-        expect(beat.label.trim().length).toBeGreaterThan(0);
-        expect(beat.label).not.toMatch(/`|\*\*|[「」『』!！]/);
-      }
-      const lastBeat = schedule[schedule.length - 1];
-      expect((step.duration ?? 0) - lastBeat.at).toBeGreaterThanOrEqual(1500);
     }
   });
 
-  it('renders SSR markup with wisp-kit banner, progress bar, and KaTeX', () => {
+  it('renders SSR markup with wisp-kit banner, persistent CPU/GPU layout, and KaTeX', () => {
     const html = renderToStaticMarkup(
       createElement(PrepareInputsExplainer, {
         title: '图 2：ModelRunner V2 永久行状态与输入元数据组装推演',
       }),
     );
-    expect(html).toContain('wisp-kit-banner');
-    expect(html).toContain('wisp-kit-banner__progress');
+    expect(html).toContain('wisp-kit-shell');
+    expect(html).toContain('wisp-lab__controls');
+    expect(html).toContain('<svg');
+    expect(html).toContain('RequestState');
+    expect(html).toContain('BlockTables');
     expect(html).toMatch(/wisp-tex|katex/);
+    expect(html).not.toMatch(/#[0-9a-fA-F]{3,8}\b/);
+    expect(html).not.toMatch(/\brx=["']2["']/);
   });
 });

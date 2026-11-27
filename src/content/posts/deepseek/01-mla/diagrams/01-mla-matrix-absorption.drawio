@@ -58,7 +58,7 @@
         <mxCell id="kv_mat_3_3" value="" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#e9f2fb;strokeColor=#2f5783;strokeWidth=1.5;shadow=0;container=0;" vertex="1" parent="1">
           <mxGeometry x="96" y="224" width="16" height="16" as="geometry" />
         </mxCell>
-        <mxCell id="kv_mat_dim" value="\(c_s^{KV}(512) \mid k_s^R(64)\)" style="text;html=1;whiteSpace=wrap;align=center;verticalAlign=middle;fontFamily=Inter, Noto Sans SC;fontSize=11;fontColor=#1d1d1f;" vertex="1" parent="1">
+        <mxCell id="kv_mat_dim" value="\(c_j^{KV}(512) \mid k_j^R(64)\)" style="text;html=1;whiteSpace=wrap;align=center;verticalAlign=middle;fontFamily=Inter, Noto Sans SC;fontSize=11;fontColor=#1d1d1f;" vertex="1" parent="1">
           <mxGeometry x="8" y="248" width="152" height="24" as="geometry" />
         </mxCell>
         <mxCell id="kv_mat_sub" value="[S × 576] 潜向量" style="text;html=1;whiteSpace=wrap;align=center;verticalAlign=middle;fontFamily=Inter, Noto Sans SC;fontSize=11;fontColor=#5c6067;" vertex="1" parent="1">
@@ -67,7 +67,7 @@
         <mxCell id="naive_grp" value="反例：Naive 展开路径（Decode 禁用，引发 32× 膨胀）" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#fcedec;strokeColor=#984646;strokeWidth=1.25;dashed=1;verticalAlign=top;align=left;spacingLeft=12;spacingTop=8;fontFamily=Inter, Noto Sans SC;fontSize=12;fontStyle=1;fontColor=#984646;container=0;" vertex="1" parent="1">
           <mxGeometry x="192" y="8" width="512" height="144" as="geometry" />
         </mxCell>
-        <mxCell id="n_dec" value="上投影解压&lt;br&gt;\(W^{UK}, W^{UV}\)" style="shape=trapezoid;perimeter=trapezoidPerimeter;whiteSpace=wrap;html=1;fixedSize=1;size=16;fillColor=#fcedec;strokeColor=#984646;strokeWidth=1.25;rounded=0;shadow=0;container=0;align=center;verticalAlign=middle;spacing=6;fontFamily=Inter, Noto Sans SC;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+        <mxCell id="n_dec" value="上投影解压&lt;br&gt;\(W_i^{UK}, W_i^{UV}\)" style="shape=trapezoid;perimeter=trapezoidPerimeter;whiteSpace=wrap;html=1;fixedSize=1;size=16;fillColor=#fcedec;strokeColor=#984646;strokeWidth=1.25;rounded=0;shadow=0;container=0;align=center;verticalAlign=middle;spacing=6;fontFamily=Inter, Noto Sans SC;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
           <mxGeometry x="216" y="48" width="152" height="64" as="geometry" />
         </mxCell>
         <mxCell id="n_mat_0_0" value="" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#fcedec;strokeColor=#984646;strokeWidth=1;shadow=0;container=0;" vertex="1" parent="1">
@@ -181,16 +181,16 @@
         <mxCell id="abs_grp" value="正解：Decode 双向矩阵吸收（只搬 576 维，等价 1 头 MQA）" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e9f5e9;strokeColor=#2c522d;strokeWidth=1.25;dashed=1;verticalAlign=top;align=left;spacingLeft=12;spacingTop=8;fontFamily=Inter, Noto Sans SC;fontSize=12;fontStyle=1;fontColor=#2c522d;container=0;" vertex="1" parent="1">
           <mxGeometry x="192" y="168" width="512" height="152" as="geometry" />
         </mxCell>
-        <mxCell id="a_q" value="1. 前吸收 Query&lt;br&gt;\(q_t^C W^{UK}\)" style="shape=trapezoid;perimeter=trapezoidPerimeter;whiteSpace=wrap;html=1;fixedSize=1;size=16;flipV=1;fillColor=#e9f2fb;strokeColor=#2f5783;strokeWidth=1.25;rounded=0;shadow=0;container=0;align=center;verticalAlign=middle;spacing=6;fontFamily=Inter, Noto Sans SC;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
-          <mxGeometry x="208" y="208" width="144" height="64" as="geometry" />
+        <mxCell id="a_q" value="1. K 路径吸收&lt;br&gt;\(\tilde{q}_{t,i}^C = (W_i^{QK})^\top c_t^Q\)" style="shape=trapezoid;perimeter=trapezoidPerimeter;whiteSpace=wrap;html=1;fixedSize=1;size=16;flipV=1;fillColor=#e9f2fb;strokeColor=#2f5783;strokeWidth=1.25;rounded=0;shadow=0;container=0;align=center;verticalAlign=middle;spacing=6;fontFamily=Inter, Noto Sans SC;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+          <mxGeometry x="208" y="208" width="160" height="64" as="geometry" />
         </mxCell>
         <mxCell id="a_mqa_lbl" value="2. 1 头 MQA" style="text;html=1;whiteSpace=wrap;align=center;verticalAlign=middle;fontFamily=Inter, Noto Sans SC;fontSize=11;fontStyle=1;fontColor=#2c522d;" vertex="1" parent="1">
-          <mxGeometry x="360" y="192" width="96" height="24" as="geometry" />
+          <mxGeometry x="368" y="192" width="96" height="24" as="geometry" />
         </mxCell>
         <mxCell id="a_mqa" value="·" style="ellipse;whiteSpace=wrap;html=1;fillColor=#e9f5e9;strokeColor=#2c522d;strokeWidth=1.25;shadow=0;container=0;align=center;verticalAlign=middle;fontFamily=Inter, Noto Sans SC;fontSize=12;fontStyle=1;fontColor=#1d1d1f;" vertex="1" parent="1">
-          <mxGeometry x="392" y="224" width="32" height="32" as="geometry" />
+          <mxGeometry x="400" y="224" width="32" height="32" as="geometry" />
         </mxCell>
-        <mxCell id="a_v" value="3. 后置上投影 \(o_t\)&lt;br&gt;\(u_t W^{UV} W^O \to [h, 128]\)" style="shape=trapezoid;perimeter=trapezoidPerimeter;whiteSpace=wrap;html=1;fixedSize=1;size=16;fillColor=#e9f5e9;strokeColor=#2c522d;strokeWidth=1.25;rounded=0;shadow=0;container=0;align=center;verticalAlign=middle;spacing=6;fontFamily=Inter, Noto Sans SC;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
+        <mxCell id="a_v" value="3. V 路径吸收 \(\tilde{o}_{t,i}\)&lt;br&gt;\(u_t = \sum_i W_i^{VO}\tilde{o}_{t,i}\)" style="shape=trapezoid;perimeter=trapezoidPerimeter;whiteSpace=wrap;html=1;fixedSize=1;size=16;fillColor=#e9f5e9;strokeColor=#2c522d;strokeWidth=1.25;rounded=0;shadow=0;container=0;align=center;verticalAlign=middle;spacing=6;fontFamily=Inter, Noto Sans SC;fontSize=12;fontColor=#1d1d1f;" vertex="1" parent="1">
           <mxGeometry x="464" y="208" width="224" height="64" as="geometry" />
         </mxCell>
         <mxCell id="e_q_mqa" value="" style="endArrow=classic;startArrow=none;html=1;strokeColor=#1d1d1f;strokeWidth=1.25;" edge="1" parent="1" source="a_q" target="a_mqa">
@@ -204,7 +204,7 @@
             <Array as="points">
               <mxPoint x="176" y="216" />
               <mxPoint x="176" y="280" />
-              <mxPoint x="408" y="280" />
+              <mxPoint x="416" y="280" />
             </Array>
           </mxGeometry>
         </mxCell>

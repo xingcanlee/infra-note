@@ -18,9 +18,9 @@ toc: true
 ```mermaid caption="图 1：DeepSeek 五代模型架构演进路线"
 flowchart TD
     V1["DeepSeek 7B / 67B<br/>标准 Dense 与 MHA / GQA-8 基线"] --> V2["DeepSeek-V2 (236B)<br/>MLA 低秩压缩 + 细粒度 MoE"]
-    V2 --> V3["DeepSeek-V3 (671B)<br/>无辅损 MoE + FP8 + MTP"]
-    NSA["NSA (2502.11089)<br/>GQA 三路硬件对齐稀疏"] -.->|"稀疏思路启发"| V32
-    V3 --> V32["DeepSeek-V3.2<br/>MLA 叠加 DSA 闪电索引"]
+    V2 --> V3["DeepSeek-V3 (671B)<br/>无辅助损失负载均衡 MoE + FP8 + MTP"]
+    NSA["NSA (2502.11089)<br/>GQA 三分支硬件对齐稀疏"] -.->|"稀疏思路启发"| V32
+    V3 --> V32["DeepSeek-V3.2<br/>MLA 叠加 DSA Lightning Indexer"]
     V32 --> V4["DeepSeek-V4<br/>CSA / HCA 序列压缩 + mHC"]
     V4 --> V41["DeepSeek-V4.1-Flash<br/>CSA2 + CED + Engram + DSpark"]
 ```
@@ -31,13 +31,13 @@ flowchart TD
 
 前五篇（第 01–05 篇）聚焦注意力与 KV 压缩主线。V2 与 V3 引入 **MLA（Multi-Head Latent Attention，多头潜在注意力）**。它通过低秩联合投影与矩阵吸收压缩单 token 缓存，同时保留完整的注意力头数。
 
-面对长序列计算瓶颈，**NSA（Native Sparse Attention，原生稀疏注意力）**探索了面向 GQA 的三路硬件对齐稀疏。随后的 **DSA（DeepSeek Sparse Attention，DeepSeek 稀疏注意力）**则将闪电索引器引入单头潜空间。
+面对长序列计算瓶颈，**NSA（Native Sparse Attention，原生稀疏注意力）**探索了面向 GQA 的三分支硬件对齐稀疏。随后的 **DSA（DeepSeek Sparse Attention，DeepSeek 稀疏注意力）**则将 Lightning Indexer 引入单头潜空间。
 
 到了 V4 与 V4.1，压缩进一步跨越单层边界。模型先用 CSA/HCA 做门控序列折叠，再经 CSA2 实现跨层缓存与索引复用。配合半程 **CED（Causal Encoder-Decoder，因果编码-解码）**切分后，40 层全局 KV 降至每 token 890 B。
 
-后四篇（第 06–09 篇）转向主干计算稀疏、条件记忆与解码吞吐，并在第 10 篇汇合。模型先用细粒度专家切分与无辅助损失偏置均衡，把 671B 总参数的单步激活压到 37B。随后引入 Engram，将局部固定搭配外包给 $O(1)$ 哈希查表。
+后四篇（第 06–09 篇）转向主干计算稀疏、残差拓扑稳定、条件记忆与解码吞吐，并在第 10 篇汇合。模型先用细粒度专家切分与无辅助损失负载均衡，把 671B 总参数的单步激活压到 37B。随后在残差主干上引入 **mHC（Manifold-Constrained Hyper-Connections，流形受限超连接）**，稳住四流残差增益。
 
-在残差稳定性上，**mHC（Manifold-Constrained Hyper-Connections，流形受限超连接）**稳住四流残差增益。在解码吞吐上，MTP 与 DSpark 打破了每步只生成 1 个 token 的权重带宽限制。
+在多流主干之上，Engram 将局部固定搭配卸载到 $O(1)$ 哈希查表，替 MoE 减负。在解码吞吐上，MTP 与 DSpark 打破了每步只生成 1 个 token 的权重带宽限制。
 
 第 10 篇将上述组件放入同一次单步解码前向流，对照 NVIDIA 与华为昇腾两条生产栈的实现落点[^ds-vllm][^ds-ascend]。其中 NVIDIA 栈覆盖 `vLLM`、`FlashMLA` 与 `DeepEP`，昇腾栈覆盖 `vllm-ascend` 与 CANN。
 
@@ -45,18 +45,18 @@ flowchart TD
 
 下表汇总了十篇文章各自切入的工程瓶颈与核心核验对象：
 
-| 篇目                                                                     | 核心瓶颈与问题                 | 关键机制与核验重点                     |
-| :----------------------------------------------------------------------- | :----------------------------- | :------------------------------------- |
-| [01 MLA 多头潜在注意力](./01-mla/)                                       | GQA 掉精度，压缩受阻于 RoPE    | 低秩 $c_t^{KV}$、解耦 RoPE 与矩阵吸收  |
-| [02 NSA 原生稀疏注意力](./02-swa-and-nsa/)                               | 固定滑窗丢失远处关键上下文     | Attention Sink、三路门控与 GQA 组块    |
-| [03 DSA 稀疏注意力](./03-dsa/)                                           | 静态分块难兼容单头 MLA         | FP8 ReLU 闪电索引、Top-$k$ 与 656+132B |
-| [04 序列压缩注意力（上）：V4 CSA 与 HCA](./04-csa-and-hca/)              | 逐 token 缓存随长度线性增长    | CSA（$m=4$）、HCA（$m'=128$）与逆 RoPE |
-| [05 序列压缩注意力（下）：V4.1 CSA2 与 CED](./05-csa2-and-ced/)          | 跨层冗余写入与多轮前缀重算     | 890 B/tok 三维压缩、HSI 与 CED 边界    |
-| [06 DeepSeekMoE：细粒度专家与无损均衡](./06-moe/)                        | 稠密 FFN 激活全量且粗 MoE 冗余 | 共享+细粒度专家、无辅损均衡与 EP       |
-| [07 Engram 条件记忆](./07-engram/)                                       | 静态实体占用多层推理算力       | 多头质数哈希、上下文门控与 DRAM 预取   |
-| [08 mHC 流形受限超连接](./08-mhc/)                                       | 四流残差引发跨层信号发散       | Birkhoff 双随机、Sinkhorn 与算子融合   |
-| [09 多 token 预测与 DSpark 动态推测解码](./09-mtp-and-dspark/)           | 单步 1 token 浪费权重带宽      | 拒绝采样、V3 MTP 与 DSpark 草稿头      |
-| [10 串珠成链：V4.1 单步全链路与双硬件协同](./10-architecture-synthesis/) | 多机制单步协同与双生态落地     | V4.1 全链路张量流与 NVIDIA/昇腾对照    |
+| 篇目                                                                     | 核心瓶颈与问题                 | 关键机制与核验重点                       |
+| :----------------------------------------------------------------------- | :----------------------------- | :--------------------------------------- |
+| [01 MLA 多头潜在注意力](./01-mla/)                                       | GQA 掉精度，压缩受阻于 RoPE    | 低秩 $c_t^{KV}$、解耦 RoPE 与矩阵吸收    |
+| [02 NSA：Attention Sink 与块稀疏](./02-swa-and-nsa/)                     | 固定滑窗丢失远处关键上下文     | Attention Sink、三分支门控与 GQA 组块    |
+| [03 DSA：Lightning Indexer 与稀疏筛选](./03-dsa/)                        | 静态分块难兼容单头 MLA         | FP8 ReLU Lightning Indexer、Top-$k$ 筛选 |
+| [04 序列压缩注意力（上）：V4 CSA 与 HCA](./04-csa-and-hca/)              | 逐 token 缓存随长度线性增长    | CSA（$m=4$）、HCA（$m'=128$）与逆 RoPE   |
+| [05 序列压缩注意力（下）：V4.1 CSA2 与 CED](./05-csa2-and-ced/)          | 跨层冗余写入与多轮前缀重算     | 890 B/tok 三维压缩、HSI 与 CED 边界      |
+| [06 DeepSeekMoE：细粒度专家与无辅助损失负载均衡](./06-moe/)              | 稠密 FFN 激活全量且粗 MoE 冗余 | 共享+细粒度专家、偏置均衡与 EP           |
+| [07 mHC 流形受限超连接](./07-mhc/)                                       | 四流残差引发跨层信号发散       | Birkhoff 双随机、Sinkhorn 与算子融合     |
+| [08 Engram 条件记忆](./08-engram/)                                       | 静态实体占用多层推理算力       | 多头质数哈希、上下文门控与 DRAM Prefetch |
+| [09 多 token 预测与 DSpark 动态推测解码](./09-mtp-and-dspark/)           | 单步 1 token 浪费权重带宽      | 拒绝采样、V3 MTP 与 DSpark 草稿头        |
+| [10 全链路整合：V4.1 单步执行与双硬件协同](./10-architecture-synthesis/) | 多机制单步协同与双生态落地     | V4.1 全链路张量流与 NVIDIA/昇腾对照      |
 
 ## 参考实现与源码基线
 
@@ -64,7 +64,7 @@ flowchart TD
 
 文中对照的仓库包括 `vllm`[^ds-vllm]、`vllm-ascend`[^ds-ascend]、`DeepSeek-V3`[^ds-v3-repo]、`FlashMLA`[^ds-flashmla]、`DeepEP`[^ds-deepep] 与 `Engram`[^ds-engram]，具体提交基线列于文末脚注。
 
-从下一篇[01 MLA 多头潜在注意力：低秩压缩与矩阵吸收](./01-mla/)开始，我们先看 DeepSeek 如何用线性代数把 128 个注意力头的 KV 缓存折叠成一条低秩向量。全部十篇读完后，可以顺势进入[《vLLM 与昇腾推理引擎》](../vllm/)追踪调度器、`torch.compile` 与静态图编排。
+从下一篇[01 MLA 多头潜在注意力：低秩压缩与矩阵吸收](./01-mla/)开始，我们先看 DeepSeek 如何用线性代数把 128 个注意力头的 KV 缓存折叠成一条低秩向量。全部十篇读完后，可以顺势进入[《vLLM 推理引擎》](../vllm/)追踪调度器、`torch.compile` 与静态图编排。
 
 [^ds-v2]: DeepSeek-AI，“DeepSeek-V2: A Strong, Economical, and Efficient Mixture-of-Experts Language Model”，2024。[arXiv:2405.04434](https://arxiv.org/abs/2405.04434)。
 
@@ -74,9 +74,9 @@ flowchart TD
 
 [^ds-v41]: DeepSeek-AI，“DeepSeek-V4.1-Flash Technical Report”，2026。[arXiv:2609.19969](https://arxiv.org/abs/2609.19969)。
 
-[^ds-vllm]: vLLM 项目，[GitHub](https://github.com/vllm-project/vllm/tree/bb23c0a81779ba733923a7dab9b840b4e533f6a5)，commit `bb23c0a8`。
+[^ds-vllm]: vLLM 项目，[GitHub](https://github.com/vllm-project/vllm/tree/99b0b0b0f34adf48122e54396448950d72efb0fe)，commit `99b0b0b0`。
 
-[^ds-ascend]: vLLM Ascend 项目，[GitHub](https://github.com/vllm-project/vllm-ascend/tree/3649b8ff7fd69e707db2c634073d2b4c40eadf15)，commit `3649b8ff`。
+[^ds-ascend]: vLLM Ascend 项目，[GitHub](https://github.com/vllm-project/vllm-ascend/tree/b776261e32d347095327b77228c6727e001509e8)，commit `b776261e`。
 
 [^ds-v3-repo]: DeepSeek-AI，`DeepSeek-V3` 参考推理代码，[GitHub](https://github.com/deepseek-ai/DeepSeek-V3/tree/9b4e9788e4a3a731f7567338ed15d3ec549ce03b)，commit `9b4e9788`。
 

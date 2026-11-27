@@ -18,15 +18,17 @@ export interface DataFlowArrowProps {
   active?: boolean;
   muted?: boolean;
   dashed?: boolean;
-  /** active 时沿折线播放数据脉冲点 */
+  /** active 时沿折线播放数据脉冲点与流光 */
   flow?: boolean;
+  /** active 且 flow 时开启持续流光虚线（默认 true，reduced-motion 下自动禁用） */
+  continuous?: boolean;
   /** 节拍显隐控制；缺省 true 保持向后兼容 */
   visible?: boolean;
   /** 是否在显影时按 pathLength 绘制连线 */
   draw?: boolean;
   drawDuration?: number;
   drawDelay?: number;
-  /** 非 0 时在每次播发节拍触发单次流动脉冲；未传时回落至 useDiagramMotion */
+  /** 非 0 时在每次切步触发强调脉冲；持续流光在 flow && active 时始终生效 */
   dotToken?: number;
   arrowEnd?: boolean;
   arrowStart?: boolean;
@@ -37,6 +39,14 @@ export interface DataFlowArrowProps {
 }
 
 const DRAW_EASE = [0.42, 0, 0.2, 1] as const;
+
+function polylineLength(points: readonly Point2D[]): number {
+  let len = 0;
+  for (let i = 0; i < points.length - 1; i++) {
+    len += Math.hypot(points[i + 1][0] - points[i][0], points[i + 1][1] - points[i][1]);
+  }
+  return len;
+}
 
 function arrowHeadPoints(from: Point2D, to: Point2D, size = 6.5): string {
   const dx = to[0] - from[0];
@@ -78,7 +88,7 @@ function defaultLabelPoint(points: readonly Point2D[]): Point2D {
  * 复用正交/折线数据流箭头：
  * - 不使用全局 <marker id>，避免多图共存时 id 冲突
  * - 标签自带 --wisp-bg 遮罩底盒，杜绝压线
- * - 支持按节拍描边显影、沿路径流动脉冲
+ * - 活跃态下以柔和轨底 + 高对比流光虚线 + 持续沿路径移动脉冲球表现真实数据流
  */
 export default function DataFlowArrow({
   points,
@@ -86,10 +96,11 @@ export default function DataFlowArrow({
   active = false,
   muted = false,
   dashed = false,
-  flow = false,
+  flow,
+  continuous = true,
   visible = true,
   draw = false,
-  drawDuration = 0.28,
+  drawDuration = 0.42,
   drawDelay = 0,
   dotToken,
   arrowEnd = true,
@@ -98,12 +109,13 @@ export default function DataFlowArrow({
   labelPos,
   strokeWidth,
 }: DataFlowArrowProps) {
-  const { canAnimateFlow, highlightTransition, packetTransition } = useDiagramMotion();
+  const { canAnimateFlow, highlightTransition } = useDiagramMotion();
   if (points.length < 2) return null;
 
   const d = points
     .map(([px, py], i) => `${i === 0 ? 'M' : 'L'} ${px.toFixed(1)} ${py.toFixed(1)}`)
     .join(' ');
+  const totalLen = polylineLength(points);
 
   const stroke = active
     ? resolveToneStroke(tone)
@@ -121,8 +133,18 @@ export default function DataFlowArrow({
   const lp = label ? (labelPos ?? defaultLabelPoint(points)) : null;
   const lw = label ? estimateLabelWidth(label) : 0;
 
-  const showTimedDot = dotToken !== undefined ? dotToken > 0 && visible && active && flow : false;
-  const showFallbackDot = dotToken === undefined && visible && active && flow && canAnimateFlow;
+  const effectiveFlow = flow ?? active;
+  const showStreamFlow = visible && active && effectiveFlow && continuous && canAnimateFlow;
+  const showContinuousDot = showStreamFlow && totalLen >= 22;
+  const showTimedDot =
+    !showContinuousDot &&
+    dotToken !== undefined &&
+    dotToken > 0 &&
+    visible &&
+    active &&
+    effectiveFlow &&
+    canAnimateFlow;
+  const pulseDuration = Math.max(0.95, Math.min(2.2, totalLen / 110));
 
   return (
     <motion.g
@@ -137,6 +159,7 @@ export default function DataFlowArrow({
           fill="none"
           stroke={stroke}
           strokeWidth={sw}
+          strokeOpacity={showStreamFlow ? 0.34 : 1}
           strokeDasharray={dashed ? '4 3' : undefined}
           strokeLinecap="round"
           strokeLinejoin="round"
@@ -154,9 +177,22 @@ export default function DataFlowArrow({
           fill="none"
           stroke={stroke}
           strokeWidth={sw}
+          strokeOpacity={showStreamFlow ? 0.34 : 1}
           strokeDasharray={dashed ? '4 3' : undefined}
           strokeLinecap="round"
           strokeLinejoin="round"
+        />
+      )}
+
+      {showStreamFlow && (
+        <path
+          d={d}
+          fill="none"
+          stroke={stroke}
+          strokeWidth={Math.max(2, sw + 0.3)}
+          strokeDasharray="6 8"
+          strokeLinecap="round"
+          className="wisp-flow-dash"
         />
       )}
 
@@ -168,8 +204,8 @@ export default function DataFlowArrow({
             initial={false}
             animate={{ opacity: visible ? targetOpacity : 0 }}
             transition={{
-              duration: visible ? 0.16 : 0,
-              delay: visible ? drawDelay + drawDuration * 0.65 : 0,
+              duration: visible ? 0.2 : 0,
+              delay: visible ? drawDelay + drawDuration * 0.6 : 0,
               ease: DRAW_EASE,
             }}
           />
@@ -184,8 +220,8 @@ export default function DataFlowArrow({
             initial={false}
             animate={{ opacity: visible ? targetOpacity : 0 }}
             transition={{
-              duration: visible ? 0.16 : 0,
-              delay: visible ? drawDelay + drawDuration * 0.65 : 0,
+              duration: visible ? 0.2 : 0,
+              delay: visible ? drawDelay + drawDuration * 0.6 : 0,
               ease: DRAW_EASE,
             }}
           />
@@ -193,30 +229,26 @@ export default function DataFlowArrow({
           <polygon points={startTri} fill={stroke} />
         ))}
 
+      {showContinuousDot && (
+        <circle r={3.8} fill={stroke} stroke="var(--wisp-bg)" strokeWidth={1.3}>
+          <animateMotion dur={`${pulseDuration.toFixed(2)}s`} repeatCount="indefinite" path={d} />
+        </circle>
+      )}
+
       {showTimedDot && (
         <motion.circle
           key={`df-${dotToken}`}
-          r={3.2}
+          r={3.6}
           fill={stroke}
+          stroke="var(--wisp-bg)"
+          strokeWidth={1.2}
           initial={{ cx: points[0][0], cy: points[0][1], opacity: 0 }}
           animate={{
             cx: points.map((p) => p[0]),
             cy: points.map((p) => p[1]),
             opacity: [0, 1, 0],
           }}
-          transition={{ duration: 0.48, delay: drawDelay, ease: DRAW_EASE }}
-        />
-      )}
-      {showFallbackDot && (
-        <motion.circle
-          r={3.2}
-          fill={stroke}
-          initial={{ cx: points[0][0], cy: points[0][1] }}
-          animate={{
-            cx: points.map((p) => p[0]),
-            cy: points.map((p) => p[1]),
-          }}
-          transition={packetTransition}
+          transition={{ duration: 0.65, delay: drawDelay, ease: DRAW_EASE }}
         />
       )}
 
@@ -224,7 +256,7 @@ export default function DataFlowArrow({
         <motion.g
           initial={false}
           animate={{ opacity: visible ? 1 : 0 }}
-          transition={{ duration: visible ? 0.2 : 0 }}
+          transition={{ duration: visible ? 0.24 : 0 }}
         >
           <rect
             x={lp[0] - lw / 2}

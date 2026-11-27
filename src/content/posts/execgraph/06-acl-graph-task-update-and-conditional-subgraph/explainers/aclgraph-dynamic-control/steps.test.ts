@@ -10,9 +10,15 @@ describe('aclgraph-dynamic-control steps model', () => {
     expect(SPEC_LOOP_CASES.case_1.iters).toBe(1);
   });
 
-  it('produces 6 ordered steps with strictly increasing beats and balanced math', () => {
+  it('produces 4 ordered steps with balanced math and clean prose', () => {
     const steps = buildAclGraphDynamicControlSteps();
-    expect(steps).toHaveLength(6);
+    expect(steps).toHaveLength(4);
+    expect(steps.map((s) => s.label)).toEqual([
+      '静态图动态断点',
+      '槽位划定与护栏',
+      '条件复位与切换',
+      '固件派发设备循环',
+    ]);
 
     for (const step of steps) {
       expect(step.label?.trim().length).toBeGreaterThan(0);
@@ -20,14 +26,6 @@ describe('aclgraph-dynamic-control steps model', () => {
       expect(step.caption).not.toMatch(/`|\*\*|[「」『』!！]/);
       const unescaped = step.caption.replace(/\\\$/g, '');
       expect((unescaped.match(/\$/g) ?? []).length % 2).toBe(0);
-
-      const beats = step.state.beats;
-      expect(beats.length).toBeGreaterThanOrEqual(4);
-      expect(beats[0].at).toBe(0);
-      for (let i = 1; i < beats.length; i++) {
-        expect(beats[i].at).toBeGreaterThan(beats[i - 1].at);
-      }
-      expect((step.duration ?? 0) - beats[beats.length - 1].at).toBeGreaterThanOrEqual(1500);
     }
   });
 });

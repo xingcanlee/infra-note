@@ -31,4 +31,4 @@ flowchart TD
 2. [02 张量、序列、专家并行与 PD 分离架构](./02-parallelism-and-disaggregation/)：分析 TP、SP、Ring CP 与混合 DP/EP 如何取舍通信频次和 KV Cache 显存，并拆解 PD 分离的流式 KV 传输栈。
 3. [03 MoE 跨卡通信：DeepEP、MC2 与 DBO](./03-moe-comm-and-overlap/)：定位偏斜路由与变长 `All-to-All` 阻塞根源，对比 NVIDIA `DeepEP` 与 DBO、昇腾 `MC2` 融合及共享专家流实现。
 
-如果还不熟悉单卡算术强度、HBM 带宽瓶颈或 Paged KV Cache（分页键值缓存），可以先读[《推理与异构硬件基础》](../foundations/)。读完本系列后，可继续前往[《DeepSeek 架构演进》](../deepseek/)查看低秩压缩与稀疏路由等减通信设计，或进入[《vLLM 与昇腾推理引擎》](../vllm/)跟踪调度与静态图执行链路。
+如果还不熟悉单卡算术强度、HBM 带宽瓶颈或 Paged KV Cache（分页键值缓存），可以先读[《推理与异构硬件基础》](../foundations/)。读完本系列后，可继续前往[《DeepSeek 架构演进》](../deepseek/)查看低秩压缩与稀疏路由等减通信设计，或进入[《vLLM 推理引擎：架构与核心组件》](../vllm/)跟踪调度与静态图执行链路。
